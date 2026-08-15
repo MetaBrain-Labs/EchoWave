@@ -4,6 +4,15 @@
 
 Act as a pragmatic software-engineering agent. Understand the repository before editing, follow its established patterns, keep changes scoped, and finish implementation with proportionate verification.
 
+## Project Snapshot
+
+- EchoWave is a pnpm 11.3.0 workspace coordinated by Turborepo and requires Node.js 24.
+- `apps/mobile` is an Expo SDK 57 application using React Native 0.86, React 19.2.3, Expo Router, TypeScript, and React Native `StyleSheet`.
+- `apps/api` is a Node.js TypeScript HTTP API using Hono, the Hono Node adapter, and Zod.
+- `packages/contracts` owns shared Zod schemas and their inferred TypeScript types. It is the authoritative boundary between the API and mobile client.
+- PostgreSQL and Redis are configuration-only future integration points. No database driver, ORM, Redis client, queue, schema, migration, or persistence implementation exists yet.
+- The product UI is Chinese-first. The current milestone is a runnable UI and HelloWorld vertical slice, not a production backend.
+
 ## Instruction Precedence
 
 - Follow system and user instructions first, then the nearest repository-level `AGENTS.md`.
@@ -45,44 +54,44 @@ Use the repository's pinned toolchain and existing scripts. Do not change depend
 - Model multi-stage workflows explicitly through the repository's workflow mechanism rather than hidden ad hoc calls.
 - Preserve state, provenance, idempotency, retry behavior, and downstream invalidation in resumable or parallel workflows.
 
-## Preferred Technology Choices
+## EchoWave Invariants
 
-### JavaScript and TypeScript
+### Toolchain and Workspaces
 
-- Prefer TypeScript for application code and preserve strict typing at module and network boundaries.
-- Prefer the repository's current package manager; for new JavaScript/TypeScript repositories, prefer `pnpm`.
-- For a new multi-package JavaScript/TypeScript repository, prefer pnpm workspaces. Add Turbo only when multiple packages need a coordinated build graph or caching.
-- Reuse existing validation libraries and schemas for untrusted or persisted data.
-- Preserve project references, module format, path aliases, and package export conventions already in use.
+- Use `pnpm`, never npm or Yarn, for dependency and workspace commands. Keep the pinned pnpm version and lockfile intact unless a dependency change is explicitly required.
+- Run Expo commands in `apps/mobile` or through `pnpm --filter @echowave/mobile`; running `npx expo` from the repository root does not target the Expo workspace reliably.
+- Keep root scripts as Turborepo orchestration and workspace scripts as the implementation of each task.
+- `pnpm start` is the interactive local workflow and uses Turbo TUI. `pnpm dev` is the streamed Turbo workflow. `pnpm dev:api` and `pnpm dev:mobile` start individual applications.
+- Preserve strict TypeScript, ESM conventions, package exports, and existing workspace boundaries.
 
-### Frontend
+### Mobile Application
 
-- For new frontend work, prefer Vite, React, TypeScript, and Tailwind CSS.
-- In an existing frontend, preserve its established stack unless migration is explicitly requested. Do not introduce a second framework or styling system for one feature.
-- Prefer Tailwind utilities for new styling. Use native HTML, CSS, and browser capabilities before adding JavaScript or a component dependency.
-- For data-heavy application interfaces that need a component library, prefer Ant Design and use Tailwind for layout and local styling. Do not add a component library when native elements are sufficient.
-- Keep the application shell focused on providers, routing, and composition. Put API clients, reusable hooks, mapping, routing helpers, utilities, shared components, and page orchestration in focused modules.
+- Preserve Expo Router and React Native primitives. Do not introduce Vite, Tailwind CSS, a web-only UI library, or a second routing system.
+- Reuse the shared color, typography, spacing, and radius tokens. Use `StyleSheet` and keep iOS, Android, and web behavior compatible.
+- Maintain full-width safe-area layouts on native and the centered, approximately 480px-wide single-column canvas on desktop web.
+- Keep the bottom routes as `分组 / 知识库 / 新建 / 分析 / 更多` unless the product requirement explicitly changes.
+- Use Expo-compatible icon packages instead of copying raster icons from the design sketches.
+- Keep mock audio, knowledge-base, and data-source records in the mobile presentation layer. Do not make them appear server-backed or persist them in browser storage.
 - Keep server data authoritative. Use browser storage only for non-authoritative UI preferences unless offline-first behavior is explicitly required.
 - Preserve accessibility basics: semantic elements, labels, keyboard behavior, focus management, and readable loading and error states.
-- Render untrusted rich content through safe structured renderers; do not bypass escaping with raw HTML injection.
+- Expo Go currently works for this code only while all dependencies are included in Expo Go or require no custom native code. Reassess the test workflow before adding a native dependency; use a Development Build when required.
 
-### Backend and Persistence
+### API and Contracts
 
-- For new TypeScript HTTP APIs, prefer Hono with Zod validation when it fits the deployment target.
-- For relational persistence, prefer PostgreSQL with Prisma. Use Redis and BullMQ only when there is a real queue, retry, scheduling, or distributed-coordination requirement.
+- Keep Hono transport concerns in `apps/api`, network schemas in `packages/contracts`, and client parsing in `apps/mobile`.
+- `GET /api/hello` must return `{ ok: true, service: "echowave-api", message: "HelloWorld" }` and pass `HelloResponseSchema` unless the shared contract is intentionally changed everywhere.
+- Validate untrusted network data at runtime. A TypeScript type assertion is not a replacement for Zod parsing.
 - Validate inputs at trust boundaries and return compact, actionable errors without leaking secrets, provider stacks, or large internal payloads.
-- Keep database writes, external side effects, and retries explicit and idempotent where practical.
-- Treat migrations and generated clients as part of contract changes; run commands from the location expected by the repository.
-- Verify that required tables, migrations, queues, caches, and environment variables exist instead of assuming setup scripts created them.
+- Do not add Prisma, PostgreSQL or Redis clients, Docker Compose, BullMQ, migrations, models, or cache abstractions without an explicit requirement to implement persistence or queues.
+- When persistence is introduced, PostgreSQL is authoritative business storage; Redis is limited to justified cache, coordination, or queue use and must not become a competing source of truth.
 
-### AI and Agent Systems
+### Configuration
 
-- Write all model-facing instructions, tool names and descriptions, parameter descriptions, and model-consumed schema metadata in English unless the product explicitly requires another language.
-- Keep tool authorization centralized and grant each Agent only the capabilities it needs.
-- Prefer structured outputs and deterministic validation for exact invariants. Leave semantic judgment to the responsible model with sufficient context rather than encoding fragile keyword rules.
-- Preserve Agent identity, tool-call identity, provenance, and lifecycle state across runtime events, persistence, and UI rendering.
-- Filter internal helpers, secrets, large state snapshots, and implementation details from user-visible streams and stored messages.
-- Make interruption, stop, retry, and resume behavior explicit. Preserve completed unaffected work during recovery.
+- `apps/api/.env` is the API's sole runtime configuration source. The API intentionally reads that file directly and does not merge `process.env` values or provide implicit defaults.
+- `apps/mobile/.env` is loaded by Expo. Only `EXPO_PUBLIC_*` values are available to client code, and all such values are public bundle content.
+- Keep `.env` files untracked. Update `.env.example` and README when the required configuration contract changes; never copy real passwords or local addresses into tracked files.
+- A physical phone cannot reach the development computer through `localhost`. Use the computer's LAN address in `EXPO_PUBLIC_API_URL` and keep its port aligned with `apps/api/.env`.
+- PostgreSQL uses the existing `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_SCHEMA`, and `POSTGRES_SSL` fields. Redis uses the existing `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_USERNAME`, `REDIS_DB`, and `REDIS_TLS` fields.
 
 ## Code and Documentation
 
@@ -97,7 +106,11 @@ Use the repository's pinned toolchain and existing scripts. Do not change depend
 
 - Leave one focused runnable check for non-trivial new logic when the repository has no suitable existing test.
 - Run the narrowest useful check first, then broaden according to risk and affected package boundaries.
-- Build or generate shared dependencies before validating consumers when the repository requires it.
+- Build `@echowave/contracts` before validating API or mobile consumers when shared exports changed.
+- Use `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm build`; use `pnpm check` for the complete root verification sequence.
+- API changes must cover `/api/hello` success and structured 404 behavior when relevant. Contract changes must test valid and rejected payloads. Mobile behavior changes should cover interaction, API failure, timeout, and retry states as applicable.
+- For web UI changes, export or run the app and inspect 360px, 480px, and desktop widths. For Android, perform a launch/API smoke test when the environment allows it.
+- On Windows, do not claim iOS Simulator verification. Use Expo bundle export, type checking, and configuration validation, and report that native iOS execution requires macOS/Xcode.
 - Test the failure or edge case that motivated a bug fix, not only the happy path.
 - Review the final diff for accidental edits, secrets, generated output, dependency churn, prompt-language violations, and incomplete contract updates.
 - Report checks that could not run and their blockers. Do not present empty, skipped, or broken checks as successful coverage.
