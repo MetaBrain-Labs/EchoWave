@@ -1,7 +1,8 @@
 /** Defines the five persistent product areas shown in the supplied navigation sketch. */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Tabs } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import type { ComponentProps } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { colors } from '../../theme/tokens';
 
@@ -15,6 +16,13 @@ export default function TabsLayout() {
         tabBarShowLabel: false,
         tabBarStyle: styles.tabBar,
         tabBarItemStyle: styles.tabBarItem,
+        tabBarButton: ({ ref, ...props }) => (
+          <Pressable
+            {...props}
+            android_ripple={undefined}
+            ref={ref as ComponentProps<typeof Pressable>['ref']}
+          />
+        ),
       }}
     >
       <Tabs.Screen
