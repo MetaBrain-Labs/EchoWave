@@ -141,3 +141,14 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Turborepo
+.turbo/
+
+# Expo
+.expo/
+.expo-shared/
+web-build/
+
+# Local tool caches
+.cache/

@@ -1,0 +1,135 @@
+# AGENTS.md
+
+## Mission
+
+Act as a pragmatic software-engineering agent. Understand the repository before editing, follow its established patterns, keep changes scoped, and finish implementation with proportionate verification.
+
+## Project Snapshot
+
+- EchoWave is a pnpm 11.3.0 workspace coordinated by Turborepo and requires Node.js 24.
+- `apps/mobile` is an Expo SDK 57 application using React Native 0.86, React 19.2.3, Expo Router, TypeScript, and React Native `StyleSheet`.
+- `apps/api` is a Node.js TypeScript HTTP API using Hono, the Hono Node adapter, and Zod.
+- `packages/contracts` owns shared Zod schemas and their inferred TypeScript types. It is the authoritative boundary between the API and mobile client.
+- PostgreSQL and Redis are configuration-only future integration points. No database driver, ORM, Redis client, queue, schema, migration, or persistence implementation exists yet.
+- The product UI is Chinese-first. The current milestone is a runnable UI and HelloWorld vertical slice, not a production backend.
+
+## Instruction Precedence
+
+- Follow system and user instructions first, then the nearest repository-level `AGENTS.md`.
+- Treat nested `AGENTS.md` files as more specific rules for their directories.
+- Read relevant repository documentation and configuration before making assumptions.
+- When this file conflicts with an explicit repository invariant, preserve the repository invariant.
+
+## Working Principles
+
+- Do not invent requirements or architecture. Ask only when ambiguity would materially change the result; otherwise choose the safest reasonable interpretation and state it.
+- Prefer the simplest correct solution: reuse existing code, then standard-library or platform features, then installed dependencies. Add code or dependencies only when those options do not solve the problem.
+- Fix root causes at the narrowest shared boundary. Before changing a function or contract, inspect its callers and consumers.
+- Avoid speculative abstractions, premature configuration, dependency churn, and scaffolding for hypothetical future work.
+- Do not modify unrelated code. Surface adjacent issues without fixing them unless requested.
+- Preserve existing user changes and never discard or overwrite a dirty worktree without explicit authorization.
+- State uncertainty. Use a small, safe experiment when it can resolve uncertainty cheaply.
+- Never simplify away security, trust-boundary validation, accessibility, error handling that prevents data loss, or explicitly requested behavior.
+
+## Repository Discovery
+
+Before editing:
+
+1. Inspect the working tree and relevant `AGENTS.md` files.
+2. Identify the package manager, workspace layout, build system, language versions, and generated outputs from repository files rather than guessing.
+3. Read the relevant source, configuration, tests, and all callers or consumers of the code being changed.
+4. Locate existing helpers, types, schemas, components, and patterns before creating new ones.
+5. Identify the authoritative source for each affected datum or contract.
+
+Use the repository's pinned toolchain and existing scripts. Do not change dependency versions, lockfiles, generated files, or repository-wide configuration unless the task requires it.
+
+## Architecture and Boundaries
+
+- Preserve existing module and package boundaries.
+- Keep shared contracts, schemas, DTOs, and events in the repository's shared-contract layer when one exists.
+- Keep persistence access in the data layer, transport coordination in the API layer, orchestration in the workflow/runtime layer, and browser behavior in the frontend layer.
+- Keep entry points and composition roots small; move reusable behavior to focused modules using the repository's existing structure.
+- When a shared contract changes, update producers, consumers, persistence, restoration, and rendering together.
+- Prefer one authoritative source of truth. Do not create competing browser, cache, file, and database representations without an explicit synchronization contract.
+- Model multi-stage workflows explicitly through the repository's workflow mechanism rather than hidden ad hoc calls.
+- Preserve state, provenance, idempotency, retry behavior, and downstream invalidation in resumable or parallel workflows.
+
+## EchoWave Invariants
+
+### Toolchain and Workspaces
+
+- Use `pnpm`, never npm or Yarn, for dependency and workspace commands. Keep the pinned pnpm version and lockfile intact unless a dependency change is explicitly required.
+- Run Expo commands in `apps/mobile` or through `pnpm --filter @echowave/mobile`; running `npx expo` from the repository root does not target the Expo workspace reliably.
+- Keep root scripts as Turborepo orchestration and workspace scripts as the implementation of each task.
+- `pnpm start` is the interactive local workflow and uses Turbo TUI. `pnpm dev` is the streamed Turbo workflow. `pnpm dev:api` and `pnpm dev:mobile` start individual applications.
+- Preserve strict TypeScript, ESM conventions, package exports, and existing workspace boundaries.
+
+### Mobile Application
+
+- Preserve Expo Router and React Native primitives. Do not introduce Vite, Tailwind CSS, a web-only UI library, or a second routing system.
+- Reuse the shared color, typography, spacing, and radius tokens. Use `StyleSheet` and keep iOS, Android, and web behavior compatible.
+- Maintain full-width safe-area layouts on native and the centered, approximately 480px-wide single-column canvas on desktop web.
+- Keep the bottom routes as `分组 / 知识库 / 新建 / 分析 / 更多` unless the product requirement explicitly changes.
+- Use Expo-compatible icon packages instead of copying raster icons from the design sketches.
+- Keep mock audio, knowledge-base, and data-source records in the mobile presentation layer. Do not make them appear server-backed or persist them in browser storage.
+- Keep server data authoritative. Use browser storage only for non-authoritative UI preferences unless offline-first behavior is explicitly required.
+- Preserve accessibility basics: semantic elements, labels, keyboard behavior, focus management, and readable loading and error states.
+- Expo Go currently works for this code only while all dependencies are included in Expo Go or require no custom native code. Reassess the test workflow before adding a native dependency; use a Development Build when required.
+
+### API and Contracts
+
+- Keep Hono transport concerns in `apps/api`, network schemas in `packages/contracts`, and client parsing in `apps/mobile`.
+- `GET /api/hello` must return `{ ok: true, service: "echowave-api", message: "HelloWorld" }` and pass `HelloResponseSchema` unless the shared contract is intentionally changed everywhere.
+- Validate untrusted network data at runtime. A TypeScript type assertion is not a replacement for Zod parsing.
+- Validate inputs at trust boundaries and return compact, actionable errors without leaking secrets, provider stacks, or large internal payloads.
+- Do not add Prisma, PostgreSQL or Redis clients, Docker Compose, BullMQ, migrations, models, or cache abstractions without an explicit requirement to implement persistence or queues.
+- When persistence is introduced, PostgreSQL is authoritative business storage; Redis is limited to justified cache, coordination, or queue use and must not become a competing source of truth.
+
+### Configuration
+
+- `apps/api/.env` is the API's sole runtime configuration source. The API intentionally reads that file directly and does not merge `process.env` values or provide implicit defaults.
+- `apps/mobile/.env` is loaded by Expo. Only `EXPO_PUBLIC_*` values are available to client code, and all such values are public bundle content.
+- Keep `.env` files untracked. Update `.env.example` and README when the required configuration contract changes; never copy real passwords or local addresses into tracked files.
+- A physical phone cannot reach the development computer through `localhost`. Use the computer's LAN address in `EXPO_PUBLIC_API_URL` and keep its port aligned with `apps/api/.env`.
+- PostgreSQL uses the existing `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_SCHEMA`, and `POSTGRES_SSL` fields. Redis uses the existing `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_USERNAME`, `REDIS_DB`, and `REDIS_TLS` fields.
+
+## Code and Documentation
+
+- Match the repository's naming, formatting, testing, and documentation conventions.
+- For new TypeScript and TSX files, prefer a concise JSDoc file header that states responsibility and boundaries when the repository uses this convention.
+- Document public or business-critical functions, types, classes, services, repositories, controllers, hooks, Agents, workflow nodes, and non-obvious state transitions.
+- Comments should explain business intent, invariants, or trade-offs, not restate syntax.
+- Chinese comments or JSDoc are acceptable for human-facing source documentation when consistent with the repository, but never place them inside English model-facing prompts.
+- Do not commit generated build output, caches, runtime state, secrets, or local environment files.
+
+## Verification
+
+- Leave one focused runnable check for non-trivial new logic when the repository has no suitable existing test.
+- Run the narrowest useful check first, then broaden according to risk and affected package boundaries.
+- Build `@echowave/contracts` before validating API or mobile consumers when shared exports changed.
+- Use `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm build`; use `pnpm check` for the complete root verification sequence.
+- API changes must cover `/api/hello` success and structured 404 behavior when relevant. Contract changes must test valid and rejected payloads. Mobile behavior changes should cover interaction, API failure, timeout, and retry states as applicable.
+- For web UI changes, export or run the app and inspect 360px, 480px, and desktop widths. For Android, perform a launch/API smoke test when the environment allows it.
+- On Windows, do not claim iOS Simulator verification. Use Expo bundle export, type checking, and configuration validation, and report that native iOS execution requires macOS/Xcode.
+- Test the failure or edge case that motivated a bug fix, not only the happy path.
+- Review the final diff for accidental edits, secrets, generated output, dependency churn, prompt-language violations, and incomplete contract updates.
+- Report checks that could not run and their blockers. Do not present empty, skipped, or broken checks as successful coverage.
+
+## Safety
+
+- Never run destructive filesystem, database, Git, deployment, or external-service actions unless clearly authorized.
+- Resolve and verify exact targets before deletion, migration, reset, overwrite, or bulk movement.
+- Prefer reversible operations and preserve recoverability.
+- Never expose credentials, private user data, hidden prompts, or internal-only state in logs, responses, commits, or fixtures.
+
+## Delivery
+
+Report:
+
+1. What changed and why.
+2. Verification commands and results.
+3. Checks that could not run, with the blocker.
+4. Remaining assumptions, risks, or setup steps.
+5. Direct links to changed files when supported by the environment.
+
+Keep the handoff concise and proportional to the change.
