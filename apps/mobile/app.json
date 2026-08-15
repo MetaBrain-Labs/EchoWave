@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "EchoWave",
+    "slug": "echowave",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "echowave",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.echowave.app"
+    },
+    "android": {
+      "package": "com.echowave.app"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

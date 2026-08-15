@@ -1,0 +1,31 @@
+import { fireEvent, render } from '@testing-library/react-native';
+import { Alert } from 'react-native';
+
+import { GroupScreen } from '../GroupScreen';
+
+describe('GroupScreen', () => {
+  it('switches among the three group content tabs', () => {
+    const screen = render(<GroupScreen />);
+
+    expect(screen.getByText('共 5 份音频')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('关联知识库'));
+    expect(screen.getByText('共关联 3 个知识库')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('连接数据源'));
+    expect(screen.getByText('共连接 3 个数据源')).toBeTruthy();
+  });
+
+  it('provides feedback for placeholder actions', () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const screen = render(<GroupScreen />);
+
+    fireEvent.press(screen.getByLabelText('搜索'));
+
+    expect(alert).toHaveBeenCalledWith(
+      '功能建设中',
+      '搜索将在后续版本开放。',
+    );
+    alert.mockRestore();
+  });
+});

@@ -1,0 +1,26 @@
+{
+  "name": "echowave",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.3.0+sha512.2c403d6594527287672b1f7056343a1f7c3634036a67ffabfcc2b3d7595d843768f8787148d1b57cf7956c90606bbd192857c363af19e96d2d0ec9ec5741d215",
+  "engines": {
+    "node": ">=24.0.0 <25",
+    "pnpm": "11.3.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "dev": "turbo run dev",
+    "dev:api": "pnpm --filter @echowave/contracts build && pnpm --filter @echowave/api dev",
+    "dev:mobile": "pnpm --filter @echowave/contracts build && pnpm --filter @echowave/mobile dev",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck"
+  },
+  "devDependencies": {
+    "eslint": "9.39.3",
+    "eslint-config-expo": "57.0.1",
+    "turbo": "2.10.10",
+    "typescript": "5.9.3"
+  }
+}

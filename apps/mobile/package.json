@@ -1,0 +1,54 @@
+{
+  "name": "@echowave/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "android": "cross-env EXPO_NO_TELEMETRY=1 expo start --android",
+    "build": "cross-env EXPO_NO_TELEMETRY=1 expo export --platform all --max-workers 1 --no-bytecode",
+    "dev": "cross-env EXPO_NO_TELEMETRY=1 expo start",
+    "ios": "cross-env EXPO_NO_TELEMETRY=1 expo start --ios",
+    "lint": "eslint .",
+    "test": "jest --runInBand",
+    "typecheck": "tsc --noEmit",
+    "web": "cross-env EXPO_NO_TELEMETRY=1 expo start --web"
+  },
+  "dependencies": {
+    "@echowave/contracts": "workspace:*",
+    "@expo/vector-icons": "15.1.1",
+    "expo": "~57.0.13",
+    "expo-constants": "~57.0.11",
+    "expo-linking": "~57.0.6",
+    "expo-router": "~57.0.13",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.2",
+    "react-native-safe-area-context": "~5.9.0",
+    "react-native-screens": "~4.27.0",
+    "react-native-worklets": "0.10.1",
+    "react-native-web": "~0.21.2"
+  },
+  "devDependencies": {
+    "@react-native/metro-config": "0.86.2",
+    "@react-native/jest-preset": "0.86.2",
+    "@testing-library/react-native": "13.3.3",
+    "@types/jest": "29.5.14",
+    "@types/react": "19.2.18",
+    "@types/react-test-renderer": "19.1.0",
+    "cross-env": "10.1.0",
+    "jest": "29.7.0",
+    "jest-expo": "~57.0.4",
+    "react-test-renderer": "19.2.3"
+  },
+  "jest": {
+    "moduleNameMapper": {
+      "^@expo/vector-icons/Ionicons$": "<rootDir>/src/test/IoniconsMock.tsx"
+    },
+    "preset": "jest-expo",
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/dist/"
+    ]
+  }
+}

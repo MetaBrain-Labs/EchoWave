@@ -1,0 +1,24 @@
+{
+  "name": "@echowave/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "node --watch --experimental-strip-types src/server.ts",
+    "lint": "eslint src test",
+    "start": "node dist/server.js",
+    "test": "pnpm run build && node --test --test-isolation=none test/*.test.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@echowave/contracts": "workspace:*",
+    "@hono/node-server": "2.1.1",
+    "dotenv": "17.4.2",
+    "hono": "4.13.2",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.0"
+  }
+}
