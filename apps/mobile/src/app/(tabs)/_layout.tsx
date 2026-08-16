@@ -4,7 +4,7 @@ import { Tabs } from 'expo-router';
 import type { ComponentProps } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { colors } from '../../theme/tokens';
+import { colors, radii } from '../../theme/tokens';
 
 export default function TabsLayout() {
   return (
@@ -103,7 +103,7 @@ const styles = StyleSheet.create({
     borderTopColor: colors.divider,
     height: 80,
     paddingBottom: 12,
-    paddingTop: 10,
+    paddingTop: 8,
   },
   tabBarItem: {
     overflow: 'visible',
@@ -111,10 +111,10 @@ const styles = StyleSheet.create({
   createButton: {
     alignItems: 'center',
     backgroundColor: colors.ink,
-    borderRadius: 36,
+    borderRadius: radii.round,
     height: 72,
     justifyContent: 'center',
-    marginTop: -30,
+    marginTop: -32,
     shadowColor: colors.ink,
     shadowOffset: { width: 0, height: 5 },
     shadowOpacity: 0.15,

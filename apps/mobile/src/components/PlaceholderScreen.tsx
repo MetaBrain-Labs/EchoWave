@@ -3,7 +3,14 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { colors, radii, spacing, typeScale } from '../theme/tokens';
+import {
+  colors,
+  fontFamilies,
+  radii,
+  spacing,
+  textColors,
+  typography,
+} from '../theme/tokens';
 
 type PlaceholderScreenProps = {
   title: string;
@@ -41,7 +48,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
     justifyContent: 'center',
-    padding: spacing.xl,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xl,
   },
   iconCircle: {
     alignItems: 'center',
@@ -53,15 +61,16 @@ const styles = StyleSheet.create({
     width: 76,
   },
   title: {
-    color: colors.ink,
-    fontSize: 28,
-    fontWeight: '700',
+    ...typography.heading2,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
     marginBottom: spacing.sm,
   },
   description: {
-    color: colors.secondary,
-    fontSize: typeScale.body,
-    lineHeight: 24,
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
     maxWidth: 310,
     textAlign: 'center',
   },
@@ -73,8 +82,9 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   badgeText: {
-    color: colors.success,
-    fontSize: typeScale.caption,
-    fontWeight: '700',
+    ...typography.label,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
   },
 });

@@ -2,7 +2,14 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ServiceStatusCard } from '../../features/service/ServiceStatusCard';
-import { colors, radii, spacing, typeScale } from '../../theme/tokens';
+import {
+  colors,
+  fontFamilies,
+  radii,
+  spacing,
+  textColors,
+  typography,
+} from '../../theme/tokens';
 
 export default function MoreScreen() {
   return (
@@ -30,37 +37,40 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: spacing.lg,
     paddingBottom: spacing.xxl,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.lg,
   },
   title: {
-    color: colors.ink,
-    fontSize: 40,
-    fontWeight: '700',
+    ...typography.heading1,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
     marginTop: spacing.xl,
   },
   subtitle: {
-    color: colors.secondary,
-    fontSize: typeScale.body,
-    lineHeight: 24,
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
     marginBottom: spacing.xl,
     marginTop: spacing.sm,
   },
   roadmapCard: {
     backgroundColor: colors.background,
-    borderRadius: radii.md,
+    borderRadius: radii.default,
     marginTop: spacing.md,
     padding: spacing.lg,
   },
   roadmapTitle: {
-    color: colors.ink,
-    fontSize: typeScale.body,
-    fontWeight: '700',
+    ...typography.heading2,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
     marginBottom: spacing.xs,
   },
   roadmapText: {
-    color: colors.secondary,
-    fontSize: typeScale.caption,
-    lineHeight: 21,
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
   },
 });

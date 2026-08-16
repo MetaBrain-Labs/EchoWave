@@ -1,9 +1,26 @@
 import { fireEvent, render } from '@testing-library/react-native';
-import { Alert } from 'react-native';
+import { Alert, StyleSheet } from 'react-native';
 
 import { GroupScreen } from '../GroupScreen';
 
 describe('GroupScreen', () => {
+  it('uses the special group title and inline icon sizing rules', () => {
+    const screen = render(<GroupScreen />);
+
+    expect(
+      StyleSheet.flatten(screen.getByText('分组名称').props.style),
+    ).toEqual(
+      expect.objectContaining({
+        fontSize: 40,
+        fontWeight: 'bold',
+        lineHeight: 60,
+      }),
+    );
+    expect(
+      StyleSheet.flatten(screen.getByTestId('icon-hourglass-outline').props.style),
+    ).toEqual({ height: 14, width: 14 });
+  });
+
   it('switches among the three group content tabs', () => {
     const screen = render(<GroupScreen />);
 
