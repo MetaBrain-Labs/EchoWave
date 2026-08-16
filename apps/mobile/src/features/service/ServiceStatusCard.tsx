@@ -9,7 +9,14 @@ import {
   View,
 } from 'react-native';
 
-import { colors, radii, spacing, typeScale } from '../../theme/tokens';
+import {
+  colors,
+  fontFamilies,
+  radii,
+  spacing,
+  textColors,
+  typography,
+} from '../../theme/tokens';
 import { apiUrl, fetchHello } from './apiClient';
 
 type ServiceState =
@@ -82,12 +89,15 @@ export function ServiceStatusCard() {
           ]}
         >
           {isLoading ? (
-            <ActivityIndicator color={colors.secondary} size="small" />
+            <ActivityIndicator
+              color={colors.secondary}
+              size={typography.label.lineHeight}
+            />
           ) : (
             <Ionicons
               color={isOnline ? colors.success : colors.secondary}
               name={isOnline ? 'checkmark-circle' : 'cloud-offline-outline'}
-              size={17}
+              size={typography.label.lineHeight}
             />
           )}
           <Text
@@ -124,7 +134,11 @@ export function ServiceStatusCard() {
           pressed && styles.pressedButton,
         ]}
       >
-        <Ionicons color={colors.white} name="refresh" size={18} />
+        <Ionicons
+          color={colors.ink}
+          name="refresh"
+          size={typography.body.lineHeight}
+        />
         <Text style={styles.retryText}>重试连接</Text>
       </Pressable>
     </View>
@@ -135,7 +149,7 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.card,
     borderColor: colors.divider,
-    borderRadius: radii.lg,
+    borderRadius: radii.default,
     borderWidth: StyleSheet.hairlineWidth,
     padding: spacing.lg,
   },
@@ -145,15 +159,17 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   eyebrow: {
-    color: colors.secondary,
-    fontSize: 11,
-    fontWeight: '700',
+    ...typography.label,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
     letterSpacing: 1.2,
   },
   title: {
-    color: colors.ink,
-    fontSize: 26,
-    fontWeight: '700',
+    ...typography.heading2,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
     marginTop: spacing.xs,
   },
   statusBadge: {
@@ -171,38 +187,43 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   statusLabel: {
-    color: colors.secondary,
-    fontSize: typeScale.caption,
-    fontWeight: '700',
+    ...typography.label,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
   },
   onlineStatusLabel: {
-    color: colors.success,
+    color: textColors.primary,
   },
   messageBox: {
     backgroundColor: colors.background,
-    borderRadius: radii.md,
+    borderRadius: radii.default,
     marginTop: spacing.lg,
     padding: spacing.md,
   },
   messageLabel: {
-    color: colors.muted,
-    fontSize: typeScale.caption,
+    ...typography.label,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
     marginBottom: spacing.xs,
   },
   message: {
-    color: colors.ink,
-    fontSize: typeScale.body,
-    lineHeight: 23,
+    ...typography.body,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sans,
   },
   endpoint: {
-    color: colors.muted,
-    fontSize: 12,
+    ...typography.label,
+    color: textColors.tertiary,
+    fontFamily: fontFamilies.sans,
     marginTop: spacing.md,
   },
   retryButton: {
     alignItems: 'center',
-    backgroundColor: colors.ink,
-    borderRadius: radii.md,
+    backgroundColor: colors.background,
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     gap: spacing.sm,
     justifyContent: 'center',
@@ -210,14 +231,15 @@ const styles = StyleSheet.create({
     minHeight: 48,
   },
   disabledButton: {
-    opacity: 0.5,
+    backgroundColor: colors.card,
   },
   pressedButton: {
-    opacity: 0.7,
+    backgroundColor: colors.divider,
   },
   retryText: {
-    color: colors.white,
-    fontSize: typeScale.body,
-    fontWeight: '700',
+    ...typography.body,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
   },
 });

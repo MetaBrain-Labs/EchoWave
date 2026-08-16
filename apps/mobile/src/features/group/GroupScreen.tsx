@@ -1,6 +1,6 @@
 /** Implements the sketch-inspired group workspace and its three content tabs. */
-import Ionicons from '@expo/vector-icons/Ionicons';
-import { useState } from 'react';
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -9,27 +9,34 @@ import {
   StyleSheet,
   Text,
   View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import { colors, radii, spacing, typeScale } from '../../theme/tokens';
+import {
+  colors,
+  fontFamilies,
+  radii,
+  spacing,
+  textColors,
+  typography,
+} from "../../theme/tokens";
 import {
   audioItems,
   dataSources,
   knowledgeBases,
   type AudioItem,
-} from './mockData';
+} from "./mockData";
 
 const tabs = [
-  { key: 'audio', label: '音频分析' },
-  { key: 'knowledge', label: '关联知识库' },
-  { key: 'sources', label: '连接数据源' },
+  { key: "audio", label: "音频分析" },
+  { key: "knowledge", label: "关联知识库" },
+  { key: "sources", label: "连接数据源" },
 ] as const;
 
-type TabKey = (typeof tabs)[number]['key'];
+type TabKey = (typeof tabs)[number]["key"];
 
 function showComingSoon(feature: string) {
-  Alert.alert('功能建设中', `${feature}将在后续版本开放。`);
+  Alert.alert("功能建设中", `${feature}将在后续版本开放。`);
 }
 
 function IconButton({
@@ -52,25 +59,32 @@ function IconButton({
   );
 }
 
-function AudioStatusView({ status }: Pick<AudioItem, 'status'>) {
+function AudioStatusView({ status }: Pick<AudioItem, "status">) {
   switch (status.kind) {
-    case 'complete':
+    case "complete":
       return <Text style={styles.statusText}>{status.duration}</Text>;
-    case 'waiting':
+    case "waiting":
       return (
         <View style={styles.inlineStatus}>
-          <Ionicons color={colors.ink} name="hourglass-outline" size={18} />
+          <Ionicons
+            color={colors.ink}
+            name="hourglass-outline"
+            size={typography.label.lineHeight}
+          />
           <Text style={styles.statusText}>待分析</Text>
         </View>
       );
-    case 'uploading':
+    case "uploading":
       return (
         <View style={styles.inlineStatus}>
-          <ActivityIndicator color={colors.ink} size="small" />
+          <ActivityIndicator
+            color={colors.ink}
+            size={typography.label.lineHeight}
+          />
           <Text style={styles.statusText}>上传中</Text>
         </View>
       );
-    case 'analyzing':
+    case "analyzing":
       return <Text style={styles.statusText}>分析中 ({status.progress}%)</Text>;
   }
 }
@@ -83,11 +97,18 @@ function AudioContent() {
         <Pressable
           accessibilityLabel="排序筛选"
           accessibilityRole="button"
-          onPress={() => showComingSoon('排序筛选')}
-          style={({ pressed }) => [styles.filterButton, pressed && styles.pressed]}
+          onPress={() => showComingSoon("排序筛选")}
+          style={({ pressed }) => [
+            styles.filterButton,
+            pressed && styles.pressed,
+          ]}
         >
           <Text style={styles.filterText}>排序筛选</Text>
-          <Ionicons color={colors.secondary} name="filter-outline" size={20} />
+          <Ionicons
+            color={colors.secondary}
+            name="filter-outline"
+            size={typography.heading5.lineHeight}
+          />
         </Pressable>
       </View>
       {audioItems.map((item) => (
@@ -99,7 +120,11 @@ function AudioContent() {
           </View>
           {item.sharedFrom ? (
             <View style={styles.sharedRow}>
-              <Ionicons color={colors.muted} name="swap-horizontal" size={18} />
+              <Ionicons
+                color={colors.muted}
+                name="swap-horizontal"
+                size={typography.label.lineHeight}
+              />
               <Text style={styles.metaText}>来自 {item.sharedFrom}</Text>
             </View>
           ) : null}
@@ -118,13 +143,19 @@ function KnowledgeContent() {
       {knowledgeBases.map((knowledgeBase) => (
         <View key={knowledgeBase.id} style={styles.card}>
           <View style={styles.titleRow}>
-            <Ionicons color={colors.ink} name="file-tray-stacked-outline" size={22} />
+            <Ionicons
+              color={colors.ink}
+              name="file-tray-stacked-outline"
+              size={typography.heading3.lineHeight}
+            />
             <Text style={styles.cardTitle}>{knowledgeBase.name}</Text>
           </View>
           <Text numberOfLines={2} style={styles.description}>
             {knowledgeBase.description}
           </Text>
-          <Text style={styles.metaText}>共 {knowledgeBase.documentCount} 份文档</Text>
+          <Text style={styles.metaText}>
+            共 {knowledgeBase.documentCount} 份文档
+          </Text>
           <Text style={styles.metaText}>更新于 {knowledgeBase.updatedAt}</Text>
         </View>
       ))}
@@ -142,7 +173,11 @@ function SourcesContent() {
         <View key={source.id} style={styles.card}>
           <View style={styles.sourceTitleRow}>
             <View style={styles.titleRow}>
-              <Ionicons color={colors.ink} name="git-network-outline" size={22} />
+              <Ionicons
+                color={colors.ink}
+                name="git-network-outline"
+                size={typography.heading3.lineHeight}
+              />
               <Text style={styles.cardTitle}>{source.name}</Text>
             </View>
             <View style={styles.connectedBadge}>
@@ -161,10 +196,10 @@ function SourcesContent() {
 }
 
 export function GroupScreen() {
-  const [activeTab, setActiveTab] = useState<TabKey>('audio');
+  const [activeTab, setActiveTab] = useState<TabKey>("audio");
 
   return (
-    <SafeAreaView edges={['top']} style={styles.safeArea}>
+    <SafeAreaView edges={["top"]} style={styles.safeArea}>
       <View style={styles.topBar}>
         <IconButton icon="menu" label="菜单" />
         <View style={styles.topActions}>
@@ -187,7 +222,12 @@ export function GroupScreen() {
               <Text style={[styles.tabText, active && styles.activeTabText]}>
                 {tab.label}
               </Text>
-              <View style={[styles.tabUnderline, active && styles.activeTabUnderline]} />
+              <View
+                style={[
+                  styles.tabUnderline,
+                  active && styles.activeTabUnderline,
+                ]}
+              />
             </Pressable>
           );
         })}
@@ -196,9 +236,9 @@ export function GroupScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {activeTab === 'audio' ? <AudioContent /> : null}
-        {activeTab === 'knowledge' ? <KnowledgeContent /> : null}
-        {activeTab === 'sources' ? <SourcesContent /> : null}
+        {activeTab === "audio" ? <AudioContent /> : null}
+        {activeTab === "knowledge" ? <KnowledgeContent /> : null}
+        {activeTab === "sources" ? <SourcesContent /> : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -210,160 +250,170 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   topBar: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
   },
   topActions: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: spacing.md,
   },
   iconButton: {
-    alignItems: 'center',
+    alignItems: "center",
     height: 44,
-    justifyContent: 'center',
+    justifyContent: "center",
     width: 44,
   },
   pressed: {
-    opacity: 0.48,
+    backgroundColor: colors.background,
+    borderRadius: radii.default,
   },
   displayTitle: {
-    color: colors.ink,
-    fontSize: typeScale.display,
-    fontWeight: '700',
-    letterSpacing: -1.8,
+    ...typography.groupName,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: "bold",
     marginBottom: spacing.xl,
-    marginHorizontal: spacing.lg,
+    marginHorizontal: spacing.md,
     marginTop: spacing.xxl,
   },
   tabs: {
     borderBottomColor: colors.divider,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
+    flexDirection: "row",
   },
   tab: {
-    alignItems: 'center',
+    alignItems: "center",
     flex: 1,
     minHeight: 51,
-    justifyContent: 'flex-end',
+    justifyContent: "flex-end",
   },
   tabText: {
-    color: colors.secondary,
-    fontSize: typeScale.tab,
-    fontWeight: '700',
-    paddingBottom: 13,
+    ...typography.heading5,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: "bold",
+    paddingBottom: 12,
   },
   activeTabText: {
-    color: colors.ink,
+    ...typography.heading4,
+    color: textColors.primary,
   },
   tabUnderline: {
-    backgroundColor: 'transparent',
+    backgroundColor: "transparent",
     height: 2,
-    width: '68%',
+    width: "68%",
   },
   activeTabUnderline: {
     backgroundColor: colors.ink,
   },
   scrollContent: {
-    padding: spacing.lg,
     paddingBottom: spacing.xxl,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.lg,
   },
   sectionHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginBottom: spacing.lg,
   },
   sectionHeaderSolo: {
     marginBottom: spacing.lg,
   },
   sectionTitle: {
-    color: colors.ink,
-    fontSize: typeScale.section,
-    fontWeight: '700',
+    ...typography.heading2,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: "bold",
   },
   filterButton: {
-    alignItems: 'center',
-    flexDirection: 'row',
+    alignItems: "center",
+    flexDirection: "row",
     gap: spacing.xs,
     minHeight: 40,
   },
   filterText: {
-    color: colors.secondary,
-    fontSize: typeScale.body,
+    ...typography.heading5,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
   },
   card: {
     backgroundColor: colors.card,
     borderColor: colors.divider,
-    borderRadius: radii.md,
+    borderRadius: radii.default,
     borderWidth: StyleSheet.hairlineWidth,
     marginBottom: spacing.sm,
-    padding: spacing.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.base,
     shadowColor: colors.ink,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.035,
     shadowRadius: 5,
   },
   cardTitle: {
-    color: colors.ink,
+    ...typography.heading3,
+    color: textColors.primary,
     flexShrink: 1,
-    fontSize: typeScale.cardTitle,
-    fontWeight: '700',
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: "bold",
   },
   audioMetaRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginTop: spacing.md,
   },
   metaText: {
-    color: colors.muted,
-    fontSize: typeScale.caption,
-    lineHeight: 22,
+    ...typography.label,
+    color: textColors.tertiary,
+    fontFamily: fontFamilies.sans,
   },
   statusText: {
-    color: colors.ink,
-    fontSize: typeScale.caption,
+    ...typography.label,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sans,
   },
   inlineStatus: {
-    alignItems: 'center',
-    flexDirection: 'row',
+    alignItems: "center",
+    flexDirection: "row",
     gap: spacing.xs,
   },
   sharedRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
+    alignItems: "center",
+    flexDirection: "row",
     gap: spacing.xs,
     marginTop: spacing.xs,
   },
   titleRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
+    alignItems: "center",
+    flexDirection: "row",
     gap: spacing.sm,
   },
   sourceTitleRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
   connectedBadge: {
     backgroundColor: colors.successSurface,
-    borderRadius: radii.sm,
+    borderRadius: radii.round,
     marginLeft: spacing.sm,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
   },
   connectedText: {
-    color: colors.success,
-    fontSize: typeScale.caption,
-    fontWeight: '700',
+    ...typography.label,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: "bold",
   },
   description: {
-    color: colors.muted,
-    fontSize: typeScale.body,
-    lineHeight: 24,
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
     marginBottom: spacing.sm,
     marginTop: spacing.md,
   },
