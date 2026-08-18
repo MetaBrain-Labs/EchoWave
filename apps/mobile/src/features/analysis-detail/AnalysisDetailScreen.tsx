@@ -1,9 +1,9 @@
 /** Renders the interactive, presentation-only analysis detail experience. */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert,
-  Modal,
+  BackHandler,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -26,6 +26,10 @@ import {
   type AiTagAnalysis,
   type TranscriptSegment,
 } from './mockData';
+import {
+  getHideIrrelevantSegmentsPreference,
+  setHideIrrelevantSegmentsPreference,
+} from './preferences';
 
 const playbackRates = [1, 1.5, 2] as const;
 const waveformHeights = [
@@ -298,30 +302,44 @@ function FilterButton({ label }: { label: string }) {
 }
 
 function SegmentView({
+  dimmed,
   onOpenAiTag,
   segment,
 }: {
+  dimmed: boolean;
   onOpenAiTag: (segment: TranscriptSegment) => void;
   segment: TranscriptSegment;
 }) {
   return (
     <View style={styles.segment}>
       <View style={styles.speakerRow}>
-        {segment.speaker === 'self' ? <View style={styles.selfMarker} /> : null}
-        <Text style={styles.speakerName}>{segment.speakerLabel}</Text>
+        {segment.speaker === 'self' ? (
+          <View style={[styles.selfMarker, dimmed && styles.dimmedMarker]} />
+        ) : null}
+        <Text style={[styles.speakerName, dimmed && styles.dimmedText]}>
+          {segment.speakerLabel}
+        </Text>
         {segment.speaker === 'host' ? (
-          <Ionicons color="#ff5964" name="pulse" size={typography.heading3.lineHeight} />
+          <Ionicons
+            color={dimmed ? colors.muted : '#ff5964'}
+            name="pulse"
+            size={typography.heading3.lineHeight}
+          />
         ) : null}
       </View>
       <View style={styles.emotionRow}>
         <Ionicons
-          color={colors.secondary}
+          color={dimmed ? colors.muted : colors.secondary}
           name="happy-outline"
           size={typography.body.lineHeight}
         />
-        <Text style={styles.emotionText}>{segment.emotion}</Text>
+        <Text style={[styles.emotionText, dimmed && styles.dimmedText]}>
+          {segment.emotion}
+        </Text>
       </View>
-      <Text style={styles.transcriptText}>{segment.text}</Text>
+      <Text style={[styles.transcriptText, dimmed && styles.dimmedText]}>
+        {segment.text}
+      </Text>
       {segment.aiTag ? (
         <Pressable
           accessibilityLabel={`查看 AI 标签：${segment.aiTag.title}`}
@@ -329,9 +347,11 @@ function SegmentView({
           onPress={() => onOpenAiTag(segment)}
           style={({ pressed }) => [styles.aiTagButton, pressed && styles.pressed]}
         >
-          <Text style={styles.aiTagText}>AI标签</Text>
+          <Text style={[styles.aiTagText, dimmed && styles.dimmedText]}>
+            AI标签
+          </Text>
           <Ionicons
-            color={colors.success}
+            color={dimmed ? colors.muted : colors.success}
             name="sparkles"
             size={typography.label.lineHeight}
           />
@@ -346,12 +366,23 @@ function SegmentView({
 
 function TranscriptContent({
   detail,
+  hideIrrelevant,
   onOpenAiTag,
+  selectedSegmentId,
 }: {
   detail: NonNullable<ReturnType<typeof getAnalysisDetail>>;
+  hideIrrelevant: boolean;
   onOpenAiTag: (segment: TranscriptSegment) => void;
+  selectedSegmentId?: string;
 }) {
   const [skipInvalid, setSkipInvalid] = useState(false);
+  const hasSelectedSegment = selectedSegmentId !== undefined;
+  const visibleScenes =
+    hasSelectedSegment && hideIrrelevant
+      ? detail.scenes.filter((scene) =>
+          scene.segments.some((segment) => segment.id === selectedSegmentId),
+        )
+      : detail.scenes;
 
   return (
     <ScrollView
@@ -370,43 +401,62 @@ function TranscriptContent({
           onPress={() => setSkipInvalid((value) => !value)}
         />
       </View>
-      {detail.scenes.map((scene, sceneIndex) => (
-        <View key={scene.id} style={styles.scene}>
-          <View style={styles.sceneTitleRow}>
-            <View style={styles.sceneTitleLine} />
-            <Text style={styles.sceneTitle}>
-              {sceneIndex + 1}. {scene.title}
-            </Text>
-            <View style={styles.sceneTitleLine} />
-          </View>
-          <View style={styles.timelineTimeRow}>
-            <Text style={styles.timelineTime}>{formatTime(scene.startSeconds)}</Text>
-            <View style={styles.timelineDot} />
-          </View>
-          <View style={styles.sceneBody}>
-            <View style={styles.timelineLine} />
-            {scene.segments.map((segment) => (
-              <SegmentView
-                key={segment.id}
-                onOpenAiTag={onOpenAiTag}
-                segment={segment}
-              />
-            ))}
-          </View>
-          {!skipInvalid && sceneIndex === 0 && detail.invalidSegment ? (
-            <View style={styles.invalidSegment}>
-              <Ionicons
-                color={colors.muted}
-                name="volume-mute-outline"
-                size={typography.description.lineHeight}
-              />
-              <Text style={styles.invalidSegmentText}>
-                已跳过 {detail.invalidSegment.durationSeconds} 秒无效片段
+      {visibleScenes.map((scene) => {
+        const sceneIndex = detail.scenes.indexOf(scene);
+        const visibleSegments =
+          hasSelectedSegment && hideIrrelevant
+            ? scene.segments.filter((segment) => segment.id === selectedSegmentId)
+            : scene.segments;
+        const invalidSegment =
+          !skipInvalid &&
+          !(hasSelectedSegment && hideIrrelevant) &&
+          sceneIndex === 0
+            ? detail.invalidSegment
+            : undefined;
+
+        return (
+          <View key={scene.id} style={styles.scene}>
+            <View style={styles.sceneTitleRow}>
+              <View style={styles.sceneTitleLine} />
+              <Text style={styles.sceneTitle}>
+                {sceneIndex + 1}. {scene.title}
               </Text>
+              <View style={styles.sceneTitleLine} />
             </View>
-          ) : null}
-        </View>
-      ))}
+            <View style={styles.timelineTimeRow}>
+              <Text style={styles.timelineTime}>
+                {formatTime(scene.startSeconds)}
+              </Text>
+              <View style={styles.timelineDot} />
+            </View>
+            <View style={styles.sceneBody}>
+              <View style={styles.timelineLine} />
+              {visibleSegments.map((segment) => (
+                <SegmentView
+                  key={segment.id}
+                  dimmed={
+                    hasSelectedSegment && segment.id !== selectedSegmentId
+                  }
+                  onOpenAiTag={onOpenAiTag}
+                  segment={segment}
+                />
+              ))}
+            </View>
+            {invalidSegment ? (
+              <View style={styles.invalidSegment}>
+                <Ionicons
+                  color={colors.muted}
+                  name="volume-mute-outline"
+                  size={typography.description.lineHeight}
+                />
+                <Text style={styles.invalidSegmentText}>
+                  已跳过 {invalidSegment.durationSeconds} 秒无效片段
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        );
+      })}
     </ScrollView>
   );
 }
@@ -439,70 +489,77 @@ function SummaryContent({
   );
 }
 
-function AiTagSheet({
+function AiTagPanel({
   analysis,
+  audioExpanded,
   endSeconds,
+  hideIrrelevant,
   onClose,
+  onHideIrrelevantChange,
   startSeconds,
 }: {
   analysis: AiTagAnalysis | undefined;
+  audioExpanded: boolean;
   endSeconds: number;
+  hideIrrelevant: boolean;
   onClose: () => void;
+  onHideIrrelevantChange: (value: boolean) => void;
   startSeconds: number;
 }) {
-  const [hideIrrelevant, setHideIrrelevant] = useState(false);
+  if (!analysis) {
+    return null;
+  }
 
   return (
-    <Modal
-      animationType="slide"
-      onRequestClose={onClose}
-      transparent
-      visible={analysis !== undefined}
+    <View
+      accessibilityLabel="AI 标签分析窗口"
+      style={[
+        styles.sheet,
+        audioExpanded ? styles.sheetWithExpandedAudio : styles.sheetWithCompactAudio,
+      ]}
+      testID="ai-tag-sheet"
     >
-      <View style={styles.modalRoot}>
-        <Pressable
-          accessibilityLabel="关闭 AI 标签面板"
-          accessibilityRole="button"
-          onPress={onClose}
-          style={StyleSheet.absoluteFill}
-        />
-        <View accessibilityViewIsModal style={styles.sheet}>
-          <Pressable
-            accessibilityLabel="收起 AI 标签面板"
-            accessibilityRole="button"
-            onPress={onClose}
-            style={({ pressed }) => [styles.sheetHandle, pressed && styles.pressed]}
-          >
-            <Ionicons color={colors.secondary} name="chevron-down" size={26} />
-          </Pressable>
-          <ScrollView contentContainerStyle={styles.sheetContent}>
-            <Text style={styles.sheetMeta}>
-              AI标签 · 涉及片段 · {formatTime(startSeconds)} ～ {formatTime(endSeconds)}
-            </Text>
-            <View style={styles.sheetCheckbox}>
-              <Checkbox
-                checked={hideIrrelevant}
-                label="隐藏无关片段"
-                onPress={() => setHideIrrelevant((value) => !value)}
-              />
-            </View>
-            <View style={styles.sheetTitleRow}>
-              <Ionicons color={colors.success} name="sparkles" size={34} />
-              <Text style={styles.sheetTitle}>{analysis?.title}</Text>
-            </View>
-            <Text style={styles.sheetDescription}>AI 智能分析，内容仅供参考</Text>
-            <Text style={styles.analysisParagraphTitle}>分析结论</Text>
-            <Text style={styles.analysisParagraph}>{analysis?.summary}</Text>
-            {analysis?.details.map((detail) => (
-              <View key={detail} style={styles.analysisDetailRow}>
-                <View style={styles.analysisBullet} />
-                <Text style={styles.analysisParagraph}>{detail}</Text>
-              </View>
-            ))}
-          </ScrollView>
+      <Pressable
+        accessibilityLabel="收起 AI 标签面板"
+        accessibilityRole="button"
+        onPress={onClose}
+        style={({ pressed }) => [styles.sheetHandle, pressed && styles.pressed]}
+      >
+        <Ionicons color={colors.secondary} name="chevron-down" size={26} />
+      </Pressable>
+      <View style={styles.sheetFixedHeader} testID="ai-tag-fixed-header">
+        <Text style={styles.sheetMeta}>
+          AI标签 · 涉及片段 · {formatTime(startSeconds)} ～ {formatTime(endSeconds)}
+        </Text>
+        <View style={styles.sheetCheckbox}>
+          <Checkbox
+            checked={hideIrrelevant}
+            label="隐藏无关片段"
+            onPress={() => onHideIrrelevantChange(!hideIrrelevant)}
+          />
         </View>
       </View>
-    </Modal>
+      <ScrollView
+        contentContainerStyle={styles.sheetContent}
+        showsVerticalScrollIndicator={false}
+        style={styles.sheetScroll}
+        testID="ai-tag-scroll-content"
+      >
+        <View style={styles.sheetTitleRow}>
+          <Ionicons color={colors.success} name="sparkles" size={34} />
+          <Text style={styles.sheetTitle}>{analysis.title}</Text>
+        </View>
+        <Text style={styles.sheetDescription}>AI 智能分析，内容仅供参考</Text>
+        <Text style={styles.analysisParagraphTitle}>分析结论</Text>
+        <Text style={styles.analysisParagraph}>{analysis.summary}</Text>
+        {analysis.details.map((detail) => (
+          <View key={detail} style={styles.analysisDetailRow}>
+            <View style={styles.analysisBullet} />
+            <Text style={styles.analysisParagraph}>{detail}</Text>
+          </View>
+        ))}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -514,6 +571,13 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
   const [playbackRateIndex, setPlaybackRateIndex] = useState(0);
   const [positionSeconds, setPositionSeconds] = useState(0);
   const [selectedSegment, setSelectedSegment] = useState<TranscriptSegment>();
+  const [hideIrrelevant, setHideIrrelevant] = useState(
+    getHideIrrelevantSegmentsPreference,
+  );
+  const changeHideIrrelevant = (value: boolean) => {
+    setHideIrrelevantSegmentsPreference(value);
+    setHideIrrelevant(value);
+  };
   const applyTabChange = (tab: AnalysisTab) => {
     setActiveTab(tab);
     if (tab === 'summary') {
@@ -527,6 +591,19 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
       onTabChange: applyTabChange,
       tabs: analysisTabKeys,
     });
+
+  useEffect(() => {
+    if (!selectedSegment) {
+      return undefined;
+    }
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      setSelectedSegment(undefined);
+      return true;
+    });
+
+    return () => subscription.remove();
+  }, [selectedSegment]);
 
   if (!detail) {
     return (
@@ -597,16 +674,24 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
         testID="analysis-tab-pager"
       >
         <View style={[styles.page, { width: pageWidth }]}>
-          <TranscriptContent detail={detail} onOpenAiTag={setSelectedSegment} />
+          <TranscriptContent
+            detail={detail}
+            hideIrrelevant={hideIrrelevant}
+            onOpenAiTag={setSelectedSegment}
+            selectedSegmentId={selectedSegment?.id}
+          />
         </View>
         <View style={[styles.page, { width: pageWidth }]}>
           <SummaryContent detail={detail} />
         </View>
       </ScrollView>
-      <AiTagSheet
+      <AiTagPanel
         analysis={selectedSegment?.aiTag}
+        audioExpanded={expandedPlayer}
         endSeconds={selectedSegment?.endSeconds ?? 0}
+        hideIrrelevant={hideIrrelevant}
         onClose={() => setSelectedSegment(undefined)}
+        onHideIrrelevantChange={changeHideIrrelevant}
         startSeconds={selectedSegment?.startSeconds ?? 0}
       />
     </SafeAreaView>
@@ -884,6 +969,12 @@ const styles = StyleSheet.create({
     height: 12,
     width: 12,
   },
+  dimmedMarker: {
+    backgroundColor: colors.divider,
+  },
+  dimmedText: {
+    color: textColors.tertiary,
+  },
   speakerName: {
     ...typography.heading2,
     color: textColors.primary,
@@ -995,25 +1086,35 @@ const styles = StyleSheet.create({
     color: textColors.primary,
     fontFamily: fontFamilies.sans,
   },
-  modalRoot: {
-    alignItems: 'center',
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
   sheet: {
     backgroundColor: colors.card,
     borderColor: colors.divider,
     borderTopLeftRadius: radii.default,
     borderTopRightRadius: radii.default,
     borderWidth: StyleSheet.hairlineWidth,
-    maxHeight: '64%',
+    flexShrink: 1,
     maxWidth: 480,
     width: '100%',
+  },
+  sheetWithCompactAudio: {
+    maxHeight: '50%',
+  },
+  sheetWithExpandedAudio: {
+    maxHeight: '33%',
   },
   sheetHandle: {
     alignItems: 'center',
     minHeight: 40,
     justifyContent: 'center',
+  },
+  sheetFixedHeader: {
+    borderBottomColor: colors.divider,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingBottom: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  sheetScroll: {
+    flexShrink: 1,
   },
   sheetContent: {
     paddingBottom: spacing.xxl,

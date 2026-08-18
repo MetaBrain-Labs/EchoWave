@@ -1,10 +1,15 @@
-import { fireEvent, render } from '@testing-library/react-native';
+import { fireEvent, render, within } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 
 import { fontFamilies, textColors } from '../../../theme/tokens';
 import { AnalysisDetailScreen } from '../AnalysisDetailScreen';
+import { setHideIrrelevantSegmentsPreference } from '../preferences';
 
 describe('AnalysisDetailScreen', () => {
+  beforeEach(() => {
+    setHideIrrelevantSegmentsPreference(false);
+  });
+
   it('renders transcript content and toggles invalid segments', () => {
     const screen = render(
       <AnalysisDetailScreen detailId="audio-1" onBack={jest.fn()} />,
@@ -103,6 +108,100 @@ describe('AnalysisDetailScreen', () => {
     fireEvent.press(screen.getByLabelText('收起 AI 标签面板'));
 
     expect(screen.queryByText('高频访谈记录场景')).toBeNull();
+  });
+
+  it('dims unrelated paragraphs and hides them on request', () => {
+    const screen = render(
+      <AnalysisDetailScreen detailId="audio-1" onBack={jest.fn()} />,
+    );
+    const selectedText =
+      '今天想和你聊聊最近使用团队音频整理工具的体验。先从日常工作开始，你通常会在什么场景下记录和回听访谈？';
+    const unrelatedText =
+      '最常见的是用户访谈和每周复盘。我会先完整录音，结束后再回听并整理重点，但在很长的录音里寻找关键内容会花不少时间。';
+
+    fireEvent.press(
+      screen.getByLabelText('查看 AI 标签：高频访谈记录场景'),
+    );
+
+    expect(StyleSheet.flatten(screen.getByText(selectedText).props.style)).toEqual(
+      expect.objectContaining({ color: textColors.primary }),
+    );
+    expect(StyleSheet.flatten(screen.getByText(unrelatedText).props.style)).toEqual(
+      expect.objectContaining({ color: textColors.tertiary }),
+    );
+
+    fireEvent.press(screen.getByText('隐藏无关片段'));
+
+    expect(screen.getByText(selectedText)).toBeTruthy();
+    expect(screen.queryByText(unrelatedText)).toBeNull();
+  });
+
+  it('keeps the hide preference across analysis records in the app session', () => {
+    const firstScreen = render(
+      <AnalysisDetailScreen detailId="audio-1" onBack={jest.fn()} />,
+    );
+
+    fireEvent.press(
+      firstScreen.getByLabelText('查看 AI 标签：高频访谈记录场景'),
+    );
+    fireEvent.press(firstScreen.getByText('隐藏无关片段'));
+    firstScreen.unmount();
+
+    const secondScreen = render(
+      <AnalysisDetailScreen detailId="audio-2" onBack={jest.fn()} />,
+    );
+    fireEvent.press(
+      secondScreen.getByLabelText('查看 AI 标签：高频访谈记录场景'),
+    );
+
+    expect(
+      secondScreen.getByRole('checkbox', { name: '隐藏无关片段' }).props
+        .accessibilityState,
+    ).toEqual({ checked: true });
+  });
+
+  it('keeps the fixed preference row outside the independently scrollable panel', () => {
+    const screen = render(
+      <AnalysisDetailScreen detailId="audio-1" onBack={jest.fn()} />,
+    );
+
+    fireEvent.press(
+      screen.getByLabelText('查看 AI 标签：高频访谈记录场景'),
+    );
+
+    expect(
+      within(screen.getByTestId('ai-tag-fixed-header')).getByText(
+        '隐藏无关片段',
+      ),
+    ).toBeTruthy();
+    expect(
+      within(screen.getByTestId('ai-tag-scroll-content')).queryByText(
+        '隐藏无关片段',
+      ),
+    ).toBeNull();
+  });
+
+  it('limits the analysis panel according to the audio player state', () => {
+    const screen = render(
+      <AnalysisDetailScreen detailId="audio-1" onBack={jest.fn()} />,
+    );
+    const openTag = () =>
+      fireEvent.press(
+        screen.getByLabelText('查看 AI 标签：高频访谈记录场景'),
+      );
+
+    openTag();
+    expect(StyleSheet.flatten(screen.getByTestId('ai-tag-sheet').props.style)).toEqual(
+      expect.objectContaining({ maxHeight: '50%' }),
+    );
+
+    fireEvent.press(screen.getByLabelText('收起 AI 标签面板'));
+    fireEvent.press(screen.getByLabelText('展开播放器'));
+    openTag();
+
+    expect(StyleSheet.flatten(screen.getByTestId('ai-tag-sheet').props.style)).toEqual(
+      expect.objectContaining({ maxHeight: '33%' }),
+    );
   });
 
   it('renders an actionable state for unknown detail ids', () => {
