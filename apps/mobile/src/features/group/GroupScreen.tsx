@@ -89,7 +89,55 @@ function AudioStatusView({ status }: Pick<AudioItem, "status">) {
   }
 }
 
-function AudioContent() {
+function AudioCard({
+  item,
+  onOpenAudio,
+}: {
+  item: AudioItem;
+  onOpenAudio?: (id: string) => void;
+}) {
+  const content = (
+    <>
+      <Text style={styles.cardTitle}>{item.title}</Text>
+      <View style={styles.audioMetaRow}>
+        <Text style={styles.metaText}>时间 {item.createdAt}</Text>
+        <AudioStatusView status={item.status} />
+      </View>
+      {item.sharedFrom ? (
+        <View style={styles.sharedRow}>
+          <Ionicons
+            color={colors.muted}
+            name="swap-horizontal"
+            size={typography.label.lineHeight}
+          />
+          <Text style={styles.metaText}>来自 {item.sharedFrom}</Text>
+        </View>
+      ) : null}
+    </>
+  );
+
+  if (item.status.kind !== "complete") {
+    return <View style={styles.card}>{content}</View>;
+  }
+
+  return (
+    <Pressable
+      accessibilityHint="打开该音频的分析详情"
+      accessibilityLabel={`${item.title}，分析已完成`}
+      accessibilityRole="button"
+      onPress={() => onOpenAudio?.(item.id)}
+      style={({ pressed }) => [styles.card, pressed && styles.pressed]}
+    >
+      {content}
+    </Pressable>
+  );
+}
+
+function AudioContent({
+  onOpenAudio,
+}: {
+  onOpenAudio?: (id: string) => void;
+}) {
   return (
     <>
       <View style={styles.sectionHeader}>
@@ -112,23 +160,7 @@ function AudioContent() {
         </Pressable>
       </View>
       {audioItems.map((item) => (
-        <View key={item.id} style={styles.card}>
-          <Text style={styles.cardTitle}>{item.title}</Text>
-          <View style={styles.audioMetaRow}>
-            <Text style={styles.metaText}>时间 {item.createdAt}</Text>
-            <AudioStatusView status={item.status} />
-          </View>
-          {item.sharedFrom ? (
-            <View style={styles.sharedRow}>
-              <Ionicons
-                color={colors.muted}
-                name="swap-horizontal"
-                size={typography.label.lineHeight}
-              />
-              <Text style={styles.metaText}>来自 {item.sharedFrom}</Text>
-            </View>
-          ) : null}
-        </View>
+        <AudioCard key={item.id} item={item} onOpenAudio={onOpenAudio} />
       ))}
     </>
   );
@@ -195,7 +227,11 @@ function SourcesContent() {
   );
 }
 
-export function GroupScreen() {
+export function GroupScreen({
+  onOpenAudio,
+}: {
+  onOpenAudio?: (id: string) => void;
+}) {
   const [activeTab, setActiveTab] = useState<TabKey>("audio");
 
   return (
@@ -236,7 +272,9 @@ export function GroupScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {activeTab === "audio" ? <AudioContent /> : null}
+        {activeTab === "audio" ? (
+          <AudioContent onOpenAudio={onOpenAudio} />
+        ) : null}
         {activeTab === "knowledge" ? <KnowledgeContent /> : null}
         {activeTab === "sources" ? <SourcesContent /> : null}
       </ScrollView>

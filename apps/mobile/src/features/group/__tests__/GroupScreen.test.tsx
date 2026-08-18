@@ -45,4 +45,16 @@ describe('GroupScreen', () => {
     );
     alert.mockRestore();
   });
+
+  it('opens only completed audio records', () => {
+    const onOpenAudio = jest.fn();
+    const screen = render(<GroupScreen onOpenAudio={onOpenAudio} />);
+
+    fireEvent.press(
+      screen.getByLabelText('产品访谈分析，分析已完成'),
+    );
+
+    expect(onOpenAudio).toHaveBeenCalledWith('audio-1');
+    expect(screen.queryByLabelText('待整理录音，分析已完成')).toBeNull();
+  });
 });
