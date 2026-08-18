@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { NavigationLoadingProvider } from '../components/NavigationLoadingProvider';
 import {
   colors,
   fontFamilies,
@@ -43,8 +44,10 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <View style={styles.stage}>
         <View style={styles.canvas}>
-          <Slot />
-          <StatusBar style="dark" />
+          <NavigationLoadingProvider>
+            <Slot />
+            <StatusBar style="dark" />
+          </NavigationLoadingProvider>
         </View>
       </View>
     </SafeAreaProvider>

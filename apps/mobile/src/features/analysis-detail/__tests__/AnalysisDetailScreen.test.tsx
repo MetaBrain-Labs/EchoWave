@@ -17,6 +17,9 @@ describe('AnalysisDetailScreen', () => {
 
     expect(screen.getByText('1. 开场与访谈背景')).toBeTruthy();
     expect(screen.getByText('已跳过 12 秒无效片段')).toBeTruthy();
+    expect(StyleSheet.flatten(screen.getByText('转写分析').props.style)).toEqual(
+      expect.objectContaining({ paddingBottom: 4 }),
+    );
 
     fireEvent.press(screen.getByText('跳过无效音频'));
 

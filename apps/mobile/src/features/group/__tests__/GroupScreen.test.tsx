@@ -21,13 +21,61 @@ describe('GroupScreen', () => {
     ).toEqual({ height: 14, width: 14 });
   });
 
+  it('uses 16/24 typography for analysis, knowledge, and source names', () => {
+    const screen = render(<GroupScreen />);
+
+    for (const title of ['产品访谈分析', '产品研究知识库', '团队文档空间']) {
+      expect(StyleSheet.flatten(screen.getByText(title).props.style)).toEqual(
+        expect.objectContaining({ fontSize: 16, lineHeight: 24 }),
+      );
+    }
+  });
+
+  it('moves the group name beside the menu after each page scrolls', () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_000);
+    const screen = render(<GroupScreen />);
+
+    fireEvent.scroll(screen.getByTestId('group-audio-scroll'), {
+      nativeEvent: { contentOffset: { x: 0, y: 40 } },
+    });
+    expect(screen.getByTestId('group-inline-title')).toBeTruthy();
+    expect(screen.queryByTestId('group-display-title')).toBeNull();
+
+    fireEvent(screen.getByTestId('group-audio-scroll'), 'momentumScrollEnd', {
+      nativeEvent: { contentOffset: { x: 0, y: 0 } },
+    });
+    expect(screen.getByTestId('group-inline-title')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('关联知识库'));
+    expect(screen.getByTestId('group-display-title')).toBeTruthy();
+
+    fireEvent.scroll(screen.getByTestId('group-knowledge-scroll'), {
+      nativeEvent: { contentOffset: { x: 0, y: 40 } },
+    });
+    expect(screen.getByTestId('group-inline-title')).toBeTruthy();
+
+    now.mockReturnValue(1_300);
+    fireEvent(screen.getByTestId('group-knowledge-scroll'), 'scrollEndDrag', {
+      nativeEvent: { contentOffset: { x: 0, y: 0 } },
+    });
+    expect(screen.getByTestId('group-display-title')).toBeTruthy();
+    now.mockRestore();
+  });
+
+  it('keeps group tab labels close to their underline', () => {
+    const screen = render(<GroupScreen />);
+    expect(StyleSheet.flatten(screen.getByText('音频分析').props.style)).toEqual(
+      expect.objectContaining({ paddingBottom: 4 }),
+    );
+  });
+
   it('switches among the three group content tabs', () => {
     const screen = render(<GroupScreen />);
 
     expect(screen.getByText('共 5 份音频')).toBeTruthy();
 
     fireEvent.press(screen.getByText('关联知识库'));
-    expect(screen.getByText('共关联 3 个知识库')).toBeTruthy();
+    expect(screen.getByText('共关联 4 个知识库')).toBeTruthy();
 
     fireEvent.press(screen.getByText('连接数据源'));
     expect(screen.getByText('共连接 3 个数据源')).toBeTruthy();

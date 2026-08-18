@@ -4,9 +4,12 @@ import { Tabs } from 'expo-router';
 import type { ComponentProps } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { useNavigationLoading } from '../../components/NavigationLoadingProvider';
 import { colors, radii } from '../../theme/tokens';
 
 export default function TabsLayout() {
+  const { runWithLoading } = useNavigationLoading();
+
   return (
     <Tabs
       screenOptions={{
@@ -16,10 +19,18 @@ export default function TabsLayout() {
         tabBarShowLabel: false,
         tabBarStyle: styles.tabBar,
         tabBarItemStyle: styles.tabBarItem,
-        tabBarButton: ({ ref, ...props }) => (
+        tabBarButton: ({ accessibilityState, onPress, ref, ...props }) => (
           <Pressable
             {...props}
+            accessibilityState={accessibilityState}
             android_ripple={undefined}
+            onPress={(event) => {
+              if (accessibilityState?.selected) {
+                onPress?.(event);
+                return;
+              }
+              void runWithLoading(() => onPress?.(event));
+            }}
             ref={ref as ComponentProps<typeof Pressable>['ref']}
           />
         ),

@@ -1,9 +1,11 @@
 /** Implements the sketch-inspired group workspace and its three content tabs. */
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -24,9 +26,9 @@ import {
 import {
   audioItems,
   dataSources,
-  knowledgeBases,
   type AudioItem,
 } from "./mockData";
+import { knowledgeBases } from "../knowledge/mockData";
 
 const tabs = [
   { key: "audio", label: "音频分析" },
@@ -36,6 +38,7 @@ const tabs = [
 
 type TabKey = (typeof tabs)[number]["key"];
 const tabKeys = tabs.map((tab) => tab.key);
+const headerCollapseGuardMs = 250;
 
 function showComingSoon(feature: string) {
   Alert.alert("功能建设中", `${feature}将在后续版本开放。`);
@@ -235,23 +238,72 @@ export function GroupScreen({
   onOpenAudio?: (id: string) => void;
 }) {
   const [activeTab, setActiveTab] = useState<TabKey>("audio");
+  const [collapsedTabs, setCollapsedTabs] = useState<Record<TabKey, boolean>>({
+    audio: false,
+    knowledge: false,
+    sources: false,
+  });
+  const collapsedAt = useRef<Record<TabKey, number>>({
+    audio: 0,
+    knowledge: 0,
+    sources: 0,
+  });
+  const headerCollapsed = collapsedTabs[activeTab];
   const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } =
     useSwipePager({
       activeTab,
       onTabChange: setActiveTab,
       tabs: tabKeys,
     });
+  const handleContentScroll =
+    (tab: TabKey) =>
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (event.nativeEvent.contentOffset.y <= spacing.xl) {
+        return;
+      }
+      setCollapsedTabs((current) => {
+        if (current[tab]) {
+          return current;
+        }
+        collapsedAt.current[tab] = Date.now();
+        return { ...current, [tab]: true };
+      });
+    };
+  const handleScrollEnd =
+    (tab: TabKey) =>
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (event.nativeEvent.contentOffset.y <= 0) {
+        setCollapsedTabs((current) =>
+          current[tab] && Date.now() - collapsedAt.current[tab] >= headerCollapseGuardMs
+            ? { ...current, [tab]: false }
+            : current,
+        );
+      }
+    };
 
   return (
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
       <View style={styles.topBar}>
-        <IconButton icon="menu" label="菜单" />
-        <View style={styles.topActions}>
-          <IconButton icon="search" label="搜索" />
-          <IconButton icon="options-outline" label="设置筛选" />
+        <View style={styles.topLeft}>
+          <IconButton icon="menu" label="菜单" />
+          {headerCollapsed ? (
+            <Text testID="group-inline-title" style={styles.inlineTitle}>
+              分组名称
+            </Text>
+          ) : null}
         </View>
+        {!headerCollapsed ? (
+          <View style={styles.topActions}>
+            <IconButton icon="search" label="搜索" />
+            <IconButton icon="options-outline" label="设置筛选" />
+          </View>
+        ) : null}
       </View>
-      <Text style={styles.displayTitle}>分组名称</Text>
+      {!headerCollapsed ? (
+        <Text testID="group-display-title" style={styles.displayTitle}>
+          分组名称
+        </Text>
+      ) : null}
       <View accessibilityRole="tablist" style={styles.tabs}>
         {tabs.map((tab) => {
           const active = tab.key === activeTab;
@@ -291,7 +343,12 @@ export function GroupScreen({
         <View style={[styles.page, { width: pageWidth }]}>
           <ScrollView
             contentContainerStyle={styles.scrollContent}
+            onMomentumScrollEnd={handleScrollEnd("audio")}
+            onScroll={handleContentScroll("audio")}
+            onScrollEndDrag={handleScrollEnd("audio")}
+            scrollEventThrottle={16}
             showsVerticalScrollIndicator={false}
+            testID="group-audio-scroll"
           >
             <AudioContent onOpenAudio={onOpenAudio} />
           </ScrollView>
@@ -299,7 +356,12 @@ export function GroupScreen({
         <View style={[styles.page, { width: pageWidth }]}>
           <ScrollView
             contentContainerStyle={styles.scrollContent}
+            onMomentumScrollEnd={handleScrollEnd("knowledge")}
+            onScroll={handleContentScroll("knowledge")}
+            onScrollEndDrag={handleScrollEnd("knowledge")}
+            scrollEventThrottle={16}
             showsVerticalScrollIndicator={false}
+            testID="group-knowledge-scroll"
           >
             <KnowledgeContent />
           </ScrollView>
@@ -307,7 +369,12 @@ export function GroupScreen({
         <View style={[styles.page, { width: pageWidth }]}>
           <ScrollView
             contentContainerStyle={styles.scrollContent}
+            onMomentumScrollEnd={handleScrollEnd("sources")}
+            onScroll={handleContentScroll("sources")}
+            onScrollEndDrag={handleScrollEnd("sources")}
+            scrollEventThrottle={16}
             showsVerticalScrollIndicator={false}
+            testID="group-sources-scroll"
           >
             <SourcesContent />
           </ScrollView>
@@ -332,6 +399,17 @@ const styles = StyleSheet.create({
   topActions: {
     flexDirection: "row",
     gap: spacing.md,
+  },
+  topLeft: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  inlineTitle: {
+    ...typography.heading2,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: "bold",
   },
   iconButton: {
     alignItems: "center",
@@ -368,7 +446,7 @@ const styles = StyleSheet.create({
     color: textColors.secondary,
     fontFamily: fontFamilies.sansBold,
     fontWeight: "bold",
-    paddingBottom: 12,
+    paddingBottom: spacing.xs,
   },
   activeTabText: {
     ...typography.heading4,
@@ -433,7 +511,7 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
   },
   cardTitle: {
-    ...typography.heading3,
+    ...typography.heading2,
     color: textColors.primary,
     flexShrink: 1,
     fontFamily: fontFamilies.sansBold,

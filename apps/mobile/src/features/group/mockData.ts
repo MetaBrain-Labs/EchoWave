@@ -47,30 +47,6 @@ export const audioItems: AudioItem[] = [
   },
 ];
 
-export const knowledgeBases = [
-  {
-    id: 'kb-1',
-    name: '产品研究知识库',
-    description: '沉淀用户访谈、需求洞察与产品策略相关资料。',
-    documentCount: 26,
-    updatedAt: '2026-08-15',
-  },
-  {
-    id: 'kb-2',
-    name: '行业趋势知识库',
-    description: '汇总行业报告、竞品动态与市场研究资料。',
-    documentCount: 18,
-    updatedAt: '2026-08-12',
-  },
-  {
-    id: 'kb-3',
-    name: '团队项目知识库',
-    description: '保存项目纪要、决策记录和团队协作文档。',
-    documentCount: 41,
-    updatedAt: '2026-08-10',
-  },
-] as const;
-
 export const dataSources = [
   {
     id: 'source-1',

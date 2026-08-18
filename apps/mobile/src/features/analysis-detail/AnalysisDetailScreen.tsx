@@ -835,7 +835,7 @@ const styles = StyleSheet.create({
     color: textColors.secondary,
     fontFamily: fontFamilies.sansBold,
     fontWeight: 'bold',
-    paddingBottom: spacing.base,
+    paddingBottom: spacing.xs,
   },
   activeDetailTabText: {
     ...typography.heading4,
@@ -1053,7 +1053,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
   },
   summaryTitle: {
-    ...typography.analysisDisplay,
+    ...typography.contentDisplay,
     color: textColors.primary,
     flex: 1,
     fontFamily: fontFamilies.sansBold,
@@ -1137,7 +1137,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   sheetTitle: {
-    ...typography.analysisDisplay,
+    ...typography.contentDisplay,
     color: textColors.primary,
     flex: 1,
     fontFamily: fontFamilies.sansBold,

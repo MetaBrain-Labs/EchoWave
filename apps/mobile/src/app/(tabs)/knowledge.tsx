@@ -1,11 +1,23 @@
-import { PlaceholderScreen } from '../../components/PlaceholderScreen';
+/** Connects the Knowledge tab catalogue to its detail hierarchy. */
+import { useRouter } from 'expo-router';
+
+import { useNavigationLoading } from '../../components/NavigationLoadingProvider';
+import { KnowledgeListScreen } from '../../features/knowledge/KnowledgeListScreen';
 
 export default function KnowledgeScreen() {
+  const router = useRouter();
+  const { runWithLoading } = useNavigationLoading();
+
   return (
-    <PlaceholderScreen
-      description="这里将集中管理所有知识库；当前分组的关联内容可在分组页查看。"
-      icon="book-outline"
-      title="知识库"
+    <KnowledgeListScreen
+      onOpenKnowledge={(knowledgeId) => {
+        void runWithLoading(() =>
+          router.push({
+            pathname: '/knowledge/[knowledgeId]',
+            params: { knowledgeId },
+          }),
+        );
+      }}
     />
   );
 }
