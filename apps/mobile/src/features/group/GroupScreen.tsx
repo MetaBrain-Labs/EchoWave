@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { useSwipePager } from "../../components/useSwipePager";
 import {
   colors,
   fontFamilies,
@@ -34,6 +35,7 @@ const tabs = [
 ] as const;
 
 type TabKey = (typeof tabs)[number]["key"];
+const tabKeys = tabs.map((tab) => tab.key);
 
 function showComingSoon(feature: string) {
   Alert.alert("功能建设中", `${feature}将在后续版本开放。`);
@@ -89,7 +91,55 @@ function AudioStatusView({ status }: Pick<AudioItem, "status">) {
   }
 }
 
-function AudioContent() {
+function AudioCard({
+  item,
+  onOpenAudio,
+}: {
+  item: AudioItem;
+  onOpenAudio?: (id: string) => void;
+}) {
+  const content = (
+    <>
+      <Text style={styles.cardTitle}>{item.title}</Text>
+      <View style={styles.audioMetaRow}>
+        <Text style={styles.metaText}>时间 {item.createdAt}</Text>
+        <AudioStatusView status={item.status} />
+      </View>
+      {item.sharedFrom ? (
+        <View style={styles.sharedRow}>
+          <Ionicons
+            color={colors.muted}
+            name="swap-horizontal"
+            size={typography.label.lineHeight}
+          />
+          <Text style={styles.metaText}>来自 {item.sharedFrom}</Text>
+        </View>
+      ) : null}
+    </>
+  );
+
+  if (item.status.kind !== "complete") {
+    return <View style={styles.card}>{content}</View>;
+  }
+
+  return (
+    <Pressable
+      accessibilityHint="打开该音频的分析详情"
+      accessibilityLabel={`${item.title}，分析已完成`}
+      accessibilityRole="button"
+      onPress={() => onOpenAudio?.(item.id)}
+      style={({ pressed }) => [styles.card, pressed && styles.pressed]}
+    >
+      {content}
+    </Pressable>
+  );
+}
+
+function AudioContent({
+  onOpenAudio,
+}: {
+  onOpenAudio?: (id: string) => void;
+}) {
   return (
     <>
       <View style={styles.sectionHeader}>
@@ -112,23 +162,7 @@ function AudioContent() {
         </Pressable>
       </View>
       {audioItems.map((item) => (
-        <View key={item.id} style={styles.card}>
-          <Text style={styles.cardTitle}>{item.title}</Text>
-          <View style={styles.audioMetaRow}>
-            <Text style={styles.metaText}>时间 {item.createdAt}</Text>
-            <AudioStatusView status={item.status} />
-          </View>
-          {item.sharedFrom ? (
-            <View style={styles.sharedRow}>
-              <Ionicons
-                color={colors.muted}
-                name="swap-horizontal"
-                size={typography.label.lineHeight}
-              />
-              <Text style={styles.metaText}>来自 {item.sharedFrom}</Text>
-            </View>
-          ) : null}
-        </View>
+        <AudioCard key={item.id} item={item} onOpenAudio={onOpenAudio} />
       ))}
     </>
   );
@@ -195,8 +229,18 @@ function SourcesContent() {
   );
 }
 
-export function GroupScreen() {
+export function GroupScreen({
+  onOpenAudio,
+}: {
+  onOpenAudio?: (id: string) => void;
+}) {
   const [activeTab, setActiveTab] = useState<TabKey>("audio");
+  const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } =
+    useSwipePager({
+      activeTab,
+      onTabChange: setActiveTab,
+      tabs: tabKeys,
+    });
 
   return (
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
@@ -216,7 +260,7 @@ export function GroupScreen() {
               key={tab.key}
               accessibilityRole="tab"
               accessibilityState={{ selected: active }}
-              onPress={() => setActiveTab(tab.key)}
+              onPress={() => selectTab(tab.key)}
               style={styles.tab}
             >
               <Text style={[styles.tabText, active && styles.activeTabText]}>
@@ -233,12 +277,41 @@ export function GroupScreen() {
         })}
       </View>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+        accessibilityLabel="分组内容分页"
+        directionalLockEnabled
+        horizontal
+        nestedScrollEnabled
+        onMomentumScrollEnd={handleMomentumScrollEnd}
+        pagingEnabled
+        ref={pagerRef}
+        showsHorizontalScrollIndicator={false}
+        style={styles.pager}
+        testID="group-tab-pager"
       >
-        {activeTab === "audio" ? <AudioContent /> : null}
-        {activeTab === "knowledge" ? <KnowledgeContent /> : null}
-        {activeTab === "sources" ? <SourcesContent /> : null}
+        <View style={[styles.page, { width: pageWidth }]}>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <AudioContent onOpenAudio={onOpenAudio} />
+          </ScrollView>
+        </View>
+        <View style={[styles.page, { width: pageWidth }]}>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <KnowledgeContent />
+          </ScrollView>
+        </View>
+        <View style={[styles.page, { width: pageWidth }]}>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <SourcesContent />
+          </ScrollView>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -308,6 +381,12 @@ const styles = StyleSheet.create({
   },
   activeTabUnderline: {
     backgroundColor: colors.ink,
+  },
+  pager: {
+    flex: 1,
+  },
+  page: {
+    height: "100%",
   },
   scrollContent: {
     paddingBottom: spacing.xxl,
