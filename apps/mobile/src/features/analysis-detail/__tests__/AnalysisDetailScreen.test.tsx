@@ -71,6 +71,22 @@ describe('AnalysisDetailScreen', () => {
     expect(screen.getByText('产品访谈分析')).toBeTruthy();
   });
 
+  it('switches analysis pages with a horizontal swipe', () => {
+    const screen = render(
+      <AnalysisDetailScreen detailId="audio-1" onBack={jest.fn()} />,
+    );
+
+    fireEvent.press(screen.getByLabelText('展开播放器'));
+    fireEvent(screen.getByTestId('analysis-tab-pager'), 'momentumScrollEnd', {
+      nativeEvent: { contentOffset: { x: 480, y: 0 } },
+    });
+
+    expect(
+      screen.getByRole('tab', { name: '分析总结' }).props.accessibilityState,
+    ).toEqual({ selected: true });
+    expect(screen.queryByLabelText('收起播放器')).toBeNull();
+  });
+
   it('opens and closes the selected AI tag sheet', () => {
     const screen = render(
       <AnalysisDetailScreen detailId="audio-1" onBack={jest.fn()} />,

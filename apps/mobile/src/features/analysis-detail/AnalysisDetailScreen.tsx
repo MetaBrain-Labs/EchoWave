@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useSwipePager } from '../../components/useSwipePager';
 import {
   colors,
   fontFamilies,
@@ -38,6 +39,11 @@ type AnalysisDetailScreenProps = {
 };
 
 type AnalysisTab = 'transcript' | 'summary';
+const analysisTabs: readonly { key: AnalysisTab; label: string }[] = [
+  { key: 'transcript', label: '转写分析' },
+  { key: 'summary', label: '分析总结' },
+];
+const analysisTabKeys = analysisTabs.map((tab) => tab.key);
 
 function formatTime(totalSeconds: number) {
   const minutes = Math.floor(totalSeconds / 60);
@@ -250,14 +256,9 @@ function DetailTabs({
   activeTab: AnalysisTab;
   onChange: (tab: AnalysisTab) => void;
 }) {
-  const tabs: readonly { key: AnalysisTab; label: string }[] = [
-    { key: 'transcript', label: '转写分析' },
-    { key: 'summary', label: '分析总结' },
-  ];
-
   return (
     <View accessibilityRole="tablist" style={styles.detailTabs}>
-      {tabs.map((tab) => {
+      {analysisTabs.map((tab) => {
         const selected = tab.key === activeTab;
         return (
           <Pressable
@@ -357,6 +358,7 @@ function TranscriptContent({
       contentContainerStyle={styles.transcriptContent}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
+      style={styles.pageScroll}
     >
       <View style={styles.filters}>
         <FilterButton label="全部场景" />
@@ -418,6 +420,7 @@ function SummaryContent({
     <ScrollView
       contentContainerStyle={styles.summaryContent}
       showsVerticalScrollIndicator={false}
+      style={styles.pageScroll}
     >
       <Text style={styles.summaryDescription}>AI 智能分析，内容仅供参考</Text>
       <View style={styles.summaryTitleRow}>
@@ -511,6 +514,19 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
   const [playbackRateIndex, setPlaybackRateIndex] = useState(0);
   const [positionSeconds, setPositionSeconds] = useState(0);
   const [selectedSegment, setSelectedSegment] = useState<TranscriptSegment>();
+  const applyTabChange = (tab: AnalysisTab) => {
+    setActiveTab(tab);
+    if (tab === 'summary') {
+      setExpandedPlayer(false);
+      setSelectedSegment(undefined);
+    }
+  };
+  const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } =
+    useSwipePager({
+      activeTab,
+      onTabChange: applyTabChange,
+      tabs: analysisTabKeys,
+    });
 
   if (!detail) {
     return (
@@ -535,13 +551,6 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
   }
 
   const playbackRate = playbackRates[playbackRateIndex];
-  const changeTab = (tab: AnalysisTab) => {
-    setActiveTab(tab);
-    if (tab === 'summary') {
-      setExpandedPlayer(false);
-      setSelectedSegment(undefined);
-    }
-  };
   const jump = (seconds: number) => {
     setPositionSeconds((current) =>
       Math.min(detail.durationSeconds, Math.max(0, current + seconds)),
@@ -574,12 +583,26 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
           positionSeconds={positionSeconds}
         />
       )}
-      <DetailTabs activeTab={activeTab} onChange={changeTab} />
-      {activeTab === 'transcript' ? (
-        <TranscriptContent detail={detail} onOpenAiTag={setSelectedSegment} />
-      ) : (
-        <SummaryContent detail={detail} />
-      )}
+      <DetailTabs activeTab={activeTab} onChange={selectTab} />
+      <ScrollView
+        accessibilityLabel="分析详情分页"
+        directionalLockEnabled
+        horizontal
+        nestedScrollEnabled
+        onMomentumScrollEnd={handleMomentumScrollEnd}
+        pagingEnabled
+        ref={pagerRef}
+        showsHorizontalScrollIndicator={false}
+        style={styles.pager}
+        testID="analysis-tab-pager"
+      >
+        <View style={[styles.page, { width: pageWidth }]}>
+          <TranscriptContent detail={detail} onOpenAiTag={setSelectedSegment} />
+        </View>
+        <View style={[styles.page, { width: pageWidth }]}>
+          <SummaryContent detail={detail} />
+        </View>
+      </ScrollView>
       <AiTagSheet
         analysis={selectedSegment?.aiTag}
         endSeconds={selectedSegment?.endSeconds ?? 0}
@@ -739,6 +762,15 @@ const styles = StyleSheet.create({
   },
   activeTabUnderline: {
     backgroundColor: colors.ink,
+  },
+  pager: {
+    flex: 1,
+  },
+  page: {
+    height: '100%',
+  },
+  pageScroll: {
+    flex: 1,
   },
   transcriptContent: {
     paddingBottom: spacing.xxl,

@@ -33,6 +33,18 @@ describe('GroupScreen', () => {
     expect(screen.getByText('共连接 3 个数据源')).toBeTruthy();
   });
 
+  it('synchronizes the selected group tab after a horizontal swipe', () => {
+    const screen = render(<GroupScreen />);
+
+    fireEvent(screen.getByTestId('group-tab-pager'), 'momentumScrollEnd', {
+      nativeEvent: { contentOffset: { x: 480, y: 0 } },
+    });
+
+    expect(
+      screen.getByRole('tab', { name: '关联知识库' }).props.accessibilityState,
+    ).toEqual({ selected: true });
+  });
+
   it('provides feedback for placeholder actions', () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
     const screen = render(<GroupScreen />);

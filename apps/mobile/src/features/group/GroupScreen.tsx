@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { useSwipePager } from "../../components/useSwipePager";
 import {
   colors,
   fontFamilies,
@@ -34,6 +35,7 @@ const tabs = [
 ] as const;
 
 type TabKey = (typeof tabs)[number]["key"];
+const tabKeys = tabs.map((tab) => tab.key);
 
 function showComingSoon(feature: string) {
   Alert.alert("功能建设中", `${feature}将在后续版本开放。`);
@@ -233,6 +235,12 @@ export function GroupScreen({
   onOpenAudio?: (id: string) => void;
 }) {
   const [activeTab, setActiveTab] = useState<TabKey>("audio");
+  const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } =
+    useSwipePager({
+      activeTab,
+      onTabChange: setActiveTab,
+      tabs: tabKeys,
+    });
 
   return (
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
@@ -252,7 +260,7 @@ export function GroupScreen({
               key={tab.key}
               accessibilityRole="tab"
               accessibilityState={{ selected: active }}
-              onPress={() => setActiveTab(tab.key)}
+              onPress={() => selectTab(tab.key)}
               style={styles.tab}
             >
               <Text style={[styles.tabText, active && styles.activeTabText]}>
@@ -269,14 +277,41 @@ export function GroupScreen({
         })}
       </View>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+        accessibilityLabel="分组内容分页"
+        directionalLockEnabled
+        horizontal
+        nestedScrollEnabled
+        onMomentumScrollEnd={handleMomentumScrollEnd}
+        pagingEnabled
+        ref={pagerRef}
+        showsHorizontalScrollIndicator={false}
+        style={styles.pager}
+        testID="group-tab-pager"
       >
-        {activeTab === "audio" ? (
-          <AudioContent onOpenAudio={onOpenAudio} />
-        ) : null}
-        {activeTab === "knowledge" ? <KnowledgeContent /> : null}
-        {activeTab === "sources" ? <SourcesContent /> : null}
+        <View style={[styles.page, { width: pageWidth }]}>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <AudioContent onOpenAudio={onOpenAudio} />
+          </ScrollView>
+        </View>
+        <View style={[styles.page, { width: pageWidth }]}>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <KnowledgeContent />
+          </ScrollView>
+        </View>
+        <View style={[styles.page, { width: pageWidth }]}>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <SourcesContent />
+          </ScrollView>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -346,6 +381,12 @@ const styles = StyleSheet.create({
   },
   activeTabUnderline: {
     backgroundColor: colors.ink,
+  },
+  pager: {
+    flex: 1,
+  },
+  page: {
+    height: "100%",
   },
   scrollContent: {
     paddingBottom: spacing.xxl,
