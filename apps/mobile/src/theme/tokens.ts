@@ -41,7 +41,7 @@ export const fontFamilies = {
 
 export const typography = {
   groupName: { fontSize: 40, lineHeight: 60 },
-  analysisDisplay: { fontSize: 32, lineHeight: 48 },
+  contentDisplay: { fontSize: 32, lineHeight: 48 },
   heading1: { fontSize: 18, lineHeight: 26 },
   heading2: { fontSize: 16, lineHeight: 24 },
   heading3: { fontSize: 14, lineHeight: 20 },
