@@ -1,11 +1,27 @@
-import { fireEvent, render } from '@testing-library/react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import type { ComponentProps } from 'react';
 import { Alert, StyleSheet } from 'react-native';
 
 import { GroupScreen } from '../GroupScreen';
 
+jest.mock('../../knowledge/apiClient', () => ({
+  listKnowledgeBases: jest.fn(async () => ({
+    items: [
+      { id: '11111111-1111-4111-8111-111111111111', name: '产品研究知识库', description: '研究资料', documentCount: 2, linkedGroupCount: 1, updatedAt: '2026-08-19T00:00:00.000Z' },
+      { id: '22222222-2222-4222-8222-222222222222', name: '团队文档空间', description: '团队资料', documentCount: 3, linkedGroupCount: 1, updatedAt: '2026-08-19T00:00:00.000Z' },
+    ],
+  })),
+}));
+
+async function renderGroup(props?: ComponentProps<typeof GroupScreen>) {
+  const screen = render(<GroupScreen {...props} />);
+  await waitFor(() => expect(screen.queryByLabelText('正在加载关联知识库')).toBeNull());
+  return screen;
+}
+
 describe('GroupScreen', () => {
-  it('uses the special group title and inline icon sizing rules', () => {
-    const screen = render(<GroupScreen />);
+  it('uses the special group title and inline icon sizing rules', async () => {
+    const screen = await renderGroup();
 
     expect(
       StyleSheet.flatten(screen.getByText('分组名称').props.style),
@@ -21,19 +37,23 @@ describe('GroupScreen', () => {
     ).toEqual({ height: 14, width: 14 });
   });
 
-  it('uses 16/24 typography for analysis, knowledge, and source names', () => {
-    const screen = render(<GroupScreen />);
+  it('uses 16/24 typography for analysis, knowledge, and source names', async () => {
+    const screen = await renderGroup();
 
     for (const title of ['产品访谈分析', '产品研究知识库', '团队文档空间']) {
-      expect(StyleSheet.flatten(screen.getByText(title).props.style)).toEqual(
+      const titleNode = screen.getAllByText(title).find((node) =>
+        StyleSheet.flatten(node.props.style)?.fontSize === 16,
+      );
+      expect(titleNode).toBeTruthy();
+      expect(StyleSheet.flatten(titleNode?.props.style)).toEqual(
         expect.objectContaining({ fontSize: 16, lineHeight: 24 }),
       );
     }
   });
 
-  it('moves the group name beside the menu after each page scrolls', () => {
+  it('moves the group name beside the menu after each page scrolls', async () => {
     const now = jest.spyOn(Date, 'now').mockReturnValue(1_000);
-    const screen = render(<GroupScreen />);
+    const screen = await renderGroup();
 
     fireEvent.scroll(screen.getByTestId('group-audio-scroll'), {
       nativeEvent: { contentOffset: { x: 0, y: 40 } },
@@ -62,27 +82,27 @@ describe('GroupScreen', () => {
     now.mockRestore();
   });
 
-  it('keeps group tab labels close to their underline', () => {
-    const screen = render(<GroupScreen />);
+  it('keeps group tab labels close to their underline', async () => {
+    const screen = await renderGroup();
     expect(StyleSheet.flatten(screen.getByText('音频分析').props.style)).toEqual(
       expect.objectContaining({ paddingBottom: 4 }),
     );
   });
 
-  it('switches among the three group content tabs', () => {
-    const screen = render(<GroupScreen />);
+  it('switches among the three group content tabs', async () => {
+    const screen = await renderGroup();
 
     expect(screen.getByText('共 5 份音频')).toBeTruthy();
 
     fireEvent.press(screen.getByText('关联知识库'));
-    expect(screen.getByText('共关联 4 个知识库')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('共关联 2 个知识库')).toBeTruthy());
 
     fireEvent.press(screen.getByText('连接数据源'));
     expect(screen.getByText('共连接 3 个数据源')).toBeTruthy();
   });
 
-  it('synchronizes the selected group tab after a horizontal swipe', () => {
-    const screen = render(<GroupScreen />);
+  it('synchronizes the selected group tab after a horizontal swipe', async () => {
+    const screen = await renderGroup();
 
     fireEvent(screen.getByTestId('group-tab-pager'), 'momentumScrollEnd', {
       nativeEvent: { contentOffset: { x: 480, y: 0 } },
@@ -93,9 +113,9 @@ describe('GroupScreen', () => {
     ).toEqual({ selected: true });
   });
 
-  it('provides feedback for placeholder actions', () => {
+  it('provides feedback for placeholder actions', async () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
-    const screen = render(<GroupScreen />);
+    const screen = await renderGroup();
 
     fireEvent.press(screen.getByLabelText('搜索'));
 
@@ -106,9 +126,9 @@ describe('GroupScreen', () => {
     alert.mockRestore();
   });
 
-  it('opens only completed audio records', () => {
+  it('opens only completed audio records', async () => {
     const onOpenAudio = jest.fn();
-    const screen = render(<GroupScreen onOpenAudio={onOpenAudio} />);
+    const screen = await renderGroup({ onOpenAudio });
 
     fireEvent.press(
       screen.getByLabelText('产品访谈分析，分析已完成'),

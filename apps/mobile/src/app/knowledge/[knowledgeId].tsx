@@ -1,5 +1,5 @@
 /** Connects one knowledge base to files and linked groups outside the tab layout. */
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 
 import { useNavigationLoading } from '../../components/NavigationLoadingProvider';
 import { KnowledgeDetailScreen } from '../../features/knowledge/KnowledgeDetailScreen';
@@ -19,6 +19,11 @@ export default function KnowledgeDetailRoute() {
     <KnowledgeDetailScreen
       knowledgeId={id}
       onBack={goBack}
+      onAsk={() => {
+        void runWithLoading(() =>
+          router.push(`/knowledge/${id}/ask` as Href),
+        );
+      }}
       onOpenDocument={(documentId) => {
         void runWithLoading(() =>
           router.push({

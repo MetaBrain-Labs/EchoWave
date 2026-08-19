@@ -1,5 +1,6 @@
 /** Shared, accessible controls for the knowledge-library page hierarchy. */
 import Ionicons from "@expo/vector-icons/Ionicons";
+import type { DocumentFormat, KnowledgeDocument } from "@echowave/contracts";
 import { useRef } from "react";
 import {
   Alert,
@@ -18,7 +19,6 @@ import {
   textColors,
   typography,
 } from "../../theme/tokens";
-import type { DocumentFormat, KnowledgeDocument } from "./mockData";
 
 export function showComingSoon(feature: string) {
   Alert.alert("功能建设中", `${feature}将在后续版本开放。`);
@@ -192,7 +192,6 @@ export function DocumentFormatIcon({
     markdown: { color: "#526071", icon: "document-text-outline" },
     word: { color: "#1768c4", icon: "document-outline" },
     spreadsheet: { color: "#078449", icon: "grid-outline" },
-    text: { color: "#858f9f", icon: "reader-outline" },
   };
 
   return (
@@ -211,11 +210,11 @@ export function DocumentStatusView({
   document: KnowledgeDocument;
 }) {
   switch (document.status.kind) {
-    case "complete":
+    case "ready":
       return (
-        <Text style={styles.statusText}>{document.blocks.length} 个文本块</Text>
+        <Text style={styles.statusText}>{document.vectorCount} 个文本块</Text>
       );
-    case "waiting":
+    case "queued":
       return (
         <View style={styles.inlineStatus}>
           <Ionicons
@@ -226,7 +225,7 @@ export function DocumentStatusView({
           <Text style={styles.statusText}>待解析</Text>
         </View>
       );
-    case "uploading":
+    case "validating":
       return (
         <View style={styles.inlineStatus}>
           <Ionicons
@@ -238,11 +237,14 @@ export function DocumentStatusView({
         </View>
       );
     case "parsing":
+    case "chunking":
       return (
-        <Text style={styles.statusText}>
-          解析中 ({document.status.progress}%)
-        </Text>
+        <Text style={styles.statusText}>解析中</Text>
       );
+    case "embedding":
+      return <Text style={styles.statusText}>向量化中 ({document.status.progress}%)</Text>;
+    case "deleting":
+      return <Text style={styles.statusText}>正在删除</Text>;
     case "failed":
       return (
         <View style={styles.failedStatus}>

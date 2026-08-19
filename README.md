@@ -1,6 +1,6 @@
 # EchoWave
 
-EchoWave 是一个面向音频分析、知识库关联和数据源连接场景的跨平台应用骨架。当前里程碑提供可运行的 Expo 三端界面、Node.js HelloWorld API 与端到端共享响应契约，不包含真实音频处理、鉴权或持久化。
+EchoWave 是一个面向音频分析、知识库关联和数据源连接场景的跨平台应用。当前里程碑提供 Expo 三端界面、Node.js API，以及基于 PostgreSQL/pgvector 的首期 RAG 知识库；仍不包含真实鉴权和音频处理。
 
 ## 技术基线
 
@@ -8,8 +8,8 @@ EchoWave 是一个面向音频分析、知识库关联和数据源连接场景�
 - pnpm 11.3.0
 - Turborepo
 - Expo SDK 57、React Native 0.86、React 19
-- Hono、Zod、TypeScript
-- 后续数据层：PostgreSQL、Redis（当前未安装或连接）
+- Hono、Zod、TypeScript、LangChain、LangGraph、DeepAgents
+- PostgreSQL 15+、pgvector 0.8.0+
 
 ## 仓库结构
 
@@ -61,7 +61,15 @@ EXPO_PUBLIC_API_URL=http://localhost:3001
 
 `EXPO_PUBLIC_*` 会被写入客户端 bundle，不得放置密码、令牌或其他秘密。修改该文件后，需要在 Expo Go 中执行完整 Reload 才能确认新值已生效。详见 [Expo 环境变量文档](https://docs.expo.dev/guides/environment-variables/)。
 
-API 的 PostgreSQL 与 Redis 配置使用 `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_USER` 等分字段变量，以及对应的 `REDIS_*` 变量。当前里程碑会读取、规范化并校验这些配置，但不会建立数据库或 Redis 连接。
+API 的 PostgreSQL 配置使用 `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_USER` 等分字段变量。RAG 还要求 OpenRouter、DeepSeek、固定开发租户与临时上传目录配置，字段清单见 `apps/api/.env.example`。Redis 字段仍仅作未来边界预留。
+
+首次启动前显式执行迁移；普通 API 启动不会修改数据库 schema：
+
+```powershell
+pnpm --filter @echowave/api migrate
+```
+
+迁移会创建业务 schema、`vector(1024)` HNSW 索引、固定开发租户和独立 LangGraph checkpoint schema。PostgreSQL 必须已经安装 `vector` 扩展。
 
 如果 API 报告端口已被占用，说明已有另一个服务实例监听了 `apps/api/.env` 中的 `PORT`。停止旧实例，或修改该 `PORT`，并同步更新 `apps/mobile/.env` 中 URL 的端口。
 
@@ -153,12 +161,15 @@ pnpm check
 - 分组主界面的音频分析、关联知识库和连接数据源标签
 - 音频完成、跨分组、待分析、上传中、分析中状态示例
 - 分组、知识库、新建、分析、更多五项导航
-- 搜索、筛选、菜单等操作的明确占位反馈
+- Markdown、DOCX、XLSX 单文件上传、异步解析、分块、嵌入与状态轮询
+- PostgreSQL 租户隔离、revision 原子发布、HNSW 检索和引用回溯
+- DeepSeek + DeepAgents 知识问答、无证据拒答与短会话 checkpoint
+- 移动端知识库列表、文档/块详情、上传、问答和引用跳转
 - 更多页中的 API 加载、在线、离线、超时和重试状态
 - `GET /api/hello` HelloWorld 接口及共享 Zod 契约
 
 ## 当前边界
 
-本里程碑不包含鉴权、真实音频上传或分析、知识库管理、数据源同步、队列、数据库、缓存、部署和 EAS Build。PostgreSQL 与 Redis 的预留原则见 [架构说明](./docs/architecture.md)。
+本里程碑不包含真实鉴权、真实音频上传或分析、数据源同步、Redis、对象存储、OCR、PDF、旧版 Office、多 API 实例部署或 EAS Build。入库 worker 与临时文件仅支持单 API 实例；横向扩容前必须迁移到对象存储和独立 worker。详见 [架构说明](./docs/architecture.md)。
 
 在 Windows 上无法运行 iOS Simulator；iOS 本轮通过 Expo bundle 导出、TypeScript 检查和应用配置校验，最终原生运行验收需在 macOS/Xcode 环境完成。

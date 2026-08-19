@@ -1,37 +1,40 @@
-import { fireEvent, render } from '@testing-library/react-native';
-import { Alert, StyleSheet } from 'react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
 import { KnowledgeListScreen } from '../KnowledgeListScreen';
+import { createKnowledgeBase, listKnowledgeBases } from '../apiClient';
+import { knowledgeSummary } from '../testFixtures';
+
+jest.mock('../apiClient');
 
 describe('KnowledgeListScreen', () => {
-  it('renders local knowledge cards and opens the selected library', () => {
+  it('loads server knowledge bases and opens one', async () => {
+    jest.mocked(listKnowledgeBases).mockResolvedValue({ items: [knowledgeSummary] });
     const onOpenKnowledge = jest.fn();
     const screen = render(<KnowledgeListScreen onOpenKnowledge={onOpenKnowledge} />);
-
-    expect(screen.getByText('产品研究知识库')).toBeTruthy();
-    expect(screen.getByText('6 份文档 · 关联 3 个分组')).toBeTruthy();
-    expect(
-      StyleSheet.flatten(screen.getByText('产品研究知识库').props.style),
-    ).toEqual(expect.objectContaining({ fontSize: 16, lineHeight: 24 }));
-    expect(
-      StyleSheet.flatten(
-        screen.getByLabelText('打开知识库：产品研究知识库').props.style,
-      ),
-    ).toEqual(expect.objectContaining({ padding: 16 }));
-
+    expect(await screen.findByText('产品研究知识库')).toBeTruthy();
     fireEvent.press(screen.getByLabelText('打开知识库：产品研究知识库'));
-    expect(onOpenKnowledge).toHaveBeenCalledWith('kb-1');
+    expect(onOpenKnowledge).toHaveBeenCalledWith(knowledgeSummary.id);
   });
 
-  it('uses explicit feedback for unimplemented actions', () => {
-    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  it('offers retry after an API failure', async () => {
+    jest.mocked(listKnowledgeBases).mockRejectedValue(new Error('网络不可用'));
     const screen = render(<KnowledgeListScreen onOpenKnowledge={jest.fn()} />);
+    expect(await screen.findByText('网络不可用')).toBeTruthy();
+    expect(screen.getByText('点击重试')).toBeTruthy();
+  });
 
-    fireEvent.press(screen.getByText('新建'));
-    expect(alert).toHaveBeenCalledWith(
-      '功能建设中',
-      '新建知识库将在后续版本开放。',
-    );
-    alert.mockRestore();
+  it('creates a knowledge base and opens it', async () => {
+    jest.mocked(listKnowledgeBases).mockResolvedValue({ items: [] });
+    jest.mocked(createKnowledgeBase).mockResolvedValue(knowledgeSummary);
+    const onOpenKnowledge = jest.fn();
+    const screen = render(<KnowledgeListScreen onOpenKnowledge={onOpenKnowledge} />);
+    await waitFor(() => expect(screen.queryByLabelText('正在加载知识库')).toBeNull());
+    fireEvent.press(screen.getByLabelText('新建知识库'));
+    fireEvent.changeText(screen.getByLabelText('知识库名称'), '产品研究知识库');
+    fireEvent.changeText(screen.getByLabelText('知识库描述'), '真实 API 知识库');
+    fireEvent.press(screen.getByText('创建并打开'));
+    await screen.findByText('产品研究知识库');
+    expect(createKnowledgeBase).toHaveBeenCalledWith('产品研究知识库', '真实 API 知识库');
+    expect(onOpenKnowledge).toHaveBeenCalledWith(knowledgeSummary.id);
   });
 });

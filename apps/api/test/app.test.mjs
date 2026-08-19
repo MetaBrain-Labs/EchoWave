@@ -31,6 +31,7 @@ describe('EchoWave API', () => {
       error: {
         code: 'NOT_FOUND',
         message: 'Route not found.',
+        retryable: false,
       },
     });
   });
@@ -54,6 +55,15 @@ describe('API environment', () => {
       REDIS_USERNAME: 'echowave',
       REDIS_DB: '2',
       REDIS_TLS: 'true',
+      DEV_TENANT_ID: '00000000-0000-4000-8000-000000000001',
+      OPENROUTER_API_KEY: 'openrouter-test-key',
+      RAG_EMBEDDING_MODEL: 'qwen/qwen3-embedding-8b',
+      RAG_EMBEDDING_DIMENSIONS: '1024',
+      DEEPSEEK_API_KEY: 'deepseek-test-key',
+      DEEPSEEK_BASE_URL: 'https://api.deepseek.com/',
+      DEEPSEEK_CHAT_MODEL: 'deepseek-v4-flash',
+      LANGGRAPH_SCHEMA: 'echowave_graph',
+      UPLOAD_TEMP_DIR: '.tmp/uploads',
     });
 
     assert.deepEqual(config, {
@@ -75,6 +85,17 @@ describe('API environment', () => {
         username: 'echowave',
         database: 2,
         tls: true,
+      },
+      rag: {
+        tenantId: '00000000-0000-4000-8000-000000000001',
+        openRouterApiKey: 'openrouter-test-key',
+        embeddingModel: 'qwen/qwen3-embedding-8b',
+        embeddingDimensions: 1024,
+        deepSeekApiKey: 'deepseek-test-key',
+        deepSeekBaseUrl: 'https://api.deepseek.com',
+        deepSeekChatModel: 'deepseek-v4-flash',
+        langGraphSchema: 'echowave_graph',
+        uploadTempDir: '.tmp/uploads',
       },
     });
   });

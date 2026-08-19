@@ -1,6 +1,7 @@
 /** Implements swipeable library-file and linked-group pages with independent scrolling. */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useMemo, useState } from 'react';
+import * as DocumentPicker from 'expo-document-picker';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -9,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import type { DocumentStatus, KnowledgeBaseDetail, KnowledgeDocument } from '@echowave/contracts';
 
 import { useSwipePager } from '../../components/useSwipePager';
 import {
@@ -29,12 +31,7 @@ import {
   SearchAndFilter,
   showComingSoon,
 } from './KnowledgeShared';
-import {
-  getKnowledgeBase,
-  type DocumentStatus,
-  type KnowledgeDocument,
-  type LinkedGroup,
-} from './mockData';
+import { getDocument, getKnowledgeBase, listDocuments, retryDocument, uploadDocument } from './apiClient';
 
 const detailTabs = [
   { key: 'files', label: '库文件' },
@@ -47,32 +44,38 @@ const formatLabels = {
   markdown: 'Markdown',
   word: 'Word',
   spreadsheet: '表格',
-  text: '文本',
 } as const;
 
 function statusLabel(status: DocumentStatus) {
   switch (status.kind) {
-    case 'complete':
+    case 'ready':
       return '解析完成';
-    case 'waiting':
+    case 'queued':
       return '待解析';
-    case 'uploading':
-      return '上传中';
+    case 'validating':
+      return '校验中';
     case 'parsing':
-      return `解析中 ${status.progress}%`;
+    case 'chunking':
+      return '解析中';
+    case 'embedding':
+      return `向量化 ${status.progress}%`;
     case 'failed':
       return '解析失败';
+    case 'deleting':
+      return '删除中';
   }
 }
 
 function DocumentRow({
   document,
   onOpen,
+  onRetry,
 }: {
   document: KnowledgeDocument;
   onOpen: () => void;
+  onRetry: () => void;
 }) {
-  const enabled = document.status.kind === 'complete';
+  const enabled = document.status.kind === 'ready';
   const content = (
     <>
       <DocumentFormatIcon format={document.format} size={40} />
@@ -81,20 +84,24 @@ function DocumentRow({
           {document.title}
         </Text>
         <Text style={styles.documentMeta}>
-          {formatLabels[document.format]} · {document.size}
+          {formatLabels[document.format]} · {(document.sizeBytes / 1024).toFixed(1)} KB
         </Text>
-        <Text style={styles.documentUpdated}>更新于 {document.updatedAt}</Text>
+        <Text style={styles.documentUpdated}>更新于 {new Date(document.updatedAt).toLocaleDateString()}</Text>
+        {document.status.kind === 'failed' ? (
+          <Text numberOfLines={2} style={styles.failureReason}>{document.status.message}</Text>
+        ) : null}
       </View>
       <View style={styles.documentStatus}>
         <DocumentStatusView document={document} />
       </View>
       <Pressable
-        accessibilityLabel={`${document.title}更多操作`}
+        accessibilityLabel={document.status.kind === 'failed' ? `重试文档：${document.title}` : `${document.title}更多操作`}
         accessibilityRole="button"
         hitSlop={8}
         onPress={(event) => {
           event?.stopPropagation();
-          showComingSoon('文件更多操作');
+          if (document.status.kind === 'failed') onRetry();
+          else showComingSoon('文件更多操作');
         }}
         style={({ pressed }) => [styles.moreButton, pressed && styles.pressed]}
       >
@@ -119,52 +126,22 @@ function DocumentRow({
   );
 }
 
-function GroupCard({ group }: { group: LinkedGroup }) {
-  const stats = [
-    { label: '分析数', value: group.analysisCount },
-    { label: '音频数', value: group.audioCount },
-    { label: '知识库', value: group.knowledgeCount },
-    { label: '数据源', value: group.dataSourceCount },
-  ];
-
-  return (
-    <View style={styles.groupCard}>
-      <View style={styles.groupTitleRow}>
-        <Text style={styles.groupTitle}>{group.name}</Text>
-        <Pressable
-          accessibilityLabel={`解除关联：${group.name}`}
-          accessibilityRole="button"
-          onPress={() => showComingSoon('解除分组关联')}
-          style={({ pressed }) => [styles.moreButton, pressed && styles.pressed]}
-        >
-          <Ionicons color={colors.secondary} name="unlink-outline" size={24} />
-        </Pressable>
-      </View>
-      <View style={styles.groupStats}>
-        {stats.map((stat, index) => (
-          <View
-            key={stat.label}
-            style={[styles.groupStat, index > 0 && styles.groupStatDivider]}
-          >
-            <Text style={styles.groupStatValue}>{stat.value}</Text>
-            <Text style={styles.groupStatLabel}>{stat.label}</Text>
-          </View>
-        ))}
-      </View>
-    </View>
-  );
-}
-
 export function KnowledgeDetailScreen({
   knowledgeId,
   onBack,
+  onAsk,
   onOpenDocument,
 }: {
   knowledgeId: string;
   onBack: () => void;
+  onAsk?: () => void;
   onOpenDocument: (documentId: string) => void;
 }) {
-  const knowledge = getKnowledgeBase(knowledgeId);
+  const [knowledge, setKnowledge] = useState<KnowledgeBaseDetail>();
+  const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [uploading, setUploading] = useState(false);
   const [activeTab, setActiveTab] = useState<DetailTab>('files');
   const [query, setQuery] = useState('');
   const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } =
@@ -174,22 +151,83 @@ export function KnowledgeDetailScreen({
       tabs: detailTabKeys,
     });
 
-  const filteredDocuments = useMemo(() => {
-    if (!knowledge) {
-      return [];
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [nextKnowledge, nextDocuments] = await Promise.all([
+        getKnowledgeBase(knowledgeId),
+        listDocuments(knowledgeId),
+      ]);
+      setKnowledge(nextKnowledge);
+      setDocuments(nextDocuments.items);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '知识库加载失败。');
+    } finally {
+      setLoading(false);
     }
+  }, [knowledgeId]);
+  useEffect(() => {
+    const task = setTimeout(() => void load(), 0);
+    return () => clearTimeout(task);
+  }, [load]);
+
+  const filteredDocuments = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
     if (!normalized) {
-      return knowledge.documents;
+      return documents;
     }
-    return knowledge.documents.filter((document) =>
+    return documents.filter((document) =>
       [
         document.title,
         formatLabels[document.format],
         statusLabel(document.status),
       ].some((value) => value.toLocaleLowerCase().includes(normalized)),
     );
-  }, [knowledge, query]);
+  }, [documents, query]);
+
+  const pickAndUpload = async () => {
+    const selection = await DocumentPicker.getDocumentAsync({
+      type: [
+        'text/markdown',
+        'text/plain',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      ],
+      copyToCacheDirectory: true,
+      multiple: false,
+    });
+    if (selection.canceled) return;
+    const asset = selection.assets[0];
+    if (!asset) return;
+    setUploading(true);
+    setError('');
+    try {
+      const uploaded = await uploadDocument(knowledgeId, asset);
+      await load();
+      let delay = 2_000;
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        const current = await getDocument(knowledgeId, uploaded.document.id);
+        setDocuments((items) => items.map((item) => item.id === current.id ? current : item));
+        if (current.status.kind === 'ready' || current.status.kind === 'failed') break;
+        if (attempt >= 4) delay = 5_000;
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '文档上传失败。');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  if (loading && !knowledge) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <PageHeader onBack={onBack} title="知识库详情" />
+        <EmptyState description="正在从服务器读取知识库与文档。" title="正在加载" />
+      </SafeAreaView>
+    );
+  }
 
   if (!knowledge) {
     return (
@@ -197,7 +235,7 @@ export function KnowledgeDetailScreen({
         <PageHeader onBack={onBack} title="知识库详情" />
         <EmptyState
           description="该知识库可能已被移除，请返回知识库列表。"
-          title="未找到知识库"
+          title={error || "未找到知识库"}
         />
       </SafeAreaView>
     );
@@ -232,9 +270,10 @@ export function KnowledgeDetailScreen({
               {knowledge.description}
             </Text>
             <Text style={styles.heroMeta}>
-              {knowledge.documentCount} 份文档 · 关联 {knowledge.linkedGroupCount} 个分组
+              {documents.length} 份文档 · 关联 {knowledge.linkedGroupCount} 个分组
             </Text>
           </View>
+          {error ? <Text accessibilityRole="alert" style={styles.failureReason}>{error}</Text> : null}
           <View style={styles.stickySearch}>
             <SearchAndFilter
               onChangeText={setQuery}
@@ -250,6 +289,11 @@ export function KnowledgeDetailScreen({
                   key={document.id}
                   document={document}
                   onOpen={() => onOpenDocument(document.id)}
+                  onRetry={() => {
+                    void retryDocument(knowledgeId, document.id)
+                      .then((current) => setDocuments((items) => items.map((item) => item.id === current.id ? current : item)))
+                      .catch((reason) => setError(reason instanceof Error ? reason.message : '重试失败，请重新上传文件。'));
+                  }}
                 />
               ))
             ) : (
@@ -260,9 +304,10 @@ export function KnowledgeDetailScreen({
           </View>
           <ActionButton
             icon="cloud-upload-outline"
-            label="上传文档"
-            onPress={() => showComingSoon('上传文档')}
+            label={uploading ? "正在上传并解析…" : "上传文档"}
+            onPress={() => { if (!uploading) void pickAndUpload(); }}
           />
+          <ActionButton icon="chatbubble-ellipses-outline" label="问知识库" onPress={() => onAsk?.()} />
         </ScrollView>
 
         <ScrollView
@@ -272,9 +317,7 @@ export function KnowledgeDetailScreen({
         >
           <PageTabs activeTab={activeTab} onChange={selectTab} tabs={detailTabs} />
           <View style={styles.groupList}>
-            {knowledge.linkedGroups.map((group) => (
-              <GroupCard key={group.id} group={group} />
-            ))}
+            <EmptyState description="首期暂不提供分组关联数据。" title="暂无关联分组" />
           </View>
           <ActionButton
             icon="add"
@@ -357,6 +400,11 @@ const styles = StyleSheet.create({
   documentUpdated: {
     ...typography.label,
     color: textColors.tertiary,
+    fontFamily: fontFamilies.sans,
+  },
+  failureReason: {
+    ...typography.description,
+    color: '#b42318',
     fontFamily: fontFamilies.sans,
   },
   documentStatus: {

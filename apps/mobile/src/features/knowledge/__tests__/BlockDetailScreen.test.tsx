@@ -1,46 +1,24 @@
 import { fireEvent, render } from '@testing-library/react-native';
 
 import { BlockDetailScreen } from '../BlockDetailScreen';
-import { resetImportantBlockIds } from '../preferences';
+import { getDocument } from '../apiClient';
+import { document, knowledge } from '../testFixtures';
+
+jest.mock('../apiClient');
 
 describe('BlockDetailScreen', () => {
-  const props = {
-    blockId: 'block-background',
-    documentId: 'doc-interview-workflow',
-    knowledgeId: 'kb-1',
-    onBack: jest.fn(),
-    onLocateOriginal: jest.fn(),
-    onNavigateBlock: jest.fn(),
-  };
+  beforeEach(() => jest.mocked(getDocument).mockResolvedValue(document));
 
-  beforeEach(() => {
-    jest.clearAllMocks();
-    resetImportantBlockIds();
+  it('shows a real source locator and navigates adjacent chunks', async () => {
+    const onNavigateBlock = jest.fn();
+    const screen = render(<BlockDetailScreen blockId={document.chunks[0]!.id} documentId={document.id} knowledgeId={knowledge.id} onBack={jest.fn()} onLocateOriginal={jest.fn()} onNavigateBlock={onNavigateBlock} />);
+    expect(await screen.findByText('研究背景，第 3-5 行')).toBeTruthy();
+    fireEvent.press(screen.getByText('下一块'));
+    expect(onNavigateBlock).toHaveBeenCalledWith(document.chunks[1]?.id);
   });
 
-  it('shows block/source content and handles next and source navigation', () => {
-    const screen = render(<BlockDetailScreen {...props} />);
-
-    expect(screen.getByText('1/4')).toBeTruthy();
-    expect(screen.getAllByText('来源位置：第 1 页 第 3 行')).toHaveLength(2);
-    expect(screen.getByRole('button', { name: '上一块' }).props.accessibilityState).toEqual({
-      disabled: true,
-    });
-
-    fireEvent.press(screen.getByRole('button', { name: '下一块' }));
-    expect(props.onNavigateBlock).toHaveBeenCalledWith('block-process');
-    fireEvent.press(screen.getByText('定位原文'));
-    expect(props.onLocateOriginal).toHaveBeenCalledWith('block-background');
-  });
-
-  it('shares an emphasis choice with the session preference store', () => {
-    const screen = render(<BlockDetailScreen {...props} />);
-    fireEvent.press(screen.getByText('设为重点'));
-    expect(screen.getByText('取消重点')).toBeTruthy();
-  });
-
-  it('renders a recoverable unknown-block state', () => {
-    const screen = render(<BlockDetailScreen {...props} blockId="missing" />);
-    expect(screen.getByText('未找到文本块')).toBeTruthy();
+  it('keeps the requested citation chunk highlighted as the only content card', async () => {
+    const screen = render(<BlockDetailScreen blockId={document.chunks[1]!.id} documentId={document.id} knowledgeId={knowledge.id} onBack={jest.fn()} onLocateOriginal={jest.fn()} onNavigateBlock={jest.fn()} />);
+    expect(await screen.findByText('回答需要关联原始证据。')).toBeTruthy();
   });
 });

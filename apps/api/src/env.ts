@@ -24,6 +24,15 @@ const EnvironmentSchema = z.object({
   REDIS_USERNAME: z.string(),
   REDIS_DB: z.coerce.number().int().min(0),
   REDIS_TLS: BooleanStringSchema,
+  DEV_TENANT_ID: z.string().uuid(),
+  OPENROUTER_API_KEY: z.string().min(1),
+  RAG_EMBEDDING_MODEL: z.literal("qwen/qwen3-embedding-8b"),
+  RAG_EMBEDDING_DIMENSIONS: z.coerce.number().int().refine((value) => value === 1024),
+  DEEPSEEK_API_KEY: z.string().min(1),
+  DEEPSEEK_BASE_URL: z.string().url(),
+  DEEPSEEK_CHAT_MODEL: z.literal("deepseek-v4-flash"),
+  LANGGRAPH_SCHEMA: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
+  UPLOAD_TEMP_DIR: z.string().min(1),
 });
 
 export type ApiConfig = {
@@ -45,6 +54,17 @@ export type ApiConfig = {
     username: string;
     database: number;
     tls: boolean;
+  };
+  rag: {
+    tenantId: string;
+    openRouterApiKey: string;
+    embeddingModel: 'qwen/qwen3-embedding-8b';
+    embeddingDimensions: 1024;
+    deepSeekApiKey: string;
+    deepSeekBaseUrl: string;
+    deepSeekChatModel: 'deepseek-v4-flash';
+    langGraphSchema: string;
+    uploadTempDir: string;
   };
 };
 
@@ -77,6 +97,17 @@ export function readApiConfig(values: Record<string, string | undefined>): ApiCo
       username: parsed.REDIS_USERNAME,
       database: parsed.REDIS_DB,
       tls: parsed.REDIS_TLS,
+    },
+    rag: {
+      tenantId: parsed.DEV_TENANT_ID,
+      openRouterApiKey: parsed.OPENROUTER_API_KEY,
+      embeddingModel: parsed.RAG_EMBEDDING_MODEL,
+      embeddingDimensions: parsed.RAG_EMBEDDING_DIMENSIONS,
+      deepSeekApiKey: parsed.DEEPSEEK_API_KEY,
+      deepSeekBaseUrl: parsed.DEEPSEEK_BASE_URL.replace(/\/$/, ""),
+      deepSeekChatModel: parsed.DEEPSEEK_CHAT_MODEL,
+      langGraphSchema: parsed.LANGGRAPH_SCHEMA,
+      uploadTempDir: parsed.UPLOAD_TEMP_DIR,
     },
   };
 }

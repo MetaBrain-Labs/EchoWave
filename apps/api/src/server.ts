@@ -4,9 +4,12 @@ import { serve } from '@hono/node-server';
 import { createApp } from './app.ts';
 import { readApiConfigFile } from './env.ts';
 import { formatServerStartError } from './serverError.ts';
+import { createRagRuntime } from './rag/runtime.ts';
 
 const config = readApiConfigFile(new URL('../.env', import.meta.url));
-const app = createApp(config);
+const ragRuntime = createRagRuntime(config);
+const app = createApp(config, { knowledgeService: ragRuntime.service });
+ragRuntime.worker.start();
 
 const server = serve({
   fetch: app.fetch,
@@ -22,11 +25,12 @@ server.once('error', (error) => {
 
 function shutdown(signal: NodeJS.Signals) {
   console.log(`Received ${signal}; shutting down EchoWave API.`);
-  server.close((error) => {
+  server.close(async (error) => {
     if (error) {
       console.error('Failed to close the API server cleanly.', error);
       process.exitCode = 1;
     }
+    await ragRuntime.close();
   });
 }
 

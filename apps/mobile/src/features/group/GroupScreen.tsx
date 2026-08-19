@@ -1,6 +1,6 @@
 /** Implements the sketch-inspired group workspace and its three content tabs. */
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -13,6 +13,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import type { KnowledgeBaseSummary } from "@echowave/contracts";
 
 import { useSwipePager } from "../../components/useSwipePager";
 import {
@@ -28,7 +29,7 @@ import {
   dataSources,
   type AudioItem,
 } from "./mockData";
-import { knowledgeBases } from "../knowledge/mockData";
+import { listKnowledgeBases } from "../knowledge/apiClient";
 
 const tabs = [
   { key: "audio", label: "音频分析" },
@@ -171,7 +172,30 @@ function AudioContent({
   );
 }
 
-function KnowledgeContent() {
+function KnowledgeContent({
+  error,
+  knowledgeBases,
+  loading,
+  onRetry,
+}: {
+  error: string;
+  knowledgeBases: KnowledgeBaseSummary[];
+  loading: boolean;
+  onRetry: () => void;
+}) {
+  if (loading) {
+    return <ActivityIndicator accessibilityLabel="正在加载关联知识库" color={colors.ink} />;
+  }
+  if (error) {
+    return (
+      <View style={styles.card}>
+        <Text accessibilityRole="alert" style={styles.description}>{error}</Text>
+        <Pressable accessibilityRole="button" onPress={onRetry}>
+          <Text style={styles.filterText}>重新加载</Text>
+        </Pressable>
+      </View>
+    );
+  }
   return (
     <>
       <Text style={[styles.sectionTitle, styles.sectionHeaderSolo]}>
@@ -193,7 +217,7 @@ function KnowledgeContent() {
           <Text style={styles.metaText}>
             共 {knowledgeBase.documentCount} 份文档
           </Text>
-          <Text style={styles.metaText}>更新于 {knowledgeBase.updatedAt}</Text>
+          <Text style={styles.metaText}>更新于 {new Date(knowledgeBase.updatedAt).toLocaleDateString()}</Text>
         </View>
       ))}
     </>
@@ -238,6 +262,9 @@ export function GroupScreen({
   onOpenAudio?: (id: string) => void;
 }) {
   const [activeTab, setActiveTab] = useState<TabKey>("audio");
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseSummary[]>([]);
+  const [knowledgeLoading, setKnowledgeLoading] = useState(true);
+  const [knowledgeError, setKnowledgeError] = useState("");
   const [collapsedTabs, setCollapsedTabs] = useState<Record<TabKey, boolean>>({
     audio: false,
     knowledge: false,
@@ -249,6 +276,22 @@ export function GroupScreen({
     sources: 0,
   });
   const headerCollapsed = collapsedTabs[activeTab];
+  const loadKnowledgeBases = useCallback(async () => {
+    setKnowledgeLoading(true);
+    setKnowledgeError("");
+    try {
+      const response = await listKnowledgeBases();
+      setKnowledgeBases(response.items);
+    } catch (reason) {
+      setKnowledgeError(reason instanceof Error ? reason.message : "关联知识库加载失败。");
+    } finally {
+      setKnowledgeLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    const task = setTimeout(() => void loadKnowledgeBases(), 0);
+    return () => clearTimeout(task);
+  }, [loadKnowledgeBases]);
   const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } =
     useSwipePager({
       activeTab,
@@ -363,7 +406,12 @@ export function GroupScreen({
             showsVerticalScrollIndicator={false}
             testID="group-knowledge-scroll"
           >
-            <KnowledgeContent />
+            <KnowledgeContent
+              error={knowledgeError}
+              knowledgeBases={knowledgeBases}
+              loading={knowledgeLoading}
+              onRetry={() => void loadKnowledgeBases()}
+            />
           </ScrollView>
         </View>
         <View style={[styles.page, { width: pageWidth }]}>

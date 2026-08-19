@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Animated, Easing, StyleSheet, View } from "react-native";
+import { Animated, Easing, StyleSheet, Text, View } from "react-native";
 
 import {
   colors,
@@ -17,7 +17,6 @@ import {
   textColors,
   typography,
 } from "../theme/tokens";
-import { Text } from "expo-router/build/react-navigation";
 
 export const minimumNavigationLoadingMs = 700;
 
