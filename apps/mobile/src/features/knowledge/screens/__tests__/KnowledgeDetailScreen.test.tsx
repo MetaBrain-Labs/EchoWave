@@ -9,7 +9,7 @@
  * Notes:
  * - 服务端请求由 feature 级 mock 控制。
  */
-import { fireEvent, render } from '@testing-library/react-native';
+import { fireEvent, render, within } from '@testing-library/react-native';
 
 import { KnowledgeDetailScreen } from '../KnowledgeDetailScreen';
 import { getKnowledgeBase, listDocuments } from '../../apiClient';
@@ -39,5 +39,13 @@ describe('KnowledgeDetailScreen', () => {
     await screen.findByText('问知识库');
     fireEvent.press(screen.getByText('问知识库'));
     expect(onAsk).toHaveBeenCalled();
+  });
+
+  it('keeps the associate-group action outside the group scroll content', async () => {
+    const screen = render(<KnowledgeDetailScreen knowledgeId={knowledge.id} onBack={jest.fn()} onOpenDocument={jest.fn()} />);
+    await screen.findByText('暂无关联分组');
+
+    expect(within(screen.getByTestId('knowledge-groups-fixed-action')).getByText('关联新分组')).toBeTruthy();
+    expect(within(screen.getByTestId('knowledge-files-scroll')).queryByText('关联新分组')).toBeNull();
   });
 });

@@ -20,11 +20,21 @@ import { DocumentFormatIcon } from './DocumentUi';
 import { showComingSoon } from './feedback';
 
 /** 渲染知识库层级页面使用的可访问返回页头。 */
-export function PageHeader({ icon, moreLabel = '更多操作', onBack, onMore, title }: {
+export function PageHeader({
+  icon,
+  moreLabel = '更多操作',
+  onBack,
+  onMore,
+  onSearch,
+  searchLabel = '搜索',
+  title,
+}: {
   icon?: DocumentFormat;
   moreLabel?: string;
   onBack: () => void;
   onMore?: () => void;
+  onSearch?: () => void;
+  searchLabel?: string;
   title: string;
 }) {
   return (
@@ -37,11 +47,20 @@ export function PageHeader({ icon, moreLabel = '更多操作', onBack, onMore, t
         {icon ? <DocumentFormatIcon format={icon} size={28} /> : null}
         <Text numberOfLines={1} style={styles.headerTitle}>{title}</Text>
       </View>
-      <Pressable accessibilityLabel={moreLabel} accessibilityRole="button" hitSlop={8}
-        onPress={onMore ?? (() => showComingSoon('更多操作'))}
-        style={({ pressed }) => [styles.headerIconButton, pressed && styles.pressed]}>
-        <Ionicons color={colors.ink} name="ellipsis-horizontal" size={28} />
-      </Pressable>
+      <View style={styles.headerActions}>
+        {onSearch ? (
+          <Pressable accessibilityLabel={searchLabel} accessibilityRole="button" hitSlop={8}
+            onPress={onSearch}
+            style={({ pressed }) => [styles.headerIconButton, pressed && styles.pressed]}>
+            <Ionicons color={colors.ink} name="search-outline" size={28} />
+          </Pressable>
+        ) : null}
+        <Pressable accessibilityLabel={moreLabel} accessibilityRole="button" hitSlop={8}
+          onPress={onMore ?? (() => showComingSoon('更多操作'))}
+          style={({ pressed }) => [styles.headerIconButton, pressed && styles.pressed]}>
+          <Ionicons color={colors.ink} name="ellipsis-horizontal" size={28} />
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -54,6 +73,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   headerIconButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
+  headerActions: { alignItems: 'center', flexDirection: 'row' },
   headerTitleRow: {
     alignItems: 'center', flex: 1, flexDirection: 'row', gap: spacing.sm,
     paddingHorizontal: spacing.sm,

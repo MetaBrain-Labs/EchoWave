@@ -11,7 +11,7 @@
  * - 过滤规则由调用页面负责。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useRef } from 'react';
+import { type RefObject, useRef } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { colors, fontFamilies, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
@@ -19,18 +19,20 @@ import { colors, fontFamilies, radii, spacing, textColors, typography } from '@/
 import { showComingSoon } from './feedback';
 
 /** 渲染知识库页面复用的搜索框与筛选入口。 */
-export function SearchAndFilter({ onChangeText, placeholder, value }: {
+export function SearchAndFilter({ inputRef, onChangeText, placeholder, value }: {
+  inputRef?: RefObject<TextInput | null>;
   onChangeText: (value: string) => void;
   placeholder: string;
   value: string;
 }) {
-  const inputRef = useRef<TextInput>(null);
+  const localInputRef = useRef<TextInput>(null);
+  const resolvedInputRef = inputRef ?? localInputRef;
   return (
     <View style={styles.searchRow}>
-      <Pressable onPress={() => inputRef.current?.focus()} style={styles.searchBox}>
+      <Pressable onPress={() => resolvedInputRef.current?.focus()} style={styles.searchBox}>
         <Ionicons color={colors.secondary} name="search-outline" size={typography.description.lineHeight} />
         <TextInput accessibilityLabel={placeholder} onChangeText={onChangeText} placeholder={placeholder}
-          placeholderTextColor={textColors.tertiary} ref={inputRef} style={styles.searchInput} value={value} />
+          placeholderTextColor={textColors.tertiary} ref={resolvedInputRef} style={styles.searchInput} value={value} />
       </Pressable>
       <Pressable accessibilityLabel="筛选" accessibilityRole="button" onPress={() => showComingSoon('筛选')}
         style={({ pressed }) => [styles.filterButton, pressed && styles.pressed]}>

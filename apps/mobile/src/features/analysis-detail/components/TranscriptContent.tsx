@@ -52,54 +52,61 @@ function SegmentView({
 }) {
   return (
     <View style={styles.segment}>
-      <View style={styles.speakerRow}>
-        {segment.speaker === 'self' ? (
-          <View style={[styles.selfMarker, dimmed && styles.dimmedMarker]} />
-        ) : null}
-        <Text style={[styles.speakerName, dimmed && styles.dimmedText]}>
-          {segment.speakerLabel}
-        </Text>
-        {segment.speaker === 'host' ? (
-          <Ionicons
-            color={dimmed ? colors.muted : '#ff5964'}
-            name="pulse"
-            size={typography.heading3.lineHeight}
-          />
-        ) : null}
-      </View>
-      <View style={styles.emotionRow}>
-        <Ionicons
-          color={dimmed ? colors.muted : colors.secondary}
-          name="happy-outline"
-          size={typography.body.lineHeight}
-        />
-        <Text style={[styles.emotionText, dimmed && styles.dimmedText]}>
-          {segment.emotion}
-        </Text>
-      </View>
-      <Text style={[styles.transcriptText, dimmed && styles.dimmedText]}>
-        {segment.text}
-      </Text>
-      {segment.aiTag ? (
-        <Pressable
-          accessibilityLabel={`查看 AI 标签：${segment.aiTag.title}`}
-          accessibilityRole="button"
-          onPress={() => onOpenAiTag(segment)}
-          style={({ pressed }) => [styles.aiTagButton, pressed && styles.pressed]}
-        >
-          <Text style={[styles.aiTagText, dimmed && styles.dimmedText]}>
-            AI标签
+      <View style={styles.segmentMain}>
+        <View style={styles.speakerRow}>
+          {segment.speaker === 'self' ? (
+            <View style={[styles.selfMarker, dimmed && styles.dimmedMarker]} />
+          ) : null}
+          <Text style={[styles.speakerName, dimmed && styles.dimmedText]}>
+            {segment.speakerLabel}
           </Text>
+          {segment.speaker === 'host' ? (
+            <Ionicons
+              color={dimmed ? colors.muted : '#ff5964'}
+              name="pulse"
+              size={typography.heading3.lineHeight}
+            />
+          ) : null}
+        </View>
+        <View style={styles.emotionRow}>
           <Ionicons
-            color={dimmed ? colors.muted : colors.success}
-            name="sparkles"
-            size={typography.label.lineHeight}
+            color={dimmed ? colors.muted : colors.secondary}
+            name="happy-outline"
+            size={typography.body.lineHeight}
           />
-        </Pressable>
-      ) : null}
-      <Text style={styles.segmentTime}>
-        {formatTime(segment.startSeconds)} – {formatTime(segment.endSeconds)}
-      </Text>
+          <Text style={[styles.emotionText, dimmed && styles.dimmedText]}>
+            {segment.emotion}
+          </Text>
+        </View>
+        <Text style={[styles.transcriptText, dimmed && styles.dimmedText]}>
+          {segment.text}
+        </Text>
+        <Text style={styles.segmentTime}>
+          {formatTime(segment.startSeconds)} – {formatTime(segment.endSeconds)}
+        </Text>
+      </View>
+      <View style={styles.segmentRail} testID={`timeline-rail-${segment.id}`}>
+        {segment.aiTag ? (
+          <Pressable
+            accessibilityLabel={`查看 AI 标签：${segment.aiTag.title}`}
+            accessibilityRole="button"
+            onPress={() => onOpenAiTag(segment)}
+            style={({ pressed }) => [styles.aiTagButton, pressed && styles.pressed]}
+            testID={`ai-tag-timeline-marker-${segment.id}`}
+          >
+            <Text style={[styles.aiTagText, dimmed && styles.dimmedText]}>
+              AI标签
+            </Text>
+            <View style={styles.aiTagNode}>
+              <Ionicons
+                color={dimmed ? colors.muted : colors.success}
+                name="sparkles"
+                size={typography.label.lineHeight}
+              />
+            </View>
+          </Pressable>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -268,23 +275,33 @@ const styles = StyleSheet.create({
     backgroundColor: colors.ink,
     borderRadius: radii.round,
     height: 8,
+    marginRight: spacing.xs,
     width: 8,
   },
   sceneBody: {
-    paddingRight: spacing.lg,
     position: 'relative',
   },
   timelineLine: {
     backgroundColor: colors.divider,
     bottom: 0,
     position: 'absolute',
-    right: spacing.xs,
+    right: spacing.sm,
     top: 0,
     width: 2,
   },
   segment: {
+    flexDirection: 'row',
     paddingBottom: spacing.xl,
     paddingTop: spacing.md,
+  },
+  segmentMain: {
+    flex: 1,
+    minWidth: 0,
+  },
+  segmentRail: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    width: 96,
   },
   speakerRow: {
     alignItems: 'center',
@@ -328,11 +345,16 @@ const styles = StyleSheet.create({
   },
   aiTagButton: {
     alignItems: 'center',
-    alignSelf: 'flex-end',
     flexDirection: 'row',
     gap: spacing.xs,
-    marginTop: spacing.sm,
     minHeight: 32,
+  },
+  aiTagNode: {
+    alignItems: 'center',
+    backgroundColor: colors.canvas,
+    height: typography.label.lineHeight,
+    justifyContent: 'center',
+    width: typography.label.lineHeight,
   },
   aiTagText: {
     ...typography.label,
@@ -364,4 +386,3 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sans,
   },
 });
-

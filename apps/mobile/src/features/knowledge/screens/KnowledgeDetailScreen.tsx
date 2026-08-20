@@ -318,21 +318,25 @@ export function KnowledgeDetailScreen({
           <ActionButton icon="chatbubble-ellipses-outline" label="问知识库" onPress={() => onAsk?.()} />
         </ScrollView>
 
-        <ScrollView
-          contentContainerStyle={styles.pageContent}
-          showsVerticalScrollIndicator={false}
-          style={{ width: pageWidth }}
-        >
-          <PageTabs activeTab={activeTab} onChange={selectTab} tabs={detailTabs} />
-          <View style={styles.groupList}>
-            <EmptyState description="首期暂不提供分组关联数据。" title="暂无关联分组" />
+        <View style={[styles.pagerPage, { width: pageWidth }]}>
+          <ScrollView
+            contentContainerStyle={styles.groupPageContent}
+            showsVerticalScrollIndicator={false}
+            style={styles.groupScroll}
+          >
+            <PageTabs activeTab={activeTab} onChange={selectTab} tabs={detailTabs} />
+            <View style={styles.groupList}>
+              <EmptyState description="首期暂不提供分组关联数据。" title="暂无关联分组" />
+            </View>
+          </ScrollView>
+          <View style={styles.groupFixedAction} testID="knowledge-groups-fixed-action">
+            <ActionButton
+              icon="add"
+              label="关联新分组"
+              onPress={() => showComingSoon('关联新分组')}
+            />
           </View>
-          <ActionButton
-            icon="add"
-            label="关联新分组"
-            onPress={() => showComingSoon('关联新分组')}
-          />
-        </ScrollView>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -345,6 +349,10 @@ const styles = StyleSheet.create({
   },
   pager: {
     flex: 1,
+  },
+  pagerPage: {
+    flex: 1,
+    height: '100%',
   },
   pageContent: {
     gap: spacing.md,
@@ -412,7 +420,7 @@ const styles = StyleSheet.create({
   },
   failureReason: {
     ...typography.description,
-    color: '#b42318',
+    color: textColors.secondary,
     fontFamily: fontFamilies.sans,
   },
   documentStatus: {
@@ -440,6 +448,20 @@ const styles = StyleSheet.create({
   },
   groupList: {
     gap: spacing.md,
+  },
+  groupScroll: {
+    flex: 1,
+  },
+  groupPageContent: {
+    flexGrow: 1,
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+  },
+  groupFixedAction: {
+    backgroundColor: colors.card,
+    borderTopColor: colors.divider,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    padding: spacing.md,
   },
   groupCard: {
     backgroundColor: colors.canvas,

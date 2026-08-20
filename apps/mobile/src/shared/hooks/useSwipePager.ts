@@ -34,7 +34,7 @@ export function useSwipePager<Tab extends string>({
   const { width } = useWindowDimensions();
   const pageWidth = Math.min(width, desktopCanvasWidth);
   const activeIndex = tabs.indexOf(activeTab);
-  const previousPageWidth = useRef(pageWidth);
+  const previousPageWidth = useRef(0);
 
   useEffect(() => {
     if (previousPageWidth.current !== pageWidth) {

@@ -124,6 +124,18 @@ describe('AnalysisDetailScreen', () => {
     expect(screen.queryByText('高频访谈记录场景')).toBeNull();
   });
 
+  it('embeds the AI tag control in its transcript timeline rail', () => {
+    const screen = render(
+      <AnalysisDetailScreen detailId="audio-1" onBack={jest.fn()} />,
+    );
+    const rail = screen.getByTestId('timeline-rail-segment-opening-question');
+
+    expect(
+      within(rail).getByLabelText('查看 AI 标签：高频访谈记录场景'),
+    ).toBeTruthy();
+    expect(screen.getByTestId('ai-tag-timeline-marker-segment-opening-question')).toBeTruthy();
+  });
+
   it('dims unrelated paragraphs and hides them on request', () => {
     const screen = render(
       <AnalysisDetailScreen detailId="audio-1" onBack={jest.fn()} />,
