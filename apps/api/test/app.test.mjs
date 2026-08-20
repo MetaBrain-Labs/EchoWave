@@ -62,6 +62,7 @@ describe('API environment', () => {
       DEEPSEEK_API_KEY: 'deepseek-test-key',
       DEEPSEEK_BASE_URL: 'https://api.deepseek.com/',
       DEEPSEEK_CHAT_MODEL: 'deepseek-v4-flash',
+      DEEPSEEK_ENABLE_THINKING: 'false',
       LANGGRAPH_SCHEMA: 'echowave_graph',
       UPLOAD_TEMP_DIR: '.tmp/uploads',
     });
@@ -94,6 +95,7 @@ describe('API environment', () => {
         deepSeekApiKey: 'deepseek-test-key',
         deepSeekBaseUrl: 'https://api.deepseek.com',
         deepSeekChatModel: 'deepseek-v4-flash',
+        enableThinking: false,
         langGraphSchema: 'echowave_graph',
         uploadTempDir: '.tmp/uploads',
       },

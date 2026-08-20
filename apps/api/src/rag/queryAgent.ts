@@ -4,7 +4,7 @@ import { tool } from '@langchain/core/tools';
 import type { BaseCheckpointSaver } from '@langchain/langgraph';
 import { ChatDeepSeek } from '@langchain/deepseek';
 import { createDeepAgent } from 'deepagents';
-import { createMiddleware, modelCallLimitMiddleware, toolCallLimitMiddleware, toolStrategy } from 'langchain';
+import { createMiddleware, modelCallLimitMiddleware, toolCallLimitMiddleware } from 'langchain';
 import { z } from 'zod';
 
 import { RagQueryResponseSchema, type RagQueryResponse } from '@echowave/contracts';
@@ -12,6 +12,7 @@ import { RagQueryResponseSchema, type RagQueryResponse } from '@echowave/contrac
 import type { ApiConfig } from '../env.ts';
 import { OpenRouterEmbeddings } from './openRouterEmbeddings.ts';
 import { RagRepository, type RetrievalChunk } from './repository.ts';
+import { extractFinalMessageText, parseJsonObject } from './structuredOutput.ts';
 
 const AgentResponseSchema = z.object({
   answer: z.string(),
@@ -49,6 +50,8 @@ type QueryAgentOptions = {
   embeddings: OpenRouterEmbeddings;
   ragConfig: ApiConfig['rag'];
   checkpointer: BaseCheckpointSaver;
+  /** Test seam mirroring OpenRouterEmbeddings: overrides the HTTP transport. */
+  fetchImplementation?: typeof fetch;
 };
 
 function usageFromMessages(messages: unknown[]): { inputTokens: number; outputTokens: number } {
@@ -67,6 +70,13 @@ export class KnowledgeQueryAgent {
   private readonly model: ChatDeepSeek;
 
   constructor(private readonly options: QueryAgentOptions) {
+    // DeepSeek V4 models enable thinking by default at the API. EchoWave keeps
+    // thinking OFF unless DEEPSEEK_ENABLE_THINKING is set, so temperature
+    // sampling applies and the API never rejects a forced tool_choice. While
+    // thinking is enabled DeepSeek ignores sampling parameters (temperature).
+    const thinking = options.ragConfig.enableThinking
+      ? { type: 'enabled' }
+      : { type: 'disabled' };
     this.model = new ChatDeepSeek({
       apiKey: options.ragConfig.deepSeekApiKey,
       model: options.ragConfig.deepSeekChatModel,
@@ -74,7 +84,11 @@ export class KnowledgeQueryAgent {
       maxTokens: 1_200,
       maxRetries: 1,
       timeout: 18_000,
-      configuration: { baseURL: options.ragConfig.deepSeekBaseUrl },
+      configuration: {
+        baseURL: options.ragConfig.deepSeekBaseUrl,
+        ...(options.fetchImplementation ? { fetch: options.fetchImplementation } : {}),
+      },
+      modelKwargs: { thinking },
     });
   }
 
@@ -131,7 +145,6 @@ export class KnowledgeQueryAgent {
         toolCallLimitMiddleware({ toolName: 'search_knowledge', runLimit: 2, exitBehavior: 'error' }),
       ],
       permissions: [{ operations: ['read', 'write'], paths: ['/**'], mode: 'deny' }],
-      responseFormat: toolStrategy(AgentResponseSchema, { handleError: false }),
       systemPrompt: [
         'You are EchoWave\'s Chinese knowledge-base question-answering agent.',
         'You must call search_knowledge before answering and may call it at most twice.',
@@ -139,29 +152,49 @@ export class KnowledgeQueryAgent {
         'If evidence is insufficient, set grounded=false, citedChunkIds=[], and clearly say the knowledge base has insufficient evidence.',
         'When grounded=true, every material claim must contain [1], [2], etc. markers corresponding to citedChunkIds order.',
         'Never call filesystem tools. Do not delegate tasks. Do not expose hidden reasoning.',
-        'Return concise Chinese text and only real chunk IDs returned by search_knowledge.',
+        'Return ONLY a single JSON object and nothing else - no markdown fences, no extra text:',
+        '{"answer": "<concise Chinese answer with [1], [2] markers when grounded>", "grounded": true|false, "citedChunkIds": ["<uuid>", ...]}',
+        'Use only real chunk IDs returned by search_knowledge; when evidence is insufficient use grounded=false and an empty citedChunkIds array.',
       ].join('\n'),
     });
 
     const invoke = async (message: string) =>
       agent.invoke(
         { messages: [{ role: 'user', content: message }] },
-        { configurable: { thread_id: conversation.threadId }, recursionLimit: 9, signal: AbortSignal.timeout(20_000) },
+        // Each deepagents middleware hook is a separate graph superstep; a
+        // tool-call round followed by the final answer needs ~16. The
+        // middleware run-limits bound the real work (3 model calls, 2 tool
+        // calls), so 32 leaves headroom without allowing unbounded loops.
+        { configurable: { thread_id: conversation.threadId }, recursionLimit: 32, signal: AbortSignal.timeout(20_000) },
       );
 
     try {
-      let result = await invoke(question);
-      let structured = AgentResponseSchema.parse(result.structuredResponse);
+      const result = await invoke(question);
+      // The agent returns a plain JSON object as its final text (thinking
+      // mode rejects forced tool_choice, so structured output comes from the
+      // prompt-instructed JSON instead of a schema tool call).
+      const { text, reasoning } = extractFinalMessageText(result.messages as unknown[]);
+      const parsed = parseJsonObject(text) ?? parseJsonObject(reasoning);
+      const parsedStructured = parsed === null ? null : AgentResponseSchema.safeParse(parsed);
+      let structured = parsedStructured?.success
+        ? parsedStructured.data
+        : { answer: '知识库中没有足够依据回答这个问题。', grounded: false, citedChunkIds: [] };
       let validIds = structured.citedChunkIds.filter((id) => retrieved.has(id));
       let correctionUsage = { inputTokens: 0, outputTokens: 0 };
       if (validIds.length !== structured.citedChunkIds.length) {
-        const correction = await this.model.withStructuredOutput(AgentResponseSchema, { includeRaw: true }).invoke([
-          ['system', 'Correct citation IDs only. Do not add facts. Return the required structured output.'],
-          ['user', `Previous output: ${JSON.stringify(structured)}\nAllowed IDs: ${JSON.stringify([...retrieved.keys()])}`],
-        ], { signal: AbortSignal.timeout(18_000) });
-        structured = AgentResponseSchema.parse(correction.parsed);
+        // Correction runs in JSON mode: function-calling structured output
+        // would force tool_choice, which thinking mode rejects.
+        const correction = await this.model
+          .withStructuredOutput(AgentResponseSchema, { method: 'jsonMode', includeRaw: true })
+          .invoke([
+            ['system', 'Correct citation IDs only. Do not add facts. Return only the required JSON object with no markdown or extra text.'],
+            ['user', `Previous output: ${JSON.stringify(structured)}\nAllowed IDs: ${JSON.stringify([...retrieved.keys()])}`],
+          ], { signal: AbortSignal.timeout(18_000) });
+        if (correction.parsed) {
+          structured = AgentResponseSchema.parse(correction.parsed);
+          validIds = structured.citedChunkIds.filter((id) => retrieved.has(id));
+        }
         correctionUsage = usageFromMessages([correction.raw]);
-        validIds = structured.citedChunkIds.filter((id) => retrieved.has(id));
         if (validIds.length !== structured.citedChunkIds.length) {
           structured = {
             answer: '知识库中没有足够依据回答这个问题。',
@@ -217,7 +250,7 @@ export class KnowledgeQueryAgent {
         throw new QueryModelError('MODEL_TIMEOUT', '问答模型响应超时，请稍后重试。');
       }
       if (error instanceof QueryModelError) throw error;
-      console.error('Knowledge query failed', { conversationId: conversation.id, knowledgeBaseId });
+      console.error('Knowledge query failed', error, { conversationId: conversation.id, knowledgeBaseId });
       throw new QueryModelError('MODEL_UNAVAILABLE', '问答模型暂时不可用，请稍后重试。');
     }
   }

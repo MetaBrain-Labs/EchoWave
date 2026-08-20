@@ -31,6 +31,7 @@ const EnvironmentSchema = z.object({
   DEEPSEEK_API_KEY: z.string().min(1),
   DEEPSEEK_BASE_URL: z.string().url(),
   DEEPSEEK_CHAT_MODEL: z.literal("deepseek-v4-flash"),
+  DEEPSEEK_ENABLE_THINKING: BooleanStringSchema,
   LANGGRAPH_SCHEMA: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
   UPLOAD_TEMP_DIR: z.string().min(1),
 });
@@ -63,6 +64,7 @@ export type ApiConfig = {
     deepSeekApiKey: string;
     deepSeekBaseUrl: string;
     deepSeekChatModel: 'deepseek-v4-flash';
+    enableThinking: boolean;
     langGraphSchema: string;
     uploadTempDir: string;
   };
@@ -106,6 +108,7 @@ export function readApiConfig(values: Record<string, string | undefined>): ApiCo
       deepSeekApiKey: parsed.DEEPSEEK_API_KEY,
       deepSeekBaseUrl: parsed.DEEPSEEK_BASE_URL.replace(/\/$/, ""),
       deepSeekChatModel: parsed.DEEPSEEK_CHAT_MODEL,
+      enableThinking: parsed.DEEPSEEK_ENABLE_THINKING,
       langGraphSchema: parsed.LANGGRAPH_SCHEMA,
       uploadTempDir: parsed.UPLOAD_TEMP_DIR,
     },
