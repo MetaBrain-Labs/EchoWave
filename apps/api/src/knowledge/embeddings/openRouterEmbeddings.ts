@@ -76,8 +76,14 @@ export class OpenRouterEmbeddings extends Embeddings {
     return vector;
   }
 
-  async embedQueryWithUsage(document: string): Promise<EmbeddingBatchResult> {
-    return this.embedBatch([`${QUERY_INSTRUCTION}\n\nQuestion: ${document}`]);
+  async embedQueryWithUsage(
+    document: string,
+    signal?: AbortSignal,
+  ): Promise<EmbeddingBatchResult> {
+    return this.embedBatch(
+      [`${QUERY_INSTRUCTION}\n\nQuestion: ${document}`],
+      signal,
+    );
   }
 
   async embedBatches(documents: string[]): Promise<EmbeddingBatchResult> {
@@ -101,13 +107,22 @@ export class OpenRouterEmbeddings extends Embeddings {
     };
   }
 
-  private async embedBatch(input: string[]): Promise<EmbeddingBatchResult> {
+  private async embedBatch(
+    input: string[],
+    parentSignal?: AbortSignal,
+  ): Promise<EmbeddingBatchResult> {
     if (input.length === 0 || input.length > MAX_BATCH_SIZE) {
       throw new Error(`Embedding batches must contain 1-${MAX_BATCH_SIZE} inputs.`);
     }
     for (let attempt = 0; attempt < 4; attempt += 1) {
+      if (parentSignal?.aborted) {
+        throw new EmbeddingProviderError('MODEL_TIMEOUT', '嵌入服务请求超时。');
+      }
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 30_000);
+      const signal = parentSignal
+        ? AbortSignal.any([controller.signal, parentSignal])
+        : controller.signal;
       try {
         const response = await this.fetchImplementation('https://openrouter.ai/api/v1/embeddings', {
           method: 'POST',
@@ -123,7 +138,7 @@ export class OpenRouterEmbeddings extends Embeddings {
             dimensions: this.options.dimensions,
             encoding_format: 'float',
           }),
-          signal: controller.signal,
+          signal,
         });
         if (!response.ok) {
           if ((response.status === 429 || response.status >= 500) && attempt < 3) {
@@ -155,7 +170,13 @@ export class OpenRouterEmbeddings extends Embeddings {
           if (error.retryable && attempt < 3) continue;
           throw error;
         }
-        if (error instanceof Error && error.name === 'AbortError') {
+        if (
+          error instanceof Error &&
+          (error.name === 'AbortError' || error.name === 'TimeoutError')
+        ) {
+          if (parentSignal?.aborted) {
+            throw new EmbeddingProviderError('MODEL_TIMEOUT', '嵌入服务请求超时。');
+          }
           if (attempt < 3) continue;
           throw new EmbeddingProviderError('MODEL_TIMEOUT', '嵌入服务请求超时。');
         }

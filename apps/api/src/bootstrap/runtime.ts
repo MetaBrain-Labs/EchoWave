@@ -11,6 +11,7 @@
  */
 import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
 
+import { createAiExecutionReporter } from '../ai-observability/executionReporter.ts';
 import type { ApiConfig } from '../config/env.ts';
 import { createDatabasePool, createPostgresConnectionString } from '../infrastructure/postgres.ts';
 import { createKnowledgeAnswerModule } from '../knowledge/answer/knowledgeAnswer.ts';
@@ -24,6 +25,7 @@ import { DefaultKnowledgeService } from '../knowledge/service.ts';
 
 /** 装配完整 RAG 运行时，并返回服务器所需的应用接口、worker 与关闭函数。 */
 export function createRagRuntime(config: ApiConfig) {
+  const executionReporter = createAiExecutionReporter(config.aiExecutionReports);
   const pool = createDatabasePool(config.database);
   const knowledgeRepository = new KnowledgeRepository(pool, config.database.schema, config.rag.tenantId);
   const ingestionRepository = new IngestionRepository(pool, config.database.schema, config.rag.tenantId);
@@ -44,6 +46,7 @@ export function createRagRuntime(config: ApiConfig) {
     agent: queryAgent,
     checkpointer,
     ragConfig: config.rag,
+    reporter: executionReporter,
   });
   const worker = new IngestionWorker({
     repository: ingestionRepository,
@@ -51,6 +54,7 @@ export function createRagRuntime(config: ApiConfig) {
     embeddingModel: config.rag.embeddingModel,
     uploadTempDirectory: config.rag.uploadTempDir,
     concurrency: 2,
+    reporter: executionReporter,
   });
   const service = new DefaultKnowledgeService(
     knowledgeRepository,

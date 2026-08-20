@@ -126,7 +126,7 @@ export const queryKnowledge = (knowledgeId: string, question: string, conversati
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question, ...(conversationId ? { conversationId } : {}) }),
     },
-    25_000,
+    50_000,
   );
 
 /** 读取当前知识库最近六个已完成问答。 */

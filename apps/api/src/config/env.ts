@@ -1,8 +1,8 @@
 /**
  * API 配置模块。
  *
- * 从唯一的 `.env` 来源读取并校验 HTTP、PostgreSQL、Redis 与 RAG 配置，阻止无效
- * 配置进入运行时组合根。
+ * 从唯一的 `.env` 来源读取并校验 HTTP、PostgreSQL、Redis、RAG 与 AI 诊断配置，
+ * 阻止无效配置进入运行时组合根。
  *
  * Responsibilities:
  * - 定义并验证完整环境变量契约。
@@ -47,6 +47,12 @@ const EnvironmentSchema = z.object({
   DEEPSEEK_ENABLE_THINKING: BooleanStringSchema,
   LANGGRAPH_SCHEMA: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
   UPLOAD_TEMP_DIR: z.string().min(1),
+  AI_EXECUTION_REPORT_ENABLED: BooleanStringSchema,
+  AI_EXECUTION_REPORT_OUTPUT_DIR: z.string().min(1),
+  AI_EXECUTION_REPORT_CONTEXT_ENABLED: BooleanStringSchema,
+  AI_EXECUTION_REPORT_TOOL_CONTENT_ENABLED: BooleanStringSchema,
+  AI_EXECUTION_REPORT_OUTPUT_ENABLED: BooleanStringSchema,
+  AI_EXECUTION_REPORT_REASONING_ENABLED: BooleanStringSchema,
 });
 
 /** API 进程通过校验后可使用的完整运行时配置。 */
@@ -81,6 +87,14 @@ export type ApiConfig = {
     enableThinking: boolean;
     langGraphSchema: string;
     uploadTempDir: string;
+  };
+  aiExecutionReports: {
+    enabled: boolean;
+    outputDirectory: string;
+    includeContext: boolean;
+    includeToolContent: boolean;
+    includeOutput: boolean;
+    includeReasoning: boolean;
   };
 };
 
@@ -126,6 +140,14 @@ export function readApiConfig(values: Record<string, string | undefined>): ApiCo
       enableThinking: parsed.DEEPSEEK_ENABLE_THINKING,
       langGraphSchema: parsed.LANGGRAPH_SCHEMA,
       uploadTempDir: parsed.UPLOAD_TEMP_DIR,
+    },
+    aiExecutionReports: {
+      enabled: parsed.AI_EXECUTION_REPORT_ENABLED,
+      outputDirectory: parsed.AI_EXECUTION_REPORT_OUTPUT_DIR,
+      includeContext: parsed.AI_EXECUTION_REPORT_CONTEXT_ENABLED,
+      includeToolContent: parsed.AI_EXECUTION_REPORT_TOOL_CONTENT_ENABLED,
+      includeOutput: parsed.AI_EXECUTION_REPORT_OUTPUT_ENABLED,
+      includeReasoning: parsed.AI_EXECUTION_REPORT_REASONING_ENABLED,
     },
   };
 }

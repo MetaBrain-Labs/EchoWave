@@ -31,6 +31,12 @@ describe('API environment', () => {
       DEEPSEEK_ENABLE_THINKING: 'false',
       LANGGRAPH_SCHEMA: 'echowave_graph',
       UPLOAD_TEMP_DIR: '.tmp/uploads',
+      AI_EXECUTION_REPORT_ENABLED: 'false',
+      AI_EXECUTION_REPORT_OUTPUT_DIR: '.ai-execution-reports',
+      AI_EXECUTION_REPORT_CONTEXT_ENABLED: 'false',
+      AI_EXECUTION_REPORT_TOOL_CONTENT_ENABLED: 'false',
+      AI_EXECUTION_REPORT_OUTPUT_ENABLED: 'false',
+      AI_EXECUTION_REPORT_REASONING_ENABLED: 'false',
     });
 
     assert.deepEqual(config, {
@@ -65,16 +71,24 @@ describe('API environment', () => {
         langGraphSchema: 'echowave_graph',
         uploadTempDir: '.tmp/uploads',
       },
+      aiExecutionReports: {
+        enabled: false,
+        outputDirectory: '.ai-execution-reports',
+        includeContext: false,
+        includeToolContent: false,
+        includeOutput: false,
+        includeReasoning: false,
+      },
     });
   });
 
   it('rejects invalid boolean values instead of coercing them', () => {
     assert.throws(() => readApiConfig({ POSTGRES_SSL: 'yes' }));
     assert.throws(() => readApiConfig({ REDIS_TLS: '1' }));
+    assert.throws(() => readApiConfig({ AI_EXECUTION_REPORT_ENABLED: '1' }));
   });
 
   it('requires all configuration to be present in the .env input', () => {
     assert.throws(() => readApiConfig({}));
   });
 });
-

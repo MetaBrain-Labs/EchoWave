@@ -20,6 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fontFamilies, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
 import { listQueryHistory, queryKnowledge } from '../apiClient';
 import { AnswerProgressCard } from '../components/AnswerProgressCard';
+import { CitationList } from '../components/CitationList';
 import { PageHeader } from '../components/PageHeader';
 import { QueryHistoryModal } from '../components/QueryHistoryModal';
 
@@ -32,12 +33,6 @@ type Turn = {
   | { status: 'completed'; response: RagQueryResponse }
   | { status: 'failed'; error: string }
 );
-
-function locatorLabel(locator: RagQueryResponse['citations'][number]['locator']) {
-  if (locator.kind === 'spreadsheet') return `${locator.sheet} · 第 ${locator.rowStart}-${locator.rowEnd} 行`;
-  if (locator.kind === 'word') return `${locator.headingPath.join(' / ') || '正文'} · 第 ${locator.paragraphStart}-${locator.paragraphEnd} 段`;
-  return `${locator.headingPath.join(' / ') || '正文'} · 第 ${locator.lineStart}-${locator.lineEnd} 行`;
-}
 
 /** 管理即时发送、动态反馈、只读历史和最终可信回答。 */
 export function KnowledgeQueryScreen({
@@ -194,18 +189,10 @@ export function KnowledgeQueryScreen({
             {turn.status === 'completed' ? (
               <View style={styles.answerCard}>
                 <Text selectable style={styles.answerText}>{turn.response.answer}</Text>
-                {turn.response.citations.map((citation) => (
-                  <Pressable
-                    key={citation.chunkId}
-                    accessibilityRole="link"
-                    onPress={() => onOpenCitation(citation.documentId, citation.chunkId)}
-                    style={({ pressed }) => [styles.citation, pressed && styles.pressed]}
-                  >
-                    <Text style={styles.citationTitle}>[{citation.number}] {citation.documentTitle}</Text>
-                    <Text style={styles.citationMeta}>{locatorLabel(citation.locator)}</Text>
-                    <Text numberOfLines={3} style={styles.citationExcerpt}>{citation.excerpt}</Text>
-                  </Pressable>
-                ))}
+                <CitationList
+                  citations={turn.response.citations}
+                  onOpenCitation={onOpenCitation}
+                />
               </View>
             ) : null}
           </View>
@@ -253,10 +240,6 @@ const styles = StyleSheet.create({
   questionText: { ...typography.body, color: colors.card, fontFamily: fontFamilies.sans },
   answerCard: { alignSelf: 'flex-start', borderColor: colors.divider, borderRadius: radii.default, borderWidth: 1, gap: spacing.sm, maxWidth: '92%', padding: spacing.md },
   answerText: { ...typography.body, color: textColors.primary, fontFamily: fontFamilies.sans },
-  citation: { backgroundColor: colors.background, borderRadius: radii.default, gap: spacing.xs, padding: spacing.sm },
-  citationTitle: { ...typography.description, color: textColors.primary, fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
-  citationMeta: { ...typography.label, color: textColors.secondary, fontFamily: fontFamilies.sans },
-  citationExcerpt: { ...typography.description, color: textColors.secondary, fontFamily: fontFamilies.sans },
   failureCard: { alignSelf: 'flex-start', backgroundColor: '#fff4f2', borderColor: '#fecdca', borderRadius: radii.default, borderWidth: 1, gap: spacing.sm, maxWidth: '92%', padding: spacing.md },
   failureTitleRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
   failureTitle: { ...typography.heading5, color: '#b42318', fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },

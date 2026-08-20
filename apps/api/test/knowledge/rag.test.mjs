@@ -49,6 +49,30 @@ describe('OpenRouter embeddings adapter', () => {
     assert.deepEqual(batchSizes, [64, 1]);
     assert.equal(result.vectors.length, 65);
   });
+
+  it('stops query embedding retries when the parent answer signal aborts', async () => {
+    const controller = new AbortController();
+    let calls = 0;
+    const embeddings = new OpenRouterEmbeddings({
+      apiKey: 'secret',
+      model: 'qwen/qwen3-embedding-8b',
+      dimensions: 1024,
+      fetchImplementation: async (_url, init) => {
+        calls += 1;
+        return new Promise((_resolve, reject) => {
+          init.signal.addEventListener('abort', () => {
+            reject(new DOMException('aborted', 'AbortError'));
+          });
+        });
+      },
+    });
+
+    const request = embeddings.embedQueryWithUsage('产品机会是什么？', controller.signal);
+    controller.abort(new DOMException('answer timed out', 'TimeoutError'));
+
+    await assert.rejects(request, (error) => error.code === 'MODEL_TIMEOUT');
+    assert.equal(calls, 1);
+  });
 });
 
 describe('upload validation', () => {

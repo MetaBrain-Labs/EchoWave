@@ -5,12 +5,13 @@ import {
   KnowledgeAnswerError,
   createKnowledgeAnswerModule,
 } from '../../../dist/knowledge/answer/knowledgeAnswer.js';
+import { EmbeddingProviderError } from '../../../dist/knowledge/embeddings/openRouterEmbeddings.js';
 
 const knowledgeBaseId = '11111111-1111-4111-8111-111111111111';
 const conversationId = '22222222-2222-4222-8222-222222222222';
 const chunkId = '33333333-3333-4333-8333-333333333333';
 
-function createHarness({ agentOverrides = {}, repositoryOverrides = {}, expired = [] } = {}) {
+function createHarness({ agentOverrides = {}, createAbortSignal, embeddingOverrides = {}, repositoryOverrides = {}, expired = [], reporter } = {}) {
   const events = [];
   let cleanupTask;
   let cancelled = false;
@@ -46,7 +47,14 @@ function createHarness({ agentOverrides = {}, repositoryOverrides = {}, expired 
     ...repositoryOverrides,
   };
   const embeddings = {
-    embedQueryWithUsage: async () => ({ vectors: [Array(1024).fill(0.1)], tokens: 7 }),
+    embedQueryWithUsage: async () => ({
+      vectors: [Array(1024).fill(0.1)],
+      tokens: 7,
+      provider: 'test-provider',
+      model: 'qwen/qwen3-embedding-8b',
+      estimatedCostUsd: 0.00000007,
+    }),
+    ...embeddingOverrides,
   };
   const agent = {
     generate: async (input) => {
@@ -85,6 +93,8 @@ function createHarness({ agentOverrides = {}, repositoryOverrides = {}, expired 
       };
     },
     now: () => 100,
+    reporter,
+    createAbortSignal,
   });
   return {
     answers,
@@ -95,6 +105,59 @@ function createHarness({ agentOverrides = {}, repositoryOverrides = {}, expired 
 }
 
 describe('trusted knowledge answer module', () => {
+  it('uses a forty-five second total answer signal', async () => {
+    const timeouts = [];
+    const controller = new AbortController();
+    const { answers } = createHarness({
+      createAbortSignal: (timeoutMs) => {
+        timeouts.push(timeoutMs);
+        return controller.signal;
+      },
+    });
+
+    await answers.answer({
+      knowledgeBaseId,
+      request: { question: '答案是什么？' },
+    });
+
+    assert.deepEqual(timeouts, [45_000]);
+  });
+
+  it('records the trusted answer lifecycle without changing the response', async () => {
+    const recorded = { start: undefined, metadata: [], steps: [], models: [], tools: [], outputs: [], finishes: [] };
+    const reporter = {
+      start: (input) => {
+        recorded.start = input;
+        return {
+          recordMetadata: (value) => recorded.metadata.push(value),
+          recordStep: (value) => recorded.steps.push(value),
+          recordModelCall: (value) => recorded.models.push(value),
+          recordToolCall: (value) => recorded.tools.push(value),
+          recordContext: () => undefined,
+          recordReasoning: () => undefined,
+          recordOutput: (value) => recorded.outputs.push(value),
+          finish: async (value) => recorded.finishes.push(value),
+        };
+      },
+    };
+    const { answers } = createHarness({ reporter });
+
+    const response = await answers.answer({
+      knowledgeBaseId,
+      request: { question: '答案是什么？' },
+    });
+
+    assert.equal(response.grounded, true);
+    assert.equal(recorded.start.kind, 'rag-answer');
+    assert.ok(recorded.metadata.some((value) => value.ragRunId === 'run-1'));
+    assert.ok(recorded.steps.some((event) => event.name === 'citation-validation'));
+    assert.deepEqual(recorded.models.map((event) => event.name), ['query-embedding']);
+    assert.equal(recorded.tools[0].summary.hitCount, 1);
+    assert.equal(recorded.outputs[0].conversationId, conversationId);
+    assert.equal(recorded.finishes[0].status, 'completed');
+    assert.equal(recorded.finishes[0].metadata.citationCount, 1);
+  });
+
   it('completes the audit before returning a grounded response', async () => {
     const { answers, events } = createHarness();
 
@@ -168,6 +231,50 @@ describe('trusted knowledge answer module', () => {
     assert.deepEqual(response.citations, []);
     assert.equal(correctionCalls, 0);
     assert.equal(events.at(-1)[0], 'complete');
+  });
+
+  it('appends the stable limit notice to an ungrounded answer', async () => {
+    const notice = '提示：本轮检索已达到上限，回答仅基于当前已检索到的内容，证据可能不完整。';
+    const { answers, events } = createHarness({
+      agentOverrides: {
+        generate: async () => ({
+          candidate: {
+            answer: '知识库中没有足够依据回答这个问题。',
+            grounded: false,
+            citedChunkIds: [],
+          },
+          usage: { inputTokens: 2, outputTokens: 3 },
+          retrievalLimited: true,
+          blockedRetrievalCalls: 1,
+        }),
+      },
+    });
+
+    const response = await answers.answer({
+      knowledgeBaseId,
+      request: { question: '没有依据的问题？' },
+    });
+
+    assert.equal(response.grounded, false);
+    assert.deepEqual(response.citations, []);
+    assert.match(response.answer, new RegExp(`${notice}$`));
+    assert.equal(response.answer.match(new RegExp(notice, 'g')).length, 1);
+    assert.equal(events.at(-1)[1].answer, response.answer);
+  });
+
+  it('maps an aborted query embedding to the stable timeout error', async () => {
+    const { answers } = createHarness({
+      embeddingOverrides: {
+        embedQueryWithUsage: async () => {
+          throw new EmbeddingProviderError('MODEL_TIMEOUT', '嵌入服务请求超时。');
+        },
+      },
+    });
+
+    await assert.rejects(
+      answers.answer({ knowledgeBaseId, request: { question: '答案是什么？' } }),
+      (error) => error instanceof KnowledgeAnswerError && error.code === 'MODEL_TIMEOUT',
+    );
   });
 
   it('preserves a timeout when the secondary failure audit also fails', async () => {

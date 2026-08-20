@@ -18,6 +18,7 @@ apps/
   api/
     src/
       bootstrap/       服务启动、运行时装配与显式迁移入口
+      ai-observability/ AI 执行报告与安全诊断记录
       config/          环境配置解析
       infrastructure/ PostgreSQL 连接设施
       http/            Hono 应用与传输层错误映射
@@ -78,6 +79,21 @@ EXPO_PUBLIC_API_URL=http://localhost:3001
 `EXPO_PUBLIC_*` 会被写入客户端 bundle，不得放置密码、令牌或其他秘密。修改该文件后，需要在 Expo Go 中执行完整 Reload 才能确认新值已生效。详见 [Expo 环境变量文档](https://docs.expo.dev/guides/environment-variables/)。
 
 API 的 PostgreSQL 配置使用 `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_USER` 等分字段变量。RAG 还要求 OpenRouter、DeepSeek、固定开发租户与临时上传目录配置，字段清单见 `apps/api/.env.example`。Redis 字段仍仅作未来边界预留。
+
+### 可选 AI 执行报告
+
+知识问答和文档入库支持类似 `meta-pm-agent` 的本地 Markdown 执行摘要。它用于开发与测试诊断，不是单元测试覆盖率或 CI 测试结果。报告默认关闭；需要时在 `apps/api/.env` 设置：
+
+```dotenv
+AI_EXECUTION_REPORT_ENABLED="true"
+AI_EXECUTION_REPORT_OUTPUT_DIR=".ai-execution-reports"
+AI_EXECUTION_REPORT_CONTEXT_ENABLED="false"
+AI_EXECUTION_REPORT_TOOL_CONTENT_ENABLED="false"
+AI_EXECUTION_REPORT_OUTPUT_ENABLED="false"
+AI_EXECUTION_REPORT_REASONING_ENABLED="false"
+```
+
+每次执行结束后会写入 `.ai-execution-reports/YYYY-MM-DD/`。安全默认模式只记录步骤、耗时、模型/provider、Token、费用、引用/分块统计和业务关联 ID；问题、提示词、知识正文、模型输出与 reasoning 必须分别显式开启。即使开启全部章节，也不会记录 API Key、密码、Authorization、Cookie、数据库连接字符串或向量。报告目录已被 Git 忽略且不会自动清理，避免后台任务误删诊断证据。
 
 首次启动前显式执行迁移；普通 API 启动不会修改数据库 schema：
 
@@ -180,6 +196,7 @@ pnpm check
 - Markdown、DOCX、XLSX 单文件上传、异步解析、分块、嵌入与状态轮询
 - PostgreSQL 租户隔离、revision 原子发布、HNSW 检索和引用回溯
 - DeepSeek + DeepAgents 知识问答、无证据拒答与短会话 checkpoint
+- 可选的知识问答与入库 Markdown 执行诊断报告
 - 移动端知识库列表、文档/块详情、上传、动态问答反馈、最近六轮只读历史和可返回聊天的引用跳转
 - 更多页中的 API 加载、在线、离线、超时和重试状态
 - `GET /api/hello` HelloWorld 接口及共享 Zod 契约
