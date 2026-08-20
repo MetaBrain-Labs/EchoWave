@@ -50,9 +50,13 @@ export {
 } from './knowledgeBase.ts';
 export {
   RagCitationSchema,
+  RagHistoryItemSchema,
+  RagHistoryResponseSchema,
   RagQueryRequestSchema,
   RagQueryResponseSchema,
   RagUsageSchema,
+  type RagHistoryItem,
+  type RagHistoryResponse,
   type RagQueryRequest,
   type RagQueryResponse,
 } from './rag.ts';

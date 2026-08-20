@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   KnowledgeBaseCreateRequestSchema,
+  RagHistoryResponseSchema,
   RagQueryResponseSchema,
   SourceLocatorSchema,
 } from '../../dist/index.js';
@@ -52,5 +53,28 @@ describe('knowledge contracts', () => {
     });
 
     assert.equal(result.citations.length, 1);
+  });
+
+  it('validates at most six read-only completed history items', () => {
+    const id = '00000000-0000-4000-8000-000000000001';
+    const history = RagHistoryResponseSchema.parse({
+      items: [{
+        id,
+        conversationId: id,
+        question: '结论是什么？',
+        answer: '结论来自资料。',
+        grounded: true,
+        citationCount: 2,
+        createdAt: '2026-08-20T12:00:00.000Z',
+      }],
+    });
+
+    assert.equal(history.items[0].citationCount, 2);
+    assert.throws(() => RagHistoryResponseSchema.parse({
+      items: [{ ...history.items[0], citationCount: -1 }],
+    }));
+    assert.throws(() => RagHistoryResponseSchema.parse({
+      items: Array.from({ length: 7 }, () => history.items[0]),
+    }));
   });
 });

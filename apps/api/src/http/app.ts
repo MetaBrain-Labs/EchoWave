@@ -121,6 +121,9 @@ export function createApp(
         id(context.req.param('chunkId')),
       )),
     );
+    app.get('/api/knowledge-bases/:knowledgeBaseId/query-history', async (context) =>
+      context.json(await service.listQueryHistory(id(context.req.param('knowledgeBaseId')))),
+    );
     app.post('/api/knowledge-bases/:knowledgeBaseId/query', async (context) => {
       const input = RagQueryRequestSchema.parse(await context.req.json());
       return context.json(await service.query(id(context.req.param('knowledgeBaseId')), input));

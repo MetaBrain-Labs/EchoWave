@@ -28,7 +28,7 @@ function locatorText(chunk: DocumentChunk) {
 }
 
 /** 加载并展示指定文档块及其相邻块导航。 */
-export function BlockDetailScreen({ blockId, documentId, knowledgeId, onBack, onNavigateBlock }: {
+export function BlockDetailScreen({ blockId, documentId, knowledgeId, onBack, onLocateOriginal, onNavigateBlock }: {
   blockId: string;
   documentId: string;
   knowledgeId: string;
@@ -59,7 +59,17 @@ export function BlockDetailScreen({ blockId, documentId, knowledgeId, onBack, on
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.metrics}><Metric label="块序号" value={`${block.index}/${document.chunks.length}`} /><Metric label="字符数" value={block.charCount} /><Metric label="向量 ID" value={block.vectorId.slice(0, 8)} /></View>
         <Text style={styles.sectionTitle}>来源定位</Text>
-        <Text style={styles.locator}>{locatorText(block)}</Text>
+        <View style={styles.locatorRow}>
+          <Text style={styles.locator}>{locatorText(block)}</Text>
+          <Pressable
+            accessibilityLabel="在文档原文中定位"
+            accessibilityRole="button"
+            onPress={() => onLocateOriginal(block.id)}
+            style={({ pressed }) => [styles.locateButton, pressed && styles.pressed]}
+          >
+            <Text style={styles.locateButtonText}>查看原文</Text>
+          </Pressable>
+        </View>
         <View style={styles.highlight}><Text selectable style={styles.body}>{block.content}</Text></View>
         <View style={styles.pagination}>
           <Pressable disabled={!previous} onPress={() => previous && onNavigateBlock(previous.id)} style={styles.button}><Text style={styles.buttonText}>上一块</Text></Pressable>
@@ -78,9 +88,13 @@ const styles = StyleSheet.create({
   meta: { ...typography.description, color: textColors.secondary, fontFamily: fontFamilies.sans },
   sectionTitle: { ...typography.heading1, color: textColors.primary, fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
   locator: { ...typography.body, color: textColors.secondary, fontFamily: fontFamilies.sans },
+  locatorRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm, justifyContent: 'space-between' },
+  locateButton: { borderColor: colors.divider, borderRadius: radii.default, borderWidth: 1, minHeight: 40, paddingHorizontal: spacing.sm, justifyContent: 'center' },
+  locateButtonText: { ...typography.description, color: textColors.primary, fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
   highlight: { backgroundColor: '#fff9d9', borderColor: colors.ink, borderRadius: radii.default, borderWidth: 1, padding: spacing.md },
   body: { ...typography.body, color: textColors.primary, fontFamily: fontFamilies.sans },
   pagination: { flexDirection: 'row', justifyContent: 'space-between' },
   button: { borderColor: colors.divider, borderRadius: radii.default, borderWidth: 1, minHeight: 44, paddingHorizontal: spacing.md, justifyContent: 'center' },
   buttonText: { ...typography.body, color: textColors.primary, fontFamily: fontFamilies.sans },
+  pressed: { opacity: 0.72 },
 });

@@ -24,18 +24,24 @@ export default function DocumentDetailRoute() {
     block?: string | string[];
     fileId?: string | string[];
     knowledgeId?: string | string[];
+    returnTo?: string | string[];
     tab?: string | string[];
   }>();
   const knowledgeId = firstRouteParam(params.knowledgeId);
   const documentId = firstRouteParam(params.fileId);
   const blockId = firstRouteParam(params.block);
   const initialTab = firstRouteParam(params.tab) === 'original' ? 'original' : 'parsed';
+  const returnsToQuery = firstRouteParam(params.returnTo) === 'knowledge-query';
   const goBack = () => {
     void runWithLoading(() => {
-      router.replace({
-        pathname: '/knowledge/[knowledgeId]',
-        params: { knowledgeId },
-      });
+      if (returnsToQuery && router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace({
+          pathname: '/knowledge/[knowledgeId]',
+          params: { knowledgeId },
+        });
+      }
     });
   };
 
@@ -54,6 +60,7 @@ export default function DocumentDetailRoute() {
               blockId: nextBlockId,
               fileId: documentId,
               knowledgeId,
+              ...(returnsToQuery ? { returnTo: 'knowledge-query' } : {}),
             },
           }),
         );

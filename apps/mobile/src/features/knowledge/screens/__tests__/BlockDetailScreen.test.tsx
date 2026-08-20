@@ -22,8 +22,11 @@ describe('BlockDetailScreen', () => {
 
   it('shows a real source locator and navigates adjacent chunks', async () => {
     const onNavigateBlock = jest.fn();
-    const screen = render(<BlockDetailScreen blockId={document.chunks[0]!.id} documentId={document.id} knowledgeId={knowledge.id} onBack={jest.fn()} onLocateOriginal={jest.fn()} onNavigateBlock={onNavigateBlock} />);
+    const onLocateOriginal = jest.fn();
+    const screen = render(<BlockDetailScreen blockId={document.chunks[0]!.id} documentId={document.id} knowledgeId={knowledge.id} onBack={jest.fn()} onLocateOriginal={onLocateOriginal} onNavigateBlock={onNavigateBlock} />);
     expect(await screen.findByText('研究背景，第 3-5 行')).toBeTruthy();
+    fireEvent.press(screen.getByText('查看原文'));
+    expect(onLocateOriginal).toHaveBeenCalledWith(document.chunks[0]?.id);
     fireEvent.press(screen.getByText('下一块'));
     expect(onNavigateBlock).toHaveBeenCalledWith(document.chunks[1]?.id);
   });

@@ -22,6 +22,7 @@ import {
   KnowledgeBaseListResponseSchema,
   KnowledgeDocumentDetailSchema,
   KnowledgeDocumentListResponseSchema,
+  RagHistoryResponseSchema,
   RagQueryResponseSchema,
 } from '@echowave/contracts';
 
@@ -126,4 +127,11 @@ export const queryKnowledge = (knowledgeId: string, question: string, conversati
       body: JSON.stringify({ question, ...(conversationId ? { conversationId } : {}) }),
     },
     25_000,
+  );
+
+/** 读取当前知识库最近六个已完成问答。 */
+export const listQueryHistory = (knowledgeId: string) =>
+  request(
+    `/api/knowledge-bases/${knowledgeId}/query-history`,
+    RagHistoryResponseSchema,
   );

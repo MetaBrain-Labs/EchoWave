@@ -35,7 +35,27 @@ export const RagQueryResponseSchema = z.object({
   citations: z.array(RagCitationSchema), usage: RagUsageSchema,
 });
 
+/** 最近一次已完成问答的只读历史记录 schema。 */
+export const RagHistoryItemSchema = z.object({
+  id: EntityIdSchema,
+  conversationId: EntityIdSchema,
+  question: z.string().min(1),
+  answer: z.string(),
+  grounded: z.boolean(),
+  citationCount: z.number().int().nonnegative(),
+  createdAt: z.string().datetime(),
+});
+
+/** 当前知识库最近六个已完成问答的响应 schema。 */
+export const RagHistoryResponseSchema = z.object({
+  items: z.array(RagHistoryItemSchema).max(6),
+});
+
 /** 可信问答请求类型。 */
 export type RagQueryRequest = z.infer<typeof RagQueryRequestSchema>;
 /** 可信问答最终响应类型。 */
 export type RagQueryResponse = z.infer<typeof RagQueryResponseSchema>;
+/** 最近一次已完成问答的只读历史记录。 */
+export type RagHistoryItem = z.infer<typeof RagHistoryItemSchema>;
+/** 当前知识库最近问答响应。 */
+export type RagHistoryResponse = z.infer<typeof RagHistoryResponseSchema>;

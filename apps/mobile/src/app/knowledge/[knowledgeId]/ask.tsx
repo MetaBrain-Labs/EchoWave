@@ -26,7 +26,12 @@ export default function KnowledgeQueryRoute() {
       onBack={() => router.replace({ pathname: '/knowledge/[knowledgeId]', params: { knowledgeId } })}
       onOpenCitation={(documentId, chunkId) => router.push({
         pathname: '/knowledge/[knowledgeId]/files/[fileId]/blocks/[blockId]',
-        params: { knowledgeId, fileId: documentId, blockId: chunkId },
+        params: {
+          knowledgeId,
+          fileId: documentId,
+          blockId: chunkId,
+          returnTo: 'knowledge-query',
+        },
       })}
     />
   );

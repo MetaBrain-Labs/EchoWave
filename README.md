@@ -180,7 +180,7 @@ pnpm check
 - Markdown、DOCX、XLSX 单文件上传、异步解析、分块、嵌入与状态轮询
 - PostgreSQL 租户隔离、revision 原子发布、HNSW 检索和引用回溯
 - DeepSeek + DeepAgents 知识问答、无证据拒答与短会话 checkpoint
-- 移动端知识库列表、文档/块详情、上传、问答和引用跳转
+- 移动端知识库列表、文档/块详情、上传、动态问答反馈、最近六轮只读历史和可返回聊天的引用跳转
 - 更多页中的 API 加载、在线、离线、超时和重试状态
 - `GET /api/hello` HelloWorld 接口及共享 Zod 契约
 

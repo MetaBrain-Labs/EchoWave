@@ -55,6 +55,7 @@ export function createRagRuntime(config: ApiConfig) {
   const service = new DefaultKnowledgeService(
     knowledgeRepository,
     ingestionRepository,
+    conversationRepository,
     answers,
     config.rag.uploadTempDir,
     config.rag.embeddingModel,

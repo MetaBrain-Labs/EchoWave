@@ -12,6 +12,7 @@
  * - checkpoint 必须由可信回答模块先删除。
  */
 import { quoteIdentifier, type DatabasePool } from '../../infrastructure/postgres.ts';
+import { RagHistoryResponseSchema, type RagHistoryResponse } from '@echowave/contracts';
 
 import { RagRepositoryError } from './errors.ts';
 
@@ -29,6 +30,33 @@ export class ConversationRepository {
 
   private table(name: string): string {
     return `${this.schema}.${quoteIdentifier(name)}`;
+  }
+
+  /** 返回当前知识库最近六个已完成问答，不暴露运行中或失败审计记录。 */
+  async listRecentRuns(knowledgeBaseId: string): Promise<RagHistoryResponse> {
+    const result = await this.pool.query(
+      `SELECT id, conversation_id, question, answer, grounded,
+              jsonb_array_length(cited_chunk_ids) AS citation_count, created_at
+       FROM ${this.table('rag_runs')}
+       WHERE tenant_id = $1 AND knowledge_base_id = $2
+         AND status = 'completed' AND answer IS NOT NULL
+       ORDER BY created_at DESC
+       LIMIT 6`,
+      [this.tenantId, knowledgeBaseId],
+    );
+    return RagHistoryResponseSchema.parse({
+      items: result.rows.map((row) => ({
+        id: row.id,
+        conversationId: row.conversation_id,
+        question: row.question,
+        answer: row.answer,
+        grounded: row.grounded,
+        citationCount: Number(row.citation_count),
+        createdAt: row.created_at instanceof Date
+          ? row.created_at.toISOString()
+          : String(row.created_at),
+      })),
+    });
   }
 
   /** 复用同租户、同知识库且未过期的会话并续期；否则为有效知识库创建新会话。 */
@@ -115,4 +143,3 @@ export class ConversationRepository {
     );
   }
 }
-

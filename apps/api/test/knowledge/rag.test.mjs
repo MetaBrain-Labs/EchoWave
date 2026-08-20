@@ -52,7 +52,7 @@ describe('OpenRouter embeddings adapter', () => {
 });
 
 describe('upload validation', () => {
-  const service = new DefaultKnowledgeService({}, {}, {}, '.tmp/uploads-test', 'qwen/qwen3-embedding-8b');
+  const service = new DefaultKnowledgeService({}, {}, {}, {}, '.tmp/uploads-test', 'qwen/qwen3-embedding-8b');
 
   it('rejects legacy and macro-capable formats before persistence', async () => {
     await assert.rejects(
@@ -98,5 +98,26 @@ describe('knowledge API contracts', () => {
     const response = await app.request('/api/knowledge-bases/not-a-uuid/documents');
     assert.equal(response.status, 400);
     assert.equal((await response.json()).error.code, 'BAD_REQUEST');
+  });
+
+  it('returns recent completed query history through the injected service boundary', async () => {
+    const service = {
+      listQueryHistory: async () => ({
+        items: [{
+          id: kbId,
+          conversationId,
+          question: '最近的问题',
+          answer: '最近的回答',
+          grounded: true,
+          citationCount: 1,
+          createdAt: '2026-08-20T12:00:00.000Z',
+        }],
+      }),
+    };
+    const app = createApp({ corsOrigins: [] }, { knowledgeService: service });
+    const response = await app.request(`/api/knowledge-bases/${kbId}/query-history`);
+
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).items[0].question, '最近的问题');
   });
 });

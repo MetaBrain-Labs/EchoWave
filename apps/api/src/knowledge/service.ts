@@ -26,6 +26,7 @@ import {
 import type { KnowledgeAnswerModule } from "./answer/knowledgeAnswer.ts";
 import type { IngestionRepository } from "./persistence/ingestionRepository.ts";
 import type { KnowledgeRepository } from "./persistence/knowledgeRepository.ts";
+import type { ConversationRepository } from "./persistence/conversationRepository.ts";
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
@@ -82,6 +83,9 @@ export type KnowledgeService = {
     documentId: string,
     chunkId: string,
   ): ReturnType<KnowledgeRepository["getChunk"]>;
+  listQueryHistory(
+    knowledgeBaseId: string,
+  ): ReturnType<ConversationRepository["listRecentRuns"]>;
   query(
     knowledgeBaseId: string,
     input: RagQueryRequest,
@@ -140,6 +144,7 @@ export class DefaultKnowledgeService implements KnowledgeService {
   constructor(
     private readonly repository: KnowledgeRepository,
     private readonly ingestionRepository: IngestionRepository,
+    private readonly conversationRepository: ConversationRepository,
     private readonly answers: Pick<KnowledgeAnswerModule, "answer">,
     private readonly uploadTempDirectory: string,
     private readonly embeddingModel: string,
@@ -177,6 +182,9 @@ export class DefaultKnowledgeService implements KnowledgeService {
   }
   getChunk(knowledgeBaseId: string, documentId: string, chunkId: string) {
     return this.repository.getChunk(knowledgeBaseId, documentId, chunkId);
+  }
+  listQueryHistory(knowledgeBaseId: string) {
+    return this.conversationRepository.listRecentRuns(knowledgeBaseId);
   }
   query(knowledgeBaseId: string, input: RagQueryRequest) {
     return this.answers.answer({ knowledgeBaseId, request: input });

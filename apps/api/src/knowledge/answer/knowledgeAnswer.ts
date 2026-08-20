@@ -19,16 +19,19 @@ import {
   RagQueryResponseSchema,
   type RagQueryRequest,
   type RagQueryResponse,
-} from '@echowave/contracts';
+} from "@echowave/contracts";
 
-import type { ApiConfig } from '../../config/env.ts';
-import type { OpenRouterEmbeddings } from '../embeddings/openRouterEmbeddings.ts';
-import type { ConversationRepository } from '../persistence/conversationRepository.ts';
-import { RagRepositoryError } from '../persistence/errors.ts';
-import type { KnowledgeRepository, RetrievalChunk } from '../persistence/knowledgeRepository.ts';
-import type { DeepSeekQueryAgent } from './deepSeekQueryAgent.ts';
+import type { ApiConfig } from "../../config/env.ts";
+import type { OpenRouterEmbeddings } from "../embeddings/openRouterEmbeddings.ts";
+import type { ConversationRepository } from "../persistence/conversationRepository.ts";
+import { RagRepositoryError } from "../persistence/errors.ts";
+import type {
+  KnowledgeRepository,
+  RetrievalChunk,
+} from "../persistence/knowledgeRepository.ts";
+import type { DeepSeekQueryAgent } from "./deepSeekQueryAgent.ts";
 
-const INSUFFICIENT_EVIDENCE = '知识库中没有足够依据回答这个问题。';
+const INSUFFICIENT_EVIDENCE = "知识库中没有足够依据回答这个问题。";
 const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1_000;
 
 /** 调用可信回答模块所需的最小命令。 */
@@ -46,28 +49,34 @@ export type KnowledgeAnswerModule = {
 /** 可由 Hono 稳定映射的模型侧错误。 */
 export class KnowledgeAnswerError extends Error {
   constructor(
-    public readonly code: 'MODEL_TIMEOUT' | 'MODEL_UNAVAILABLE',
+    public readonly code: "MODEL_TIMEOUT" | "MODEL_UNAVAILABLE",
     message: string,
   ) {
     super(message);
-    this.name = 'KnowledgeAnswerError';
+    this.name = "KnowledgeAnswerError";
   }
 }
 
-type KnowledgeAnswerEmbeddings = Pick<OpenRouterEmbeddings, 'embedQueryWithUsage'>;
-type KnowledgeAnswerAgent = Pick<DeepSeekQueryAgent, 'generate' | 'correctCitations'>;
+type KnowledgeAnswerEmbeddings = Pick<
+  OpenRouterEmbeddings,
+  "embedQueryWithUsage"
+>;
+type KnowledgeAnswerAgent = Pick<
+  DeepSeekQueryAgent,
+  "generate" | "correctCitations"
+>;
 type KnowledgeAnswerCheckpointer = {
   deleteThread(threadId: string): Promise<void>;
 };
 type ScheduleCleanup = (task: () => void, intervalMs: number) => () => void;
 
 type KnowledgeAnswerOptions = {
-  knowledgeRepository: Pick<KnowledgeRepository, 'search'>;
+  knowledgeRepository: Pick<KnowledgeRepository, "search">;
   conversationRepository: ConversationRepository;
   embeddings: KnowledgeAnswerEmbeddings;
   agent: KnowledgeAnswerAgent;
   checkpointer: KnowledgeAnswerCheckpointer;
-  ragConfig: Pick<ApiConfig['rag'], 'embeddingModel' | 'deepSeekChatModel'>;
+  ragConfig: Pick<ApiConfig["rag"], "embeddingModel" | "deepSeekChatModel">;
   scheduleCleanup?: ScheduleCleanup;
   now?: () => number;
 };
@@ -79,13 +88,18 @@ const scheduleCleanup: ScheduleCleanup = (task, intervalMs) => {
 };
 
 function isTimeout(error: unknown): boolean {
-  return error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
+  return (
+    error instanceof Error &&
+    (error.name === "TimeoutError" || error.name === "AbortError")
+  );
 }
 
 /**
  * 创建拥有回答执行与会话清理生命周期的深模块。
  */
-export function createKnowledgeAnswerModule(options: KnowledgeAnswerOptions): KnowledgeAnswerModule {
+export function createKnowledgeAnswerModule(
+  options: KnowledgeAnswerOptions,
+): KnowledgeAnswerModule {
   return new DefaultKnowledgeAnswerModule(options);
 }
 
@@ -107,21 +121,22 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
    * 执行一次完整问答；只有最终响应已通过引用校验并完成审计后才向调用方返回。
    */
   async answer(command: KnowledgeAnswerCommand): Promise<RagQueryResponse> {
-    if (this.disposed) throw new Error('Knowledge answer module is disposed.');
+    if (this.disposed) throw new Error("Knowledge answer module is disposed.");
 
     const request = RagQueryRequestSchema.parse(command.request);
     const startedAt = (this.options.now ?? Date.now)();
-    const conversation = await this.options.conversationRepository.getOrCreateConversation(
-      command.knowledgeBaseId,
-      request.conversationId,
-    );
+    const conversation =
+      await this.options.conversationRepository.getOrCreateConversation(
+        command.knowledgeBaseId,
+        request.conversationId,
+      );
     const runId = await this.options.conversationRepository.beginRun({
       knowledgeBaseId: command.knowledgeBaseId,
       conversationId: conversation.id,
       question: request.question,
       embeddingModel: this.options.ragConfig.embeddingModel,
       chatModel: this.options.ragConfig.deepSeekChatModel,
-      chatProvider: 'deepseek',
+      chatProvider: "deepseek",
     });
     const retrieved = new Map<string, RetrievalChunk>();
     let retrievalCalls = 0;
@@ -136,9 +151,13 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         searchKnowledge: async (query) => {
           retrievalCalls += 1;
           if (retrievalCalls > 2) {
-            return { error: 'The retrieval limit for this answer has been reached.', chunks: [] };
+            return {
+              error: "The retrieval limit for this answer has been reached.",
+              chunks: [],
+            };
           }
-          const embedded = await this.options.embeddings.embedQueryWithUsage(query);
+          const embedded =
+            await this.options.embeddings.embedQueryWithUsage(query);
           embeddingTokens += embedded.tokens;
           const chunks = await this.options.knowledgeRepository.search(
             command.knowledgeBaseId,
@@ -177,13 +196,18 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         validIds.length === 0 ||
         validIds.length !== candidate.citedChunkIds.length
       ) {
-        candidate = { answer: INSUFFICIENT_EVIDENCE, grounded: false, citedChunkIds: [] };
+        candidate = {
+          answer: INSUFFICIENT_EVIDENCE,
+          grounded: false,
+          citedChunkIds: [],
+        };
         validIds = [];
       }
 
       const usage = {
         inputTokens: generated.usage.inputTokens + correctionUsage.inputTokens,
-        outputTokens: generated.usage.outputTokens + correctionUsage.outputTokens,
+        outputTokens:
+          generated.usage.outputTokens + correctionUsage.outputTokens,
       };
       const response = RagQueryResponseSchema.parse({
         conversationId: conversation.id,
@@ -191,7 +215,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         grounded: candidate.grounded,
         citations: validIds.map((id, index) => {
           const chunk = retrieved.get(id);
-          if (!chunk) throw new Error('Validated citation disappeared.');
+          if (!chunk) throw new Error("Validated citation disappeared.");
           return {
             number: index + 1,
             documentId: chunk.documentId,
@@ -219,14 +243,24 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         .failRun(runId, (this.options.now ?? Date.now)() - startedAt)
         .catch(() => undefined);
       if (isTimeout(error)) {
-        throw new KnowledgeAnswerError('MODEL_TIMEOUT', '问答模型响应超时，请稍后重试。');
+        throw new KnowledgeAnswerError(
+          "MODEL_TIMEOUT",
+          "问答模型响应超时，请稍后重试。",
+        );
       }
-      if (error instanceof KnowledgeAnswerError || error instanceof RagRepositoryError) throw error;
-      console.error('Knowledge answer failed', error, {
+      if (
+        error instanceof KnowledgeAnswerError ||
+        error instanceof RagRepositoryError
+      )
+        throw error;
+      console.error("Knowledge answer failed", error, {
         conversationId: conversation.id,
         knowledgeBaseId: command.knowledgeBaseId,
       });
-      throw new KnowledgeAnswerError('MODEL_UNAVAILABLE', '问答模型暂时不可用，请稍后重试。');
+      throw new KnowledgeAnswerError(
+        "MODEL_UNAVAILABLE",
+        "问答模型暂时不可用，请稍后重试。",
+      );
     }
   }
 
@@ -243,9 +277,11 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
 
   private runCleanup(): Promise<void> {
     if (this.cleanupPromise) return this.cleanupPromise;
-    const running = this.cleanupExpiredConversations().catch((error: unknown) => {
-      console.error('Failed to clean expired RAG conversations', error);
-    });
+    const running = this.cleanupExpiredConversations().catch(
+      (error: unknown) => {
+        console.error("Failed to clean expired RAG conversations", error);
+      },
+    );
     this.cleanupPromise = running.finally(() => {
       this.cleanupPromise = undefined;
     });
@@ -257,9 +293,11 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
       try {
         // checkpoint 必须先删除；随后数据库外键才能安全清理 conversation 与关联 run。
         await this.options.checkpointer.deleteThread(conversation.threadId);
-        await this.options.conversationRepository.deleteExpiredConversation(conversation.id);
+        await this.options.conversationRepository.deleteExpiredConversation(
+          conversation.id,
+        );
       } catch (error) {
-        console.error('Failed to clean expired RAG conversation', error, {
+        console.error("Failed to clean expired RAG conversation", error, {
           conversationId: conversation.id,
         });
       }
