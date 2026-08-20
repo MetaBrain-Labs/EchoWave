@@ -1,4 +1,15 @@
-/** Displays a server-authoritative chunk, source locator, and adjacent chunk navigation. */
+/**
+ * 文档块详情页面。
+ *
+ * 展示服务器权威的文档块正文、原文定位和相邻块导航，并为加载失败提供可理解状态。
+ *
+ * Responsibilities:
+ * - 加载并渲染指定文档块。
+ * - 提供上一块、下一块与来源定位操作。
+ *
+ * Notes:
+ * - 不在客户端复制或修改正文事实。
+ */
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -15,6 +26,7 @@ function locatorText(chunk: DocumentChunk) {
   return `${locator.headingPath.join(' / ') || '正文'}，第 ${locator.lineStart}-${locator.lineEnd} 行`;
 }
 
+/** 加载并展示指定文档块及其相邻块导航。 */
 export function BlockDetailScreen({ blockId, documentId, knowledgeId, onBack, onNavigateBlock }: {
   blockId: string;
   documentId: string;

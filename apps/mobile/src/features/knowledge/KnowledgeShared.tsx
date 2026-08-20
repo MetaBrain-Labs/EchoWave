@@ -1,4 +1,15 @@
-/** Shared, accessible controls for the knowledge-library page hierarchy. */
+/**
+ * 知识库共享展示控件。
+ *
+ * 集中知识库页面层级复用的页头、状态、操作按钮和格式化逻辑，保持可访问性与视觉语义一致。
+ *
+ * Responsibilities:
+ * - 提供知识库 feature 的共享 React Native 控件。
+ * - 将文档处理状态映射为稳定中文展示。
+ *
+ * Notes:
+ * - 不发起网络请求或持有服务器状态。
+ */
 import Ionicons from "@expo/vector-icons/Ionicons";
 import type { DocumentFormat, KnowledgeDocument } from "@echowave/contracts";
 import { useRef } from "react";
@@ -20,10 +31,12 @@ import {
   typography,
 } from "../../theme/tokens";
 
+/** 为尚未实现的知识库操作显示一致提示。 */
 export function showComingSoon(feature: string) {
   Alert.alert("功能建设中", `${feature}将在后续版本开放。`);
 }
 
+/** 渲染知识库层级页面使用的可访问返回页头。 */
 export function PageHeader({
   icon,
   onBack,
@@ -69,6 +82,7 @@ export function PageHeader({
   );
 }
 
+/** 渲染可点击并可与滑动分页同步的同级标签。 */
 export function PageTabs<Tab extends string>({
   activeTab,
   onChange,
@@ -101,6 +115,7 @@ export function PageTabs<Tab extends string>({
   );
 }
 
+/** 渲染知识库页面复用的搜索框与筛选入口。 */
 export function SearchAndFilter({
   onChangeText,
   placeholder,
@@ -153,6 +168,7 @@ export function SearchAndFilter({
   );
 }
 
+/** 渲染具有统一图标、反馈和禁用语义的操作按钮。 */
 export function ActionButton({
   icon,
   label,
@@ -178,6 +194,7 @@ export function ActionButton({
   );
 }
 
+/** 按文档格式渲染一致的 Expo 图标。 */
 export function DocumentFormatIcon({
   format,
   size = 36,
@@ -204,6 +221,7 @@ export function DocumentFormatIcon({
   );
 }
 
+/** 将服务器文档处理状态映射为稳定、可理解的中文展示。 */
 export function DocumentStatusView({
   document,
 }: {
@@ -259,6 +277,7 @@ export function DocumentStatusView({
   }
 }
 
+/** 渲染知识库页面通用的空、加载或失败状态。 */
 export function EmptyState({
   description,
   title,

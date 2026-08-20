@@ -1,4 +1,17 @@
-/** Starts and gracefully stops the EchoWave Node.js API process. */
+/**
+ * API 进程入口。
+ *
+ * 负责读取配置、装配 RAG 运行时、启动 Hono Node 监听器，并在系统信号到达时按顺序
+ * 关闭网络与后台资源。
+ *
+ * Responsibilities:
+ * - 启动 API 与入库 worker。
+ * - 报告可操作的监听失败信息。
+ * - 协调优雅停机。
+ *
+ * Notes:
+ * - 领域行为留在 app 与 RAG 模块中。
+ */
 import { serve } from '@hono/node-server';
 
 import { createApp } from './app.ts';
@@ -23,6 +36,7 @@ server.once('error', (error) => {
   process.exitCode = 1;
 });
 
+/** 收到系统信号后先停止接收新连接，再释放 RAG 运行时资源。 */
 function shutdown(signal: NodeJS.Signals) {
   console.log(`Received ${signal}; shutting down EchoWave API.`);
   server.close(async (error) => {

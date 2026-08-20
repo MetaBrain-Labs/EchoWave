@@ -1,4 +1,15 @@
-/** Implements swipeable library-file and linked-group pages with independent scrolling. */
+/**
+ * 知识库详情页面。
+ *
+ * 组合知识库概览、文档列表、关联分组、上传和问答入口，并保持两个同级页面独立滚动。
+ *
+ * Responsibilities:
+ * - 加载知识库与文档列表。
+ * - 协调上传、重试、标签滑动和详情导航。
+ *
+ * Notes:
+ * - 关联分组展示仍为当前 presentation 范围。
+ */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -126,6 +137,7 @@ function DocumentRow({
   );
 }
 
+/** 加载并展示知识库详情，协调上传、重试与问答入口。 */
 export function KnowledgeDetailScreen({
   knowledgeId,
   onBack,

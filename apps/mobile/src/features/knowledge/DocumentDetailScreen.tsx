@@ -1,4 +1,15 @@
-/** Renders server-authoritative parsed chunks and normalized source preview for one document. */
+/**
+ * 知识文档详情页面。
+ *
+ * 展示服务器解析后的文档状态、正文预览和可追溯文档块，并协调块详情与失败重试操作。
+ *
+ * Responsibilities:
+ * - 加载并渲染知识文档详情。
+ * - 展示解析状态、预览和块导航。
+ *
+ * Notes:
+ * - 文档和解析结果始终以服务器响应为准。
+ */
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -11,6 +22,7 @@ import { getDocument } from './apiClient';
 const tabs = [{ key: 'parsed', label: '文档解析' }, { key: 'original', label: '文档原文' }] as const;
 type Tab = (typeof tabs)[number]['key'];
 
+/** 加载并展示指定知识文档的解析状态、预览与文档块。 */
 export function DocumentDetailScreen({
   documentId,
   initialBlockId,

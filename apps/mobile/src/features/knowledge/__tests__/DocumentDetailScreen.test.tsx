@@ -1,3 +1,14 @@
+/**
+ * 知识文档详情页面测试。
+ *
+ * 验证文档状态、解析预览、文档块列表和失败重试行为。
+ *
+ * Responsibilities:
+ * - 覆盖文档详情的用户可观察状态。
+ *
+ * Notes:
+ * - 使用符合共享契约的固定数据。
+ */
 import { fireEvent, render } from '@testing-library/react-native';
 
 import { DocumentDetailScreen } from '../DocumentDetailScreen';

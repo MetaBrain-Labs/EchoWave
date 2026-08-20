@@ -1,4 +1,17 @@
-/** Runs the resumable PostgreSQL ingestion queue through an explicit LangGraph pipeline. */
+/**
+ * 知识文档入库 worker。
+ *
+ * 通过显式 LangGraph 流程消费可恢复的 PostgreSQL 入库任务，完成校验、解析、
+ * embedding、revision 发布与临时文件清理。
+ *
+ * Responsibilities:
+ * - 控制并发领取和执行入库任务。
+ * - 推进可观察的任务阶段与失败状态。
+ * - 在停止时等待当前任务安全收敛。
+ *
+ * Notes:
+ * - 当前 worker 与 API 同进程，尚不支持多实例协调。
+ */
 import { readFile, readdir, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -25,6 +38,7 @@ type WorkerOptions = {
   concurrency?: number;
 };
 
+/** 管理可恢复入库任务领取、LangGraph 执行和优雅停止的后台 worker。 */
 export class IngestionWorker {
   private readonly concurrency: number;
   private readonly active = new Set<Promise<void>>();
@@ -93,6 +107,7 @@ export class IngestionWorker {
       .compile();
   }
 
+  /** 启动孤立文件清理和周期任务领取；重复调用不会创建第二个 timer。 */
   start(): void {
     if (this.timer) return;
     this.stopping = false;
@@ -102,6 +117,7 @@ export class IngestionWorker {
     void this.pump();
   }
 
+  /** 停止领取新任务并等待所有活动任务完成或失败收敛。 */
   async stop(): Promise<void> {
     this.stopping = true;
     if (this.timer) clearInterval(this.timer);

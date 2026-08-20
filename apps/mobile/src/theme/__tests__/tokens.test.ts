@@ -1,3 +1,14 @@
+/**
+ * 视觉 token 测试。
+ *
+ * 锁定跨平台颜色、字体、间距和排版 token 的关键设计约束。
+ *
+ * Responsibilities:
+ * - 防止共享视觉语义被意外修改。
+ *
+ * Notes:
+ * - 只验证权威 token，不测试页面样式实现。
+ */
 import {
   colors,
   fontFamilies,

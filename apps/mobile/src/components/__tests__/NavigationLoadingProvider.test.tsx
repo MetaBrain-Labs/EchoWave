@@ -1,3 +1,14 @@
+/**
+ * 导航加载状态测试。
+ *
+ * 验证 provider 的任务计数、最短展示时长和遮罩交互，防止路由切换出现闪烁或提前消失。
+ *
+ * Responsibilities:
+ * - 覆盖导航加载状态的可观察行为。
+ *
+ * Notes:
+ * - 使用 fake timer 控制时间相关断言。
+ */
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { Pressable, Text } from 'react-native';
 

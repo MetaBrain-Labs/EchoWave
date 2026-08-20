@@ -1,3 +1,14 @@
+/**
+ * API 服务状态卡片测试。
+ *
+ * 验证加载、在线、失败和重试状态的可访问渲染。
+ *
+ * Responsibilities:
+ * - 覆盖状态卡片的用户可观察行为。
+ *
+ * Notes:
+ * - 健康检查请求使用 mock 实现。
+ */
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
 import { fetchHello } from '../apiClient';

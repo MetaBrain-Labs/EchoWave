@@ -8,10 +8,11 @@ Act as a pragmatic software-engineering agent. Understand the repository before 
 
 - EchoWave is a pnpm 11.3.0 workspace coordinated by Turborepo and requires Node.js 24.
 - `apps/mobile` is an Expo SDK 57 application using React Native 0.86, React 19.2.3, Expo Router, TypeScript, and React Native `StyleSheet`.
-- `apps/api` is a Node.js TypeScript HTTP API using Hono, the Hono Node adapter, and Zod.
+- `apps/api` is a Node.js TypeScript HTTP API using Hono, Zod, LangGraph/DeepAgents, `pg`, and pgvector.
 - `packages/contracts` owns shared Zod schemas and their inferred TypeScript types. It is the authoritative boundary between the API and mobile client.
-- PostgreSQL and Redis are configuration-only future integration points. No database driver, ORM, Redis client, queue, schema, migration, or persistence implementation exists yet.
-- The product UI is Chinese-first. The current milestone is a runnable UI and HelloWorld vertical slice, not a production backend.
+- PostgreSQL is the authoritative store for the implemented RAG knowledge-base slice. Ordered SQL migrations, tenant-scoped repositories, pgvector retrieval, ingestion jobs, conversations, and run audit records already exist.
+- Redis remains a configuration-only future integration point. No Redis client, distributed queue, or cache implementation exists yet.
+- The product UI is Chinese-first. The current milestone is a runnable cross-platform UI plus a PostgreSQL/pgvector RAG vertical slice, not a production multi-tenant backend.
 
 ## Instruction Precedence
 
@@ -82,8 +83,8 @@ Use the repository's pinned toolchain and existing scripts. Do not change depend
 - `GET /api/hello` must return `{ ok: true, service: "echowave-api", message: "HelloWorld" }` and pass `HelloResponseSchema` unless the shared contract is intentionally changed everywhere.
 - Validate untrusted network data at runtime. A TypeScript type assertion is not a replacement for Zod parsing.
 - Validate inputs at trust boundaries and return compact, actionable errors without leaking secrets, provider stacks, or large internal payloads.
-- Do not add Prisma, PostgreSQL or Redis clients, Docker Compose, BullMQ, migrations, models, or cache abstractions without an explicit requirement to implement persistence or queues.
-- When persistence is introduced, PostgreSQL is authoritative business storage; Redis is limited to justified cache, coordination, or queue use and must not become a competing source of truth.
+- Preserve the existing `pg` and explicit SQL migration approach. The RAG hot path depends on pgvector types and HNSW queries, `FOR UPDATE SKIP LOCKED`, schema-qualified SQL, and multi-table revision publication; do not add Prisma unless an explicit migration requirement justifies operating two persistence models during the transition.
+- PostgreSQL is authoritative business storage. Redis is limited to justified cache, coordination, or queue use and must not become a competing source of truth.
 
 ### Configuration
 
@@ -93,13 +94,29 @@ Use the repository's pinned toolchain and existing scripts. Do not change depend
 - A physical phone cannot reach the development computer through `localhost`. Use the computer's LAN address in `EXPO_PUBLIC_API_URL` and keep its port aligned with `apps/api/.env`.
 - PostgreSQL uses the existing `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_SCHEMA`, and `POSTGRES_SSL` fields. Redis uses the existing `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_USERNAME`, `REDIS_DB`, and `REDIS_TLS` fields.
 
-## Code and Documentation
+## Source Documentation
 
 - Match the repository's naming, formatting, testing, and documentation conventions.
-- For new TypeScript and TSX files, prefer a concise JSDoc file header that states responsibility and boundaries when the repository uses this convention.
-- Document public or business-critical functions, types, classes, services, repositories, controllers, hooks, Agents, workflow nodes, and non-obvious state transitions.
+- Every human-maintained `.ts` and `.tsx` file must start with a multi-line Simplified Chinese JSDoc header describing its responsibilities and boundaries. Do not edit generated declarations such as `expo-env.d.ts` merely to satisfy this rule.
+- Public or business-critical functions, types, classes, services, repositories, controllers, hooks, Agents, graph nodes, and workflow steps require Simplified Chinese JSDoc.
+- Important branches and state transitions require concise Simplified Chinese comments explaining the invariant or business reason.
 - Comments should explain business intent, invariants, or trade-offs, not restate syntax.
-- Chinese comments or JSDoc are acceptable for human-facing source documentation when consistent with the repository, but never place them inside English model-facing prompts.
+- Never place Chinese comments or prose inside English model-facing prompts, tool names/descriptions, parameter descriptions, or schema metadata consumed by a model.
+- Use this file-header shape and adapt its content to the file:
+
+  ```ts
+  /**
+   * <模块名称 / 文件职责>
+   *
+   * <详细职责说明>
+   *
+   * Responsibilities:
+   * - <职责>
+   *
+   * Notes:
+   * - <边界说明>
+   */
+  ```
 - Do not commit generated build output, caches, runtime state, secrets, or local environment files.
 
 ## Verification

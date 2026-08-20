@@ -1,3 +1,14 @@
+/**
+ * 知识库详情页面测试。
+ *
+ * 验证知识库概览、文档展示、上传与问答入口等主要行为。
+ *
+ * Responsibilities:
+ * - 覆盖知识库详情的加载和导航交互。
+ *
+ * Notes:
+ * - 服务端请求由 feature 级 mock 控制。
+ */
 import { fireEvent, render } from '@testing-library/react-native';
 
 import { KnowledgeDetailScreen } from '../KnowledgeDetailScreen';

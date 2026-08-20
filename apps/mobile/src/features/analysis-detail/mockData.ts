@@ -1,10 +1,22 @@
-/** Local presentation data for the analysis-detail prototype; no record is server-backed. */
+/**
+ * 分析详情演示数据。
+ *
+ * 为当前静态原型提供结构化中文内容和状态示例，使页面可以在无后端分析能力时运行。
+ *
+ * Responsibilities:
+ * - 定义分析详情使用的本地只读记录。
+ *
+ * Notes:
+ * - 所有记录均非服务器数据，不得作为持久化事实。
+ */
+/** AI 标签在演示分析中对应的解释和证据片段。 */
 export type AiTagAnalysis = {
   title: string;
   summary: string;
   details: readonly string[];
 };
 
+/** 带时间范围和说话人的转写片段。 */
 export type TranscriptSegment = {
   aiTag?: AiTagAnalysis;
   emotion: string;
@@ -16,6 +28,7 @@ export type TranscriptSegment = {
   text: string;
 };
 
+/** 按业务场景聚合的一组转写片段。 */
 export type TranscriptScene = {
   id: string;
   segments: readonly TranscriptSegment[];
@@ -23,12 +36,14 @@ export type TranscriptScene = {
   title: string;
 };
 
+/** 分析摘要中的一个结构化章节。 */
 export type SummarySection = {
   body: string;
   id: string;
   title: string;
 };
 
+/** 分析详情原型使用的完整只读展示记录。 */
 export type AnalysisDetail = {
   durationSeconds: number;
   generatedAt: string;
@@ -160,6 +175,7 @@ export const analysisDetails: Readonly<Record<string, AnalysisDetail>> = {
   },
 };
 
+/** 按 ID 返回稳定分析演示记录，不存在时回退到默认记录。 */
 export function getAnalysisDetail(id: string) {
   return analysisDetails[id];
 }

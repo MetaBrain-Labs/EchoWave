@@ -1,3 +1,14 @@
+/**
+ * 分组工作区页面测试。
+ *
+ * 验证标签、状态展示、刷新和导航回调等分组纵切片行为。
+ *
+ * Responsibilities:
+ * - 覆盖用户可观察的分组页面交互。
+ *
+ * Notes:
+ * - 使用本地 presentation 数据。
+ */
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { ComponentProps } from 'react';
 import { Alert, StyleSheet } from 'react-native';

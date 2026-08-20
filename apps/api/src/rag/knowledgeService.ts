@@ -1,4 +1,17 @@
-/** Orchestrates safe upload staging and the tenant-scoped knowledge/RAG application services. */
+/**
+ * 知识库应用模块。
+ *
+ * 负责知识库与文档操作的应用编排，并把可信回答委托给独立的深模块；HTTP 传输、
+ * 模型适配和底层 SQL 均不属于本文件职责。
+ *
+ * Responsibilities:
+ * - 暴露知识库、文档和文本块的应用级操作。
+ * - 校验并安全暂存上传文件。
+ * - 通过窄接口调用可信知识回答模块。
+ *
+ * Notes:
+ * - PostgreSQL 仍是服务器数据的权威来源。
+ */
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -10,11 +23,12 @@ import {
   type RagQueryRequest,
 } from "@echowave/contracts";
 
-import { KnowledgeQueryAgent } from "./queryAgent.ts";
+import type { KnowledgeAnswerModule } from "./knowledgeAnswer.ts";
 import { RagRepository } from "./repository.ts";
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
+/** 可安全展示给用户的上传文件验证错误。 */
 export class UploadValidationError extends Error {
   constructor(
     public readonly code:
@@ -28,6 +42,7 @@ export class UploadValidationError extends Error {
   }
 }
 
+/** Hono transport 使用的知识库应用接口。 */
 export type KnowledgeService = {
   listKnowledgeBases(): ReturnType<RagRepository["listKnowledgeBases"]>;
   getKnowledgeBase(id: string): ReturnType<RagRepository["getKnowledgeBase"]>;
@@ -69,7 +84,7 @@ export type KnowledgeService = {
   query(
     knowledgeBaseId: string,
     input: RagQueryRequest,
-  ): ReturnType<KnowledgeQueryAgent["query"]>;
+  ): ReturnType<KnowledgeAnswerModule["answer"]>;
 };
 
 const formats: Record<string, { format: DocumentFormat; mime: string }> = {
@@ -119,10 +134,11 @@ function inspectFile(file: File, buffer: Buffer): { format: DocumentFormat } {
   return { format: supported.format };
 }
 
+/** 组合知识库仓储、上传暂存与可信回答接口的默认应用实现。 */
 export class DefaultKnowledgeService implements KnowledgeService {
   constructor(
     private readonly repository: RagRepository,
-    private readonly queryAgent: KnowledgeQueryAgent,
+    private readonly answers: Pick<KnowledgeAnswerModule, "answer">,
     private readonly uploadTempDirectory: string,
     private readonly embeddingModel: string,
   ) {}
@@ -161,13 +177,10 @@ export class DefaultKnowledgeService implements KnowledgeService {
     return this.repository.getChunk(knowledgeBaseId, documentId, chunkId);
   }
   query(knowledgeBaseId: string, input: RagQueryRequest) {
-    return this.queryAgent.query(
-      knowledgeBaseId,
-      input.question,
-      input.conversationId,
-    );
+    return this.answers.answer({ knowledgeBaseId, request: input });
   }
 
+  /** 校验并暂存上传文件，成功创建入库任务后返回服务器权威文档状态。 */
   async uploadDocument(knowledgeBaseId: string, file: File) {
     const buffer = Buffer.from(await file.arrayBuffer());
     const { format } = inspectFile(file, buffer);

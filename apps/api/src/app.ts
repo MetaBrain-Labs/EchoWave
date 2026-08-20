@@ -1,4 +1,17 @@
-/** Defines the validated Hono transport boundary without starting a network listener. */
+/**
+ * Hono HTTP 传输入口。
+ *
+ * 负责路由注册、共享契约校验、跨域策略与稳定错误映射，但不启动网络监听器，
+ * 也不承载知识库业务实现。
+ *
+ * Responsibilities:
+ * - 将 HTTP 请求转换为知识库应用接口调用。
+ * - 使用共享 Zod 契约验证输入与输出。
+ * - 将领域错误映射为紧凑且不泄密的响应。
+ *
+ * Notes:
+ * - 网络监听和资源生命周期由 server/runtime 负责。
+ */
 import {
   ApiErrorResponseSchema,
   EntityIdSchema,
@@ -14,7 +27,7 @@ import { ZodError } from 'zod';
 
 import type { ApiConfig } from './env.ts';
 import { UploadValidationError, type KnowledgeService } from './rag/knowledgeService.ts';
-import { QueryModelError } from './rag/queryAgent.ts';
+import { KnowledgeAnswerError } from './rag/knowledgeAnswer.ts';
 import { RagRepositoryError } from './rag/repository.ts';
 
 type ErrorStatus = 400 | 404 | 409 | 413 | 500 | 503 | 504;
@@ -27,6 +40,7 @@ function id(value: string): string {
   return EntityIdSchema.parse(value);
 }
 
+/** 创建不启动监听器的 Hono 应用，使生产服务器和测试通过同一传输接口调用业务模块。 */
 export function createApp(
   config: Pick<ApiConfig, 'corsOrigins'>,
   dependencies: { knowledgeService?: KnowledgeService } = {},
@@ -132,7 +146,7 @@ export function createApp(
       status = error.code === 'DOCUMENT_TOO_LARGE' ? 413 : 400;
       code = error.code;
       message = error.message;
-    } else if (error instanceof QueryModelError) {
+    } else if (error instanceof KnowledgeAnswerError) {
       status = error.code === 'MODEL_TIMEOUT' ? 504 : 503;
       code = error.code;
       message = error.message;
@@ -146,4 +160,5 @@ export function createApp(
   return app;
 }
 
+/** EchoWave Hono 应用的推断类型。 */
 export type EchoWaveApp = ReturnType<typeof createApp>;

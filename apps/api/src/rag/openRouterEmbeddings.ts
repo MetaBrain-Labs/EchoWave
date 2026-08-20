@@ -1,4 +1,17 @@
-/** LangChain Embeddings adapter with OpenRouter-specific routing, usage, validation, and retries. */
+/**
+ * OpenRouter embedding 适配器。
+ *
+ * 为 LangChain 提供固定维度的查询与文档向量化能力，并隐藏 OpenRouter 路由、批次、
+ * 用量解析、响应校验和有限重试细节。
+ *
+ * Responsibilities:
+ * - 为查询添加检索指令并批量处理文档块。
+ * - 验证 1024 维向量与 provider 响应顺序。
+ * - 返回 token 用量和成本估算。
+ *
+ * Notes:
+ * - 不负责向量持久化或相似度检索。
+ */
 import { Embeddings } from '@langchain/core/embeddings';
 import { z } from 'zod';
 
@@ -14,6 +27,7 @@ const EmbeddingResponseSchema = z.object({
   usage: z.object({ prompt_tokens: z.number().int().nonnegative().optional(), total_tokens: z.number().int().nonnegative().optional() }).optional(),
 });
 
+/** OpenRouter embedding 失败的稳定错误类型。 */
 export class EmbeddingProviderError extends Error {
   constructor(
     public readonly code: 'MODEL_TIMEOUT' | 'MODEL_UNAVAILABLE',
@@ -25,6 +39,7 @@ export class EmbeddingProviderError extends Error {
   }
 }
 
+/** 一次或多批 embedding 调用的向量、用量与 provider 汇总结果。 */
 export type EmbeddingBatchResult = {
   vectors: number[][];
   tokens: number;
@@ -40,6 +55,7 @@ type OpenRouterEmbeddingsOptions = {
   fetchImplementation?: typeof fetch;
 };
 
+/** 提供固定模型、维度、批次和运行时校验的 OpenRouter embedding 适配器。 */
 export class OpenRouterEmbeddings extends Embeddings {
   private readonly fetchImplementation: typeof fetch;
 

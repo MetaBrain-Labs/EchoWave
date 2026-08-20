@@ -1,4 +1,15 @@
-/** Renders the interactive, presentation-only analysis detail experience. */
+/**
+ * 分析详情展示页面。
+ *
+ * 呈现转写分析、摘要与可展开内容，并管理仅影响当前会话的展示偏好和交互状态。
+ *
+ * Responsibilities:
+ * - 渲染分析详情的多个内容区域。
+ * - 协调展开、切换与复制等界面交互。
+ *
+ * Notes:
+ * - 当前数据为 presentation mock，不表示服务器持久化结果。
+ */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useState } from 'react';
 import {
@@ -69,7 +80,7 @@ function Waveform({ expanded = false }: { expanded?: boolean }) {
       <View style={styles.waveformCursor} />
       {waveformHeights.map((height, index) => (
         <View
-          // The index is stable because this decorative waveform never changes order.
+          // 装饰波形顺序固定，因此索引可作为稳定渲染键。
           key={index}
           style={[
             styles.waveformBar,
@@ -563,6 +574,7 @@ function AiTagPanel({
   );
 }
 
+/** 渲染指定分析记录的转写、摘要和交互式播放展示。 */
 export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenProps) {
   const detail = getAnalysisDetail(detailId);
   const [activeTab, setActiveTab] = useState<AnalysisTab>('transcript');

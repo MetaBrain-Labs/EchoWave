@@ -1,4 +1,17 @@
-/** Applies ordered SQL migrations and initializes LangGraph checkpoint tables. */
+/**
+ * 数据库迁移入口。
+ *
+ * 负责按名称顺序应用显式 SQL migration，并初始化独立的 LangGraph checkpoint schema；
+ * 普通 API 启动不会调用此流程。
+ *
+ * Responsibilities:
+ * - 记录并幂等应用未执行的业务 migration。
+ * - 初始化 checkpointer 所需表结构。
+ * - 在失败时回滚当前 migration 并关闭资源。
+ *
+ * Notes:
+ * - migration 文件是数据库契约的权威历史。
+ */
 import { readFile, readdir } from 'node:fs/promises';
 
 import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
@@ -14,6 +27,10 @@ const config = readApiConfigFile(new URL('../.env', import.meta.url));
 const pool = createDatabasePool(config.database);
 const schema = quoteIdentifier(config.database.schema);
 
+/**
+ * 按文件名顺序应用尚未执行的业务迁移，并初始化独立的 LangGraph checkpoint schema。
+ * 每个业务迁移独占一个事务，只有 SQL 与迁移记录同时成功后才会提交。
+ */
 async function migrate() {
   await pool.query(`CREATE SCHEMA IF NOT EXISTS ${schema}`);
   await pool.query(`

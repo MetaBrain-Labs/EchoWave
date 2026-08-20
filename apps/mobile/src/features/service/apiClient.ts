@@ -1,4 +1,15 @@
-/** Validates the API response and converts transport failures into stable UI errors. */
+/**
+ * HelloWorld 服务状态传输适配器。
+ *
+ * 请求 API 健康端点、校验共享响应契约，并把网络、超时和无效负载转换为稳定 UI 错误。
+ *
+ * Responsibilities:
+ * - 执行带超时的健康检查。
+ * - 隔离传输异常和响应解析细节。
+ *
+ * Notes:
+ * - 不缓存服务状态。
+ */
 import {
   HelloResponseSchema,
   type HelloResponse,
@@ -8,8 +19,10 @@ export const apiUrl =
   process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '') ??
   'http://localhost:3001';
 
+/** HelloWorld 健康检查可向 UI 暴露的错误类别。 */
 export type ServiceErrorCode = 'INVALID_RESPONSE' | 'NETWORK' | 'TIMEOUT';
 
+/** 将底层 fetch 异常归一化为稳定错误码的客户端错误。 */
 export class ServiceRequestError extends Error {
   constructor(
     public readonly code: ServiceErrorCode,

@@ -1,3 +1,14 @@
+/**
+ * 知识库测试固件。
+ *
+ * 提供符合共享运行时契约的稳定知识库、文档与文档块数据，供多个页面测试复用。
+ *
+ * Responsibilities:
+ * - 集中构造可追溯的测试记录。
+ *
+ * Notes:
+ * - 固件 ID 与时间固定，禁止依赖真实服务。
+ */
 import type { KnowledgeBaseDetail, KnowledgeBaseSummary, KnowledgeDocumentDetail } from '@echowave/contracts';
 
 export const knowledge: KnowledgeBaseDetail = {

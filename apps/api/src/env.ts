@@ -1,4 +1,17 @@
-/** Validates process configuration before the HTTP server starts. */
+/**
+ * API 配置模块。
+ *
+ * 从唯一的 `.env` 来源读取并校验 HTTP、PostgreSQL、Redis 与 RAG 配置，阻止无效
+ * 配置进入运行时组合根。
+ *
+ * Responsibilities:
+ * - 定义并验证完整环境变量契约。
+ * - 将字符串配置规范化为强类型运行时对象。
+ * - 为缺失配置文件提供可操作的启动错误。
+ *
+ * Notes:
+ * - 不合并系统环境变量，也不提供隐式默认值。
+ */
 import { readFileSync } from "node:fs";
 
 import { parse } from "dotenv";
@@ -36,6 +49,7 @@ const EnvironmentSchema = z.object({
   UPLOAD_TEMP_DIR: z.string().min(1),
 });
 
+/** API 进程通过校验后可使用的完整运行时配置。 */
 export type ApiConfig = {
   port: number;
   corsOrigins: string[];
@@ -70,6 +84,7 @@ export type ApiConfig = {
   };
 };
 
+/** 将显式键值集合解析为无默认值的强类型 API 配置。 */
 export function readApiConfig(values: Record<string, string | undefined>): ApiConfig {
   const parsed = EnvironmentSchema.parse(values);
   const corsOrigins = parsed.CORS_ORIGINS.split(",")
@@ -115,7 +130,7 @@ export function readApiConfig(values: Record<string, string | undefined>): ApiCo
   };
 }
 
-/** Loads the required API configuration exclusively from the given .env file. */
+/** 仅从指定 `.env` 文件加载所需配置，并为文件缺失提供明确错误。 */
 export function readApiConfigFile(fileUrl: URL): ApiConfig {
   try {
     return readApiConfig(parse(readFileSync(fileUrl)));

@@ -1,33 +1,32 @@
 /**
- * Tolerant JSON extraction from model output.
+ * 模型结构化输出恢复工具。
  *
- * DeepSeek thinking responses can wrap JSON in markdown fences, prefix or
- * append prose, or place the JSON in the reasoning stream instead of the
- * answer text. This module mirrors meta-pm-agent's utils/json.ts approach:
- * collect string-safe balanced JSON object candidates and return the first
- * one that parses, preferring the last complete object.
+ * 从 DeepSeek 的文本或 reasoning 内容中容错提取完整 JSON 对象，兼容 Markdown fence、
+ * 前后说明文字与字符串内转义，同时拒绝截断对象。
+ *
+ * Responsibilities:
+ * - 查找字符串安全的平衡 JSON 对象候选。
+ * - 提取最终 AI 文本与 reasoning 内容。
+ *
+ * Notes:
+ * - 这里只恢复语法结构，业务 schema 校验由调用模块完成。
  */
 
 import { AIMessage } from '@langchain/core/messages';
 
-/**
- * Parses the first complete JSON object found in the given text, or null when
- * no valid object is present (for example when streaming output is truncated).
- */
+/** 从任意模型文本中解析最后一个完整 JSON 对象；截断或无效内容返回 null。 */
 export function parseJsonObject(text: string): unknown | null {
   for (const candidate of extractJsonObjectCandidates(text)) {
     try {
       return JSON.parse(candidate);
     } catch {
-      // Streamed output may mix in partial JSON; try the next candidate.
+      // 模型输出可能混入残缺 JSON；继续尝试下一个完整候选。
     }
   }
   return null;
 }
 
-/**
- * Extracts possible JSON object candidates, preferring the last complete one.
- */
+/** 提取所有完整 JSON 对象候选，并优先尝试模型输出中最后出现的对象。 */
 function extractJsonObjectCandidates(text: string): string[] {
   const trimmed = text.trim();
   if (!trimmed) return [];
@@ -39,8 +38,7 @@ function extractJsonObjectCandidates(text: string): string[] {
 
   if (withoutFence.startsWith('{')) {
     const rootEnd = findBalancedObjectEnd(withoutFence, 0);
-    // If the root object never closes, the output is likely truncated; do not
-    // fall back to parsing a nested object.
+    // 根对象未闭合表示输出可能被截断，此时不能退回解析内部嵌套对象。
     if (rootEnd === -1) return [];
     return [withoutFence.slice(0, rootEnd + 1)];
   }
@@ -77,8 +75,8 @@ function extractJsonObjectCandidates(text: string): string[] {
 }
 
 /**
- * Finds the closing brace matching the brace at {@link start}, ignoring braces
- * inside strings and escapes. Returns -1 when the object never closes.
+ * 查找与 {@link start} 处左花括号匹配的右花括号，忽略字符串与转义序列中的括号。
+ * 对象未闭合时返回 -1，避免把截断输出误判为有效 JSON。
  */
 function findBalancedObjectEnd(text: string, start: number): number {
   let depth = 0;
@@ -114,12 +112,7 @@ function findBalancedObjectEnd(text: string, start: number): number {
   return -1;
 }
 
-/**
- * Extracts the final AI answer text and any reasoning content from an agent
- * run's message list. Reasoning is returned separately so callers can attempt
- * structured JSON parsing from either stream (mirrors meta-pm-agent's
- * resolveJsonOutput text-then-reasoning order).
- */
+/** 提取 Agent 最终文本与 reasoning 内容，供调用方按固定优先级恢复结构化结果。 */
 export function extractFinalMessageText(messages: unknown[]): {
   text: string;
   reasoning: string;

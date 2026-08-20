@@ -1,4 +1,17 @@
-/** Tenant-scoped persistence for knowledge libraries, ingestion jobs, retrieval, and RAG runs. */
+/**
+ * RAG PostgreSQL 仓储模块。
+ *
+ * 集中知识库、文档修订版、入库任务、向量检索、问答会话与运行审计的租户范围 SQL，
+ * 确保所有读写遵守同一数据权威和事务规则。
+ *
+ * Responsibilities:
+ * - 执行知识库与文档的租户隔离 CRUD。
+ * - 领取、推进并原子发布入库 revision。
+ * - 执行 pgvector 检索并记录问答运行。
+ *
+ * Notes:
+ * - 复杂 PostgreSQL 能力保留为显式 SQL，不在调用方重复实现。
+ */
 import { toSql } from 'pgvector';
 
 import {
@@ -19,6 +32,7 @@ import {
 import { quoteIdentifier, type DatabasePool } from '../database.ts';
 import type { ParsedChunkDraft } from './documentParser.ts';
 
+/** 可由传输层稳定映射的知识库仓储领域错误。 */
 export class RagRepositoryError extends Error {
   constructor(
     public readonly code: 'CONFLICT' | 'DUPLICATE_DOCUMENT' | 'NOT_FOUND',
@@ -29,6 +43,7 @@ export class RagRepositoryError extends Error {
   }
 }
 
+/** worker 已持有租约、可以安全执行的入库任务快照。 */
 export type ClaimedIngestionJob = {
   id: string;
   tenantId: string;
@@ -42,6 +57,7 @@ export type ClaimedIngestionJob = {
   attempts: number;
 };
 
+/** 向可信回答模块返回的可引用检索结果。 */
 export type RetrievalChunk = {
   id: string;
   documentId: string;
@@ -98,6 +114,7 @@ function mapDocument(row: Record<string, unknown>): KnowledgeDocument {
   });
 }
 
+/** 集中所有租户范围 RAG SQL 与事务不变量的 PostgreSQL 仓储。 */
 export class RagRepository {
   private readonly schema: string;
 
@@ -276,6 +293,7 @@ export class RagRepository {
     return chunk;
   }
 
+  /** 在单个事务中创建文档、处理中 revision 与待领取任务，避免留下不完整的入库状态。 */
   async createIngestion(input: {
     knowledgeBaseId: string;
     title: string;
@@ -330,6 +348,10 @@ export class RagRepository {
     }
   }
 
+  /**
+   * 领取最早可执行或租约已过期的任务。
+   * `SKIP LOCKED` 允许多个 worker 并行领取而不会阻塞或重复处理同一任务。
+   */
   async claimIngestionJob(): Promise<ClaimedIngestionJob | undefined> {
     const result = await this.pool.query(
       `WITH candidate AS (
@@ -375,6 +397,10 @@ export class RagRepository {
     );
   }
 
+  /**
+   * 原子写入全部文档块并发布 revision。
+   * 提交前旧 active revision 始终可检索，避免读请求看到半成品向量或中间状态。
+   */
   async publishRevision(input: PublishInput): Promise<void> {
     if (input.chunks.length !== input.vectors.length) throw new Error('Chunk/vector count mismatch.');
     const client = await this.pool.connect();
@@ -481,6 +507,10 @@ export class RagRepository {
     if (!result.rowCount) throw new RagRepositoryError('NOT_FOUND', '文档不存在。');
   }
 
+  /**
+   * 仅检索当前租户、指定知识库和 active revision 的向量块。
+   * HNSW 参数只在当前事务生效，随后按内容去重并限制单文档、总块数与上下文字符数。
+   */
   async search(knowledgeBaseId: string, embedding: number[]): Promise<RetrievalChunk[]> {
     const startedAt = Date.now();
     const client = await this.pool.connect();
@@ -534,6 +564,7 @@ export class RagRepository {
     }
   }
 
+  /** 复用同租户、同知识库且未过期的会话并续期；否则为有效知识库创建新会话。 */
   async getOrCreateConversation(knowledgeBaseId: string, conversationId?: string) {
     if (conversationId) {
       const existing = await this.pool.query(
@@ -559,6 +590,7 @@ export class RagRepository {
     return { id: created.rows[0].id as string, threadId: created.rows[0].thread_id as string };
   }
 
+  /** 在调用模型前创建 running 审计记录，使失败请求也拥有可追踪的运行标识。 */
   async beginRun(input: {
     knowledgeBaseId: string; conversationId: string; question: string;
     embeddingModel: string; chatModel: string; chatProvider: string;
@@ -573,6 +605,7 @@ export class RagRepository {
     return result.rows[0].id as string;
   }
 
+  /** 在可信性校验完成后一次性写入答案、引用、用量与耗时，并标记运行成功。 */
   async completeRun(runId: string, input: {
     answer: string; grounded: boolean; citedChunkIds: string[]; embeddingTokens: number;
     inputTokens: number; outputTokens: number; durationMs: number;
@@ -587,6 +620,7 @@ export class RagRepository {
     );
   }
 
+  /** 将已开始但未生成可信响应的运行标记为失败，同时保留原始问题与模型元数据。 */
   async failRun(runId: string, durationMs: number): Promise<void> {
     await this.pool.query(
       `UPDATE ${this.table('rag_runs')}
@@ -595,6 +629,7 @@ export class RagRepository {
     );
   }
 
+  /** 分批列出过期会话，供可信回答模块先清理 checkpoint 再删除会话记录。 */
   async listExpiredConversations(): Promise<{ id: string; threadId: string }[]> {
     const result = await this.pool.query(
       `SELECT id, thread_id FROM ${this.table('rag_conversations')}
@@ -604,6 +639,7 @@ export class RagRepository {
     return result.rows.map((row) => ({ id: row.id, threadId: row.thread_id }));
   }
 
+  /** 仅删除在执行时仍然过期的会话，避免与并发续期竞争时误删活跃会话。 */
   async deleteExpiredConversation(id: string): Promise<void> {
     await this.pool.query(
       `DELETE FROM ${this.table('rag_conversations')}

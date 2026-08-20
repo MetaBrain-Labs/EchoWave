@@ -1,4 +1,15 @@
-/** Implements the sketch-inspired group workspace and its three content tabs. */
+/**
+ * 分组工作区页面。
+ *
+ * 呈现分组内的音频、关联知识库和数据源三个区域，并协调标签、筛选、刷新与详情导航。
+ *
+ * Responsibilities:
+ * - 渲染分组工作区及多种音频状态。
+ * - 同步标签点击和横向滑动分页。
+ *
+ * Notes:
+ * - 当前音频和数据源记录仍为 presentation mock。
+ */
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -256,6 +267,7 @@ function SourcesContent() {
   );
 }
 
+/** 渲染分组工作区并协调三个同级内容页的导航。 */
 export function GroupScreen({
   onOpenAudio,
 }: {

@@ -1,3 +1,14 @@
+/**
+ * 知识库目录页面测试。
+ *
+ * 验证列表加载、知识库创建、错误状态和详情导航行为。
+ *
+ * Responsibilities:
+ * - 覆盖知识库目录的主要交互流程。
+ *
+ * Notes:
+ * - 不依赖真实 API。
+ */
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
 import { KnowledgeListScreen } from '../KnowledgeListScreen';

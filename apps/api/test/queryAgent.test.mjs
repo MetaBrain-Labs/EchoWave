@@ -3,7 +3,8 @@ import { describe, it } from 'node:test';
 
 import { MemorySaver } from '@langchain/langgraph';
 
-import { KnowledgeQueryAgent } from '../dist/rag/queryAgent.js';
+import { createKnowledgeAnswerModule } from '../dist/rag/knowledgeAnswer.js';
+import { DeepSeekQueryAgent } from '../dist/rag/queryAgent.js';
 import { parseJsonObject } from '../dist/rag/structuredOutput.js';
 
 const kbId = '11111111-1111-4111-8111-111111111111';
@@ -24,7 +25,7 @@ function chatCompletion({ content, toolCalls } = {}) {
 }
 
 /**
- * Builds a KnowledgeQueryAgent with stubbed persistence/embeddings and a fake
+ * Builds the trusted-answer module with stubbed persistence/embeddings and a fake
  * DeepSeek transport. The fake provider first answers with a search_knowledge
  * tool call, then with the given final answer; an optional correction answer
  * serves the citation-correction model call.
@@ -48,23 +49,26 @@ function createHarness({ enableThinking, finalAnswer, correctionAnswer }) {
     return Response.json(chatCompletion({ content: correctionAnswer }));
   };
 
-  const agent = new KnowledgeQueryAgent({
-    repository: {
-      getOrCreateConversation: async () => ({ id: conversationId, threadId: `thread-${conversationId}` }),
-      beginRun: async () => 'run-1',
-      search: async () => [{
-        id: chunkId,
-        documentId: '44444444-4444-4444-8444-444444444444',
-        documentTitle: '研究.md',
-        locator: { kind: 'markdown', headingPath: ['结论'], lineStart: 3, lineEnd: 4 },
-        content: '答案为 A。',
-      }],
-      completeRun: async () => undefined,
-      failRun: async () => undefined,
-    },
-    embeddings: {
-      embedQueryWithUsage: async () => ({ vectors: [Array(1024).fill(0.1)], tokens: 7 }),
-    },
+  const checkpointer = new MemorySaver();
+  const repository = {
+    getOrCreateConversation: async () => ({ id: conversationId, threadId: `thread-${conversationId}` }),
+    beginRun: async () => 'run-1',
+    search: async () => [{
+      id: chunkId,
+      documentId: '44444444-4444-4444-8444-444444444444',
+      documentTitle: '研究.md',
+      locator: { kind: 'markdown', headingPath: ['结论'], lineStart: 3, lineEnd: 4 },
+      content: '答案为 A。',
+    }],
+    completeRun: async () => undefined,
+    failRun: async () => undefined,
+    listExpiredConversations: async () => [],
+    deleteExpiredConversation: async () => undefined,
+  };
+  const embeddings = {
+    embedQueryWithUsage: async () => ({ vectors: [Array(1024).fill(0.1)], tokens: 7 }),
+  };
+  const agent = new DeepSeekQueryAgent({
     ragConfig: {
       tenantId: '00000000-0000-4000-8000-000000000001',
       openRouterApiKey: 'openrouter-test-key',
@@ -77,11 +81,22 @@ function createHarness({ enableThinking, finalAnswer, correctionAnswer }) {
       langGraphSchema: 'echowave_graph',
       uploadTempDir: '.tmp/uploads',
     },
-    checkpointer: new MemorySaver(),
+    checkpointer,
     fetchImplementation: fetch,
   });
+  const answers = createKnowledgeAnswerModule({
+    repository,
+    embeddings,
+    agent,
+    checkpointer,
+    ragConfig: {
+      embeddingModel: 'qwen/qwen3-embedding-8b',
+      deepSeekChatModel: 'deepseek-v4-flash',
+    },
+    scheduleCleanup: () => () => undefined,
+  });
 
-  return { agent, requests };
+  return { answers, requests };
 }
 
 describe('parseJsonObject', () => {
@@ -113,12 +128,12 @@ describe('parseJsonObject', () => {
 
 describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
   it('answers grounded questions without sending tool_choice and with thinking disabled by default', async () => {
-    const { agent, requests } = createHarness({
+    const { answers, requests } = createHarness({
       enableThinking: false,
       finalAnswer: JSON.stringify({ answer: '依据显示答案为 A。[1]', grounded: true, citedChunkIds: [chunkId] }),
     });
 
-    const result = await agent.query(kbId, '答案是什么？');
+    const result = await answers.answer({ knowledgeBaseId: kbId, request: { question: '答案是什么？' } });
 
     assert.equal(result.answer, '依据显示答案为 A。[1]');
     assert.equal(result.grounded, true);
@@ -136,12 +151,12 @@ describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
   });
 
   it('sends thinking enabled when DEEPSEEK_ENABLE_THINKING is true', async () => {
-    const { agent, requests } = createHarness({
+    const { answers, requests } = createHarness({
       enableThinking: true,
       finalAnswer: JSON.stringify({ answer: '依据显示答案为 A。[1]', grounded: true, citedChunkIds: [chunkId] }),
     });
 
-    const result = await agent.query(kbId, '答案是什么？');
+    const result = await answers.answer({ knowledgeBaseId: kbId, request: { question: '答案是什么？' } });
 
     assert.equal(result.grounded, true);
     assert.deepEqual(requests[0].thinking, { type: 'enabled' });
@@ -152,13 +167,13 @@ describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
 
   it('corrects invalid citation IDs through JSON-mode output without tool_choice', async () => {
     const unknownId = '99999999-9999-4999-8999-999999999999';
-    const { agent, requests } = createHarness({
+    const { answers, requests } = createHarness({
       enableThinking: false,
       finalAnswer: JSON.stringify({ answer: '依据显示答案为 A。[1]', grounded: true, citedChunkIds: [unknownId] }),
       correctionAnswer: JSON.stringify({ answer: '依据显示答案为 A。[1]', grounded: true, citedChunkIds: [chunkId] }),
     });
 
-    const result = await agent.query(kbId, '答案是什么？');
+    const result = await answers.answer({ knowledgeBaseId: kbId, request: { question: '答案是什么？' } });
 
     assert.equal(result.citations[0].chunkId, chunkId);
     const correctionRequest = requests.at(-1);
@@ -167,12 +182,12 @@ describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
   });
 
   it('falls back to an insufficient-evidence answer when the agent output is not valid JSON', async () => {
-    const { agent } = createHarness({
+    const { answers } = createHarness({
       enableThinking: false,
       finalAnswer: 'Sorry, I could not find enough evidence.',
     });
 
-    const result = await agent.query(kbId, '答案是什么？');
+    const result = await answers.answer({ knowledgeBaseId: kbId, request: { question: '答案是什么？' } });
 
     assert.equal(result.grounded, false);
     assert.equal(result.answer, '知识库中没有足够依据回答这个问题。');

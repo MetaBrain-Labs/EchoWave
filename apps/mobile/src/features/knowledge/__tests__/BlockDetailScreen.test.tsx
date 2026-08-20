@@ -1,3 +1,14 @@
+/**
+ * 文档块详情页面测试。
+ *
+ * 验证服务器文档块、来源定位及相邻块导航的渲染行为。
+ *
+ * Responsibilities:
+ * - 覆盖文档块详情的加载与导航结果。
+ *
+ * Notes:
+ * - 网络调用由测试替身提供。
+ */
 import { fireEvent, render } from '@testing-library/react-native';
 
 import { BlockDetailScreen } from '../BlockDetailScreen';

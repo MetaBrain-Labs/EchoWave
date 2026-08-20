@@ -1,4 +1,15 @@
-/** Provides ephemeral grounded knowledge-base chat with traceable citation navigation. */
+/**
+ * 可信知识问答页面。
+ *
+ * 管理当前页面生命周期内的问答会话，展示服务器最终校验的回答，并提供 citation 原文跳转。
+ *
+ * Responsibilities:
+ * - 提交问题并维护当前临时对话轮次。
+ * - 展示加载、失败、回答与引用状态。
+ *
+ * Notes:
+ * - 当前协议为完整 JSON 响应，不显示未验证的流式文本。
+ */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -17,6 +28,7 @@ function locatorLabel(locator: RagQueryResponse['citations'][number]['locator'])
   return `${locator.headingPath.join(' / ') || '正文'} · 第 ${locator.lineStart}-${locator.lineEnd} 行`;
 }
 
+/** 管理临时问答轮次并只展示服务器最终验证的回答与引用。 */
 export function KnowledgeQueryScreen({
   knowledgeId,
   onBack,

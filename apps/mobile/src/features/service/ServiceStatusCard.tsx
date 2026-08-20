@@ -1,4 +1,15 @@
-/** Presents observable HelloWorld connectivity with explicit retry and failure states. */
+/**
+ * API 服务状态卡片。
+ *
+ * 以可观察、可重试的方式展示 HelloWorld 连接状态，区分加载、在线、离线和超时反馈。
+ *
+ * Responsibilities:
+ * - 触发并展示健康检查结果。
+ * - 提供失败后的显式重试操作。
+ *
+ * Notes:
+ * - 状态仅用于当前卡片生命周期。
+ */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -24,6 +35,7 @@ type ServiceState =
   | { phase: 'online'; message: string }
   | { phase: 'offline'; message: string };
 
+/** 执行 HelloWorld 健康检查并渲染加载、在线、失败和重试状态。 */
 export function ServiceStatusCard() {
   const [state, setState] = useState<ServiceState>({ phase: 'loading' });
   const requestVersion = useRef(0);

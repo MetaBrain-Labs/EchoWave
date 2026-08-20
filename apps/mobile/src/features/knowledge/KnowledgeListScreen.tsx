@@ -1,4 +1,15 @@
-/** Renders the local knowledge-library catalogue shown in the Knowledge tab. */
+/**
+ * 知识库目录页面。
+ *
+ * 从服务器加载知识库列表并提供创建、错误重试和详情导航，是知识库标签的首个数据入口。
+ *
+ * Responsibilities:
+ * - 展示知识库加载、空状态和列表。
+ * - 校验创建表单并提交新知识库。
+ *
+ * Notes:
+ * - 列表数据不写入本地存储。
+ */
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
@@ -16,6 +27,7 @@ import {
 import { showComingSoon } from "./KnowledgeShared";
 import { createKnowledgeBase, listKnowledgeBases } from "./apiClient";
 
+/** 加载知识库目录并提供创建与详情导航。 */
 export function KnowledgeListScreen({
   onOpenKnowledge,
 }: {

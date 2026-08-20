@@ -1,10 +1,22 @@
-/** View-only sample records used to demonstrate the first mobile vertical slice. */
+/**
+ * 分组工作区演示数据。
+ *
+ * 为首期移动端纵切片提供只读的音频、知识库与数据源状态示例。
+ *
+ * Responsibilities:
+ * - 定义分组页面需要的展示记录。
+ *
+ * Notes:
+ * - 数据不来自服务器，也不允许写入本地持久化存储。
+ */
+/** 分组音频记录在 presentation 层可展示的处理状态。 */
 export type AudioStatus =
   | { kind: 'complete'; duration: string }
   | { kind: 'waiting' }
   | { kind: 'uploading' }
   | { kind: 'analyzing'; progress: number };
 
+/** 分组工作区使用的只读音频展示记录。 */
 export type AudioItem = {
   id: string;
   title: string;

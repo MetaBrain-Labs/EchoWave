@@ -1,4 +1,15 @@
-/** Reusable, accessible placeholder for product areas outside the first milestone. */
+/**
+ * 通用占位页面。
+ *
+ * 为尚未实现的产品区域提供一致、可访问且不会误示为真实功能的说明界面。
+ *
+ * Responsibilities:
+ * - 展示标题、说明与可选图标。
+ * - 保持原生和 Web 布局一致。
+ *
+ * Notes:
+ * - 不承载业务交互或持久化状态。
+ */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,6 +29,7 @@ type PlaceholderScreenProps = {
   icon: keyof typeof Ionicons.glyphMap;
 };
 
+/** 渲染未进入当前里程碑产品区域的一致占位反馈。 */
 export function PlaceholderScreen({
   title,
   description,

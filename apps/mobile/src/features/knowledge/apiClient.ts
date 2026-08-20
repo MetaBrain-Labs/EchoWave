@@ -1,4 +1,15 @@
-/** Runtime-validates all mobile knowledge-library requests against shared contracts. */
+/**
+ * 移动端知识库传输适配器。
+ *
+ * 封装知识库、文档、文本块和最终问答 JSON 请求，并在客户端信任边界使用共享契约校验响应。
+ *
+ * Responsibilities:
+ * - 统一 API URL、超时、错误解析与运行时校验。
+ * - 暴露知识库 feature 使用的窄请求函数。
+ *
+ * Notes:
+ * - 当前问答读取完整 JSON，不解析流式事件。
+ */
 import type { DocumentPickerAsset } from 'expo-document-picker';
 import { Platform } from 'react-native';
 
@@ -16,6 +27,7 @@ import {
 
 import { apiUrl } from '../service/apiClient';
 
+/** 知识库请求在移动端暴露的稳定错误类型。 */
 export class KnowledgeRequestError extends Error {
   constructor(
     public readonly code: string,
@@ -103,6 +115,7 @@ export const retryDocument = (knowledgeId: string, documentId: string) =>
     { method: 'POST' },
   );
 
+/** 提交问题并读取完整、已通过服务器引用校验的最终回答 JSON。 */
 export const queryKnowledge = (knowledgeId: string, question: string, conversationId?: string) =>
   request(
     `/api/knowledge-bases/${knowledgeId}/query`,

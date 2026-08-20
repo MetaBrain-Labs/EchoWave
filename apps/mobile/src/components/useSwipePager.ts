@@ -1,4 +1,15 @@
-/** Synchronizes same-level tabs with a horizontally swipeable React Native pager. */
+/**
+ * 同级页面滑动 Hook。
+ *
+ * 同步标签选择、页面宽度和横向 ScrollView 偏移，为多个 feature 提供统一的滑动分页行为。
+ *
+ * Responsibilities:
+ * - 根据布局宽度计算并控制分页位置。
+ * - 将手势结束状态同步回活动标签。
+ *
+ * Notes:
+ * - 仅管理 UI 导航偏好，不持久化业务数据。
+ */
 import { useEffect, useRef } from 'react';
 import {
   type NativeScrollEvent,
@@ -9,6 +20,7 @@ import {
 
 const desktopCanvasWidth = 480;
 
+/** 同步标签选择与横向分页 ScrollView，并返回页面宽度和事件处理器。 */
 export function useSwipePager<Tab extends string>({
   activeTab,
   onTabChange,

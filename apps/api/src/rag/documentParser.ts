@@ -1,4 +1,17 @@
-/** Safely parses supported knowledge documents into traceable semantic chunks. */
+/**
+ * 知识文档解析模块。
+ *
+ * 将受支持的 Markdown、Word 与 Spreadsheet 内容转换为可追溯的语义文档块，
+ * 同时保留标题路径、行段范围和预览文本。
+ *
+ * Responsibilities:
+ * - 验证并解析支持的文档格式。
+ * - 生成稳定的文档块、定位信息与 embedding 文本。
+ * - 将解析失败归一化为安全错误。
+ *
+ * Notes:
+ * - 本文件不写数据库，也不调用外部 embedding 服务。
+ */
 import { createHash } from 'node:crypto';
 
 import ExcelJS from 'exceljs';
@@ -22,6 +35,7 @@ const TARGET_CHARS = 800;
 const MAX_CHARS = 1_200;
 const OVERLAP_CHARS = 120;
 
+/** 可安全传递到入库状态的文档解析错误。 */
 export class DocumentParseError extends Error {
   constructor(
     public readonly code: 'DOCUMENT_TOO_LARGE' | 'INVALID_FILE' | 'UNSUPPORTED_FORMAT',
@@ -33,6 +47,7 @@ export class DocumentParseError extends Error {
   }
 }
 
+/** 尚未持久化、但已包含来源定位与 embedding 文本的文档块草稿。 */
 export type ParsedChunkDraft = {
   index: number;
   title: string;
@@ -43,6 +58,7 @@ export type ParsedChunkDraft = {
   locator: SourceLocator;
 };
 
+/** 一次文档解析产生的预览、文档块与非致命警告。 */
 export type ParsedDocument = {
   chunks: ParsedChunkDraft[];
   previewText: string;
@@ -344,6 +360,7 @@ async function parseSpreadsheet(
   return { sections, warnings };
 }
 
+/** 按文件格式解析并规范化知识文档，返回可追溯的文档块。 */
 export async function parseKnowledgeDocument(
   buffer: Buffer,
   format: DocumentFormat,
@@ -375,6 +392,7 @@ export async function parseKnowledgeDocument(
   };
 }
 
+/** 计算原文件内容哈希，用于重复上传和 revision 幂等判断。 */
 export function sourceSha256(buffer: Buffer): string {
   return sha256(buffer);
 }

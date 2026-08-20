@@ -1,3 +1,14 @@
+/**
+ * 分析详情页面测试。
+ *
+ * 验证分析内容、标签和展开交互在 presentation 数据下保持稳定。
+ *
+ * Responsibilities:
+ * - 覆盖分析详情的主要用户交互。
+ *
+ * Notes:
+ * - 不连接真实分析后端。
+ */
 import { fireEvent, render, within } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 

@@ -1,9 +1,21 @@
-/** Connects the analysis-detail presentation screen to Expo Router navigation. */
+/**
+ * 分析详情路由入口。
+ *
+ * 读取分析记录路由参数并连接展示页面与返回导航。
+ *
+ * Responsibilities:
+ * - 校验并传递分析记录 ID。
+ * - 隔离 Expo Router 导航调用。
+ *
+ * Notes:
+ * - 分析内容仍为 presentation 数据。
+ */
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { useNavigationLoading } from '../../components/NavigationLoadingProvider';
 import { AnalysisDetailScreen } from '../../features/analysis-detail/AnalysisDetailScreen';
 
+/** 读取分析 ID 并渲染对应分析详情页面。 */
 export default function AnalysisDetailRoute() {
   const router = useRouter();
   const { runWithLoading } = useNavigationLoading();

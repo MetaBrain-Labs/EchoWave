@@ -1,3 +1,14 @@
+/**
+ * HelloWorld 传输适配器测试。
+ *
+ * 验证成功响应、无效负载、网络错误和超时被转换为稳定客户端结果。
+ *
+ * Responsibilities:
+ * - 覆盖服务状态请求的信任边界。
+ *
+ * Notes:
+ * - 所有 fetch 响应均由测试替身提供。
+ */
 import { fetchHello, ServiceRequestError } from '../apiClient';
 
 describe('fetchHello', () => {

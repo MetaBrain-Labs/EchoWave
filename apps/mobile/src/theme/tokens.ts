@@ -1,4 +1,15 @@
-/** Cross-platform visual tokens governed by the repository design specification. */
+/**
+ * 跨平台视觉 token。
+ *
+ * 集中 EchoWave 的颜色、字体、间距、圆角与文字层级，作为 React Native 样式的单一视觉来源。
+ *
+ * Responsibilities:
+ * - 导出可复用的设计 token。
+ * - 保持 iOS、Android 与 Web 的视觉语义一致。
+ *
+ * Notes:
+ * - 页面不得复制同义的硬编码 token。
+ */
 export const textColors = {
   primary: '#000000',
   secondary: '#5A6472',

@@ -1,4 +1,15 @@
-/** Provides a persistent, minimum-duration loading overlay for route transitions and future async work. */
+/**
+ * 导航加载状态 provider。
+ *
+ * 为路由切换和未来异步操作提供具有最短展示时间的全局加载遮罩，避免快速闪烁和重复状态实现。
+ *
+ * Responsibilities:
+ * - 协调加载任务计数与最短可见时长。
+ * - 向页面暴露开始和结束加载的 Hook。
+ *
+ * Notes:
+ * - 不替代页面自身的数据错误与重试状态。
+ */
 import {
   createContext,
   useCallback,
@@ -139,6 +150,7 @@ function LivelyLoadingMark() {
   );
 }
 
+/** 为子树提供可计数、具有最短展示时长的导航加载状态。 */
 export function NavigationLoadingProvider({
   children,
 }: {
@@ -191,6 +203,7 @@ export function NavigationLoadingProvider({
   );
 }
 
+/** 读取导航加载接口；在 provider 外调用会立即暴露编程错误。 */
 export function useNavigationLoading() {
   const context = useContext(NavigationLoadingContext);
   if (!context) {
@@ -216,11 +229,7 @@ const styles = StyleSheet.create({
   },
   indicatorCard: {
     alignItems: "center",
-    // backgroundColor: colors.card,
     backgroundColor: "transparent",
-    // borderColor: colors.divider,
-    // borderRadius: radii.default,
-    // borderWidth: StyleSheet.hairlineWidth,
     gap: spacing.base,
     minWidth: 128,
     padding: spacing.lg,

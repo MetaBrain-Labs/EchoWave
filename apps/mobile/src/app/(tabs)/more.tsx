@@ -1,3 +1,14 @@
+/**
+ * 更多标签页面。
+ *
+ * 展示当前应用与 API 连接状态，为开发和用户提供可观察的 HelloWorld 健康检查。
+ *
+ * Responsibilities:
+ * - 组合页面说明与服务状态卡片。
+ *
+ * Notes:
+ * - 不保存服务器健康状态。
+ */
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -11,6 +22,7 @@ import {
   typography,
 } from '../../theme/tokens';
 
+/** 组合更多页面说明与 API 服务状态。 */
 export default function MoreScreen() {
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
