@@ -68,6 +68,9 @@ Use the repository's pinned toolchain and existing scripts. Do not change depend
 ### Mobile Application
 
 - Preserve Expo Router and React Native primitives. Do not introduce Vite, Tailwind CSS, a web-only UI library, or a second routing system.
+- Keep `apps/mobile/src/app` routes thin: normalize route parameters, bind navigation callbacks, and render feature screens. Put business state and presentation behavior in `features`.
+- Use the `@/*` alias for imports rooted at `apps/mobile/src`. `shared` must not import `features`; do not make one feature depend on another feature's internal API or UI module.
+- Keep feature-specific components and styles within their feature. Styles follow the component they describe; do not create a repository-wide screen style module.
 - Reuse the shared color, typography, spacing, and radius tokens. Use `StyleSheet` and keep iOS, Android, and web behavior compatible.
 - Maintain full-width safe-area layouts on native and the centered, approximately 480px-wide single-column canvas on desktop web.
 - Keep the bottom routes as `分组 / 知识库 / 新建 / 分析 / 更多` unless the product requirement explicitly changes.
@@ -80,6 +83,10 @@ Use the repository's pinned toolchain and existing scripts. Do not change depend
 ### API and Contracts
 
 - Keep Hono transport concerns in `apps/api`, network schemas in `packages/contracts`, and client parsing in `apps/mobile`.
+- Keep API entry points and runtime assembly in `bootstrap`, configuration parsing in `config`, PostgreSQL connection facilities in `infrastructure`, Hono transport in `http`, and knowledge behavior in the `knowledge` deep module.
+- Within `knowledge`, keep trusted-answer orchestration in `answer`, provider embeddings in `embeddings`, document processing in `ingestion`, and SQL lifecycle operations in `persistence`.
+- Keep knowledge, ingestion, and conversation persistence as narrow lifecycle repositories. Services and workers depend directly on the repositories they use; do not add a delegating aggregate repository.
+- Keep `packages/contracts/src/index.ts` as the compatibility export surface while domain schemas remain split across common errors, knowledge bases, documents, and RAG.
 - `GET /api/hello` must return `{ ok: true, service: "echowave-api", message: "HelloWorld" }` and pass `HelloResponseSchema` unless the shared contract is intentionally changed everywhere.
 - Validate untrusted network data at runtime. A TypeScript type assertion is not a replacement for Zod parsing.
 - Validate inputs at trust boundaries and return compact, actionable errors without leaking secrets, provider stacks, or large internal payloads.

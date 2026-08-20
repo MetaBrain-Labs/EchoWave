@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "tsx watch src/server.ts",
+    "dev": "tsx watch src/bootstrap/server.ts",
     "lint": "eslint src test",
-    "migrate": "tsx src/migrate.ts",
-    "start": "node dist/server.js",
-    "test": "pnpm run build && node --test --test-isolation=none test/*.test.mjs",
+    "migrate": "tsx src/bootstrap/migrate.ts",
+    "start": "node dist/bootstrap/server.js",
+    "test": "pnpm run build && node --test --test-isolation=none \"test/**/*.test.mjs\"",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

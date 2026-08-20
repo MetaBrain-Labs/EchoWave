@@ -15,8 +15,8 @@ import { Tabs } from 'expo-router';
 import type { ComponentProps } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { useNavigationLoading } from '../../components/NavigationLoadingProvider';
-import { colors, radii } from '../../theme/tokens';
+import { useNavigationLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { colors, radii } from '@/shared/theme/tokens';
 
 /** 渲染五个固定产品区域的底部标签布局。 */
 export default function TabsLayout() {

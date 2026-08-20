@@ -12,15 +12,16 @@
  */
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
-import { useNavigationLoading } from '../../components/NavigationLoadingProvider';
-import { AnalysisDetailScreen } from '../../features/analysis-detail/AnalysisDetailScreen';
+import { AnalysisDetailScreen } from '@/features/analysis-detail/AnalysisDetailScreen';
+import { useNavigationLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { firstRouteParam } from '@/shared/navigation/routeParams';
 
 /** 读取分析 ID 并渲染对应分析详情页面。 */
 export default function AnalysisDetailRoute() {
   const router = useRouter();
   const { runWithLoading } = useNavigationLoading();
   const { id } = useLocalSearchParams<{ id?: string | string[] }>();
-  const detailId = Array.isArray(id) ? id[0] : (id ?? '');
+  const detailId = firstRouteParam(id);
   const goBack = () => {
     void runWithLoading(() => {
       router.replace('/');

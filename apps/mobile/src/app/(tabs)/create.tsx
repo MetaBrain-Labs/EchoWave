@@ -9,7 +9,7 @@
  * Notes:
  * - 真实创建工作流尚未接入。
  */
-import { PlaceholderScreen } from '../../components/PlaceholderScreen';
+import { PlaceholderScreen } from '@/shared/ui/PlaceholderScreen';
 
 /** 渲染新建区域的当前里程碑占位页面。 */
 export default function CreateScreen() {

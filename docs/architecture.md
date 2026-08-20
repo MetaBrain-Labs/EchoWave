@@ -15,6 +15,27 @@ Expo mobile ── validated JSON/multipart ──> Hono API
 
 `@echowave/contracts` 是全部 JSON 网络契约的唯一权威来源。API 生产端和移动端消费端都执行 Zod 运行时解析。客户端从不提交 `tenant_id`；固定开发租户只由 `apps/api/.env` 注入。
 
+## 模块与依赖方向
+
+```text
+apps/mobile/src/app
+        │
+        ▼
+apps/mobile/src/features ──> apps/mobile/src/shared
+        │                              │
+        └──────── @echowave/contracts ◄┘
+
+apps/api/src/bootstrap ──> http / knowledge / infrastructure / config
+apps/api/src/http ───────> knowledge ──> answer / embeddings / ingestion / persistence
+apps/api/src/http ───────> @echowave/contracts <──── apps/mobile/src/features
+```
+
+- `apps/mobile/src/app` 只负责路由参数归一化、导航回调和 screen 渲染；业务状态归属 feature，跨 feature 的稳定能力归属 `shared`。
+- 移动端使用 `@/*` 指向 `apps/mobile/src/*`。`shared` 不得反向依赖 `features`，feature 之间也不通过导入另一个 feature 的内部实现来共享基础设施。
+- `apps/api/src/bootstrap` 是组合根；`http` 只处理传输，`knowledge` 负责领域用例，`infrastructure` 只提供 PostgreSQL 连接设施。
+- 知识模块按生命周期形成深模块：可信回答、embedding、入库和持久化。服务、回答模块和 worker 直接依赖所需窄仓储，不设置委托式总仓储。
+- `packages/contracts` 按通用错误、知识库、文档和 RAG 拆分，包根继续作为公共导出兼容面。
+
 ## 数据与发布边界
 
 - PostgreSQL 是知识库、文档、revision、chunk、任务、会话和运行记录的权威来源。

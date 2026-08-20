@@ -12,7 +12,7 @@
 import { fireEvent, render, within } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 
-import { fontFamilies, textColors } from '../../../theme/tokens';
+import { fontFamilies, textColors } from '@/shared/theme/tokens';
 import { AnalysisDetailScreen } from '../AnalysisDetailScreen';
 import { setHideIrrelevantSegmentsPreference } from '../preferences';
 

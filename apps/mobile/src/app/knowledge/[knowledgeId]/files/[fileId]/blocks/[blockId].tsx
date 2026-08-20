@@ -12,8 +12,9 @@
  */
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
-import { useNavigationLoading } from '../../../../../../components/NavigationLoadingProvider';
-import { BlockDetailScreen } from '../../../../../../features/knowledge/BlockDetailScreen';
+import { BlockDetailScreen } from '@/features/knowledge/screens/BlockDetailScreen';
+import { useNavigationLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { firstRouteParam } from '@/shared/navigation/routeParams';
 
 /** 渲染指定文档块并保留完整来源层级参数。 */
 export default function BlockDetailRoute() {
@@ -24,9 +25,9 @@ export default function BlockDetailRoute() {
     fileId?: string | string[];
     knowledgeId?: string | string[];
   }>();
-  const knowledgeId = first(params.knowledgeId);
-  const documentId = first(params.fileId);
-  const blockId = first(params.blockId);
+  const knowledgeId = firstRouteParam(params.knowledgeId);
+  const documentId = firstRouteParam(params.fileId);
+  const blockId = firstRouteParam(params.blockId);
   const fileRoute = {
     pathname: '/knowledge/[knowledgeId]/files/[fileId]' as const,
     params: { fileId: documentId, knowledgeId },
@@ -65,8 +66,4 @@ export default function BlockDetailRoute() {
       }}
     />
   );
-}
-
-function first(value: string | string[] | undefined) {
-  return Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
 }

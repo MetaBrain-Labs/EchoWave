@@ -25,7 +25,7 @@ import {
   RagQueryResponseSchema,
 } from '@echowave/contracts';
 
-import { apiUrl } from '../service/apiClient';
+import { apiUrl } from '@/shared/api/apiUrl';
 
 /** 知识库请求在移动端暴露的稳定错误类型。 */
 export class KnowledgeRequestError extends Error {

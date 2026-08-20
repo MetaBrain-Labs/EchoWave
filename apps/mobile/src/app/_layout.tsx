@@ -22,14 +22,14 @@ import {
 } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { NavigationLoadingProvider } from '../components/NavigationLoadingProvider';
+import { NavigationLoadingProvider } from '@/shared/navigation/NavigationLoadingProvider';
 import {
   colors,
   fontFamilies,
   spacing,
   textColors,
   typography,
-} from '../theme/tokens';
+} from '@/shared/theme/tokens';
 
 /** 装载应用级 provider、字体门禁与根路由栈。 */
 export default function RootLayout() {

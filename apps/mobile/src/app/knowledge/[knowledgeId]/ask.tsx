@@ -12,13 +12,14 @@
  */
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
-import { KnowledgeQueryScreen } from '../../../features/knowledge/KnowledgeQueryScreen';
+import { KnowledgeQueryScreen } from '@/features/knowledge/screens/KnowledgeQueryScreen';
+import { firstRouteParam } from '@/shared/navigation/routeParams';
 
 /** 渲染指定知识库的临时可信问答页面。 */
 export default function KnowledgeQueryRoute() {
   const router = useRouter();
   const params = useLocalSearchParams<{ knowledgeId?: string | string[] }>();
-  const knowledgeId = Array.isArray(params.knowledgeId) ? (params.knowledgeId[0] ?? '') : (params.knowledgeId ?? '');
+  const knowledgeId = firstRouteParam(params.knowledgeId);
   return (
     <KnowledgeQueryScreen
       knowledgeId={knowledgeId}

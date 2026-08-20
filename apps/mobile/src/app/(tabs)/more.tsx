@@ -12,7 +12,7 @@
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { ServiceStatusCard } from '../../features/service/ServiceStatusCard';
+import { ServiceStatusCard } from '@/features/system-status/ServiceStatusCard';
 import {
   colors,
   fontFamilies,
@@ -20,7 +20,7 @@ import {
   spacing,
   textColors,
   typography,
-} from '../../theme/tokens';
+} from '@/shared/theme/tokens';
 
 /** 组合更多页面说明与 API 服务状态。 */
 export default function MoreScreen() {

@@ -15,13 +15,29 @@ EchoWave 是一个面向音频分析、知识库关联和数据源连接场景�
 
 ```text
 apps/
-  api/       Node.js + Hono API
-  mobile/    Expo Router 通用应用（iOS / Android / Web）
+  api/
+    src/
+      bootstrap/       服务启动、运行时装配与显式迁移入口
+      config/          环境配置解析
+      infrastructure/ PostgreSQL 连接设施
+      http/            Hono 应用与传输层错误映射
+      knowledge/       知识库领域深模块（回答、嵌入、入库、持久化）
+  mobile/
+    src/
+      app/              Expo Router 薄路由
+      shared/           API 基础、Hook、导航、主题与通用 UI
+      features/         analysis-detail、group、knowledge、system-status
 packages/
-  contracts/ API 与客户端共享的运行时契约
+  contracts/
+    src/                通用错误、知识库、文档与 RAG 网络契约
 docs/
-  architecture.md
+  README.md            文档索引
+  architecture.md      架构与技术决策
+  design-system.md     移动端设计规范
+  domain-language.md   领域术语
 ```
+
+模块职责和依赖方向详见 [架构说明](./docs/architecture.md)，领域名词以 [领域语言](./docs/domain-language.md) 为准。
 
 ## 本地启动
 
@@ -170,6 +186,6 @@ pnpm check
 
 ## 当前边界
 
-本里程碑不包含真实鉴权、真实音频上传或分析、数据源同步、Redis、对象存储、OCR、PDF、旧版 Office、多 API 实例部署或 EAS Build。入库 worker 与临时文件仅支持单 API 实例；横向扩容前必须迁移到对象存储和独立 worker。详见 [架构说明](./docs/architecture.md)。
+本里程碑不包含真实鉴权、真实音频上传或分析、数据源同步、Redis、对象存储、OCR、PDF、旧版 Office、多 API 实例部署或 EAS Build。入库 worker 与临时文件仅支持单 API 实例；横向扩容前必须迁移到对象存储和独立 worker。详见 [文档索引](./docs/README.md) 与 [架构说明](./docs/architecture.md)。
 
 在 Windows 上无法运行 iOS Simulator；iOS 本轮通过 Expo bundle 导出、TypeScript 检查和应用配置校验，最终原生运行验收需在 macOS/Xcode 环境完成。

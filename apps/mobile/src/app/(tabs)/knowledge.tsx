@@ -12,8 +12,8 @@
  */
 import { useRouter } from 'expo-router';
 
-import { useNavigationLoading } from '../../components/NavigationLoadingProvider';
-import { KnowledgeListScreen } from '../../features/knowledge/KnowledgeListScreen';
+import { KnowledgeListScreen } from '@/features/knowledge/screens/KnowledgeListScreen';
+import { useNavigationLoading } from '@/shared/navigation/NavigationLoadingProvider';
 
 /** 连接知识库目录与知识库详情导航。 */
 export default function KnowledgeScreen() {

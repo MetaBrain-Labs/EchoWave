@@ -12,15 +12,16 @@
  */
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 
-import { useNavigationLoading } from '../../components/NavigationLoadingProvider';
-import { KnowledgeDetailScreen } from '../../features/knowledge/KnowledgeDetailScreen';
+import { KnowledgeDetailScreen } from '@/features/knowledge/screens/KnowledgeDetailScreen';
+import { useNavigationLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { firstRouteParam } from '@/shared/navigation/routeParams';
 
 /** 读取知识库 ID 并连接详情、文档与问答路由。 */
 export default function KnowledgeDetailRoute() {
   const router = useRouter();
   const { runWithLoading } = useNavigationLoading();
   const { knowledgeId } = useLocalSearchParams<{ knowledgeId?: string | string[] }>();
-  const id = Array.isArray(knowledgeId) ? knowledgeId[0] : (knowledgeId ?? '');
+  const id = firstRouteParam(knowledgeId);
   const goBack = () => {
     void runWithLoading(() => {
       router.replace('/knowledge');

@@ -12,8 +12,9 @@
  */
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
-import { useNavigationLoading } from '../../../../components/NavigationLoadingProvider';
-import { DocumentDetailScreen } from '../../../../features/knowledge/DocumentDetailScreen';
+import { DocumentDetailScreen } from '@/features/knowledge/screens/DocumentDetailScreen';
+import { useNavigationLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { firstRouteParam } from '@/shared/navigation/routeParams';
 
 /** 渲染指定知识文档并连接文档块详情导航。 */
 export default function DocumentDetailRoute() {
@@ -25,10 +26,10 @@ export default function DocumentDetailRoute() {
     knowledgeId?: string | string[];
     tab?: string | string[];
   }>();
-  const knowledgeId = first(params.knowledgeId);
-  const documentId = first(params.fileId);
-  const blockId = first(params.block);
-  const initialTab = first(params.tab) === 'original' ? 'original' : 'parsed';
+  const knowledgeId = firstRouteParam(params.knowledgeId);
+  const documentId = firstRouteParam(params.fileId);
+  const blockId = firstRouteParam(params.block);
+  const initialTab = firstRouteParam(params.tab) === 'original' ? 'original' : 'parsed';
   const goBack = () => {
     void runWithLoading(() => {
       router.replace({
@@ -59,8 +60,4 @@ export default function DocumentDetailRoute() {
       }}
     />
   );
-}
-
-function first(value: string | string[] | undefined) {
-  return Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
 }

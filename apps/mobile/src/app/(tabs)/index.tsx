@@ -12,8 +12,8 @@
  */
 import { useRouter } from 'expo-router';
 
-import { useNavigationLoading } from '../../components/NavigationLoadingProvider';
-import { GroupScreen } from '../../features/group/GroupScreen';
+import { GroupScreen } from '@/features/group/GroupScreen';
+import { useNavigationLoading } from '@/shared/navigation/NavigationLoadingProvider';
 
 /** 连接分组页面与分析详情导航。 */
 export default function GroupRoute() {
