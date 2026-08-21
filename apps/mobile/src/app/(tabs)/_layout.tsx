@@ -1,12 +1,24 @@
-/** Defines the five persistent product areas shown in the supplied navigation sketch. */
+/**
+ * 底部标签路由布局。
+ *
+ * 定义 EchoWave 五个持久产品区域的路由、中文标签与图标，并保持跨平台导航行为一致。
+ *
+ * Responsibilities:
+ * - 注册分组、知识库、新建、分析和更多标签页。
+ * - 配置标签栏的可访问名称与视觉状态。
+ *
+ * Notes:
+ * - 不承载各页面业务状态。
+ */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Tabs } from 'expo-router';
 import type { ComponentProps } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { useNavigationLoading } from '../../components/NavigationLoadingProvider';
-import { colors, radii } from '../../theme/tokens';
+import { useNavigationLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { colors, radii } from '@/shared/theme/tokens';
 
+/** 渲染五个固定产品区域的底部标签布局。 */
 export default function TabsLayout() {
   const { runWithLoading } = useNavigationLoading();
 

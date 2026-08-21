@@ -1,4 +1,15 @@
-/** Constrains the universal app to a centered mobile canvas on wide web screens. */
+/**
+ * 移动应用根布局。
+ *
+ * 装载字体、安全区、导航加载状态与 Expo Router 栈，并在桌面 Web 上约束居中的单列画布。
+ *
+ * Responsibilities:
+ * - 初始化跨平台应用级 provider。
+ * - 定义根路由栈和全局画布约束。
+ *
+ * Notes:
+ * - 业务页面状态不得提升到此组合根。
+ */
 import { useFonts } from 'expo-font';
 import { Slot } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -11,15 +22,16 @@ import {
 } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { NavigationLoadingProvider } from '../components/NavigationLoadingProvider';
+import { NavigationLoadingProvider } from '@/shared/navigation/NavigationLoadingProvider';
 import {
   colors,
   fontFamilies,
   spacing,
   textColors,
   typography,
-} from '../theme/tokens';
+} from '@/shared/theme/tokens';
 
+/** 装载应用级 provider、字体门禁与根路由栈。 */
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     [fontFamilies.kai]: require('../../assets/fonts/LXGWWenKaiLite-Regular.ttf'),

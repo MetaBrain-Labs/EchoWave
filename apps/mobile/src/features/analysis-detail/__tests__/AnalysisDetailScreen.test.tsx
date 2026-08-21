@@ -1,7 +1,18 @@
+/**
+ * 分析详情页面测试。
+ *
+ * 验证分析内容、标签和展开交互在 presentation 数据下保持稳定。
+ *
+ * Responsibilities:
+ * - 覆盖分析详情的主要用户交互。
+ *
+ * Notes:
+ * - 不连接真实分析后端。
+ */
 import { fireEvent, render, within } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 
-import { fontFamilies, textColors } from '../../../theme/tokens';
+import { fontFamilies, textColors } from '@/shared/theme/tokens';
 import { AnalysisDetailScreen } from '../AnalysisDetailScreen';
 import { setHideIrrelevantSegmentsPreference } from '../preferences';
 
@@ -111,6 +122,18 @@ describe('AnalysisDetailScreen', () => {
     fireEvent.press(screen.getByLabelText('收起 AI 标签面板'));
 
     expect(screen.queryByText('高频访谈记录场景')).toBeNull();
+  });
+
+  it('embeds the AI tag control in its transcript timeline rail', () => {
+    const screen = render(
+      <AnalysisDetailScreen detailId="audio-1" onBack={jest.fn()} />,
+    );
+    const rail = screen.getByTestId('timeline-rail-segment-opening-question');
+
+    expect(
+      within(rail).getByLabelText('查看 AI 标签：高频访谈记录场景'),
+    ).toBeTruthy();
+    expect(screen.getByTestId('ai-tag-timeline-marker-segment-opening-question')).toBeTruthy();
   });
 
   it('dims unrelated paragraphs and hides them on request', () => {
