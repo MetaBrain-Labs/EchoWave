@@ -18,7 +18,7 @@ import {
   textColors,
   typography,
 } from "@/shared/theme/tokens";
-import type { AiTagAnalysis } from "../mockData";
+import type { AiTagAnalysis } from "../model";
 import { Checkbox } from "./AnalysisControls";
 import { formatTime } from "./utils";
 
@@ -191,4 +191,3 @@ const styles = StyleSheet.create({
     width: 8,
   },
 });
-

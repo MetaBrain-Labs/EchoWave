@@ -8,7 +8,7 @@
  * - 将数据源选择转换为详情路由。
  *
  * Notes:
- * - 展示数据由 data-sources feature 的 presentation mock 提供。
+ * - 展示数据由 data-sources feature 通过共享工作区 API 获取。
  */
 import { useRouter } from 'expo-router';
 

@@ -40,6 +40,9 @@ apps/api/src/http ───────> @echowave/contracts <──── apps/
 ## 数据与发布边界
 
 - PostgreSQL 是知识库、文档、revision、chunk、任务、会话和运行记录的权威来源。
+- PostgreSQL 同时保存租户级分组、数据源、音频元数据和已发布音频分析修订版；音频二进制与第三方凭据不进入业务表。
+- 分组通过关联表连接知识库和数据源；分组可见音频由显式分享与关联数据源两条关系合并去重，页面计数不作为可写字段保存。
+- 新音频分析修订版只有完整写入场景、转写、摘要与标签后才替换音频的当前版本指针，失败重跑不会覆盖旧结果。
 - 所有仓储 SQL 都包含 `tenant_id`，检索还同时约束知识库和文档当前生效 revision。
 - `ingestion_jobs` 通过 `FOR UPDATE SKIP LOCKED`、租约和幂等 chunk 唯一键恢复执行。
 - 新 revision 仅在全部向量写入成功后才在单事务中成为 active revision；失败不会使旧内容离线。

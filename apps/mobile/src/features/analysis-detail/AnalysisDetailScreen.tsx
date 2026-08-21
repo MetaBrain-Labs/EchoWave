@@ -8,14 +8,15 @@
  * - 处理页面返回、分页与不存在记录的降级展示。
  *
  * Notes:
- * - 当前详情数据来自 presentation mock，不表示服务端持久化结果。
+ * - 只展示服务端已经原子发布的当前分析修订版。
  */
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useEffect, useState } from "react";
-import { BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useSwipePager } from "@/shared/hooks/useSwipePager";
+import { getAudioAnalysis } from "@/shared/api/workspaceApi";
 import {
   colors,
   fontFamilies,
@@ -24,7 +25,7 @@ import {
   textColors,
   typography,
 } from "@/shared/theme/tokens";
-import { getAnalysisDetail, type TranscriptSegment } from "./mockData";
+import { toAnalysisDetailView, type AnalysisDetailView, type TranscriptSegment } from "./model";
 import { getHideIrrelevantSegmentsPreference, setHideIrrelevantSegmentsPreference } from "./preferences";
 import { AiTagPanel } from "./components/AiTagPanel";
 import { IconButton } from "./components/AnalysisControls";
@@ -42,7 +43,9 @@ type AnalysisDetailScreenProps = {
 
 /** 渲染指定分析记录的转写、摘要和交互式播放展示。 */
 export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenProps) {
-  const detail = getAnalysisDetail(detailId);
+  const [detail, setDetail] = useState<AnalysisDetailView>();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<AnalysisTab>('transcript');
   const [expandedPlayer, setExpandedPlayer] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -70,6 +73,23 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
       tabs: analysisTabKeys,
     });
 
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      setDetail(toAnalysisDetailView(await getAudioAnalysis(detailId)));
+    } catch (reason) {
+      setDetail(undefined);
+      setError(reason instanceof Error ? reason.message : '分析详情加载失败。');
+    } finally {
+      setLoading(false);
+    }
+  }, [detailId]);
+  useEffect(() => {
+    const task = setTimeout(() => void load(), 0);
+    return () => clearTimeout(task);
+  }, [load]);
+
   useEffect(() => {
     if (!selectedSegment) {
       return undefined;
@@ -83,6 +103,17 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
     return () => subscription.remove();
   }, [selectedSegment]);
 
+  if (loading) {
+    return (
+      <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
+        <View style={styles.unknownTopBar}>
+          <IconButton icon="chevron-back" label="返回" onPress={onBack} />
+        </View>
+        <ActivityIndicator accessibilityLabel="正在加载分析详情" color={colors.ink} style={styles.loading} />
+      </SafeAreaView>
+    );
+  }
+
   if (!detail) {
     return (
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
@@ -92,7 +123,10 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
         <View accessibilityRole="alert" style={styles.emptyState}>
           <Ionicons color={colors.secondary} name="document-outline" size={36} />
           <Text style={styles.emptyTitle}>未找到分析详情</Text>
-          <Text style={styles.emptyDescription}>该音频可能尚未完成分析，请返回后重试。</Text>
+          <Text accessibilityRole="alert" style={styles.emptyDescription}>{error || '该音频可能尚未完成分析，请返回后重试。'}</Text>
+          <Pressable accessibilityRole="button" onPress={() => void load()} style={({ pressed }) => [styles.returnButton, pressed && styles.pressed]}>
+            <Text style={styles.returnButtonText}>重新加载</Text>
+          </Pressable>
           <Pressable
             accessibilityRole="button"
             onPress={onBack}
@@ -200,6 +234,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: spacing.md,
   },
+  loading: { marginTop: spacing.xxl },
   emptyTitle: {
     ...typography.heading2,
     color: textColors.primary,

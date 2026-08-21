@@ -93,10 +93,13 @@ export class KnowledgeRepository {
   async listKnowledgeBases() {
     const result = await this.pool.query(
       `SELECT kb.id, kb.name, kb.description, kb.updated_at,
-              count(d.id)::int AS document_count
+              count(DISTINCT d.id)::int AS document_count,
+              count(DISTINCT gkb.group_id)::int AS linked_group_count
        FROM ${this.table('knowledge_bases')} kb
        LEFT JOIN ${this.table('documents')} d
          ON d.tenant_id = kb.tenant_id AND d.knowledge_base_id = kb.id AND d.deleted_at IS NULL
+       LEFT JOIN ${this.table('group_knowledge_bases')} gkb
+         ON gkb.tenant_id = kb.tenant_id AND gkb.knowledge_base_id = kb.id
        WHERE kb.tenant_id = $1 AND kb.deleted_at IS NULL
        GROUP BY kb.id
        ORDER BY kb.updated_at DESC`,
@@ -108,7 +111,7 @@ export class KnowledgeRepository {
         name: row.name,
         description: row.description,
         documentCount: row.document_count,
-        linkedGroupCount: 0,
+        linkedGroupCount: row.linked_group_count,
         updatedAt: iso(row.updated_at),
       })),
     });
@@ -117,10 +120,13 @@ export class KnowledgeRepository {
   async getKnowledgeBase(id: string): Promise<KnowledgeBaseSummary> {
     const result = await this.pool.query(
       `SELECT kb.id, kb.name, kb.description, kb.updated_at,
-              count(d.id)::int AS document_count
+              count(DISTINCT d.id)::int AS document_count,
+              count(DISTINCT gkb.group_id)::int AS linked_group_count
        FROM ${this.table('knowledge_bases')} kb
        LEFT JOIN ${this.table('documents')} d
          ON d.tenant_id = kb.tenant_id AND d.knowledge_base_id = kb.id AND d.deleted_at IS NULL
+       LEFT JOIN ${this.table('group_knowledge_bases')} gkb
+         ON gkb.tenant_id = kb.tenant_id AND gkb.knowledge_base_id = kb.id
        WHERE kb.tenant_id = $1 AND kb.id = $2 AND kb.deleted_at IS NULL
        GROUP BY kb.id`,
       [this.tenantId, id],
@@ -132,7 +138,7 @@ export class KnowledgeRepository {
       name: row.name,
       description: row.description,
       documentCount: row.document_count,
-      linkedGroupCount: 0,
+      linkedGroupCount: row.linked_group_count,
       updatedAt: iso(row.updated_at),
     });
   }
@@ -321,4 +327,3 @@ export class KnowledgeRepository {
   }
 
 }
-

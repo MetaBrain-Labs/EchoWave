@@ -4,15 +4,15 @@
  * 组合数据源概览、音频文件、上传记录和关联分组四个同级页面。
  *
  * Responsibilities:
- * - 根据数据源标识读取只读 presentation 详情。
+ * - 根据数据源标识读取并组合服务端只读详情。
  * - 协调标签点击、横向滑动、独立纵向滚动和固定操作栏。
  * - 为尚未接入的搜索、上传、转写、重试和关联操作提供明确反馈。
  *
  * Notes:
- * - 页面不发起网络请求，也不持久化任何交互状态。
+ * - 页面不持久化筛选、分页或操作栏交互状态。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -35,15 +35,21 @@ import {
 } from '@/shared/theme/tokens';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { PageTabs } from '@/shared/ui/PageTabs';
+import {
+  getDataSource,
+  listDataSourceAudioFiles,
+  listDataSourceGroups,
+  listDataSourceIngestionRecords,
+} from '@/shared/api/workspaceApi';
 
 import {
-  findDataSourceDetail,
-  type DataSourceDetail,
-  type LinkedSourceGroup,
+  toDataSourceDetailView,
+  type DataSourceDetailView,
   type SourceAudioItem,
   type SourceAudioStatus,
   type UploadRecord,
-} from '../mockData';
+} from '../model';
+import type { LinkedDataSourceGroup } from '@echowave/contracts';
 
 const detailTabs = [
   { key: 'overview', label: '概览' },
@@ -153,7 +159,7 @@ function InfoRow({
   );
 }
 
-function OverviewContent({ source }: { source: DataSourceDetail }) {
+function OverviewContent({ source }: { source: DataSourceDetailView }) {
   const completedCount = source.audioItems.filter((item) => item.status.kind === 'complete').length;
   const pendingCount = source.audioItems.length - completedCount;
   return (
@@ -162,7 +168,7 @@ function OverviewContent({ source }: { source: DataSourceDetail }) {
       <Text style={styles.recentUpload}>最近上传　{source.uploadedAt}:00</Text>
       <View style={styles.metrics}>
         <Metric label="音频数" value={`${source.audioItems.length}`} />
-        <Metric divider label="总时长" value="6h 18m" />
+        <Metric divider label="总时长" value={source.totalDuration} />
         <Metric divider label="已转写" value={`${completedCount}`} />
         <Metric divider label="待处理" value={`${pendingCount}`} />
       </View>
@@ -247,7 +253,7 @@ function UploadRecordRow({ record }: { record: UploadRecord }) {
   );
 }
 
-function GroupCard({ group }: { group: LinkedSourceGroup }) {
+function GroupCard({ group }: { group: LinkedDataSourceGroup }) {
   return (
     <View style={styles.groupCard}>
       <View style={styles.groupTitleRow}>
@@ -322,7 +328,9 @@ export function DataSourceDetailScreen({
   onBack: () => void;
   sourceId: string;
 }) {
-  const source = findDataSourceDetail(sourceId);
+  const [source, setSource] = useState<DataSourceDetailView>();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
   const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } = useSwipePager({
     activeTab,
@@ -330,14 +338,49 @@ export function DataSourceDetailScreen({
     tabs: detailTabKeys,
   });
 
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [detail, audio, records, groups] = await Promise.all([
+        getDataSource(sourceId),
+        listDataSourceAudioFiles(sourceId),
+        listDataSourceIngestionRecords(sourceId),
+        listDataSourceGroups(sourceId),
+      ]);
+      setSource(toDataSourceDetailView(detail, audio.items, records.items, groups.items));
+    } catch (reason) {
+      setSource(undefined);
+      setError(reason instanceof Error ? reason.message : '数据源加载失败。');
+    } finally {
+      setLoading(false);
+    }
+  }, [sourceId]);
+  useEffect(() => {
+    const task = setTimeout(() => void load(), 0);
+    return () => clearTimeout(task);
+  }, [load]);
+
+  if (loading) {
+    return (
+      <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
+        <PageHeader onBack={onBack} onMore={() => showComingSoon('更多操作')} title="数据源详情" />
+        <ActivityIndicator accessibilityLabel="正在加载数据源详情" color={colors.ink} style={styles.loading} />
+      </SafeAreaView>
+    );
+  }
+
   if (!source) {
     return (
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
         <PageHeader onBack={onBack} onMore={() => showComingSoon('更多操作')} title="数据源详情" />
         <View style={styles.emptyState}>
           <Ionicons color={colors.secondary} name="git-network-outline" size={40} />
-          <Text style={styles.emptyTitle}>未找到数据源</Text>
-          <Text style={styles.emptyDescription}>该数据源可能已移除，请返回数据源列表。</Text>
+          <Text style={styles.emptyTitle}>{error.includes('不存在') ? '未找到数据源' : '数据源加载失败'}</Text>
+          <Text accessibilityRole="alert" style={styles.emptyDescription}>{error || '该数据源可能已移除，请返回数据源列表。'}</Text>
+          <Pressable accessibilityRole="button" onPress={() => void load()} style={styles.retryButton}>
+            <Text style={styles.retryText}>重新加载</Text>
+          </Pressable>
         </View>
       </SafeAreaView>
     );
@@ -679,6 +722,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: spacing.md,
   },
+  loading: { marginTop: spacing.xxl },
   emptyTitle: {
     ...typography.heading2,
     color: textColors.primary,

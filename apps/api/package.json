@@ -8,6 +8,7 @@
     "dev": "tsx watch src/bootstrap/server.ts",
     "lint": "eslint src test",
     "migrate": "tsx src/bootstrap/migrate.ts",
+    "seed:dev": "tsx src/bootstrap/seed.ts",
     "start": "node dist/bootstrap/server.js",
     "test": "pnpm run build && node --test --test-isolation=none \"test/**/*.test.mjs\"",
     "typecheck": "tsc -p tsconfig.json --noEmit"

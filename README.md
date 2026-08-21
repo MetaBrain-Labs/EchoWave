@@ -101,6 +101,14 @@ AI_EXECUTION_REPORT_REASONING_ENABLED="false"
 pnpm --filter @echowave/api migrate
 ```
 
+如需在本地还原移动端音频工作区演示内容，请在迁移完成后执行幂等开发 seed：
+
+```powershell
+pnpm --filter @echowave/api seed:dev
+```
+
+开发 seed 使用固定演示 UUID，可安全重复执行；它不会写入 migration，也不保存音频二进制或连接凭据。
+
 迁移会创建业务 schema、`vector(1024)` HNSW 索引、固定开发租户和独立 LangGraph checkpoint schema。PostgreSQL 必须已经安装 `vector` 扩展。
 
 如果 API 报告端口已被占用，说明已有另一个服务实例监听了 `apps/api/.env` 中的 `PORT`。停止旧实例，或修改该 `PORT`，并同步更新 `apps/mobile/.env` 中 URL 的端口。
@@ -195,6 +203,7 @@ pnpm check
 - 分组、知识库、新建、分析、更多五项导航
 - Markdown、DOCX、XLSX 单文件上传、异步解析、分块、嵌入与状态轮询
 - PostgreSQL 租户隔离、revision 原子发布、HNSW 检索和引用回溯
+- PostgreSQL 分组、数据源、音频、上传时间线和版本化分析结果只读纵切片
 - DeepSeek + DeepAgents 知识问答、无证据拒答与短会话 checkpoint
 - 可选的知识问答与入库 Markdown 执行诊断报告
 - 移动端知识库列表、文档/块详情、上传、动态问答反馈、最近六轮只读历史和可返回聊天的引用跳转
@@ -203,6 +212,6 @@ pnpm check
 
 ## 当前边界
 
-本里程碑不包含真实鉴权、真实音频上传或分析、数据源同步、Redis、对象存储、OCR、PDF、旧版 Office、多 API 实例部署或 EAS Build。入库 worker 与临时文件仅支持单 API 实例；横向扩容前必须迁移到对象存储和独立 worker。详见 [文档索引](./docs/README.md) 与 [架构说明](./docs/architecture.md)。
+本里程碑不包含真实鉴权、真实音频上传或分析 worker、数据源同步、Redis、对象存储、OCR、PDF、旧版 Office、多 API 实例部署或 EAS Build。入库 worker 与临时文件仅支持单 API 实例；横向扩容前必须迁移到对象存储和独立 worker。详见 [文档索引](./docs/README.md) 与 [架构说明](./docs/architecture.md)。
 
 在 Windows 上无法运行 iOS Simulator；iOS 本轮通过 Expo bundle 导出、TypeScript 检查和应用配置校验，最终原生运行验收需在 macOS/Xcode 环境完成。

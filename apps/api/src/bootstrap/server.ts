@@ -21,7 +21,10 @@ import { createRagRuntime } from './runtime.ts';
 
 const config = readApiConfigFile(new URL('../../.env', import.meta.url));
 const ragRuntime = createRagRuntime(config);
-const app = createApp(config, { knowledgeService: ragRuntime.service });
+const app = createApp(config, {
+  knowledgeService: ragRuntime.service,
+  workspaceService: ragRuntime.workspaceService,
+});
 ragRuntime.worker.start();
 
 const server = serve({

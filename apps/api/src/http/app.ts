@@ -29,6 +29,8 @@ import type { ApiConfig } from '../config/env.ts';
 import { KnowledgeAnswerError } from '../knowledge/answer/knowledgeAnswer.ts';
 import { RagRepositoryError } from '../knowledge/persistence/errors.ts';
 import { UploadValidationError, type KnowledgeService } from '../knowledge/service.ts';
+import { WorkspaceRepositoryError } from '../workspace/persistence/errors.ts';
+import type { WorkspaceService } from '../workspace/service.ts';
 
 type ErrorStatus = 400 | 404 | 409 | 413 | 500 | 503 | 504;
 
@@ -43,7 +45,7 @@ function id(value: string): string {
 /** 创建不启动监听器的 Hono 应用，使生产服务器和测试通过同一传输接口调用业务模块。 */
 export function createApp(
   config: Pick<ApiConfig, 'corsOrigins'>,
-  dependencies: { knowledgeService?: KnowledgeService } = {},
+  dependencies: { knowledgeService?: KnowledgeService; workspaceService?: WorkspaceService } = {},
 ) {
   const app = new Hono();
 
@@ -130,6 +132,39 @@ export function createApp(
     });
   }
 
+  const workspace = dependencies.workspaceService;
+  if (workspace) {
+    app.get('/api/groups', async (context) => context.json(await workspace.listGroups()));
+    app.get('/api/groups/:groupId', async (context) =>
+      context.json(await workspace.getGroup(id(context.req.param('groupId')))),
+    );
+    app.get('/api/groups/:groupId/audio-files', async (context) =>
+      context.json(await workspace.listGroupAudioFiles(id(context.req.param('groupId')))),
+    );
+    app.get('/api/groups/:groupId/knowledge-bases', async (context) =>
+      context.json(await workspace.listGroupKnowledgeBases(id(context.req.param('groupId')))),
+    );
+    app.get('/api/groups/:groupId/data-sources', async (context) =>
+      context.json(await workspace.listGroupDataSources(id(context.req.param('groupId')))),
+    );
+    app.get('/api/data-sources', async (context) => context.json(await workspace.listDataSources()));
+    app.get('/api/data-sources/:dataSourceId', async (context) =>
+      context.json(await workspace.getDataSource(id(context.req.param('dataSourceId')))),
+    );
+    app.get('/api/data-sources/:dataSourceId/audio-files', async (context) =>
+      context.json(await workspace.listDataSourceAudioFiles(id(context.req.param('dataSourceId')))),
+    );
+    app.get('/api/data-sources/:dataSourceId/ingestion-records', async (context) =>
+      context.json(await workspace.listDataSourceIngestionRecords(id(context.req.param('dataSourceId')))),
+    );
+    app.get('/api/data-sources/:dataSourceId/groups', async (context) =>
+      context.json(await workspace.listDataSourceGroups(id(context.req.param('dataSourceId')))),
+    );
+    app.get('/api/audio-files/:audioFileId/analysis', async (context) =>
+      context.json(await workspace.getAudioAnalysis(id(context.req.param('audioFileId')))),
+    );
+  }
+
   app.notFound((context) => context.json(errorBody('NOT_FOUND', 'Route not found.'), 404));
 
   app.onError((error, context) => {
@@ -143,6 +178,10 @@ export function createApp(
       message = '请求参数无效。';
     } else if (error instanceof RagRepositoryError) {
       status = error.code === 'NOT_FOUND' ? 404 : 409;
+      code = error.code;
+      message = error.message;
+    } else if (error instanceof WorkspaceRepositoryError) {
+      status = 404;
       code = error.code;
       message = error.message;
     } else if (error instanceof UploadValidationError) {

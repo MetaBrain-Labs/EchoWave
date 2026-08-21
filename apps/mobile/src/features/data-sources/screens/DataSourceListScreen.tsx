@@ -1,17 +1,19 @@
 /**
  * 数据源列表页面。
  *
- * 展示当前 presentation 范围内的数据源摘要，并连接到数据源详情路由。
+ * 展示服务端数据源摘要，并连接到数据源详情路由。
  *
  * Responsibilities:
  * - 呈现数据源名称、说明、连接方式、分组数和最近上传时间。
  * - 提供搜索、新增占位反馈和详情导航入口。
  *
  * Notes:
- * - 数据来自本地只读 mock，不表示服务器连接状态。
+ * - 所有响应均由共享契约在客户端边界校验。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import type { DataSourceSummary } from '@echowave/contracts';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -22,8 +24,7 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
-
-import { dataSources, type DataSourceSummary } from '../mockData';
+import { listDataSources } from '@/shared/api/workspaceApi';
 
 function showComingSoon(feature: string) {
   Alert.alert('功能建设中', `${feature}将在后续版本开放。`);
@@ -67,9 +68,11 @@ function DataSourceCard({
         {source.description}
       </Text>
       <Text numberOfLines={1} style={styles.metaText}>
-        接入 {source.linkedGroupCount} 个分组 · {source.connection}
+        接入 {source.linkedGroupCount} 个分组 · {source.connectionLabel}
       </Text>
-      <Text style={styles.uploadedAt}>最近上传　{source.uploadedAt}</Text>
+      <Text style={styles.uploadedAt}>
+        最近上传　{source.lastUploadedAt ? new Date(source.lastUploadedAt).toLocaleString() : '暂无'}
+      </Text>
     </Pressable>
   );
 }
@@ -80,6 +83,25 @@ export function DataSourceListScreen({
 }: {
   onOpenSource: (sourceId: string) => void;
 }) {
+  const [dataSources, setDataSources] = useState<DataSourceSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      setDataSources((await listDataSources()).items);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '数据源加载失败。');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    const task = setTimeout(() => void load(), 0);
+    return () => clearTimeout(task);
+  }, [load]);
+
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <ScrollView
@@ -113,13 +135,25 @@ export function DataSourceListScreen({
           </View>
         </View>
         <View style={styles.list}>
-          {dataSources.map((source) => (
+          {loading ? <ActivityIndicator accessibilityLabel="正在加载数据源" color={colors.ink} /> : null}
+          {error ? (
+            <View style={styles.errorCard}>
+              <Text accessibilityRole="alert" style={styles.description}>{error}</Text>
+              <Pressable accessibilityRole="button" onPress={() => void load()}>
+                <Text style={styles.retryText}>重新加载</Text>
+              </Pressable>
+            </View>
+          ) : null}
+          {!loading && !error && dataSources.length === 0 ? (
+            <Text style={styles.description}>暂无数据源。</Text>
+          ) : null}
+          {!loading && !error ? dataSources.map((source) => (
             <DataSourceCard
               key={source.id}
               onOpen={() => onOpenSource(source.id)}
               source={source}
             />
-          ))}
+          )) : null}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -181,6 +215,17 @@ const styles = StyleSheet.create({
   },
   list: {
     gap: spacing.sm,
+  },
+  errorCard: {
+    backgroundColor: colors.card,
+    borderRadius: radii.default,
+    padding: spacing.lg,
+  },
+  retryText: {
+    ...typography.heading5,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    marginTop: spacing.sm,
   },
   card: {
     backgroundColor: colors.card,

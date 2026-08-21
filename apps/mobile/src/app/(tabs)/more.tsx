@@ -35,7 +35,7 @@ export default function MoreScreen() {
         <View style={styles.roadmapCard}>
           <Text style={styles.roadmapTitle}>后续接入</Text>
           <Text style={styles.roadmapText}>
-            PostgreSQL 与 Redis 已保留架构边界，本里程碑不会连接或启动这些服务。
+            PostgreSQL 已承载知识库与音频工作区数据；Redis 仍保留为未来协调边界。
           </Text>
         </View>
       </ScrollView>

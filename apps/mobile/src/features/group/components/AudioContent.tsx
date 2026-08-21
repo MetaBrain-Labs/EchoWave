@@ -8,6 +8,7 @@
  * - 由 GroupScreen 持有分页、导航和远端加载状态。
  */
 import Ionicons from "@expo/vector-icons/Ionicons";
+import type { AudioFileSummary, AudioProcessingStatus } from "@echowave/contracts";
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native";
 
 import {
@@ -18,16 +19,20 @@ import {
   textColors,
   typography,
 } from "@/shared/theme/tokens";
-import { audioItems, type AudioItem } from "../mockData";
-
 function showComingSoon(feature: string) {
   Alert.alert("功能建设中", `${feature}将在后续版本开放。`);
 }
 
-function AudioStatusView({ status }: Pick<AudioItem, "status">) {
+function formatDuration(durationMs: number | null) {
+  if (durationMs === null) return '--:--';
+  const seconds = Math.floor(durationMs / 1_000);
+  return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`;
+}
+
+function AudioStatusView({ durationMs, status }: { durationMs: number | null; status: AudioProcessingStatus }) {
   switch (status.kind) {
-    case "complete":
-      return <Text style={styles.statusText}>{status.duration}</Text>;
+    case "ready":
+      return <Text style={styles.statusText}>{formatDuration(durationMs)}</Text>;
     case "waiting":
       return (
         <View style={styles.inlineStatus}>
@@ -51,6 +56,10 @@ function AudioStatusView({ status }: Pick<AudioItem, "status">) {
       );
     case "analyzing":
       return <Text style={styles.statusText}>分析中 ({status.progress}%)</Text>;
+    case "transcribing":
+      return <Text style={styles.statusText}>转写中 ({status.progress}%)</Text>;
+    case "failed":
+      return <Text accessibilityRole="alert" style={styles.statusText}>{status.message}</Text>;
   }
 }
 
@@ -58,15 +67,15 @@ function AudioCard({
   item,
   onOpenAudio,
 }: {
-  item: AudioItem;
+  item: AudioFileSummary;
   onOpenAudio?: (id: string) => void;
 }) {
   const content = (
     <>
       <Text style={styles.cardTitle}>{item.title}</Text>
       <View style={styles.audioMetaRow}>
-        <Text style={styles.metaText}>时间 {item.createdAt}</Text>
-        <AudioStatusView status={item.status} />
+        <Text style={styles.metaText}>时间 {new Date(item.createdAt).toLocaleString()}</Text>
+        <AudioStatusView durationMs={item.durationMs} status={item.status} />
       </View>
       {item.sharedFrom ? (
         <View style={styles.sharedRow}>
@@ -81,7 +90,7 @@ function AudioCard({
     </>
   );
 
-  if (item.status.kind !== "complete") {
+  if (item.status.kind !== "ready") {
     return <View style={styles.card}>{content}</View>;
   }
 
@@ -99,14 +108,35 @@ function AudioCard({
 }
 
 export function AudioContent({
+  error,
+  items,
+  loading,
   onOpenAudio,
+  onRetry,
 }: {
+  error: string;
+  items: AudioFileSummary[];
+  loading: boolean;
   onOpenAudio?: (id: string) => void;
+  onRetry: () => void;
 }) {
+  if (loading) {
+    return <ActivityIndicator accessibilityLabel="正在加载分组音频" color={colors.ink} />;
+  }
+  if (error) {
+    return (
+      <View style={styles.card}>
+        <Text accessibilityRole="alert" style={styles.metaText}>{error}</Text>
+        <Pressable accessibilityRole="button" onPress={onRetry}>
+          <Text style={styles.filterText}>重新加载</Text>
+        </Pressable>
+      </View>
+    );
+  }
   return (
     <>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>共 {audioItems.length} 份音频</Text>
+        <Text style={styles.sectionTitle}>共 {items.length} 份音频</Text>
         <Pressable
           accessibilityLabel="排序筛选"
           accessibilityRole="button"
@@ -124,7 +154,7 @@ export function AudioContent({
           />
         </Pressable>
       </View>
-      {audioItems.map((item) => (
+      {items.map((item) => (
         <AudioCard key={item.id} item={item} onOpenAudio={onOpenAudio} />
       ))}
     </>
@@ -207,4 +237,3 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
 });
-

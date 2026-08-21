@@ -8,10 +8,15 @@
  * - 同步标签点击和横向滑动分页。
  *
  * Notes:
- * - 当前音频和数据源记录仍为 presentation mock。
+ * - 分组目录当前选择服务端返回的第一个分组，多分组切换入口仍为占位功能。
  */
 import Ionicons from "@expo/vector-icons/Ionicons";
-import type { KnowledgeBaseSummary } from "@echowave/contracts";
+import type {
+  AudioFileSummary,
+  DataSourceSummary,
+  GroupSummary,
+  KnowledgeBaseSummary,
+} from "@echowave/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -26,6 +31,12 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSwipePager } from "@/shared/hooks/useSwipePager";
 import {
+  listGroupAudioFiles,
+  listGroupDataSources,
+  listGroupKnowledgeBases,
+  listGroups,
+} from "@/shared/api/workspaceApi";
+import {
   colors,
   fontFamilies,
   radii,
@@ -33,7 +44,6 @@ import {
   textColors,
   typography,
 } from "@/shared/theme/tokens";
-import { listKnowledgeBases } from "../knowledge/apiClient";
 import { AudioContent } from "./components/AudioContent";
 import { DataSourcesContent } from "./components/DataSourcesContent";
 import { KnowledgeContent } from "./components/KnowledgeContent";
@@ -79,9 +89,16 @@ export function GroupScreen({
   onOpenAudio?: (id: string) => void;
 }) {
   const [activeTab, setActiveTab] = useState<TabKey>("audio");
+  const [group, setGroup] = useState<GroupSummary>();
+  const [audioItems, setAudioItems] = useState<AudioFileSummary[]>([]);
+  const [audioLoading, setAudioLoading] = useState(true);
+  const [audioError, setAudioError] = useState("");
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseSummary[]>([]);
   const [knowledgeLoading, setKnowledgeLoading] = useState(true);
   const [knowledgeError, setKnowledgeError] = useState("");
+  const [dataSources, setDataSources] = useState<DataSourceSummary[]>([]);
+  const [sourcesLoading, setSourcesLoading] = useState(true);
+  const [sourcesError, setSourcesError] = useState("");
   const [collapsedTabs, setCollapsedTabs] = useState<Record<TabKey, boolean>>({
     audio: false,
     knowledge: false,
@@ -93,11 +110,11 @@ export function GroupScreen({
     sources: 0,
   });
   const headerCollapsed = collapsedTabs[activeTab];
-  const loadKnowledgeBases = useCallback(async () => {
+  const loadKnowledgeBases = useCallback(async (groupId: string) => {
     setKnowledgeLoading(true);
     setKnowledgeError("");
     try {
-      const response = await listKnowledgeBases();
+      const response = await listGroupKnowledgeBases(groupId);
       setKnowledgeBases(response.items);
     } catch (reason) {
       setKnowledgeError(reason instanceof Error ? reason.message : "关联知识库加载失败。");
@@ -105,10 +122,58 @@ export function GroupScreen({
       setKnowledgeLoading(false);
     }
   }, []);
+  const loadAudio = useCallback(async (groupId: string) => {
+    setAudioLoading(true);
+    setAudioError("");
+    try {
+      setAudioItems((await listGroupAudioFiles(groupId)).items);
+    } catch (reason) {
+      setAudioError(reason instanceof Error ? reason.message : "分组音频加载失败。");
+    } finally {
+      setAudioLoading(false);
+    }
+  }, []);
+  const loadSources = useCallback(async (groupId: string) => {
+    setSourcesLoading(true);
+    setSourcesError("");
+    try {
+      setDataSources((await listGroupDataSources(groupId)).items);
+    } catch (reason) {
+      setSourcesError(reason instanceof Error ? reason.message : "分组数据源加载失败。");
+    } finally {
+      setSourcesLoading(false);
+    }
+  }, []);
   useEffect(() => {
-    const task = setTimeout(() => void loadKnowledgeBases(), 0);
+    const task = setTimeout(() => {
+      void listGroups()
+        .then((response) => {
+          const firstGroup = response.items[0];
+          setGroup(firstGroup);
+          if (!firstGroup) {
+            setAudioLoading(false);
+            setKnowledgeLoading(false);
+            setSourcesLoading(false);
+            return;
+          }
+          void Promise.all([
+            loadAudio(firstGroup.id),
+            loadKnowledgeBases(firstGroup.id),
+            loadSources(firstGroup.id),
+          ]);
+        })
+        .catch((reason) => {
+          const message = reason instanceof Error ? reason.message : "分组加载失败。";
+          setAudioError(message);
+          setKnowledgeError(message);
+          setSourcesError(message);
+          setAudioLoading(false);
+          setKnowledgeLoading(false);
+          setSourcesLoading(false);
+        });
+    }, 0);
     return () => clearTimeout(task);
-  }, [loadKnowledgeBases]);
+  }, [loadAudio, loadKnowledgeBases, loadSources]);
   const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } =
     useSwipePager({
       activeTab,
@@ -148,7 +213,7 @@ export function GroupScreen({
           <IconButton icon="menu" label="菜单" />
           {headerCollapsed ? (
             <Text testID="group-inline-title" style={styles.inlineTitle}>
-              分组名称
+              {group?.name ?? "分组"}
             </Text>
           ) : null}
         </View>
@@ -161,7 +226,7 @@ export function GroupScreen({
       </View>
       {!headerCollapsed ? (
         <Text testID="group-display-title" style={styles.displayTitle}>
-          分组名称
+          {group?.name ?? "分组"}
         </Text>
       ) : null}
       <View accessibilityRole="tablist" style={styles.tabs}>
@@ -210,7 +275,13 @@ export function GroupScreen({
             showsVerticalScrollIndicator={false}
             testID="group-audio-scroll"
           >
-            <AudioContent onOpenAudio={onOpenAudio} />
+            <AudioContent
+              error={audioError}
+              items={audioItems}
+              loading={audioLoading}
+              onOpenAudio={onOpenAudio}
+              onRetry={() => { if (group) void loadAudio(group.id); }}
+            />
           </ScrollView>
         </View>
         <View style={[styles.page, { width: pageWidth }]}>
@@ -227,7 +298,7 @@ export function GroupScreen({
               error={knowledgeError}
               knowledgeBases={knowledgeBases}
               loading={knowledgeLoading}
-              onRetry={() => void loadKnowledgeBases()}
+              onRetry={() => { if (group) void loadKnowledgeBases(group.id); }}
             />
           </ScrollView>
         </View>
@@ -241,7 +312,12 @@ export function GroupScreen({
             showsVerticalScrollIndicator={false}
             testID="group-sources-scroll"
           >
-            <DataSourcesContent />
+            <DataSourcesContent
+              error={sourcesError}
+              loading={sourcesLoading}
+              onRetry={() => { if (group) void loadSources(group.id); }}
+              sources={dataSources}
+            />
           </ScrollView>
         </View>
       </ScrollView>

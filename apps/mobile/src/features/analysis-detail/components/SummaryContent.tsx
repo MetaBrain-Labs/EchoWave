@@ -17,12 +17,12 @@ import {
   textColors,
   typography,
 } from "@/shared/theme/tokens";
-import { getAnalysisDetail } from "../mockData";
+import type { AnalysisDetailView } from "../model";
 
 export function SummaryContent({
   detail,
 }: {
-  detail: NonNullable<ReturnType<typeof getAnalysisDetail>>;
+  detail: AnalysisDetailView;
 }) {
   return (
     <ScrollView

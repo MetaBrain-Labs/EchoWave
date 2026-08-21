@@ -8,7 +8,7 @@
  * - 把分析记录选择转换为路由跳转。
  *
  * Notes:
- * - 分组展示数据仍由 presentation 层提供。
+ * - 分组数据请求与状态由 feature 层负责。
  */
 import { useRouter } from 'expo-router';
 

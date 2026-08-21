@@ -7,35 +7,51 @@
  * - 覆盖用户可观察的分组页面交互。
  *
  * Notes:
- * - 使用本地 presentation 数据。
+ * - 服务端响应通过共享工作区适配器 mock 注入。
  */
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { ComponentProps } from 'react';
 import { Alert, StyleSheet } from 'react-native';
 
 import { GroupScreen } from '../GroupScreen';
+import * as workspaceApi from '@/shared/api/workspaceApi';
+import {
+  audioFixtures,
+  groupFixture,
+  knowledgeFixtures,
+  sourceFixtures,
+} from '@/test/workspaceFixtures';
 
-jest.mock('../../knowledge/apiClient', () => ({
-  listKnowledgeBases: jest.fn(async () => ({
-    items: [
-      { id: '11111111-1111-4111-8111-111111111111', name: '产品研究知识库', description: '研究资料', documentCount: 2, linkedGroupCount: 1, updatedAt: '2026-08-19T00:00:00.000Z' },
-      { id: '22222222-2222-4222-8222-222222222222', name: '团队文档空间', description: '团队资料', documentCount: 3, linkedGroupCount: 1, updatedAt: '2026-08-19T00:00:00.000Z' },
-    ],
-  })),
+jest.mock('@/shared/api/workspaceApi', () => ({
+  listGroups: jest.fn(),
+  listGroupAudioFiles: jest.fn(),
+  listGroupKnowledgeBases: jest.fn(),
+  listGroupDataSources: jest.fn(),
 }));
 
 async function renderGroup(props?: ComponentProps<typeof GroupScreen>) {
   const screen = render(<GroupScreen {...props} />);
-  await waitFor(() => expect(screen.queryByLabelText('正在加载关联知识库')).toBeNull());
+  await waitFor(() => {
+    expect(screen.queryByLabelText('正在加载分组音频')).toBeNull();
+    expect(screen.queryByLabelText('正在加载关联知识库')).toBeNull();
+    expect(screen.queryByLabelText('正在加载分组数据源')).toBeNull();
+  });
   return screen;
 }
 
 describe('GroupScreen', () => {
+  beforeEach(() => {
+    jest.mocked(workspaceApi.listGroups).mockResolvedValue({ items: [groupFixture] });
+    jest.mocked(workspaceApi.listGroupAudioFiles).mockResolvedValue({ items: audioFixtures.slice(0, 5) });
+    jest.mocked(workspaceApi.listGroupKnowledgeBases).mockResolvedValue({ items: knowledgeFixtures });
+    jest.mocked(workspaceApi.listGroupDataSources).mockResolvedValue({ items: sourceFixtures.slice(0, 3) });
+  });
+
   it('uses the special group title and inline icon sizing rules', async () => {
     const screen = await renderGroup();
 
     expect(
-      StyleSheet.flatten(screen.getByText('分组名称').props.style),
+      StyleSheet.flatten(screen.getByText('产品研究组').props.style),
     ).toEqual(
       expect.objectContaining({
         fontSize: 40,
@@ -145,7 +161,7 @@ describe('GroupScreen', () => {
       screen.getByLabelText('产品访谈分析，分析已完成'),
     );
 
-    expect(onOpenAudio).toHaveBeenCalledWith('audio-1');
-    expect(screen.queryByLabelText('待整理录音，分析已完成')).toBeNull();
+    expect(onOpenAudio).toHaveBeenCalledWith(audioFixtures[0].id);
+    expect(screen.queryByLabelText('功能概念验证，分析已完成')).toBeNull();
   });
 });

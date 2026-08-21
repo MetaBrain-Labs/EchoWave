@@ -19,7 +19,7 @@ import {
   textColors,
   typography,
 } from "@/shared/theme/tokens";
-import { getAnalysisDetail, type TranscriptSegment } from "../mockData";
+import type { AnalysisDetailView, TranscriptSegment } from "../model";
 import { Checkbox } from "./AnalysisControls";
 import { formatTime, showComingSoon } from "./utils";
 
@@ -117,7 +117,7 @@ export function TranscriptContent({
   onOpenAiTag,
   selectedSegmentId,
 }: {
-  detail: NonNullable<ReturnType<typeof getAnalysisDetail>>;
+  detail: AnalysisDetailView;
   hideIrrelevant: boolean;
   onOpenAiTag: (segment: TranscriptSegment) => void;
   selectedSegmentId?: string;
