@@ -9,7 +9,7 @@
  * Notes:
  * - 真实上传、同步和音频处理不属于当前服务边界。
  */
-import type { GroupCreateRequest } from '@echowave/contracts';
+import type { GroupCreateRequest, KnowledgeBaseGroupLinkRequest } from '@echowave/contracts';
 
 import type { WorkspaceRepository } from './persistence/workspaceRepository.ts';
 
@@ -21,6 +21,11 @@ export interface WorkspaceService {
   archiveGroup(id: string): ReturnType<WorkspaceRepository['archiveGroup']>;
   listGroupAudioFiles(id: string): ReturnType<WorkspaceRepository['listGroupAudioFiles']>;
   listGroupKnowledgeBases(id: string): ReturnType<WorkspaceRepository['listGroupKnowledgeBases']>;
+  listKnowledgeBaseGroups(id: string): ReturnType<WorkspaceRepository['listKnowledgeBaseGroups']>;
+  linkKnowledgeBaseGroups(
+    id: string,
+    input: KnowledgeBaseGroupLinkRequest,
+  ): ReturnType<WorkspaceRepository['linkKnowledgeBaseGroups']>;
   listGroupDataSources(id: string): ReturnType<WorkspaceRepository['listGroupDataSources']>;
   listDataSources(): ReturnType<WorkspaceRepository['listDataSources']>;
   getDataSource(id: string): ReturnType<WorkspaceRepository['getDataSource']>;
@@ -40,6 +45,10 @@ export class DefaultWorkspaceService implements WorkspaceService {
   archiveGroup(id: string) { return this.repository.archiveGroup(id); }
   listGroupAudioFiles(id: string) { return this.repository.listGroupAudioFiles(id); }
   listGroupKnowledgeBases(id: string) { return this.repository.listGroupKnowledgeBases(id); }
+  listKnowledgeBaseGroups(id: string) { return this.repository.listKnowledgeBaseGroups(id); }
+  linkKnowledgeBaseGroups(id: string, input: KnowledgeBaseGroupLinkRequest) {
+    return this.repository.linkKnowledgeBaseGroups(id, input);
+  }
   listGroupDataSources(id: string) { return this.repository.listGroupDataSources(id); }
   listDataSources() { return this.repository.listDataSources(); }
   getDataSource(id: string) { return this.repository.getDataSource(id); }

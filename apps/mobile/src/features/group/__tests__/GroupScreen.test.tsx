@@ -355,4 +355,13 @@ describe('GroupScreen', () => {
     expect(screen.queryByText('过期分组响应')).toBeNull();
     expect(screen.getByText('共 5 份音频')).toBeTruthy();
   });
+
+  it('honors a routed initial group and opens its knowledge tab', async () => {
+    jest.mocked(workspaceApi.listGroups).mockResolvedValue({ items: [groupFixture, secondGroup] });
+    const screen = render(<GroupScreen initialGroupId={secondGroup.id} initialTab="knowledge" />);
+
+    await waitFor(() => expect(screen.getByTestId('group-display-title').props.children).toBe(secondGroup.name));
+    expect(screen.getByRole('tab', { name: '关联知识库' }).props.accessibilityState).toEqual({ selected: true });
+    expect(workspaceApi.listGroupKnowledgeBases).toHaveBeenCalledWith(secondGroup.id);
+  });
 });

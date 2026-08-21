@@ -25,6 +25,7 @@ import {
   LinkedDataSourceGroupListResponseSchema,
   type AudioProcessingStatus,
   type GroupCreateRequest,
+  type KnowledgeBaseGroupLinkRequest,
 } from '@echowave/contracts';
 
 import { quoteIdentifier, type DatabasePool } from '../../infrastructure/postgres.ts';
@@ -277,6 +278,68 @@ export class WorkspaceRepository {
         updatedAt: iso(row.updated_at),
       })),
     });
+  }
+
+  /** 返回知识库当前关联的全部未归档分组及其实时指标。 */
+  async listKnowledgeBaseGroups(knowledgeBaseId: string) {
+    const knowledge = await this.pool.query(
+      `SELECT id FROM ${this.table('knowledge_bases')}
+       WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+      [this.tenantId, knowledgeBaseId],
+    );
+    if (!knowledge.rowCount) {
+      throw new WorkspaceRepositoryError('NOT_FOUND', '知识库不存在。');
+    }
+    const groups = await this.listGroups();
+    const links = await this.pool.query(
+      `SELECT group_id FROM ${this.table('group_knowledge_bases')}
+       WHERE tenant_id = $1 AND knowledge_base_id = $2`,
+      [this.tenantId, knowledgeBaseId],
+    );
+    const linkedIds = new Set(links.rows.map((row) => String(row.group_id)));
+    return GroupListResponseSchema.parse({
+      items: groups.items.filter((group) => linkedIds.has(group.id)),
+    });
+  }
+
+  /** 在单个事务中校验并幂等建立知识库与多个活动分组的关系。 */
+  async linkKnowledgeBaseGroups(knowledgeBaseId: string, input: KnowledgeBaseGroupLinkRequest) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const knowledge = await client.query(
+        `SELECT id FROM ${this.table('knowledge_bases')}
+         WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+         FOR SHARE`,
+        [this.tenantId, knowledgeBaseId],
+      );
+      if (!knowledge.rowCount) {
+        throw new WorkspaceRepositoryError('NOT_FOUND', '知识库不存在。');
+      }
+      const groups = await client.query(
+        `SELECT id FROM ${this.table('groups')}
+         WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL
+         FOR SHARE`,
+        [this.tenantId, input.groupIds],
+      );
+      if (groups.rows.length !== input.groupIds.length) {
+        throw new WorkspaceRepositoryError('NOT_FOUND', '一个或多个分组不存在或已归档。');
+      }
+      await client.query(
+        `INSERT INTO ${this.table('group_knowledge_bases')} (tenant_id, group_id, knowledge_base_id)
+         SELECT $1, requested.group_id, $2
+         FROM unnest($3::uuid[]) AS requested(group_id)
+         ON CONFLICT (tenant_id, group_id, knowledge_base_id) DO NOTHING`,
+        [this.tenantId, knowledgeBaseId, input.groupIds],
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    return this.listKnowledgeBaseGroups(knowledgeBaseId);
   }
 
   private dataSourceSummary(row: Record<string, any>) {

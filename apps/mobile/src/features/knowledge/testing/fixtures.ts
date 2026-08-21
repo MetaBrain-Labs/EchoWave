@@ -14,8 +14,18 @@ import type { KnowledgeBaseDetail, KnowledgeBaseSummary, KnowledgeDocumentDetail
 export const knowledge: KnowledgeBaseDetail = {
   id: '11111111-1111-4111-8111-111111111111', name: '产品研究知识库', description: '真实 API 知识库',
   documentCount: 1, linkedGroupCount: 0, updatedAt: '2026-08-19T10:00:00.000Z',
+  settings: {
+    storageLocation: 'local', indexingMode: 'rag', embeddingModel: 'qwen/qwen3-embedding-8b',
+    rerankerModel: null, parsingMode: 'automatic',
+  },
+  totalSizeBytes: 1024, parsedDocumentCount: 1, pendingDocumentCount: 0,
+  lastUploadedAt: '2026-08-19T10:00:00.000Z',
 };
-export const knowledgeSummary: KnowledgeBaseSummary = knowledge;
+export const knowledgeSummary: KnowledgeBaseSummary = {
+  id: knowledge.id, name: knowledge.name, description: knowledge.description,
+  documentCount: knowledge.documentCount, linkedGroupCount: knowledge.linkedGroupCount,
+  updatedAt: knowledge.updatedAt,
+};
 export const document: KnowledgeDocumentDetail = {
   id: '22222222-2222-4222-8222-222222222222', knowledgeBaseId: knowledge.id, title: '用户研究执行计划',
   format: 'markdown', sizeBytes: 1024, status: { kind: 'ready', parsedAt: '2026-08-19T10:00:00.000Z' },

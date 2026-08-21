@@ -18,6 +18,7 @@ import {
   GroupCreateRequestSchema,
   HelloResponseSchema,
   KnowledgeBaseCreateRequestSchema,
+  KnowledgeBaseGroupLinkRequestSchema,
   KnowledgeBaseUpdateRequestSchema,
   RagQueryRequestSchema,
   type ApiErrorCode,
@@ -135,6 +136,16 @@ export function createApp(
 
   const workspace = dependencies.workspaceService;
   if (workspace) {
+    app.get('/api/knowledge-bases/:knowledgeBaseId/groups', async (context) =>
+      context.json(await workspace.listKnowledgeBaseGroups(id(context.req.param('knowledgeBaseId')))),
+    );
+    app.post('/api/knowledge-bases/:knowledgeBaseId/groups', async (context) => {
+      const input = KnowledgeBaseGroupLinkRequestSchema.parse(await context.req.json());
+      return context.json(await workspace.linkKnowledgeBaseGroups(
+        id(context.req.param('knowledgeBaseId')),
+        input,
+      ));
+    });
     app.get('/api/groups', async (context) => context.json(await workspace.listGroups()));
     app.post('/api/groups', async (context) => {
       const input = GroupCreateRequestSchema.parse(await context.req.json());

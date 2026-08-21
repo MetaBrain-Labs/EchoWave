@@ -1,6 +1,6 @@
 # EchoWave 数据库结构
 
-本文说明 EchoWave 应用全部 SQL migration 执行后的目标数据库结构。数据库结构的权威来源始终是 [`001_rag.sql`](../apps/api/migrations/001_rag.sql) 与 [`002_audio_workspace.sql`](../apps/api/migrations/002_audio_workspace.sql)；本文用于解释各表的业务职责、关系、约束和生命周期，不记录某一开发环境的临时迁移状态。
+本文说明 EchoWave 应用全部 SQL migration 执行后的目标数据库结构。数据库结构的权威来源始终是 [`001_rag.sql`](../apps/api/migrations/001_rag.sql)、[`002_audio_workspace.sql`](../apps/api/migrations/002_audio_workspace.sql) 与 [`003_knowledge_base_overview.sql`](../apps/api/migrations/003_knowledge_base_overview.sql)；本文用于解释各表的业务职责、关系、约束和生命周期，不记录某一开发环境的临时迁移状态。
 
 ## 数据库边界
 
@@ -81,7 +81,17 @@ erDiagram
 
 ### `knowledge_bases`
 
-知识库主表，对应用户看到的一个知识集合。它保存知识库名称、描述和生命周期信息，不保存文档数或关联分组数。
+知识库主表，对应用户看到的一个知识集合。它保存知识库名称、描述、当前只读处理配置和生命周期信息，不保存文档数、文件总大小或关联分组数。
+
+当前配置字段：
+
+- `storage_location`：内容存储位置，当前默认 `local`，可选 `local` 或 `cloud`。
+- `indexing_mode`：索引方式，当前默认 `rag`，可选 `full_context` 或 `rag`。
+- `embedding_model`：知识库配置的嵌入模型，当前默认 `qwen/qwen3-embedding-8b`。
+- `reranker_model`：可为空的重排序模型；`NULL` 表示未启用。
+- `parsing_mode`：解析方式，当前默认 `automatic`，可选 `automatic` 或 `manual`。
+
+这些字段当前用于保存和展示创建时配置，不改变仍由 API 全局配置驱动的解析与检索流程。
 
 关键约束与行为：
 
@@ -89,7 +99,8 @@ erDiagram
 - `(tenant_id, updated_at DESC)` 部分索引支持租户内未删除知识库列表。
 - `(tenant_id, id)` 唯一约束供音频工作区的租户复合外键使用。
 - `documentCount` 从未删除的 `documents` 聚合。
-- `linkedGroupCount` 从 `group_knowledge_bases` 聚合。
+- `linkedGroupCount` 从 `group_knowledge_bases` 与未归档 `groups` 聚合；归档分组的关系事实仍保留但不计入页面数量。
+- `totalSizeBytes`、`parsedDocumentCount`、`pendingDocumentCount` 和 `lastUploadedAt` 从未删除 `documents` 聚合，不回写主表。
 
 ### `documents`
 

@@ -39,6 +39,7 @@ describe('EchoWave API', () => {
 describe('workspace routes', () => {
   let archivedGroupId;
   let createdGroupInput;
+  let linkedKnowledgeInput;
   const workspaceService = {
     listGroups: async () => ({ items: [{
       id: groupId,
@@ -64,6 +65,11 @@ describe('workspace routes', () => {
     archiveGroup: async (id) => { archivedGroupId = id; },
     listGroupAudioFiles: async () => ({ items: [] }),
     listGroupKnowledgeBases: async () => ({ items: [] }),
+    listKnowledgeBaseGroups: async () => ({ items: [] }),
+    linkKnowledgeBaseGroups: async (id, input) => {
+      linkedKnowledgeInput = { id, input };
+      return { items: [] };
+    },
     listGroupDataSources: async () => ({ items: [] }),
     listDataSources: async () => ({ items: [] }),
     getDataSource: async () => ({}),
@@ -115,5 +121,22 @@ describe('workspace routes', () => {
     const response = await workspaceApp.request(`/api/groups/${groupId}/audio-files`);
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { items: [] });
+  });
+
+  it('validates and routes knowledge-base group links', async () => {
+    const linked = await workspaceApp.request(`/api/knowledge-bases/${groupId}/groups`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groupIds: [groupId] }),
+    });
+    assert.equal(linked.status, 200);
+    assert.deepEqual(linkedKnowledgeInput, { id: groupId, input: { groupIds: [groupId] } });
+
+    const invalid = await workspaceApp.request(`/api/knowledge-bases/${groupId}/groups`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groupIds: [] }),
+    });
+    assert.equal(invalid.status, 400);
   });
 });

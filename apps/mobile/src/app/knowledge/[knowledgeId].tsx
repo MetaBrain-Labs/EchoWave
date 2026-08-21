@@ -45,6 +45,11 @@ export default function KnowledgeDetailRoute() {
           }),
         );
       }}
+      onSwitchGroup={(groupId) => {
+        void runWithLoading(() => {
+          router.replace({ pathname: '/', params: { groupId, tab: 'knowledge' } });
+        });
+      }}
     />
   );
 }

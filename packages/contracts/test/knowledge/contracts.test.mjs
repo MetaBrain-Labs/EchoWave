@@ -3,6 +3,8 @@ import { describe, it } from 'node:test';
 
 import {
   KnowledgeBaseCreateRequestSchema,
+  KnowledgeBaseDetailSchema,
+  KnowledgeBaseGroupLinkRequestSchema,
   RagHistoryResponseSchema,
   RagQueryResponseSchema,
   SourceLocatorSchema,
@@ -26,6 +28,50 @@ describe('knowledge contracts', () => {
 
   it('rejects empty knowledge-base names', () => {
     assert.throws(() => KnowledgeBaseCreateRequestSchema.parse({ name: '  ' }));
+  });
+
+  it('validates knowledge-base overview settings and nullable upload facts', () => {
+    const id = '00000000-0000-4000-8000-000000000001';
+    const detail = KnowledgeBaseDetailSchema.parse({
+      id,
+      name: '产品知识库',
+      description: '',
+      documentCount: 0,
+      linkedGroupCount: 0,
+      updatedAt: '2026-08-21T10:00:00.000Z',
+      settings: {
+        storageLocation: 'local',
+        indexingMode: 'rag',
+        embeddingModel: 'qwen/qwen3-embedding-8b',
+        rerankerModel: null,
+        parsingMode: 'automatic',
+      },
+      totalSizeBytes: 0,
+      parsedDocumentCount: 0,
+      pendingDocumentCount: 0,
+      lastUploadedAt: null,
+    });
+
+    assert.equal(detail.settings.rerankerModel, null);
+    assert.throws(() => KnowledgeBaseDetailSchema.parse({
+      ...detail,
+      settings: { ...detail.settings, indexingMode: 'hybrid' },
+    }));
+  });
+
+  it('requires a bounded unique list of group IDs for knowledge links', () => {
+    const first = '00000000-0000-4000-8000-000000000001';
+    const second = '00000000-0000-4000-8000-000000000002';
+    assert.deepEqual(KnowledgeBaseGroupLinkRequestSchema.parse({ groupIds: [first, second] }), {
+      groupIds: [first, second],
+    });
+    assert.throws(() => KnowledgeBaseGroupLinkRequestSchema.parse({ groupIds: [] }));
+    assert.throws(() => KnowledgeBaseGroupLinkRequestSchema.parse({ groupIds: [first, first] }));
+    assert.throws(() => KnowledgeBaseGroupLinkRequestSchema.parse({ groupIds: ['invalid'] }));
+    assert.throws(() => KnowledgeBaseGroupLinkRequestSchema.parse({
+      groupIds: Array.from({ length: 101 }, (_, index) =>
+        `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`),
+    }));
   });
 
   it('validates grounded answers with typed citations', () => {

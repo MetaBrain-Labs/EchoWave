@@ -106,11 +106,15 @@ function IconButton({
 
 /** 渲染分组工作区并协调分组目录与三个同级内容页。 */
 export function GroupScreen({
+  initialGroupId,
+  initialTab,
   onOpenAudio,
 }: {
+  initialGroupId?: string;
+  initialTab?: TabKey;
   onOpenAudio?: (id: string) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<TabKey>('audio');
+  const [activeTab, setActiveTab] = useState<TabKey>(initialTab ?? 'audio');
   const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [group, setGroup] = useState<GroupSummary>();
   const [directoryLoading, setDirectoryLoading] = useState(true);
@@ -238,7 +242,7 @@ export function GroupScreen({
     try {
       const response = await listGroups();
       setGroups(response.items);
-      const firstGroup = response.items[0];
+      const firstGroup = response.items.find((item) => item.id === initialGroupId) ?? response.items[0];
       if (firstGroup) selectGroup(firstGroup);
       else clearSelection();
     } catch (reason) {
@@ -247,7 +251,7 @@ export function GroupScreen({
     } finally {
       setDirectoryLoading(false);
     }
-  }, [clearSelection, selectGroup]);
+  }, [clearSelection, initialGroupId, selectGroup]);
 
   useEffect(() => {
     const task = setTimeout(() => { void loadDirectory(); }, 0);

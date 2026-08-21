@@ -21,8 +21,10 @@ import {
   GroupDetailSchema,
   GroupListResponseSchema,
   KnowledgeBaseListResponseSchema,
+  KnowledgeBaseGroupLinkRequestSchema,
   LinkedDataSourceGroupListResponseSchema,
   type GroupCreateRequest,
+  type KnowledgeBaseGroupLinkRequest,
 } from '@echowave/contracts';
 
 import { apiUrl } from './apiUrl';
@@ -99,6 +101,12 @@ export const listGroupAudioFiles = (id: string) =>
   request(`/api/groups/${id}/audio-files`, AudioFileListResponseSchema);
 export const listGroupKnowledgeBases = (id: string) =>
   request(`/api/groups/${id}/knowledge-bases`, KnowledgeBaseListResponseSchema);
+export const listKnowledgeBaseGroups = (id: string) =>
+  request(`/api/knowledge-bases/${id}/groups`, GroupListResponseSchema);
+export const linkKnowledgeBaseGroups = (id: string, input: KnowledgeBaseGroupLinkRequest) => {
+  const body = KnowledgeBaseGroupLinkRequestSchema.parse(input);
+  return request(`/api/knowledge-bases/${id}/groups`, GroupListResponseSchema, { body, method: 'POST' });
+};
 export const listGroupDataSources = (id: string) =>
   request(`/api/groups/${id}/data-sources`, DataSourceListResponseSchema);
 export const listDataSources = () => request('/api/data-sources', DataSourceListResponseSchema);

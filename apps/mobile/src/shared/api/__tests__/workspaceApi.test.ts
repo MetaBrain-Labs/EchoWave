@@ -10,7 +10,13 @@
  * - 不发起真实网络请求。
  */
 import { groupFixture } from '@/test/workspaceFixtures';
-import { archiveGroup, createGroup, listGroups } from '../workspaceApi';
+import {
+  archiveGroup,
+  createGroup,
+  linkKnowledgeBaseGroups,
+  listGroups,
+  listKnowledgeBaseGroups,
+} from '../workspaceApi';
 
 describe('workspace API client', () => {
   afterEach(() => {
@@ -83,5 +89,26 @@ describe('workspace API client', () => {
       message: '分组不存在或已归档。',
       retryable: false,
     });
+  });
+
+  it('reads and posts knowledge-base group links with validated IDs', async () => {
+    const response = { items: [groupFixture] };
+    const fetch = jest.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify(response), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(response), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }));
+
+    await expect(listKnowledgeBaseGroups(groupFixture.id)).resolves.toEqual(response);
+    await expect(linkKnowledgeBaseGroups(groupFixture.id, { groupIds: [groupFixture.id] })).resolves.toEqual(response);
+    expect(fetch.mock.calls[1][1]).toEqual(expect.objectContaining({
+      body: JSON.stringify({ groupIds: [groupFixture.id] }),
+      method: 'POST',
+    }));
+    expect(() => linkKnowledgeBaseGroups(groupFixture.id, { groupIds: [] })).toThrow();
   });
 });

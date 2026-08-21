@@ -27,6 +27,21 @@ import {
 import { showComingSoon } from "../components/feedback";
 import { createKnowledgeBase, listKnowledgeBases } from "../apiClient";
 
+/** 展示创建知识库时由服务端默认值锁定的配置项。 */
+function ReadonlySetting({ label, value }: { label: string; value: string }) {
+  return (
+    <View
+      accessibilityLabel={`${label}：${value}，不可修改`}
+      accessibilityState={{ disabled: true }}
+      accessible
+      style={styles.readonlySetting}
+    >
+      <Text style={styles.readonlyLabel}>{label}</Text>
+      <Text numberOfLines={1} style={styles.readonlyValue}>{value}</Text>
+    </View>
+  );
+}
+
 /** 加载知识库目录并提供创建与详情导航。 */
 export function KnowledgeListScreen({
   onOpenKnowledge,
@@ -133,6 +148,20 @@ export function KnowledgeListScreen({
               style={[styles.input, styles.descriptionInput]}
               value={createDescription}
             />
+            <View style={styles.settingsSection}>
+              <Text style={styles.settingsTitle}>内容存储</Text>
+              <ReadonlySetting label="存储位置" value="本地" />
+            </View>
+            <View style={styles.settingsSection}>
+              <Text style={styles.settingsTitle}>知识解析</Text>
+              <ReadonlySetting label="索引方式" value="检索增强（RAG）" />
+              <ReadonlySetting label="嵌入模型" value="qwen/qwen3-embedding-8b" />
+              <ReadonlySetting label="重排序模型" value="未启用" />
+            </View>
+            <View style={styles.settingsSection}>
+              <Text style={styles.settingsTitle}>解析处理</Text>
+              <ReadonlySetting label="解析方式" value="自动解析" />
+            </View>
             <View style={styles.createActions}>
               <Pressable accessibilityRole="button" onPress={() => setShowCreate(false)}>
                 <Text style={styles.retry}>取消</Text>
@@ -250,6 +279,11 @@ const styles = StyleSheet.create({
   createPanel: { backgroundColor: colors.card, borderRadius: radii.default, gap: spacing.sm, padding: spacing.md },
   input: { ...typography.body, backgroundColor: colors.background, borderColor: colors.divider, borderRadius: radii.default, borderWidth: StyleSheet.hairlineWidth, color: textColors.primary, minHeight: 44, paddingHorizontal: spacing.base, paddingVertical: spacing.sm },
   descriptionInput: { minHeight: 88, textAlignVertical: 'top' },
+  settingsSection: { gap: spacing.xs },
+  settingsTitle: { ...typography.heading3, color: textColors.primary, fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
+  readonlySetting: { alignItems: 'center', backgroundColor: colors.background, borderRadius: radii.default, flexDirection: 'row', justifyContent: 'space-between', minHeight: 40, opacity: 0.72, paddingHorizontal: spacing.sm },
+  readonlyLabel: { ...typography.description, color: textColors.secondary, fontFamily: fontFamilies.sans },
+  readonlyValue: { ...typography.description, color: textColors.secondary, flexShrink: 1, fontFamily: fontFamilies.sans, marginLeft: spacing.sm },
   createActions: { alignItems: 'center', flexDirection: 'row', justifyContent: 'flex-end', gap: spacing.md },
   submitButton: { backgroundColor: colors.background, borderRadius: radii.default, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   disabled: { opacity: 0.45 },

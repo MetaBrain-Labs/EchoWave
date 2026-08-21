@@ -26,6 +26,23 @@ export const KnowledgeBaseUpdateRequestSchema = KnowledgeBaseCreateRequestSchema
   { message: 'At least one field must be provided.' },
 );
 
+/** 知识库当前只读的存储、检索和解析配置。 */
+export const KnowledgeBaseSettingsSchema = z.object({
+  storageLocation: z.enum(['local', 'cloud']),
+  indexingMode: z.enum(['full_context', 'rag']),
+  embeddingModel: z.string().min(1),
+  rerankerModel: z.string().min(1).nullable(),
+  parsingMode: z.enum(['automatic', 'manual']),
+});
+
+/** 为知识库批量关联分组的请求，禁止同一分组在单次请求内重复出现。 */
+export const KnowledgeBaseGroupLinkRequestSchema = z.object({
+  groupIds: z.array(EntityIdSchema).min(1).max(100).refine(
+    (ids) => new Set(ids).size === ids.length,
+    { message: 'Group IDs must be unique.' },
+  ),
+});
+
 /** 知识库列表和详情共用的摘要 schema。 */
 export const KnowledgeBaseSummarySchema = z.object({
   id: EntityIdSchema,
@@ -37,11 +54,21 @@ export const KnowledgeBaseSummarySchema = z.object({
 });
 
 export const KnowledgeBaseListResponseSchema = z.object({ items: z.array(KnowledgeBaseSummarySchema) });
-export const KnowledgeBaseDetailSchema = KnowledgeBaseSummarySchema;
+export const KnowledgeBaseDetailSchema = KnowledgeBaseSummarySchema.extend({
+  settings: KnowledgeBaseSettingsSchema,
+  totalSizeBytes: z.number().int().nonnegative(),
+  parsedDocumentCount: z.number().int().nonnegative(),
+  pendingDocumentCount: z.number().int().nonnegative(),
+  lastUploadedAt: z.string().datetime().nullable(),
+});
 
 /** 创建知识库输入类型。 */
 export type KnowledgeBaseCreateRequest = z.infer<typeof KnowledgeBaseCreateRequestSchema>;
+/** 知识库批量关联分组输入类型。 */
+export type KnowledgeBaseGroupLinkRequest = z.infer<typeof KnowledgeBaseGroupLinkRequestSchema>;
 /** 知识库详情类型。 */
 export type KnowledgeBaseDetail = z.infer<typeof KnowledgeBaseDetailSchema>;
+/** 知识库只读处理配置类型。 */
+export type KnowledgeBaseSettings = z.infer<typeof KnowledgeBaseSettingsSchema>;
 /** 知识库摘要类型。 */
 export type KnowledgeBaseSummary = z.infer<typeof KnowledgeBaseSummarySchema>;

@@ -10,18 +10,24 @@
  * Notes:
  * - 分组数据请求与状态由 feature 层负责。
  */
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { GroupScreen } from '@/features/group/GroupScreen';
 import { useNavigationLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { firstRouteParam } from '@/shared/navigation/routeParams';
 
 /** 连接分组页面与分析详情导航。 */
 export default function GroupRoute() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ groupId?: string | string[]; tab?: string | string[] }>();
   const { runWithLoading } = useNavigationLoading();
+  const initialGroupId = firstRouteParam(params.groupId) || undefined;
+  const initialTab = firstRouteParam(params.tab) === 'knowledge' ? 'knowledge' : undefined;
 
   return (
     <GroupScreen
+      initialGroupId={initialGroupId}
+      initialTab={initialTab}
       onOpenAudio={(id) => {
         void runWithLoading(() =>
           router.push({ pathname: '/analysis/[id]', params: { id } }),

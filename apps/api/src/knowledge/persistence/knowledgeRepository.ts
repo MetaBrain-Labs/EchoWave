@@ -21,7 +21,7 @@ import {
   KnowledgeDocumentSchema,
   SourceLocatorSchema,
   type KnowledgeBaseCreateRequest,
-  type KnowledgeBaseSummary,
+  type KnowledgeBaseDetail,
   type KnowledgeDocument,
   type SourceLocator,
 } from '@echowave/contracts';
@@ -93,15 +93,22 @@ export class KnowledgeRepository {
   async listKnowledgeBases() {
     const result = await this.pool.query(
       `SELECT kb.id, kb.name, kb.description, kb.updated_at,
-              count(DISTINCT d.id)::int AS document_count,
-              count(DISTINCT gkb.group_id)::int AS linked_group_count
+              coalesce(document_stats.document_count, 0)::int AS document_count,
+              coalesce(group_stats.linked_group_count, 0)::int AS linked_group_count
        FROM ${this.table('knowledge_bases')} kb
-       LEFT JOIN ${this.table('documents')} d
-         ON d.tenant_id = kb.tenant_id AND d.knowledge_base_id = kb.id AND d.deleted_at IS NULL
-       LEFT JOIN ${this.table('group_knowledge_bases')} gkb
-         ON gkb.tenant_id = kb.tenant_id AND gkb.knowledge_base_id = kb.id
+       LEFT JOIN LATERAL (
+         SELECT count(*)::int AS document_count
+         FROM ${this.table('documents')} d
+         WHERE d.tenant_id = kb.tenant_id AND d.knowledge_base_id = kb.id AND d.deleted_at IS NULL
+       ) document_stats ON true
+       LEFT JOIN LATERAL (
+         SELECT count(*)::int AS linked_group_count
+         FROM ${this.table('group_knowledge_bases')} gkb
+         JOIN ${this.table('groups')} g
+           ON g.tenant_id = gkb.tenant_id AND g.id = gkb.group_id AND g.deleted_at IS NULL
+         WHERE gkb.tenant_id = kb.tenant_id AND gkb.knowledge_base_id = kb.id
+       ) group_stats ON true
        WHERE kb.tenant_id = $1 AND kb.deleted_at IS NULL
-       GROUP BY kb.id
        ORDER BY kb.updated_at DESC`,
       [this.tenantId],
     );
@@ -117,18 +124,36 @@ export class KnowledgeRepository {
     });
   }
 
-  async getKnowledgeBase(id: string): Promise<KnowledgeBaseSummary> {
+  async getKnowledgeBase(id: string): Promise<KnowledgeBaseDetail> {
     const result = await this.pool.query(
       `SELECT kb.id, kb.name, kb.description, kb.updated_at,
-              count(DISTINCT d.id)::int AS document_count,
-              count(DISTINCT gkb.group_id)::int AS linked_group_count
+              kb.storage_location, kb.indexing_mode, kb.embedding_model,
+              kb.reranker_model, kb.parsing_mode,
+              coalesce(document_stats.document_count, 0)::int AS document_count,
+              coalesce(document_stats.total_size_bytes, 0)::bigint AS total_size_bytes,
+              coalesce(document_stats.parsed_document_count, 0)::int AS parsed_document_count,
+              coalesce(document_stats.pending_document_count, 0)::int AS pending_document_count,
+              document_stats.last_uploaded_at,
+              coalesce(group_stats.linked_group_count, 0)::int AS linked_group_count
        FROM ${this.table('knowledge_bases')} kb
-       LEFT JOIN ${this.table('documents')} d
-         ON d.tenant_id = kb.tenant_id AND d.knowledge_base_id = kb.id AND d.deleted_at IS NULL
-       LEFT JOIN ${this.table('group_knowledge_bases')} gkb
-         ON gkb.tenant_id = kb.tenant_id AND gkb.knowledge_base_id = kb.id
+       LEFT JOIN LATERAL (
+         SELECT count(*)::int AS document_count,
+                coalesce(sum(d.size_bytes), 0)::bigint AS total_size_bytes,
+                count(*) FILTER (WHERE d.status = 'ready')::int AS parsed_document_count,
+                count(*) FILTER (WHERE d.status NOT IN ('ready', 'deleting'))::int AS pending_document_count,
+                max(d.created_at) AS last_uploaded_at
+         FROM ${this.table('documents')} d
+         WHERE d.tenant_id = kb.tenant_id AND d.knowledge_base_id = kb.id AND d.deleted_at IS NULL
+       ) document_stats ON true
+       LEFT JOIN LATERAL (
+         SELECT count(*)::int AS linked_group_count
+         FROM ${this.table('group_knowledge_bases')} gkb
+         JOIN ${this.table('groups')} g
+           ON g.tenant_id = gkb.tenant_id AND g.id = gkb.group_id AND g.deleted_at IS NULL
+         WHERE gkb.tenant_id = kb.tenant_id AND gkb.knowledge_base_id = kb.id
+       ) group_stats ON true
        WHERE kb.tenant_id = $1 AND kb.id = $2 AND kb.deleted_at IS NULL
-       GROUP BY kb.id`,
+       `,
       [this.tenantId, id],
     );
     const row = result.rows[0];
@@ -140,6 +165,17 @@ export class KnowledgeRepository {
       documentCount: row.document_count,
       linkedGroupCount: row.linked_group_count,
       updatedAt: iso(row.updated_at),
+      settings: {
+        storageLocation: row.storage_location,
+        indexingMode: row.indexing_mode,
+        embeddingModel: row.embedding_model,
+        rerankerModel: row.reranker_model ?? null,
+        parsingMode: row.parsing_mode,
+      },
+      totalSizeBytes: Number(row.total_size_bytes),
+      parsedDocumentCount: row.parsed_document_count,
+      pendingDocumentCount: row.pending_document_count,
+      lastUploadedAt: row.last_uploaded_at ? iso(row.last_uploaded_at) : null,
     });
   }
 

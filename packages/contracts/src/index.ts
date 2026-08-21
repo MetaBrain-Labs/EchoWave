@@ -41,11 +41,15 @@ export {
 export {
   KnowledgeBaseCreateRequestSchema,
   KnowledgeBaseDetailSchema,
+  KnowledgeBaseGroupLinkRequestSchema,
   KnowledgeBaseListResponseSchema,
+  KnowledgeBaseSettingsSchema,
   KnowledgeBaseSummarySchema,
   KnowledgeBaseUpdateRequestSchema,
   type KnowledgeBaseCreateRequest,
   type KnowledgeBaseDetail,
+  type KnowledgeBaseGroupLinkRequest,
+  type KnowledgeBaseSettings,
   type KnowledgeBaseSummary,
 } from './knowledgeBase.ts';
 export {
