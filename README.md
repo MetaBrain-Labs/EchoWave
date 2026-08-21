@@ -34,11 +34,12 @@ packages/
 docs/
   README.md            文档索引
   architecture.md      架构与技术决策
+  database-schema.md   数据库表、关系与生命周期
   design-system.md     移动端设计规范
   domain-language.md   领域术语
 ```
 
-模块职责和依赖方向详见 [架构说明](./docs/architecture.md)，领域名词以 [领域语言](./docs/domain-language.md) 为准。
+模块职责和依赖方向详见 [架构说明](./docs/architecture.md)，数据库表与关系详见 [数据库结构](./docs/database-schema.md)，领域名词以 [领域语言](./docs/domain-language.md) 为准。
 
 ## 本地启动
 
