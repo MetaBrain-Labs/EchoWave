@@ -9,7 +9,7 @@
  */
 import Ionicons from "@expo/vector-icons/Ionicons";
 import type { AudioFileSummary, AudioProcessingStatus } from "@echowave/contracts";
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import {
   colors,
@@ -19,10 +19,6 @@ import {
   textColors,
   typography,
 } from "@/shared/theme/tokens";
-function showComingSoon(feature: string) {
-  Alert.alert("功能建设中", `${feature}将在后续版本开放。`);
-}
-
 function formatDuration(durationMs: number | null) {
   if (durationMs === null) return '--:--';
   const seconds = Math.floor(durationMs / 1_000);
@@ -109,14 +105,18 @@ function AudioCard({
 
 export function AudioContent({
   error,
+  emptyMessage,
   items,
   loading,
+  onOpenFilter,
   onOpenAudio,
   onRetry,
 }: {
   error: string;
+  emptyMessage: string;
   items: AudioFileSummary[];
   loading: boolean;
+  onOpenFilter: () => void;
   onOpenAudio?: (id: string) => void;
   onRetry: () => void;
 }) {
@@ -140,7 +140,7 @@ export function AudioContent({
         <Pressable
           accessibilityLabel="排序筛选"
           accessibilityRole="button"
-          onPress={() => showComingSoon("排序筛选")}
+          onPress={onOpenFilter}
           style={({ pressed }) => [
             styles.filterButton,
             pressed && styles.pressed,
@@ -154,9 +154,13 @@ export function AudioContent({
           />
         </Pressable>
       </View>
-      {items.map((item) => (
+      {items.length ? items.map((item) => (
         <AudioCard key={item.id} item={item} onOpenAudio={onOpenAudio} />
-      ))}
+      )) : (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyText}>{emptyMessage}</Text>
+        </View>
+      )}
     </>
   );
 }
@@ -201,6 +205,17 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.035,
     shadowRadius: 5,
+  },
+  emptyState: {
+    alignItems: "center",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xl,
+  },
+  emptyText: {
+    ...typography.body,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    textAlign: "center",
   },
   cardTitle: {
     ...typography.heading2,

@@ -61,10 +61,12 @@ export {
   type RagQueryResponse,
 } from './rag.ts';
 export {
+  GroupCreateRequestSchema,
   GroupDetailSchema,
   GroupListResponseSchema,
   GroupMetricsSchema,
   GroupSummarySchema,
+  type GroupCreateRequest,
   type GroupMetrics,
   type GroupSummary,
 } from './group.ts';

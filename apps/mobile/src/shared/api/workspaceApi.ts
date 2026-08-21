@@ -1,30 +1,33 @@
 /**
  * 音频工作区移动端传输适配器。
  *
- * 统一请求分组、数据源、音频和分析只读接口，并在客户端信任边界解析共享契约。
+ * 统一请求分组生命周期、数据源、音频和分析接口，并在客户端信任边界解析共享契约。
  *
  * Responsibilities:
- * - 提供跨 feature 复用的工作区读取函数。
+ * - 提供跨 feature 复用的工作区读写函数。
  * - 将网络、超时和非法响应转换为稳定错误。
  *
  * Notes:
  * - 本模块不保存服务器数据，也不提供真实上传或分析操作。
  */
 import {
+  ApiErrorResponseSchema,
   AudioAnalysisDetailSchema,
   AudioFileListResponseSchema,
   DataSourceDetailSchema,
   DataSourceIngestionListResponseSchema,
   DataSourceListResponseSchema,
+  GroupCreateRequestSchema,
   GroupDetailSchema,
   GroupListResponseSchema,
   KnowledgeBaseListResponseSchema,
   LinkedDataSourceGroupListResponseSchema,
+  type GroupCreateRequest,
 } from '@echowave/contracts';
 
 import { apiUrl } from './apiUrl';
 
-/** 工作区只读请求的稳定客户端错误。 */
+/** 工作区读写请求的稳定客户端错误。 */
 export class WorkspaceRequestError extends Error {
   constructor(public readonly code: string, message: string, public readonly retryable = false) {
     super(message);
@@ -36,22 +39,43 @@ type RuntimeSchema<T> = {
   safeParse(value: unknown): { success: true; data: T } | { success: false };
 };
 
-async function request<T>(path: string, schema: RuntimeSchema<T>): Promise<T> {
+type RequestOptions = {
+  body?: unknown;
+  method?: 'GET' | 'POST' | 'DELETE';
+};
+
+async function request<T>(path: string, schema: RuntimeSchema<T>, options?: RequestOptions): Promise<T>;
+async function request(path: string, schema: null, options: RequestOptions): Promise<void>;
+async function request<T>(path: string, schema: RuntimeSchema<T> | null, options: RequestOptions = {}): Promise<T | void> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20_000);
   try {
     const response = await fetch(`${apiUrl}${path}`, {
-      headers: { Accept: 'application/json' },
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      headers: {
+        Accept: 'application/json',
+        ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      },
+      method: options.method ?? 'GET',
       signal: controller.signal,
     });
-    const body: unknown = await response.json();
     if (!response.ok) {
+      const body: unknown = await response.json().catch(() => null);
+      const parsedError = ApiErrorResponseSchema.safeParse(body);
       throw new WorkspaceRequestError(
-        response.status === 404 ? 'NOT_FOUND' : 'HTTP_ERROR',
-        response.status === 404 ? '请求的数据不存在。' : `请求失败（HTTP ${response.status}）。`,
-        response.status >= 500,
+        parsedError.success ? parsedError.data.error.code : response.status === 404 ? 'NOT_FOUND' : 'HTTP_ERROR',
+        parsedError.success
+          ? parsedError.data.error.message
+          : response.status === 404 ? '请求的数据不存在。' : `请求失败（HTTP ${response.status}）。`,
+        parsedError.success ? parsedError.data.error.retryable : response.status >= 500,
       );
     }
+    if (response.status === 204) {
+      if (schema === null) return;
+      throw new WorkspaceRequestError('INVALID_RESPONSE', '服务返回了无法识别的数据。');
+    }
+    const body: unknown = await response.json();
+    if (schema === null) throw new WorkspaceRequestError('INVALID_RESPONSE', '服务返回了无法识别的数据。');
     const parsed = schema.safeParse(body);
     if (!parsed.success) throw new WorkspaceRequestError('INVALID_RESPONSE', '服务返回了无法识别的数据。');
     return parsed.data;
@@ -65,6 +89,11 @@ async function request<T>(path: string, schema: RuntimeSchema<T>): Promise<T> {
 }
 
 export const listGroups = () => request('/api/groups', GroupListResponseSchema);
+export const createGroup = (input: GroupCreateRequest) => {
+  const body = GroupCreateRequestSchema.parse(input);
+  return request('/api/groups', GroupDetailSchema, { body, method: 'POST' });
+};
+export const archiveGroup = (id: string) => request(`/api/groups/${id}`, null, { method: 'DELETE' });
 export const getGroup = (id: string) => request(`/api/groups/${id}`, GroupDetailSchema);
 export const listGroupAudioFiles = (id: string) =>
   request(`/api/groups/${id}/audio-files`, AudioFileListResponseSchema);

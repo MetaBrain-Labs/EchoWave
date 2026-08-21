@@ -21,11 +21,13 @@ import {
 } from "@/shared/theme/tokens";
 export function DataSourcesContent({
   error,
+  emptyMessage,
   loading,
   onRetry,
   sources,
 }: {
   error: string;
+  emptyMessage: string;
   loading: boolean;
   onRetry: () => void;
   sources: DataSourceSummary[];
@@ -48,7 +50,7 @@ export function DataSourcesContent({
       <Text style={[styles.sectionTitle, styles.sectionHeaderSolo]}>
         共连接 {sources.length} 个数据源
       </Text>
-      {sources.map((source) => (
+      {sources.length ? sources.map((source) => (
         <View key={source.id} style={styles.card}>
           <View style={styles.sourceTitleRow}>
             <View style={styles.titleRow}>
@@ -69,7 +71,11 @@ export function DataSourcesContent({
           <Text style={styles.metaText}>{source.connectionLabel}</Text>
           <Text style={styles.metaText}>最近上传 {source.lastUploadedAt ? new Date(source.lastUploadedAt).toLocaleString() : '暂无'}</Text>
         </View>
-      ))}
+      )) : (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyText}>{emptyMessage}</Text>
+        </View>
+      )}
     </>
   );
 }
@@ -96,6 +102,17 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.035,
     shadowRadius: 5,
+  },
+  emptyState: {
+    alignItems: "center",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xl,
+  },
+  emptyText: {
+    ...typography.body,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    textAlign: "center",
   },
   cardTitle: {
     ...typography.heading2,

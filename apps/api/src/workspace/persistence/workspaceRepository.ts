@@ -1,12 +1,14 @@
 /**
- * 音频工作区只读仓储。
+ * 音频工作区仓储。
  *
- * 从分组、数据源、音频及分析结果事实表构建移动端所需投影，并在每条查询中固定租户边界。
+ * 从分组、数据源、音频及分析结果事实表构建移动端所需投影，并维护分组生命周期；
+ * 所有读写均固定在当前租户边界内。
  *
  * Responsibilities:
  * - 聚合分组和数据源动态指标。
  * - 统一推导音频处理状态与上传时间线。
  * - 恢复当前已发布分析版本的有序内容。
+ * - 创建并软归档租户内分组。
  *
  * Notes:
  * - 本仓储不创建连接、不保存凭据，也不执行音频处理任务。
@@ -22,6 +24,7 @@ import {
   KnowledgeBaseListResponseSchema,
   LinkedDataSourceGroupListResponseSchema,
   type AudioProcessingStatus,
+  type GroupCreateRequest,
 } from '@echowave/contracts';
 
 import { quoteIdentifier, type DatabasePool } from '../../infrastructure/postgres.ts';
@@ -95,7 +98,7 @@ const visibleAudioCte = `
      AND af.deleted_at IS NULL
   )`;
 
-/** 为当前固定租户提供全部音频工作区只读查询。 */
+/** 为当前固定租户提供分组生命周期和音频工作区查询。 */
 export class WorkspaceRepository {
   private readonly schema: string;
 
@@ -169,6 +172,37 @@ export class WorkspaceRepository {
     const group = groups.items.find((item) => item.id === groupId);
     if (!group) throw new WorkspaceRepositoryError('NOT_FOUND', '分组不存在。');
     return GroupDetailSchema.parse(group);
+  }
+
+  /** 在当前租户下创建空分组，并返回与列表一致的零指标投影。 */
+  async createGroup(input: GroupCreateRequest) {
+    const result = await this.pool.query(
+      `INSERT INTO ${this.table('groups')} (tenant_id, name)
+       VALUES ($1, $2)
+       RETURNING id, name, updated_at`,
+      [this.tenantId, input.name],
+    );
+    const row = result.rows[0];
+    return GroupDetailSchema.parse({
+      id: row.id,
+      name: row.name,
+      metrics: { analysisCount: 0, audioCount: 0, knowledgeCount: 0, sourceCount: 0 },
+      updatedAt: iso(row.updated_at),
+    });
+  }
+
+  /** 软归档当前租户内尚未归档的分组，保留关联事实供未来恢复。 */
+  async archiveGroup(groupId: string) {
+    const result = await this.pool.query(
+      `UPDATE ${this.table('groups')}
+       SET deleted_at = now(), updated_at = now()
+       WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+       RETURNING id`,
+      [this.tenantId, groupId],
+    );
+    if (!result.rowCount) {
+      throw new WorkspaceRepositoryError('NOT_FOUND', '分组不存在或已归档。');
+    }
   }
 
   async listGroupAudioFiles(groupId: string) {

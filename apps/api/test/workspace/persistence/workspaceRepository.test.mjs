@@ -63,3 +63,41 @@ describe('WorkspaceRepository group audio', () => {
     assert.deepEqual(calls[1].values, [tenantId, groupId]);
   });
 });
+
+describe('WorkspaceRepository group lifecycle', () => {
+  it('creates groups inside the fixed tenant with zero derived metrics', async () => {
+    const calls = [];
+    const pool = {
+      query: async (sql, values) => {
+        calls.push({ sql, values });
+        return { rows: [{ id: groupId, name: '客户研究组', updated_at: new Date('2026-08-21T10:00:00.000Z') }] };
+      },
+    };
+    const repository = new WorkspaceRepository(pool, 'echowave', tenantId);
+
+    const created = await repository.createGroup({ name: '客户研究组' });
+
+    assert.equal(created.name, '客户研究组');
+    assert.deepEqual(created.metrics, { analysisCount: 0, audioCount: 0, knowledgeCount: 0, sourceCount: 0 });
+    assert.match(calls[0].sql, /INSERT INTO/);
+    assert.deepEqual(calls[0].values, [tenantId, '客户研究组']);
+  });
+
+  it('soft archives only a matching active group and rejects missing rows', async () => {
+    const calls = [];
+    const pool = {
+      query: async (sql, values) => {
+        calls.push({ sql, values });
+        return { rowCount: calls.length === 1 ? 1 : 0, rows: [] };
+      },
+    };
+    const repository = new WorkspaceRepository(pool, 'echowave', tenantId);
+
+    await repository.archiveGroup(groupId);
+    await assert.rejects(() => repository.archiveGroup(groupId), /不存在或已归档/);
+
+    assert.match(calls[0].sql, /SET deleted_at = now\(\), updated_at = now\(\)/);
+    assert.match(calls[0].sql, /deleted_at IS NULL/);
+    assert.deepEqual(calls[0].values, [tenantId, groupId]);
+  });
+});

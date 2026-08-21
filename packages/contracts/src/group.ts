@@ -13,6 +13,11 @@ import { z } from 'zod';
 
 import { EntityIdSchema } from './common.ts';
 
+/** 创建分组时接受的名称，写入前统一去除首尾空白。 */
+export const GroupCreateRequestSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+});
+
 /** 分组页面展示的四项聚合指标。 */
 export const GroupMetricsSchema = z.object({
   analysisCount: z.number().int().nonnegative(),
@@ -34,3 +39,4 @@ export const GroupDetailSchema = GroupSummarySchema;
 
 export type GroupMetrics = z.infer<typeof GroupMetricsSchema>;
 export type GroupSummary = z.infer<typeof GroupSummarySchema>;
+export type GroupCreateRequest = z.infer<typeof GroupCreateRequestSchema>;

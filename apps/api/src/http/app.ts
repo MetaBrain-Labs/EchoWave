@@ -15,6 +15,7 @@
 import {
   ApiErrorResponseSchema,
   EntityIdSchema,
+  GroupCreateRequestSchema,
   HelloResponseSchema,
   KnowledgeBaseCreateRequestSchema,
   KnowledgeBaseUpdateRequestSchema,
@@ -135,9 +136,17 @@ export function createApp(
   const workspace = dependencies.workspaceService;
   if (workspace) {
     app.get('/api/groups', async (context) => context.json(await workspace.listGroups()));
+    app.post('/api/groups', async (context) => {
+      const input = GroupCreateRequestSchema.parse(await context.req.json());
+      return context.json(await workspace.createGroup(input), 201);
+    });
     app.get('/api/groups/:groupId', async (context) =>
       context.json(await workspace.getGroup(id(context.req.param('groupId')))),
     );
+    app.delete('/api/groups/:groupId', async (context) => {
+      await workspace.archiveGroup(id(context.req.param('groupId')));
+      return context.body(null, 204);
+    });
     app.get('/api/groups/:groupId/audio-files', async (context) =>
       context.json(await workspace.listGroupAudioFiles(id(context.req.param('groupId')))),
     );

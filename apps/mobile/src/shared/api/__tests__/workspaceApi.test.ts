@@ -10,7 +10,7 @@
  * - 不发起真实网络请求。
  */
 import { groupFixture } from '@/test/workspaceFixtures';
-import { listGroups } from '../workspaceApi';
+import { archiveGroup, createGroup, listGroups } from '../workspaceApi';
 
 describe('workspace API client', () => {
   afterEach(() => {
@@ -49,5 +49,39 @@ describe('workspace API client', () => {
     await jest.advanceTimersByTimeAsync(1);
     await rejection;
     expect(requestSignal?.aborted).toBe(true);
+  });
+
+  it('sends validated group creation JSON and accepts archive 204 responses', async () => {
+    const fetch = jest.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify(groupFixture), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    await expect(createGroup({ name: '  产品研究组  ' })).resolves.toEqual(groupFixture);
+    expect(fetch.mock.calls[0][1]).toEqual(expect.objectContaining({
+      body: JSON.stringify({ name: '产品研究组' }),
+      method: 'POST',
+    }));
+
+    await expect(archiveGroup(groupFixture.id)).resolves.toBeUndefined();
+    expect(fetch.mock.calls[1][1]).toEqual(expect.objectContaining({ method: 'DELETE' }));
+  });
+
+  it('preserves structured server errors for group writes', async () => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+      ok: false,
+      error: { code: 'NOT_FOUND', message: '分组不存在或已归档。', retryable: false },
+    }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+
+    await expect(archiveGroup(groupFixture.id)).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      message: '分组不存在或已归档。',
+      retryable: false,
+    });
   });
 });

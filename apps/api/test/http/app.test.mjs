@@ -37,6 +37,8 @@ describe('EchoWave API', () => {
 });
 
 describe('workspace routes', () => {
+  let archivedGroupId;
+  let createdGroupInput;
   const workspaceService = {
     listGroups: async () => ({ items: [{
       id: groupId,
@@ -50,6 +52,16 @@ describe('workspace routes', () => {
       metrics: { analysisCount: 1, audioCount: 2, knowledgeCount: 1, sourceCount: 1 },
       updatedAt: '2026-08-21T10:00:00.000Z',
     }),
+    createGroup: async (input) => {
+      createdGroupInput = input;
+      return {
+        id: groupId,
+        name: input.name,
+        metrics: { analysisCount: 0, audioCount: 0, knowledgeCount: 0, sourceCount: 0 },
+        updatedAt: '2026-08-21T10:00:00.000Z',
+      };
+    },
+    archiveGroup: async (id) => { archivedGroupId = id; },
     listGroupAudioFiles: async () => ({ items: [] }),
     listGroupKnowledgeBases: async () => ({ items: [] }),
     listGroupDataSources: async () => ({ items: [] }),
@@ -72,6 +84,31 @@ describe('workspace routes', () => {
 
     const invalid = await workspaceApp.request('/api/groups/not-a-uuid');
     assert.equal(invalid.status, 400);
+  });
+
+  it('creates trimmed groups and archives validated identifiers', async () => {
+    const created = await workspaceApp.request('/api/groups', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: '  客户研究组  ' }),
+    });
+    assert.equal(created.status, 201);
+    assert.deepEqual(createdGroupInput, { name: '客户研究组' });
+    assert.equal((await created.json()).name, '客户研究组');
+
+    const archived = await workspaceApp.request(`/api/groups/${groupId}`, { method: 'DELETE' });
+    assert.equal(archived.status, 204);
+    assert.equal(archivedGroupId, groupId);
+  });
+
+  it('rejects invalid group creation payloads', async () => {
+    const response = await workspaceApp.request('/api/groups', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: '   ' }),
+    });
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).error.code, 'BAD_REQUEST');
   });
 
   it('routes nested read models to the workspace service', async () => {

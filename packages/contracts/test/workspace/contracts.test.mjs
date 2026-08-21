@@ -13,6 +13,7 @@ import {
   AudioAnalysisDetailSchema,
   AudioFileSummarySchema,
   DataSourceDetailSchema,
+  GroupCreateRequestSchema,
 } from '../../dist/index.js';
 
 const firstId = '11111111-1111-4111-8111-111111111111';
@@ -20,6 +21,15 @@ const secondId = '22222222-2222-4222-8222-222222222222';
 const thirdId = '33333333-3333-4333-8333-333333333333';
 
 describe('workspace contracts', () => {
+  it('trims valid group names and rejects empty or oversized names', () => {
+    assert.deepEqual(GroupCreateRequestSchema.parse({ name: '  客户研究组  ' }), {
+      name: '客户研究组',
+    });
+    assert.throws(() => GroupCreateRequestSchema.parse({ name: '   ' }));
+    assert.throws(() => GroupCreateRequestSchema.parse({ name: '分'.repeat(121) }));
+    assert.throws(() => GroupCreateRequestSchema.parse({ name: 42 }));
+  });
+
   it('validates structured audio failure states and progress bounds', () => {
     const audio = AudioFileSummarySchema.parse({
       id: firstId,
