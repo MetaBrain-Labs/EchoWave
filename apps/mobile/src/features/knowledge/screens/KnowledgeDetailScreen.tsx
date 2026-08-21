@@ -24,6 +24,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { DocumentStatus, KnowledgeBaseDetail, KnowledgeDocument } from '@echowave/contracts';
 
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
+import { PageHeader } from '@/shared/ui/PageHeader';
+import { PageTabs } from '@/shared/ui/PageTabs';
 import {
   colors,
   fontFamilies,
@@ -34,8 +36,6 @@ import {
 } from '@/shared/theme/tokens';
 import { ActionButton, DocumentFormatIcon, DocumentStatusView } from '../components/DocumentUi';
 import { EmptyState } from '../components/EmptyState';
-import { PageHeader } from '../components/PageHeader';
-import { PageTabs } from '../components/PageTabs';
 import { SearchAndFilter } from '../components/SearchAndFilter';
 import { showComingSoon } from '../components/feedback';
 import { getDocument, getKnowledgeBase, listDocuments, retryDocument, uploadDocument } from '../apiClient';
@@ -231,7 +231,7 @@ export function KnowledgeDetailScreen({
   if (loading && !knowledge) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <PageHeader onBack={onBack} title="知识库详情" />
+        <PageHeader onBack={onBack} onMore={() => showComingSoon('更多操作')} title="知识库详情" />
         <EmptyState description="正在从服务器读取知识库与文档。" title="正在加载" />
       </SafeAreaView>
     );
@@ -240,7 +240,7 @@ export function KnowledgeDetailScreen({
   if (!knowledge) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <PageHeader onBack={onBack} title="知识库详情" />
+        <PageHeader onBack={onBack} onMore={() => showComingSoon('更多操作')} title="知识库详情" />
         <EmptyState
           description="该知识库可能已被移除，请返回知识库列表。"
           title={error || "未找到知识库"}
@@ -251,7 +251,7 @@ export function KnowledgeDetailScreen({
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <PageHeader onBack={onBack} title={knowledge.name} />
+      <PageHeader onBack={onBack} onMore={() => showComingSoon('更多操作')} title={knowledge.name} />
       <ScrollView
         horizontal
         keyboardShouldPersistTaps="handled"

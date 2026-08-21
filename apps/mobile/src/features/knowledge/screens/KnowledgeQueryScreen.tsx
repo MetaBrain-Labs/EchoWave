@@ -17,11 +17,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { PageHeader } from '@/shared/ui/PageHeader';
+
 import { colors, fontFamilies, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
 import { listQueryHistory, queryKnowledge } from '../apiClient';
 import { AnswerProgressCard } from '../components/AnswerProgressCard';
 import { CitationList } from '../components/CitationList';
-import { PageHeader } from '../components/PageHeader';
 import { QueryHistoryModal } from '../components/QueryHistoryModal';
 
 type Turn = {

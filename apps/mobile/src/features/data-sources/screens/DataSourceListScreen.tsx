@@ -1,0 +1,246 @@
+/**
+ * 数据源列表页面。
+ *
+ * 展示当前 presentation 范围内的数据源摘要，并连接到数据源详情路由。
+ *
+ * Responsibilities:
+ * - 呈现数据源名称、说明、连接方式、分组数和最近上传时间。
+ * - 提供搜索、新增占位反馈和详情导航入口。
+ *
+ * Notes:
+ * - 数据来自本地只读 mock，不表示服务器连接状态。
+ */
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import {
+  colors,
+  fontFamilies,
+  radii,
+  spacing,
+  textColors,
+  typography,
+} from '@/shared/theme/tokens';
+
+import { dataSources, type DataSourceSummary } from '../mockData';
+
+function showComingSoon(feature: string) {
+  Alert.alert('功能建设中', `${feature}将在后续版本开放。`);
+}
+
+function DataSourceCard({
+  onOpen,
+  source,
+}: {
+  onOpen: () => void;
+  source: DataSourceSummary;
+}) {
+  return (
+    <Pressable
+      accessibilityHint="打开该数据源的详情"
+      accessibilityLabel={`打开数据源：${source.name}`}
+      accessibilityRole="button"
+      onPress={onOpen}
+      style={({ pressed }) => [styles.card, pressed && styles.pressedCard]}
+    >
+      <View style={styles.cardTitleRow}>
+        <View style={styles.cardTitleMain}>
+          <Ionicons
+            color={colors.ink}
+            name="git-network-outline"
+            size={typography.heading2.lineHeight}
+          />
+          <Text numberOfLines={1} style={styles.cardTitle}>
+            {source.name}
+          </Text>
+        </View>
+        <View accessibilityLabel={source.location === 'local' ? '本地来源' : '云端来源'} style={styles.locationIcon}>
+          <Ionicons
+            color={colors.ink}
+            name={source.location === 'local' ? 'folder-outline' : 'cloud-outline'}
+            size={typography.heading2.lineHeight}
+          />
+        </View>
+      </View>
+      <Text numberOfLines={2} style={styles.description}>
+        {source.description}
+      </Text>
+      <Text numberOfLines={1} style={styles.metaText}>
+        接入 {source.linkedGroupCount} 个分组 · {source.connection}
+      </Text>
+      <Text style={styles.uploadedAt}>最近上传　{source.uploadedAt}</Text>
+    </Pressable>
+  );
+}
+
+/** 渲染数据源目录并把选中项交给路由层处理。 */
+export function DataSourceListScreen({
+  onOpenSource,
+}: {
+  onOpenSource: (sourceId: string) => void;
+}) {
+  return (
+    <SafeAreaView edges={['top']} style={styles.safeArea}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        testID="data-source-list-scroll"
+      >
+        <View style={styles.header}>
+          <Text accessibilityRole="header" style={styles.pageTitle}>
+            数据源
+          </Text>
+          <View style={styles.headerActions}>
+            <Pressable
+              accessibilityLabel="搜索数据源"
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={() => showComingSoon('数据源搜索')}
+              style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+            >
+              <Ionicons color={colors.ink} name="search-outline" size={30} />
+            </Pressable>
+            <Pressable
+              accessibilityLabel="新增数据源"
+              accessibilityRole="button"
+              onPress={() => showComingSoon('新增数据源')}
+              style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}
+            >
+              <Ionicons color={colors.ink} name="add" size={typography.heading3.lineHeight} />
+              <Text style={styles.addButtonText}>新增</Text>
+            </Pressable>
+          </View>
+        </View>
+        <View style={styles.list}>
+          {dataSources.map((source) => (
+            <DataSourceCard
+              key={source.id}
+              onOpen={() => onOpenSource(source.id)}
+              source={source}
+            />
+          ))}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: {
+    backgroundColor: colors.background,
+    flex: 1,
+  },
+  content: {
+    paddingBottom: spacing.xxl,
+    paddingHorizontal: spacing.md,
+  },
+  header: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    minHeight: 112,
+  },
+  pageTitle: {
+    ...typography.heading1,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  headerActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  iconButton: {
+    alignItems: 'center',
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  addButton: {
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderColor: colors.ink,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+  },
+  addButtonText: {
+    ...typography.heading3,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  pressed: {
+    backgroundColor: colors.divider,
+    borderRadius: radii.default,
+  },
+  list: {
+    gap: spacing.sm,
+  },
+  card: {
+    backgroundColor: colors.card,
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: StyleSheet.hairlineWidth,
+    minHeight: 188,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
+    shadowColor: colors.ink,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.035,
+    shadowRadius: 5,
+  },
+  pressedCard: {
+    backgroundColor: colors.background,
+  },
+  cardTitleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  cardTitleMain: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  cardTitle: {
+    ...typography.heading2,
+    color: textColors.primary,
+    flex: 1,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  locationIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderRadius: radii.default,
+    height: 36,
+    justifyContent: 'center',
+    marginLeft: spacing.sm,
+    width: 36,
+  },
+  description: {
+    ...typography.body,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    marginTop: spacing.lg,
+  },
+  metaText: {
+    ...typography.description,
+    color: textColors.tertiary,
+    fontFamily: fontFamilies.sans,
+    marginTop: spacing.md,
+  },
+  uploadedAt: {
+    ...typography.description,
+    color: textColors.tertiary,
+    fontFamily: fontFamilies.sans,
+    marginTop: spacing.sm,
+  },
+});

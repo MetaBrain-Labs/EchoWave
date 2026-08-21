@@ -89,10 +89,10 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="analysis"
+        name="sources"
         options={{
-          title: '分析',
-          tabBarAccessibilityLabel: '分析',
+          title: '数据源',
+          tabBarAccessibilityLabel: '数据源',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               color={color}

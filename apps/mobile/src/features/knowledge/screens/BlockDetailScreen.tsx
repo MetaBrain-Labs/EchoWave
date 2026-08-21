@@ -16,10 +16,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { PageHeader } from '@/shared/ui/PageHeader';
+
 import { colors, fontFamilies, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
 import { getDocument } from '../apiClient';
 import { EmptyState } from '../components/EmptyState';
-import { PageHeader } from '../components/PageHeader';
 import { showComingSoon } from '../components/feedback';
 import { toggleImportantBlock, useImportantBlocks } from '../importantBlocks';
 
@@ -59,7 +60,7 @@ export function BlockDetailScreen({ blockId, documentId, knowledgeId, onBack, on
   if (!document || !block) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <PageHeader onBack={onBack} title="文本块详情" />
+        <PageHeader onBack={onBack} onMore={() => showComingSoon('更多操作')} title="文本块详情" />
         <EmptyState description={error || '正在从服务器读取文本块。'} title={error ? '加载失败' : '正在加载'} />
       </SafeAreaView>
     );
@@ -70,6 +71,7 @@ export function BlockDetailScreen({ blockId, documentId, knowledgeId, onBack, on
     <SafeAreaView style={styles.safeArea}>
       <PageHeader
         onBack={onBack}
+        onMore={() => showComingSoon('更多操作')}
         onSearch={() => showComingSoon('文本块搜索')}
         searchLabel="搜索文本块"
         title={`块 ${block.index} · ${block.title || '正文'}`}

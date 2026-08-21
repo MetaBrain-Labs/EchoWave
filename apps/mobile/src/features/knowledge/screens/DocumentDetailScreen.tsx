@@ -23,13 +23,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { PageHeader } from '@/shared/ui/PageHeader';
+import { PageTabs } from '@/shared/ui/PageTabs';
+
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
 import { colors, fontFamilies, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
 import { getDocument } from '../apiClient';
 import { ActionButton, DocumentFormatIcon } from '../components/DocumentUi';
 import { EmptyState } from '../components/EmptyState';
-import { PageHeader } from '../components/PageHeader';
-import { PageTabs } from '../components/PageTabs';
 import { SearchAndFilter } from '../components/SearchAndFilter';
 import { showComingSoon } from '../components/feedback';
 import { toggleImportantBlock, useImportantBlocks } from '../importantBlocks';
@@ -103,7 +104,7 @@ export function DocumentDetailScreen({
   if (!document) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <PageHeader onBack={onBack} title="文件详情" />
+        <PageHeader onBack={onBack} onMore={() => showComingSoon('更多操作')} title="文件详情" />
         <EmptyState description={error || '正在从服务器读取解析结果。'} title={error ? '加载失败' : '正在加载'} />
       </SafeAreaView>
     );
@@ -131,7 +132,8 @@ export function DocumentDetailScreen({
   return (
     <SafeAreaView style={styles.safeArea}>
       <PageHeader
-        icon={document.format}
+        leading={<DocumentFormatIcon format={document.format} size={28} />}
+        onMore={() => showComingSoon('更多操作')}
         onBack={onBack}
         onSearch={() => {
           if (activeTab === 'parsed') searchInputRef.current?.focus();
