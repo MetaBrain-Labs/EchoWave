@@ -17,6 +17,7 @@ export const EntityIdSchema = z.string().uuid();
 
 /** EchoWave HTTP API 允许使用的稳定错误码 schema。 */
 export const ApiErrorCodeSchema = z.enum([
+  'AUDIO_TOO_LARGE',
   'BAD_REQUEST',
   'CONFLICT',
   'DOCUMENT_TOO_LARGE',
@@ -26,6 +27,7 @@ export const ApiErrorCodeSchema = z.enum([
   'MODEL_TIMEOUT',
   'MODEL_UNAVAILABLE',
   'NOT_FOUND',
+  'TOO_MANY_FILES',
   'UNSUPPORTED_FORMAT',
 ]);
 

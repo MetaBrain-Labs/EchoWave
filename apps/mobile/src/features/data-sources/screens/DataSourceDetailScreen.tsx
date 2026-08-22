@@ -12,7 +12,9 @@
  * - 页面不持久化筛选、分页或操作栏交互状态。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useCallback, useEffect, useState } from 'react';
+import type { GroupSummary, LinkedDataSourceGroup } from '@echowave/contracts';
+import * as DocumentPicker from 'expo-document-picker';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -37,10 +39,24 @@ import { PageHeader } from '@/shared/ui/PageHeader';
 import { PageTabs } from '@/shared/ui/PageTabs';
 import {
   getDataSource,
+  archiveDataSource,
+  archiveDataSourceAudioFile,
+  linkDataSourceGroups,
+  listGroups,
   listDataSourceAudioFiles,
   listDataSourceGroups,
   listDataSourceIngestionRecords,
+  unlinkDataSourceGroup,
+  updateDataSource,
+  uploadDataSourceAudioFiles,
 } from '@/shared/api/workspaceApi';
+
+import {
+  DataSourceConfirmDialog,
+  DataSourceFormSheet,
+  DataSourceGroupPicker,
+  type DataSourceFormValue,
+} from '../components/DataSourceDialogs';
 
 import {
   toDataSourceDetailView,
@@ -49,7 +65,6 @@ import {
   type SourceAudioStatus,
   type UploadRecord,
 } from '../model';
-import type { LinkedDataSourceGroup } from '@echowave/contracts';
 
 const detailTabs = [
   { key: 'overview', label: '概览' },
@@ -126,7 +141,7 @@ function AudioStatusView({ status }: { status: SourceAudioStatus }) {
   }
 }
 
-function AudioRow({ item }: { item: SourceAudioItem }) {
+function AudioRow({ item, onArchive }: { item: SourceAudioItem; onArchive: () => void }) {
   return (
     <View style={styles.audioRow}>
       <Pressable
@@ -150,7 +165,7 @@ function AudioRow({ item }: { item: SourceAudioItem }) {
         accessibilityLabel={`${item.title}更多操作`}
         accessibilityRole="button"
         hitSlop={8}
-        onPress={() => showComingSoon('音频更多操作')}
+        onPress={onArchive}
         style={({ pressed }) => [styles.moreButton, pressed && styles.pressed]}
       >
         <Ionicons color={colors.ink} name="ellipsis-vertical" size={24} />
@@ -181,7 +196,13 @@ function InfoRow({
   );
 }
 
-function OverviewContent({ source }: { source: DataSourceDetailView }) {
+function OverviewContent({
+  onArchiveAudio,
+  source,
+}: {
+  onArchiveAudio: (audio: SourceAudioItem) => void;
+  source: DataSourceDetailView;
+}) {
   const completedCount = source.audioItems.filter((item) => item.status.kind === 'complete').length;
   const pendingCount = source.audioItems.length - completedCount;
   return (
@@ -241,15 +262,21 @@ function OverviewContent({ source }: { source: DataSourceDetailView }) {
 
       <View style={styles.recentAudioSection}>
         <Text style={styles.sectionTitle}>近期音频</Text>
-        {source.audioItems.slice(0, 3).map((item) => (
-          <AudioRow item={item} key={item.id} />
-        ))}
+        {source.audioItems.length === 0 ? (
+          <Text style={styles.listEmptyText}>暂无音频，上传后会在这里显示。</Text>
+        ) : (
+          source.audioItems
+            .slice(0, 3)
+            .map((item) => (
+              <AudioRow item={item} key={item.id} onArchive={() => onArchiveAudio(item)} />
+            ))
+        )}
       </View>
     </View>
   );
 }
 
-function UploadRecordRow({ record }: { record: UploadRecord }) {
+function UploadRecordRow({ onReupload, record }: { onReupload: () => void; record: UploadRecord }) {
   const failed = record.kind !== 'upload-success';
   const title =
     record.kind === 'upload-success'
@@ -280,7 +307,7 @@ function UploadRecordRow({ record }: { record: UploadRecord }) {
         <Pressable
           accessibilityLabel={`${actionLabel}：${record.time}`}
           accessibilityRole="button"
-          onPress={() => showComingSoon(actionLabel)}
+          onPress={record.kind === 'upload-failed' ? onReupload : () => showComingSoon(actionLabel)}
           style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
         >
           <Text style={styles.retryText}>{actionLabel}</Text>
@@ -300,16 +327,45 @@ function UploadRecordRow({ record }: { record: UploadRecord }) {
   );
 }
 
-function GroupCard({ group }: { group: LinkedDataSourceGroup }) {
+function GroupCard({
+  group,
+  onSwitch,
+  onUnlink,
+}: {
+  group: LinkedDataSourceGroup;
+  onSwitch: () => void;
+  onUnlink: () => void;
+}) {
   return (
     <View style={styles.groupCard}>
       <View style={styles.groupTitleRow}>
         <Text style={styles.groupTitle}>{group.name}</Text>
-        <Ionicons
-          color={colors.secondary}
-          name="swap-horizontal"
-          size={typography.heading2.lineHeight}
-        />
+        <View style={styles.groupActions}>
+          <Pressable
+            accessibilityLabel={`切换到分组：${group.name}`}
+            accessibilityRole="button"
+            onPress={onSwitch}
+            style={styles.groupIconButton}
+          >
+            <Ionicons
+              color={colors.secondary}
+              name="swap-horizontal"
+              size={typography.heading2.lineHeight}
+            />
+          </Pressable>
+          <Pressable
+            accessibilityLabel={`解除关联分组：${group.name}`}
+            accessibilityRole="button"
+            onPress={onUnlink}
+            style={styles.groupIconButton}
+          >
+            <Ionicons
+              color={colors.secondary}
+              name="unlink-outline"
+              size={typography.heading2.lineHeight}
+            />
+          </Pressable>
+        </View>
       </View>
       <View style={styles.groupMetrics}>
         <Metric label="分析数" value={`${group.analysisCount}`} />
@@ -326,19 +382,24 @@ function ActionButton({
   label,
   onPress,
   emphasized = false,
+  disabled = false,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   onPress: () => void;
   emphasized?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [
         styles.actionButton,
         emphasized && styles.emphasizedActionButton,
+        disabled && styles.disabledActionButton,
         pressed && styles.pressed,
       ]}
     >
@@ -348,16 +409,21 @@ function ActionButton({
   );
 }
 
-function FixedActions({ activeTab }: { activeTab: DetailTab }) {
+function FixedActions({
+  activeTab,
+  onLinkGroups,
+  onUpload,
+  uploading,
+}: {
+  activeTab: DetailTab;
+  onLinkGroups: () => void;
+  onUpload: () => void;
+  uploading: boolean;
+}) {
   if (activeTab === 'groups') {
     return (
       <View style={styles.fixedActions} testID="data-source-fixed-actions">
-        <ActionButton
-          emphasized
-          icon="add"
-          label="关联新分组"
-          onPress={() => showComingSoon('关联新分组')}
-        />
+        <ActionButton emphasized icon="add" label="关联新分组" onPress={onLinkGroups} />
       </View>
     );
   }
@@ -367,8 +433,9 @@ function FixedActions({ activeTab }: { activeTab: DetailTab }) {
         <ActionButton
           emphasized
           icon="cloud-upload-outline"
-          label="上传音频"
-          onPress={() => showComingSoon('上传音频')}
+          label={uploading ? '正在上传…' : '上传音频'}
+          onPress={onUpload}
+          disabled={uploading}
         />
       </View>
     );
@@ -383,8 +450,9 @@ function FixedActions({ activeTab }: { activeTab: DetailTab }) {
       <ActionButton
         emphasized
         icon="cloud-upload-outline"
-        label="上传音频"
-        onPress={() => showComingSoon('上传音频')}
+        label={uploading ? '正在上传…' : '上传音频'}
+        onPress={onUpload}
+        disabled={uploading}
       />
     </View>
   );
@@ -393,43 +461,217 @@ function FixedActions({ activeTab }: { activeTab: DetailTab }) {
 /** 渲染数据源详情及四个可点击、可滑动的同级页面。 */
 export function DataSourceDetailScreen({
   onBack,
+  onArchived,
+  onSwitchGroup,
   sourceId,
 }: {
   onBack: () => void;
+  onArchived?: () => void;
+  onSwitchGroup?: (groupId: string) => void;
   sourceId: string;
 }) {
   const [source, setSource] = useState<DataSourceDetailView>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [operationError, setOperationError] = useState('');
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
+  const [editVisible, setEditVisible] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [archiveSourceVisible, setArchiveSourceVisible] = useState(false);
+  const [audioArchiveTarget, setAudioArchiveTarget] = useState<SourceAudioItem>();
+  const [unlinkTarget, setUnlinkTarget] = useState<LinkedDataSourceGroup>();
+  const [switchTarget, setSwitchTarget] = useState<LinkedDataSourceGroup>();
+  const [confirming, setConfirming] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [availableGroups, setAvailableGroups] = useState<GroupSummary[]>([]);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [pickerError, setPickerError] = useState('');
+  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(() => new Set());
+  const [linking, setLinking] = useState(false);
   const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } = useSwipePager({
     activeTab,
     onTabChange: setActiveTab,
     tabs: detailTabKeys,
   });
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const [detail, audio, records, groups] = await Promise.all([
-        getDataSource(sourceId),
-        listDataSourceAudioFiles(sourceId),
-        listDataSourceIngestionRecords(sourceId),
-        listDataSourceGroups(sourceId),
-      ]);
-      setSource(toDataSourceDetailView(detail, audio.items, records.items, groups.items));
-    } catch (reason) {
-      setSource(undefined);
-      setError(reason instanceof Error ? reason.message : '数据源加载失败。');
-    } finally {
-      setLoading(false);
-    }
-  }, [sourceId]);
+  const load = useCallback(
+    async (showLoading = true) => {
+      if (showLoading) setLoading(true);
+      setError('');
+      try {
+        const [detail, audio, records, groups] = await Promise.all([
+          getDataSource(sourceId),
+          listDataSourceAudioFiles(sourceId),
+          listDataSourceIngestionRecords(sourceId),
+          listDataSourceGroups(sourceId),
+        ]);
+        setSource(toDataSourceDetailView(detail, audio.items, records.items, groups.items));
+      } catch (reason) {
+        if (showLoading) setSource(undefined);
+        setError(reason instanceof Error ? reason.message : '数据源加载失败。');
+      } finally {
+        if (showLoading) setLoading(false);
+      }
+    },
+    [sourceId],
+  );
   useEffect(() => {
     const task = setTimeout(() => void load(), 0);
     return () => clearTimeout(task);
   }, [load]);
+
+  const linkedGroupIds = useMemo(
+    () => new Set(source?.linkedGroups.map((group) => group.id) ?? []),
+    [source?.linkedGroups],
+  );
+
+  const saveDataSource = async (value: DataSourceFormValue) => {
+    setSaving(true);
+    setFormError('');
+    try {
+      await updateDataSource(sourceId, value);
+      setEditVisible(false);
+      await load(false);
+    } catch (reason) {
+      setFormError(reason instanceof Error ? reason.message : '数据源保存失败。');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const pickAndUpload = async () => {
+    if (uploading) return;
+    const selection = await DocumentPicker.getDocumentAsync({
+      type: ['audio/*'],
+      copyToCacheDirectory: true,
+      multiple: true,
+    });
+    if (selection.canceled) return;
+    const assets = selection.assets;
+    const allowedExtensions = new Set(['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'webm']);
+    if (assets.length > 20) {
+      setOperationError('单批最多上传 20 个音频文件。');
+      return;
+    }
+    if (
+      assets.some(
+        (asset) => !allowedExtensions.has(asset.name.split('.').pop()?.toLowerCase() ?? ''),
+      )
+    ) {
+      setOperationError('仅支持 MP3、WAV、M4A、AAC、FLAC、OGG 和 WebM 音频。');
+      return;
+    }
+    const totalBytes = assets.reduce((total, asset) => total + (asset.size ?? 0), 0);
+    if (
+      assets.some((asset) => (asset.size ?? 0) > 200 * 1024 * 1024) ||
+      totalBytes > 200 * 1024 * 1024
+    ) {
+      setOperationError('单个文件和整批文件总大小均不能超过 200 MB。');
+      return;
+    }
+    setUploading(true);
+    setOperationError('');
+    try {
+      await uploadDataSourceAudioFiles(sourceId, assets);
+      await load(false);
+    } catch (reason) {
+      setOperationError(reason instanceof Error ? reason.message : '音频上传失败。');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const loadAvailableGroups = useCallback(async () => {
+    setPickerLoading(true);
+    setPickerError('');
+    setAvailableGroups([]);
+    try {
+      setAvailableGroups((await listGroups()).items);
+    } catch (reason) {
+      setPickerError(reason instanceof Error ? reason.message : '分组加载失败。');
+    } finally {
+      setPickerLoading(false);
+    }
+  }, []);
+
+  const openGroupPicker = () => {
+    setSelectedGroupIds(new Set());
+    setPickerVisible(true);
+    void loadAvailableGroups();
+  };
+
+  const toggleGroup = (groupId: string) => {
+    setSelectedGroupIds((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+  };
+
+  const confirmLinks = async () => {
+    if (linking || selectedGroupIds.size === 0) return;
+    setLinking(true);
+    setPickerError('');
+    try {
+      await linkDataSourceGroups(sourceId, { groupIds: [...selectedGroupIds] });
+      await load(false);
+      setPickerVisible(false);
+    } catch (reason) {
+      setPickerError(reason instanceof Error ? reason.message : '关联分组失败。');
+    } finally {
+      setLinking(false);
+    }
+  };
+
+  const confirmArchiveSource = async () => {
+    setConfirming(true);
+    setOperationError('');
+    try {
+      await archiveDataSource(sourceId);
+      setArchiveSourceVisible(false);
+      (onArchived ?? onBack)();
+    } catch (reason) {
+      setOperationError(reason instanceof Error ? reason.message : '数据源归档失败。');
+      setArchiveSourceVisible(false);
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  const confirmArchiveAudio = async () => {
+    const target = audioArchiveTarget;
+    if (!target) return;
+    setConfirming(true);
+    setOperationError('');
+    try {
+      await archiveDataSourceAudioFile(sourceId, target.id);
+      setAudioArchiveTarget(undefined);
+      await load(false);
+    } catch (reason) {
+      setOperationError(reason instanceof Error ? reason.message : '音频归档失败。');
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  const confirmUnlink = async () => {
+    const target = unlinkTarget;
+    if (!target) return;
+    setConfirming(true);
+    setOperationError('');
+    try {
+      await unlinkDataSourceGroup(sourceId, target.id);
+      setUnlinkTarget(undefined);
+      await load(false);
+    } catch (reason) {
+      setOperationError(reason instanceof Error ? reason.message : '解除关联失败。');
+    } finally {
+      setConfirming(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -474,16 +716,112 @@ export function DataSourceDetailScreen({
     </View>
   );
   const uploadDates = [...new Set(source.uploadRecords.map((record) => record.date))];
+  const openMoreActions = () =>
+    Alert.alert('数据源操作', source.name, [
+      {
+        text: '编辑数据源',
+        onPress: () => {
+          setFormError('');
+          setEditVisible(true);
+        },
+      },
+      { text: '归档数据源', onPress: () => setArchiveSourceVisible(true), style: 'destructive' },
+      { text: '取消', style: 'cancel' },
+    ]);
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
+      <DataSourceFormSheet
+        error={formError}
+        initialValue={{ name: source.name, description: source.description }}
+        mode="edit"
+        onClose={() => {
+          if (!saving) setEditVisible(false);
+        }}
+        onSubmit={(value) => {
+          void saveDataSource(value);
+        }}
+        pending={saving}
+        visible={editVisible}
+      />
+      <DataSourceGroupPicker
+        allGroups={availableGroups}
+        error={pickerError}
+        linkedGroupIds={linkedGroupIds}
+        loading={pickerLoading}
+        onClose={() => {
+          if (!linking) setPickerVisible(false);
+        }}
+        onConfirm={() => {
+          void confirmLinks();
+        }}
+        onRetry={() => {
+          void loadAvailableGroups();
+        }}
+        onToggle={toggleGroup}
+        pending={linking}
+        selectedGroupIds={selectedGroupIds}
+        visible={pickerVisible}
+      />
+      <DataSourceConfirmDialog
+        body="归档后该数据源及其音频将从分组中隐藏，但关联、音频记录和本地文件会保留。"
+        confirmLabel="确认归档"
+        onCancel={() => setArchiveSourceVisible(false)}
+        onConfirm={() => {
+          void confirmArchiveSource();
+        }}
+        pending={confirming}
+        title="归档数据源？"
+        visible={archiveSourceVisible}
+      />
+      <DataSourceConfirmDialog
+        body={`归档“${audioArchiveTarget?.title ?? ''}”后，它将不再出现在数据源和分组列表中。`}
+        confirmLabel="归档音频"
+        onCancel={() => setAudioArchiveTarget(undefined)}
+        onConfirm={() => {
+          void confirmArchiveAudio();
+        }}
+        pending={confirming}
+        title="归档音频？"
+        visible={Boolean(audioArchiveTarget)}
+      />
+      <DataSourceConfirmDialog
+        body={`解除后，“${unlinkTarget?.name ?? ''}”将不再通过此数据源看到相关音频；显式分享不受影响。`}
+        confirmLabel="解除关联"
+        onCancel={() => setUnlinkTarget(undefined)}
+        onConfirm={() => {
+          void confirmUnlink();
+        }}
+        pending={confirming}
+        title="解除分组关联？"
+        visible={Boolean(unlinkTarget)}
+      />
+      <DataSourceConfirmDialog
+        body={`将返回主页并切换到“${switchTarget?.name ?? ''}”的连接数据源分页。`}
+        confirmLabel="确认切换"
+        onCancel={() => setSwitchTarget(undefined)}
+        onConfirm={() => {
+          const target = switchTarget;
+          setSwitchTarget(undefined);
+          if (target) onSwitchGroup?.(target.id);
+        }}
+        title="切换分组？"
+        visible={Boolean(switchTarget)}
+      />
       <PageHeader
         onBack={onBack}
-        onMore={() => showComingSoon('数据源更多操作')}
+        onMore={openMoreActions}
         onSearch={() => showComingSoon('数据源详情搜索')}
         searchLabel="搜索数据源内容"
         title={source.name}
       />
+      {operationError ? (
+        <View style={styles.operationError}>
+          <Text accessibilityRole="alert" style={styles.operationErrorText}>
+            {operationError}
+          </Text>
+        </View>
+      ) : null}
       <ScrollView
         directionalLockEnabled
         horizontal
@@ -506,13 +844,13 @@ export function DataSourceDetailScreen({
             <Text accessibilityRole="header" style={styles.heroTitle}>
               {source.name}
             </Text>
-            <Text style={styles.heroDescription}>{source.description}</Text>
+            <Text style={styles.heroDescription}>{source.description || '暂无描述'}</Text>
             <Text style={styles.heroMeta}>
               {source.connection}　接入 {source.linkedGroupCount} 个分组
             </Text>
           </View>
           {renderTabs()}
-          <OverviewContent source={source} />
+          <OverviewContent onArchiveAudio={setAudioArchiveTarget} source={source} />
         </ScrollView>
 
         <ScrollView
@@ -524,9 +862,13 @@ export function DataSourceDetailScreen({
         >
           {renderTabs()}
           <View style={styles.audioList}>
-            {source.audioItems.map((item) => (
-              <AudioRow item={item} key={item.id} />
-            ))}
+            {source.audioItems.length === 0 ? (
+              <Text style={styles.listEmptyText}>暂无音频，点击下方“上传音频”开始添加。</Text>
+            ) : (
+              source.audioItems.map((item) => (
+                <AudioRow item={item} key={item.id} onArchive={() => setAudioArchiveTarget(item)} />
+              ))
+            )}
           </View>
         </ScrollView>
 
@@ -539,16 +881,29 @@ export function DataSourceDetailScreen({
         >
           {renderTabs()}
           <View style={styles.recordsList}>
-            {uploadDates.map((date, index) => (
-              <View key={date} style={[styles.recordGroup, index > 0 && styles.recordGroupDivider]}>
-                <Text style={styles.recordDate}>{date}</Text>
-                {source.uploadRecords
-                  .filter((record) => record.date === date)
-                  .map((record) => (
-                    <UploadRecordRow key={record.id} record={record} />
-                  ))}
-              </View>
-            ))}
+            {uploadDates.length === 0 ? (
+              <Text style={styles.listEmptyText}>暂无上传记录。</Text>
+            ) : (
+              uploadDates.map((date, index) => (
+                <View
+                  key={date}
+                  style={[styles.recordGroup, index > 0 && styles.recordGroupDivider]}
+                >
+                  <Text style={styles.recordDate}>{date}</Text>
+                  {source.uploadRecords
+                    .filter((record) => record.date === date)
+                    .map((record) => (
+                      <UploadRecordRow
+                        key={record.id}
+                        onReupload={() => {
+                          void pickAndUpload();
+                        }}
+                        record={record}
+                      />
+                    ))}
+                </View>
+              ))
+            )}
           </View>
         </ScrollView>
 
@@ -561,21 +916,37 @@ export function DataSourceDetailScreen({
         >
           {renderTabs()}
           <View style={styles.groupList}>
-            {source.linkedGroups.map((group) => (
-              <GroupCard group={group} key={group.id} />
-            ))}
+            {source.linkedGroups.length === 0 ? (
+              <Text style={styles.listEmptyText}>暂未关联分组。</Text>
+            ) : (
+              source.linkedGroups.map((group) => (
+                <GroupCard
+                  group={group}
+                  key={group.id}
+                  onSwitch={() => setSwitchTarget(group)}
+                  onUnlink={() => setUnlinkTarget(group)}
+                />
+              ))
+            )}
           </View>
         </ScrollView>
       </ScrollView>
-      <FixedActions activeTab={activeTab} />
+      <FixedActions
+        activeTab={activeTab}
+        onLinkGroups={openGroupPicker}
+        onUpload={() => {
+          void pickAndUpload();
+        }}
+        uploading={uploading}
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { backgroundColor: colors.card, flex: 1 },
+  safeArea: { backgroundColor: colors.background, flex: 1 },
   pager: { flex: 1 },
-  page: { height: '100%' },
+  page: { backgroundColor: colors.card, height: '100%' },
   pageContent: { paddingBottom: spacing.lg },
   tabsSurface: {
     backgroundColor: colors.card,
@@ -600,6 +971,7 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: textColors.primary,
     fontFamily: fontFamilies.sans,
+    minHeight: typography.body.lineHeight * 2,
   },
   heroMeta: {
     ...typography.body,
@@ -783,8 +1155,16 @@ const styles = StyleSheet.create({
   groupTitle: {
     ...typography.heading2,
     color: textColors.primary,
+    flex: 1,
     fontFamily: fontFamilies.sansBold,
     fontWeight: 'bold',
+  },
+  groupActions: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
+  groupIconButton: {
+    alignItems: 'center',
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
   },
   groupMetrics: { flexDirection: 'row' },
   fixedActions: {
@@ -809,6 +1189,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   emphasizedActionButton: { borderColor: colors.ink, borderWidth: 2 },
+  disabledActionButton: { opacity: 0.5 },
   actionButtonText: {
     ...typography.body,
     color: textColors.primary,
@@ -834,5 +1215,24 @@ const styles = StyleSheet.create({
     color: textColors.secondary,
     fontFamily: fontFamilies.sans,
     textAlign: 'center',
+  },
+  listEmptyText: {
+    ...typography.body,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    paddingVertical: spacing.xl,
+    textAlign: 'center',
+  },
+  operationError: {
+    backgroundColor: colors.background,
+    borderBottomColor: colors.divider,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  operationErrorText: {
+    ...typography.description,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sans,
   },
 });

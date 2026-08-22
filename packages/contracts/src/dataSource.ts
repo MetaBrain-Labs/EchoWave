@@ -12,6 +12,7 @@
  */
 import { z } from 'zod';
 
+import { AudioFileSummarySchema } from './audio.ts';
 import { EntityIdSchema } from './common.ts';
 
 export const DataSourceTypeSchema = z.enum([
@@ -28,6 +29,34 @@ export const DataSourceConnectionStatusSchema = z.enum([
   'error',
   'disabled',
 ]);
+
+const DataSourceNameSchema = z.string().trim().min(1).max(120);
+const DataSourceDescriptionSchema = z.string().trim().max(1_000);
+
+/** 创建本地手动上传数据源时允许客户端提交的字段。 */
+export const DataSourceCreateRequestSchema = z.object({
+  name: DataSourceNameSchema,
+  description: DataSourceDescriptionSchema.default(''),
+});
+
+/** 编辑数据源时允许修改的展示字段。 */
+export const DataSourceUpdateRequestSchema = z
+  .object({
+    name: DataSourceNameSchema.optional(),
+    description: DataSourceDescriptionSchema.optional(),
+  })
+  .refine((value) => value.name !== undefined || value.description !== undefined, {
+    message: '至少提供一个需要更新的字段。',
+  });
+
+/** 批量关联活动分组的请求。 */
+export const DataSourceGroupLinkRequestSchema = z.object({
+  groupIds: z
+    .array(EntityIdSchema)
+    .min(1)
+    .max(100)
+    .refine((items) => new Set(items).size === items.length, { message: '分组 ID 不能重复。' }),
+});
 
 /** 数据源列表使用的摘要。 */
 export const DataSourceSummarySchema = z.object({
@@ -93,6 +122,16 @@ export const LinkedDataSourceGroupListResponseSchema = z.object({
   items: z.array(LinkedDataSourceGroupSchema),
 });
 
+/** 一批音频可靠保存后的权威响应。 */
+export const DataSourceAudioUploadResponseSchema = z.object({
+  ingestionRunId: EntityIdSchema,
+  items: z.array(AudioFileSummarySchema),
+});
+
+export type DataSourceCreateRequest = z.infer<typeof DataSourceCreateRequestSchema>;
+export type DataSourceUpdateRequest = z.infer<typeof DataSourceUpdateRequestSchema>;
+export type DataSourceGroupLinkRequest = z.infer<typeof DataSourceGroupLinkRequestSchema>;
+export type DataSourceAudioUploadResponse = z.infer<typeof DataSourceAudioUploadResponseSchema>;
 export type DataSourceSummary = z.infer<typeof DataSourceSummarySchema>;
 export type DataSourceDetail = z.infer<typeof DataSourceDetailSchema>;
 export type DataSourceIngestionRecord = z.infer<typeof DataSourceIngestionRecordSchema>;

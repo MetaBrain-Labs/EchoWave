@@ -9,13 +9,20 @@
  * Notes:
  * - 不发起真实网络请求。
  */
-import { groupFixture } from '@/test/workspaceFixtures';
+import { audioFixtures, dataSourceDetailFixture, groupFixture } from '@/test/workspaceFixtures';
 import {
+  archiveDataSource,
+  archiveDataSourceAudioFile,
   archiveGroup,
+  createDataSource,
   createGroup,
+  linkDataSourceGroups,
   linkKnowledgeBaseGroups,
   listGroups,
   listKnowledgeBaseGroups,
+  unlinkDataSourceGroup,
+  updateDataSource,
+  uploadDataSourceAudioFiles,
 } from '../workspaceApi';
 
 describe('workspace API client', () => {
@@ -134,5 +141,87 @@ describe('workspace API client', () => {
       }),
     );
     expect(() => linkKnowledgeBaseGroups(groupFixture.id, { groupIds: [] })).toThrow();
+  });
+
+  it('sends validated data-source JSON writes and accepts delete 204 responses', async () => {
+    const fetch = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(dataSourceDetailFixture), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(dataSourceDetailFixture), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    await createDataSource({ name: '  本地访谈  ', description: '  用户声音  ' });
+    expect(fetch.mock.calls[0][1]).toEqual(
+      expect.objectContaining({
+        body: JSON.stringify({ name: '本地访谈', description: '用户声音' }),
+        method: 'POST',
+      }),
+    );
+
+    await updateDataSource(dataSourceDetailFixture.id, { description: '  新描述  ' });
+    expect(fetch.mock.calls[1][1]).toEqual(
+      expect.objectContaining({ body: JSON.stringify({ description: '新描述' }), method: 'PATCH' }),
+    );
+    await archiveDataSource(dataSourceDetailFixture.id);
+    await unlinkDataSourceGroup(dataSourceDetailFixture.id, groupFixture.id);
+    await archiveDataSourceAudioFile(dataSourceDetailFixture.id, audioFixtures[0].id);
+    expect(fetch.mock.calls.slice(2).every((call) => call[1]?.method === 'DELETE')).toBe(true);
+    expect(() => updateDataSource(dataSourceDetailFixture.id, {})).toThrow();
+  });
+
+  it('posts group links and multipart audio without forcing a JSON content type', async () => {
+    const linkedResponse = { items: [] };
+    const uploadResponse = {
+      ingestionRunId: groupFixture.id,
+      items: [audioFixtures.find((item) => item.status.kind === 'waiting')!],
+    };
+    const fetch = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(linkedResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(uploadResponse), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+
+    await linkDataSourceGroups(dataSourceDetailFixture.id, { groupIds: [groupFixture.id] });
+    expect(fetch.mock.calls[0][1]).toEqual(
+      expect.objectContaining({
+        body: JSON.stringify({ groupIds: [groupFixture.id] }),
+        method: 'POST',
+      }),
+    );
+
+    await uploadDataSourceAudioFiles(dataSourceDetailFixture.id, [
+      {
+        name: 'sample.wav',
+        uri: 'file:///sample.wav',
+        mimeType: 'audio/wav',
+        size: 1_644,
+        lastModified: 0,
+      },
+    ]);
+    const uploadInit = fetch.mock.calls[1][1]!;
+    expect(uploadInit.method).toBe('POST');
+    expect(uploadInit.body).toBeInstanceOf(FormData);
+    expect((uploadInit.headers as Record<string, string>)['Content-Type']).toBeUndefined();
   });
 });

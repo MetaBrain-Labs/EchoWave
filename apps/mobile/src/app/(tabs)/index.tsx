@@ -22,7 +22,8 @@ export default function GroupRoute() {
   const params = useLocalSearchParams<{ groupId?: string | string[]; tab?: string | string[] }>();
   const { runWithLoading } = useNavigationLoading();
   const initialGroupId = firstRouteParam(params.groupId) || undefined;
-  const initialTab = firstRouteParam(params.tab) === 'knowledge' ? 'knowledge' : undefined;
+  const routedTab = firstRouteParam(params.tab);
+  const initialTab = routedTab === 'knowledge' || routedTab === 'sources' ? routedTab : undefined;
 
   return (
     <GroupScreen

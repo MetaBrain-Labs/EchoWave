@@ -23,6 +23,10 @@ export default function DataSourceDetailRoute() {
   return (
     <DataSourceDetailScreen
       onBack={() => router.back()}
+      onArchived={() => router.replace('/(tabs)/sources')}
+      onSwitchGroup={(groupId) =>
+        router.replace({ pathname: '/', params: { groupId, tab: 'sources' } })
+      }
       sourceId={firstRouteParam(params.sourceId)}
     />
   );

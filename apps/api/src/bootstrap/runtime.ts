@@ -86,7 +86,10 @@ export function createRagRuntime(config: ApiConfig) {
     config.rag.uploadTempDir,
     config.rag.embeddingModel,
   );
-  const workspaceService = new DefaultWorkspaceService(workspaceRepository);
+  const workspaceService = new DefaultWorkspaceService(
+    workspaceRepository,
+    config.rag.audioStorageDir,
+  );
   return {
     service,
     workspaceService,

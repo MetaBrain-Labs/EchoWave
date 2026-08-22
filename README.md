@@ -71,6 +71,8 @@ Copy-Item apps/api/.env.example apps/api/.env
 Copy-Item apps/mobile/.env.example apps/mobile/.env
 ```
 
+`apps/api/.env` 中的 `AUDIO_STORAGE_DIR` 是手动上传音频的持久化目录。该目录应位于具备持久化磁盘的服务端路径，API 只把随机生成的相对 `storage_key` 写入数据库。生产或容器环境必须显式挂载并备份该目录；不要把它指向临时目录或纳入 Git。
+
 `apps/api/.env` 是 API 的唯一配置来源：启动时会直接读取并校验该文件，不合并系统环境变量，也不使用隐式默认值。移动端由 Expo CLI 自动加载 `apps/mobile/.env`，其中客户端可用变量必须以 `EXPO_PUBLIC_` 开头：
 
 ```dotenv
@@ -205,7 +207,8 @@ pnpm check
 - 分组、知识库、新建、分析、更多五项导航
 - Markdown、DOCX、XLSX 单文件上传、异步解析、分块、嵌入与状态轮询
 - PostgreSQL 租户隔离、revision 原子发布、HNSW 检索和引用回溯
-- PostgreSQL 分组生命周期，以及数据源、音频、上传时间线和版本化分析结果查询纵切片
+- PostgreSQL 数据源创建、编辑、软归档、分组关联/解除，以及本地批量音频上传与软归档
+- PostgreSQL 音频上传时间线和版本化分析结果查询纵切片
 - DeepSeek + DeepAgents 知识问答、无证据拒答与短会话 checkpoint
 - 可选的知识问答与入库 Markdown 执行诊断报告
 - 移动端知识库列表、文档/块详情、上传、动态问答反馈、最近六轮只读历史和可返回聊天的引用跳转
@@ -214,6 +217,6 @@ pnpm check
 
 ## 当前边界
 
-本里程碑不包含真实鉴权、真实音频上传或分析 worker、数据源同步、Redis、对象存储、OCR、PDF、旧版 Office、多 API 实例部署或 EAS Build。入库 worker 与临时文件仅支持单 API 实例；横向扩容前必须迁移到对象存储和独立 worker。详见 [文档索引](./docs/README.md) 与 [架构说明](./docs/architecture.md)。
+本里程碑不包含真实鉴权、音频 ASR/分析 worker、数据源同步、Redis、对象存储、OCR、PDF、旧版 Office、多 API 实例部署或 EAS Build。手动上传音频保存在 `AUDIO_STORAGE_DIR` 指定的单机持久化目录并保持“待分析”；入库 worker 与本地文件仅支持单 API 实例，横向扩容前必须迁移到对象存储和独立 worker。详见 [文档索引](./docs/README.md) 与 [架构说明](./docs/architecture.md)。
 
 在 Windows 上无法运行 iOS Simulator；iOS 本轮通过 Expo bundle 导出、TypeScript 检查和应用配置校验，最终原生运行验收需在 macOS/Xcode 环境完成。

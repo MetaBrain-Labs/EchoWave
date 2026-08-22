@@ -12,7 +12,11 @@ import { describe, it } from 'node:test';
 import {
   AudioAnalysisDetailSchema,
   AudioFileSummarySchema,
+  DataSourceAudioUploadResponseSchema,
+  DataSourceCreateRequestSchema,
   DataSourceDetailSchema,
+  DataSourceGroupLinkRequestSchema,
+  DataSourceUpdateRequestSchema,
   GroupCreateRequestSchema,
 } from '../../dist/index.js';
 
@@ -80,6 +84,47 @@ describe('workspace contracts', () => {
     });
 
     assert.equal('apiKey' in source, false);
+  });
+
+  it('validates data-source writes and trims user-editable fields', () => {
+    assert.deepEqual(
+      DataSourceCreateRequestSchema.parse({ name: '  客户访谈  ', description: '  一线反馈  ' }),
+      { name: '客户访谈', description: '一线反馈' },
+    );
+    assert.deepEqual(DataSourceUpdateRequestSchema.parse({ description: '   ' }), {
+      description: '',
+    });
+    assert.throws(() => DataSourceCreateRequestSchema.parse({ name: '   ' }));
+    assert.throws(() => DataSourceCreateRequestSchema.parse({ name: '名'.repeat(121) }));
+    assert.throws(() =>
+      DataSourceCreateRequestSchema.parse({ name: '有效', description: '描'.repeat(1_001) }),
+    );
+    assert.throws(() => DataSourceUpdateRequestSchema.parse({}));
+  });
+
+  it('rejects duplicate group links and parses ordered audio upload responses', () => {
+    assert.deepEqual(DataSourceGroupLinkRequestSchema.parse({ groupIds: [firstId, secondId] }), {
+      groupIds: [firstId, secondId],
+    });
+    assert.throws(() => DataSourceGroupLinkRequestSchema.parse({ groupIds: [] }));
+    assert.throws(() => DataSourceGroupLinkRequestSchema.parse({ groupIds: [firstId, firstId] }));
+    assert.throws(() => DataSourceGroupLinkRequestSchema.parse({ groupIds: ['bad'] }));
+
+    const response = DataSourceAudioUploadResponseSchema.parse({
+      ingestionRunId: thirdId,
+      items: [
+        {
+          id: firstId,
+          sourceId: secondId,
+          title: '客户访谈',
+          durationMs: 1_000,
+          createdAt: '2026-08-21T10:00:00.000Z',
+          sharedFrom: null,
+          status: { kind: 'waiting' },
+        },
+      ],
+    });
+    assert.equal(response.items[0].status.kind, 'waiting');
   });
 
   it('rejects reversed transcript and invalid-segment time ranges', () => {

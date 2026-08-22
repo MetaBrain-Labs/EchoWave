@@ -8,21 +8,31 @@
  * - 将网络、超时和非法响应转换为稳定错误。
  *
  * Notes:
- * - 本模块不保存服务器数据，也不提供真实上传或分析操作。
+ * - 本模块不保存服务器数据；音频二进制只通过 multipart 发送到 API。
  */
+import type { DocumentPickerAsset } from 'expo-document-picker';
+import { Platform } from 'react-native';
+
 import {
   ApiErrorResponseSchema,
   AudioAnalysisDetailSchema,
   AudioFileListResponseSchema,
+  DataSourceAudioUploadResponseSchema,
+  DataSourceCreateRequestSchema,
   DataSourceDetailSchema,
+  DataSourceGroupLinkRequestSchema,
   DataSourceIngestionListResponseSchema,
   DataSourceListResponseSchema,
+  DataSourceUpdateRequestSchema,
   GroupCreateRequestSchema,
   GroupDetailSchema,
   GroupListResponseSchema,
   KnowledgeBaseListResponseSchema,
   KnowledgeBaseGroupLinkRequestSchema,
   LinkedDataSourceGroupListResponseSchema,
+  type DataSourceCreateRequest,
+  type DataSourceGroupLinkRequest,
+  type DataSourceUpdateRequest,
   type GroupCreateRequest,
   type KnowledgeBaseGroupLinkRequest,
 } from '@echowave/contracts';
@@ -46,8 +56,9 @@ type RuntimeSchema<T> = {
 };
 
 type RequestOptions = {
-  body?: unknown;
-  method?: 'GET' | 'POST' | 'DELETE';
+  body?: unknown | FormData;
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  timeoutMs?: number;
 };
 
 async function request<T>(
@@ -62,13 +73,19 @@ async function request<T>(
   options: RequestOptions = {},
 ): Promise<T | void> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20_000);
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 20_000);
+  const multipart = options.body instanceof FormData;
   try {
     const response = await fetch(`${apiUrl}${path}`, {
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      body:
+        options.body === undefined
+          ? undefined
+          : options.body instanceof FormData
+            ? options.body
+            : JSON.stringify(options.body),
       headers: {
         Accept: 'application/json',
-        ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...(options.body === undefined || multipart ? {} : { 'Content-Type': 'application/json' }),
       },
       method: options.method ?? 'GET',
       signal: controller.signal,
@@ -135,13 +152,56 @@ export const linkKnowledgeBaseGroups = (id: string, input: KnowledgeBaseGroupLin
 export const listGroupDataSources = (id: string) =>
   request(`/api/groups/${id}/data-sources`, DataSourceListResponseSchema);
 export const listDataSources = () => request('/api/data-sources', DataSourceListResponseSchema);
+export const createDataSource = (input: DataSourceCreateRequest) => {
+  const body = DataSourceCreateRequestSchema.parse(input);
+  return request('/api/data-sources', DataSourceDetailSchema, { body, method: 'POST' });
+};
 export const getDataSource = (id: string) =>
   request(`/api/data-sources/${id}`, DataSourceDetailSchema);
+export const updateDataSource = (id: string, input: DataSourceUpdateRequest) => {
+  const body = DataSourceUpdateRequestSchema.parse(input);
+  return request(`/api/data-sources/${id}`, DataSourceDetailSchema, { body, method: 'PATCH' });
+};
+export const archiveDataSource = (id: string) =>
+  request(`/api/data-sources/${id}`, null, { method: 'DELETE' });
 export const listDataSourceAudioFiles = (id: string) =>
   request(`/api/data-sources/${id}/audio-files`, AudioFileListResponseSchema);
 export const listDataSourceIngestionRecords = (id: string) =>
   request(`/api/data-sources/${id}/ingestion-records`, DataSourceIngestionListResponseSchema);
 export const listDataSourceGroups = (id: string) =>
   request(`/api/data-sources/${id}/groups`, LinkedDataSourceGroupListResponseSchema);
+export const linkDataSourceGroups = (id: string, input: DataSourceGroupLinkRequest) => {
+  const body = DataSourceGroupLinkRequestSchema.parse(input);
+  return request(`/api/data-sources/${id}/groups`, LinkedDataSourceGroupListResponseSchema, {
+    body,
+    method: 'POST',
+  });
+};
+export const unlinkDataSourceGroup = (id: string, groupId: string) =>
+  request(`/api/data-sources/${id}/groups/${groupId}`, null, { method: 'DELETE' });
+
+/** 将 Document Picker 资产批量编码为数据源音频 multipart 请求。 */
+export async function uploadDataSourceAudioFiles(id: string, assets: DocumentPickerAsset[]) {
+  const form = new FormData();
+  for (const asset of assets) {
+    if (Platform.OS === 'web' && asset.file) {
+      form.append('files', asset.file);
+    } else {
+      form.append('files', {
+        uri: asset.uri,
+        name: asset.name,
+        type: asset.mimeType ?? 'application/octet-stream',
+      } as unknown as Blob);
+    }
+  }
+  return request(`/api/data-sources/${id}/audio-files`, DataSourceAudioUploadResponseSchema, {
+    body: form,
+    method: 'POST',
+    timeoutMs: 120_000,
+  });
+}
+
+export const archiveDataSourceAudioFile = (id: string, audioFileId: string) =>
+  request(`/api/data-sources/${id}/audio-files/${audioFileId}`, null, { method: 'DELETE' });
 export const getAudioAnalysis = (id: string) =>
   request(`/api/audio-files/${id}/analysis`, AudioAnalysisDetailSchema);

@@ -10,7 +10,8 @@
  * Notes:
  * - 展示数据由 data-sources feature 通过共享工作区 API 获取。
  */
-import { useRouter } from 'expo-router';
+import { useCallback, useRef, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
 
 import { DataSourceListScreen } from '@/features/data-sources/screens/DataSourceListScreen';
 import { useNavigationLoading } from '@/shared/navigation/NavigationLoadingProvider';
@@ -19,9 +20,22 @@ import { useNavigationLoading } from '@/shared/navigation/NavigationLoadingProvi
 export default function DataSourcesRoute() {
   const router = useRouter();
   const { runWithLoading } = useNavigationLoading();
+  const [refreshKey, setRefreshKey] = useState(0);
+  const firstFocus = useRef(true);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (firstFocus.current) {
+        firstFocus.current = false;
+      } else {
+        setRefreshKey((value) => value + 1);
+      }
+    }, []),
+  );
 
   return (
     <DataSourceListScreen
+      key={refreshKey}
       onOpenSource={(sourceId) => {
         void runWithLoading(() =>
           router.push({
