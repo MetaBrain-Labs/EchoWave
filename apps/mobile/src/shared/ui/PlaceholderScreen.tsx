@@ -49,7 +49,7 @@ export function PlaceholderScreen({ title, description, icon }: PlaceholderScree
 
 const styles = StyleSheet.create({
   safeArea: {
-    backgroundColor: colors.canvas,
+    backgroundColor: colors.background,
     flex: 1,
   },
   content: {

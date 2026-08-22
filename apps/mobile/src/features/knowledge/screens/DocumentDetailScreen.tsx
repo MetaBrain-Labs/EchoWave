@@ -144,7 +144,7 @@ export function DocumentDetailScreen({
   const reparse = () => showComingSoon('成功文档重新解析');
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeAreaWhite}>
       <PageHeader
         leading={<DocumentFormatIcon format={document.format} size={28} />}
         onMore={() => showComingSoon('更多操作')}
@@ -433,6 +433,7 @@ function DocumentPreview({
 
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.card, flex: 1 },
+  safeAreaWhite: { backgroundColor: colors.white, flex: 1 },
   pager: { flex: 1 },
   page: { flex: 1, height: '100%' },
   pageContent: { paddingBottom: spacing.lg },

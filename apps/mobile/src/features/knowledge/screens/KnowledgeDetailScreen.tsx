@@ -468,7 +468,7 @@ export function KnowledgeDetailScreen({
         {knowledge.name}
       </Text>
       <Text numberOfLines={3} style={styles.heroDescription}>
-        {knowledge.description}
+        {knowledge.description || '暂无描述'}
       </Text>
       <Text style={styles.heroMeta}>
         {knowledge.documentCount} 份文档 · 关联 {knowledge.linkedGroupCount} 个分组
@@ -713,17 +713,27 @@ const styles = StyleSheet.create({
   pager: { flex: 1 },
   page: { flex: 1 },
   pageContent: { flexGrow: 1, paddingBottom: spacing.lg },
-  hero: { gap: spacing.md, padding: spacing.md, paddingTop: spacing.lg },
+  hero: {
+    gap: spacing.md,
+    padding: spacing.md,
+    paddingTop: spacing.lg,
+    backgroundColor: colors.background,
+  },
   displayTitle: {
     ...typography.contentDisplay,
     color: textColors.primary,
     fontFamily: fontFamilies.sansBold,
     fontWeight: 'bold',
   },
-  heroDescription: { ...typography.body, color: textColors.primary, fontFamily: fontFamilies.sans },
+  heroDescription: {
+    ...typography.body,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sans,
+    minHeight: 40,
+  },
   heroMeta: { ...typography.body, color: textColors.secondary, fontFamily: fontFamilies.sans },
   tabsSurface: { backgroundColor: colors.card, zIndex: 1 },
-  overviewContent: { gap: spacing.md, paddingHorizontal: spacing.md },
+  overviewContent: { gap: spacing.md, paddingHorizontal: spacing.md, paddingTop: spacing.md },
   sectionTitle: {
     ...typography.heading1,
     color: textColors.primary,
@@ -810,14 +820,17 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     textAlign: 'center',
   },
-  groupList: { gap: spacing.md, padding: spacing.md },
+  groupList: { gap: spacing.md, padding: spacing.md, backgroundColor: colors.white },
   groupCard: {
     backgroundColor: colors.canvas,
     borderColor: colors.divider,
     borderRadius: radii.default,
     borderWidth: StyleSheet.hairlineWidth,
     gap: spacing.lg,
-    padding: spacing.lg,
+    paddingTop: spacing.base,
+    paddingBottom: spacing.base,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.md,
   },
   groupTitleRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
   groupTitle: {

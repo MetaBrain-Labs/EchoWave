@@ -50,7 +50,7 @@ const styles = StyleSheet.create({
   tabs: {
     flexDirection: 'row',
     gap: spacing.lg,
-    minHeight: 44,
+    minHeight: 34,
     paddingHorizontal: spacing.md,
   },
   tab: { justifyContent: 'flex-end' },

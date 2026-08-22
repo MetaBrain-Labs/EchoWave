@@ -207,7 +207,7 @@ export function KnowledgeListScreen({
               <Text style={styles.cardTitle}>{knowledge.name}</Text>
             </View>
             <Text numberOfLines={2} style={styles.description}>
-              {knowledge.description}
+              {knowledge.description || '暂无描述'}
             </Text>
             <Text style={styles.meta}>
               {knowledge.documentCount} 份文档 · 关联 {knowledge.linkedGroupCount} 个分组
@@ -363,6 +363,7 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: textColors.secondary,
     fontFamily: fontFamilies.sans,
+    minHeight: 40,
   },
   meta: {
     ...typography.body,

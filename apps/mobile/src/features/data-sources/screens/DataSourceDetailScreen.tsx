@@ -773,9 +773,11 @@ const styles = StyleSheet.create({
   groupCard: {
     backgroundColor: colors.background,
     borderRadius: radii.default,
-    gap: spacing.xl,
-    minHeight: 164,
-    padding: spacing.lg,
+    gap: spacing.lg,
+    paddingTop: spacing.base,
+    paddingBottom: spacing.base,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.md,
   },
   groupTitleRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
   groupTitle: {

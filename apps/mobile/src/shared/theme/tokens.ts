@@ -17,8 +17,8 @@ export const textColors = {
 } as const;
 
 export const colors = {
-  background: '#f5f5f5',
-  canvas: '#fafafa',
+  background: '#f9f9f9',
+  canvas: '#f9f9f9',
   card: '#ffffff',
   divider: '#e8e8e8',
   ink: textColors.primary,
@@ -27,6 +27,7 @@ export const colors = {
   success: '#18b88b',
   successSurface: '#e1f3ed',
   white: '#ffffff',
+  black: '#171717',
 } as const;
 
 export const spacing = {

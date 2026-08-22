@@ -86,6 +86,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     minHeight: 76,
     paddingHorizontal: spacing.sm,
+    backgroundColor: colors.background,
   },
   headerIconButton: {
     alignItems: 'center',
