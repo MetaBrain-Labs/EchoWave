@@ -18,6 +18,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { NavigationLoadingProvider } from '@/shared/navigation/NavigationLoadingProvider';
 import { colors, fontFamilies, spacing, textColors, typography } from '@/shared/theme/tokens';
+import { StatusBarBackdrop } from '@/shared/ui/StatusBarBackdrop';
 
 /** 装载应用级 provider、字体门禁与根路由栈。 */
 export default function RootLayout() {
@@ -42,6 +43,7 @@ export default function RootLayout() {
           <NavigationLoadingProvider>
             <Slot />
             <StatusBar style="dark" />
+            <StatusBarBackdrop />
           </NavigationLoadingProvider>
         </View>
       </View>
