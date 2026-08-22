@@ -7,9 +7,9 @@
  * - 只负责本标签页的内容渲染与局部交互。
  * - 由 GroupScreen 持有分页、导航和远端加载状态。
  */
-import Ionicons from "@expo/vector-icons/Ionicons";
-import type { KnowledgeBaseSummary } from "@echowave/contracts";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import Ionicons from '@expo/vector-icons/Ionicons';
+import type { KnowledgeBaseSummary } from '@echowave/contracts';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
   colors,
@@ -18,15 +18,17 @@ import {
   spacing,
   textColors,
   typography,
-} from "@/shared/theme/tokens";
+} from '@/shared/theme/tokens';
 
 export function KnowledgeContent({
   error,
+  emptyMessage,
   knowledgeBases,
   loading,
   onRetry,
 }: {
   error: string;
+  emptyMessage: string;
   knowledgeBases: KnowledgeBaseSummary[];
   loading: boolean;
   onRetry: () => void;
@@ -37,7 +39,9 @@ export function KnowledgeContent({
   if (error) {
     return (
       <View style={styles.card}>
-        <Text accessibilityRole="alert" style={styles.description}>{error}</Text>
+        <Text accessibilityRole="alert" style={styles.description}>
+          {error}
+        </Text>
         <Pressable accessibilityRole="button" onPress={onRetry}>
           <Text style={styles.filterText}>重新加载</Text>
         </Pressable>
@@ -49,25 +53,31 @@ export function KnowledgeContent({
       <Text style={[styles.sectionTitle, styles.sectionHeaderSolo]}>
         共关联 {knowledgeBases.length} 个知识库
       </Text>
-      {knowledgeBases.map((knowledgeBase) => (
-        <View key={knowledgeBase.id} style={styles.card}>
-          <View style={styles.titleRow}>
-            <Ionicons
-              color={colors.ink}
-              name="file-tray-stacked-outline"
-              size={typography.heading3.lineHeight}
-            />
-            <Text style={styles.cardTitle}>{knowledgeBase.name}</Text>
+      {knowledgeBases.length ? (
+        knowledgeBases.map((knowledgeBase) => (
+          <View key={knowledgeBase.id} style={styles.card}>
+            <View style={styles.titleRow}>
+              <Ionicons
+                color={colors.ink}
+                name="file-tray-stacked-outline"
+                size={typography.heading3.lineHeight}
+              />
+              <Text style={styles.cardTitle}>{knowledgeBase.name}</Text>
+            </View>
+            <Text numberOfLines={2} style={styles.description}>
+              {knowledgeBase.description}
+            </Text>
+            <Text style={styles.metaText}>共 {knowledgeBase.documentCount} 份文档</Text>
+            <Text style={styles.metaText}>
+              更新于 {new Date(knowledgeBase.updatedAt).toLocaleDateString()}
+            </Text>
           </View>
-          <Text numberOfLines={2} style={styles.description}>
-            {knowledgeBase.description}
-          </Text>
-          <Text style={styles.metaText}>
-            共 {knowledgeBase.documentCount} 份文档
-          </Text>
-          <Text style={styles.metaText}>更新于 {new Date(knowledgeBase.updatedAt).toLocaleDateString()}</Text>
+        ))
+      ) : (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyText}>{emptyMessage}</Text>
         </View>
-      ))}
+      )}
     </>
   );
 }
@@ -80,7 +90,7 @@ const styles = StyleSheet.create({
     ...typography.heading2,
     color: textColors.primary,
     fontFamily: fontFamilies.sansBold,
-    fontWeight: "bold",
+    fontWeight: 'bold',
   },
   filterText: {
     ...typography.heading5,
@@ -100,12 +110,23 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.035,
     shadowRadius: 5,
   },
+  emptyState: {
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xl,
+  },
+  emptyText: {
+    ...typography.body,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    textAlign: 'center',
+  },
   cardTitle: {
     ...typography.heading2,
     color: textColors.primary,
     flexShrink: 1,
     fontFamily: fontFamilies.sansBold,
-    fontWeight: "bold",
+    fontWeight: 'bold',
   },
   metaText: {
     ...typography.label,
@@ -113,8 +134,8 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sans,
   },
   titleRow: {
-    alignItems: "center",
-    flexDirection: "row",
+    alignItems: 'center',
+    flexDirection: 'row',
     gap: spacing.sm,
   },
   description: {
@@ -125,4 +146,3 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
 });
-

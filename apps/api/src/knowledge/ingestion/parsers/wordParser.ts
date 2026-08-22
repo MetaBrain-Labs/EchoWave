@@ -21,7 +21,9 @@ function isElement(node: Node): node is Element {
   return node.type === ElementType.Tag;
 }
 
-export async function parseWord(buffer: Buffer): Promise<{ sections: SemanticSection[]; warnings: string[] }> {
+export async function parseWord(
+  buffer: Buffer,
+): Promise<{ sections: SemanticSection[]; warnings: string[] }> {
   await inspectOfficeArchive(buffer, 'word/document.xml');
   const result = await mammoth.convertToHtml(
     { buffer },
@@ -64,4 +66,3 @@ export async function parseWord(buffer: Buffer): Promise<{ sections: SemanticSec
     warnings: result.messages.map((message) => message.message),
   };
 }
-

@@ -30,11 +30,7 @@ type PlaceholderScreenProps = {
 };
 
 /** 渲染未进入当前里程碑产品区域的一致占位反馈。 */
-export function PlaceholderScreen({
-  title,
-  description,
-  icon,
-}: PlaceholderScreenProps) {
+export function PlaceholderScreen({ title, description, icon }: PlaceholderScreenProps) {
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <View style={styles.content}>
@@ -53,7 +49,7 @@ export function PlaceholderScreen({
 
 const styles = StyleSheet.create({
   safeArea: {
-    backgroundColor: colors.canvas,
+    backgroundColor: colors.background,
     flex: 1,
   },
   content: {

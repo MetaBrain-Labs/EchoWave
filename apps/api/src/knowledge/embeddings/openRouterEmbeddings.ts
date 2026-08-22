@@ -21,10 +21,17 @@ const MAX_BATCH_SIZE = 64;
 const EMBEDDING_PRICE_PER_MILLION_TOKENS_USD = 0.01;
 
 const EmbeddingResponseSchema = z.object({
-  data: z.array(z.object({ index: z.number().int().nonnegative(), embedding: z.array(z.number()) })),
+  data: z.array(
+    z.object({ index: z.number().int().nonnegative(), embedding: z.array(z.number()) }),
+  ),
   model: z.string().optional(),
   provider: z.string().optional(),
-  usage: z.object({ prompt_tokens: z.number().int().nonnegative().optional(), total_tokens: z.number().int().nonnegative().optional() }).optional(),
+  usage: z
+    .object({
+      prompt_tokens: z.number().int().nonnegative().optional(),
+      total_tokens: z.number().int().nonnegative().optional(),
+    })
+    .optional(),
 });
 
 /** OpenRouter embedding 失败的稳定错误类型。 */
@@ -76,14 +83,8 @@ export class OpenRouterEmbeddings extends Embeddings {
     return vector;
   }
 
-  async embedQueryWithUsage(
-    document: string,
-    signal?: AbortSignal,
-  ): Promise<EmbeddingBatchResult> {
-    return this.embedBatch(
-      [`${QUERY_INSTRUCTION}\n\nQuestion: ${document}`],
-      signal,
-    );
+  async embedQueryWithUsage(document: string, signal?: AbortSignal): Promise<EmbeddingBatchResult> {
+    return this.embedBatch([`${QUERY_INSTRUCTION}\n\nQuestion: ${document}`], signal);
   }
 
   async embedBatches(documents: string[]): Promise<EmbeddingBatchResult> {
@@ -154,14 +155,18 @@ export class OpenRouterEmbeddings extends Embeddings {
         const vectors = [...parsed.data.data]
           .sort((left, right) => left.index - right.index)
           .map((item) => item.embedding);
-        if (vectors.length !== input.length || vectors.some((vector) => vector.length !== this.options.dimensions)) {
+        if (
+          vectors.length !== input.length ||
+          vectors.some((vector) => vector.length !== this.options.dimensions)
+        ) {
           throw new EmbeddingProviderError('MODEL_UNAVAILABLE', '嵌入向量数量或维度不正确。');
         }
         const tokens = parsed.data.usage?.total_tokens ?? parsed.data.usage?.prompt_tokens ?? 0;
         return {
           vectors,
           tokens,
-          provider: parsed.data.provider ?? response.headers.get('x-openrouter-provider') ?? 'unknown',
+          provider:
+            parsed.data.provider ?? response.headers.get('x-openrouter-provider') ?? 'unknown',
           model: parsed.data.model ?? this.options.model,
           estimatedCostUsd: (tokens / 1_000_000) * EMBEDDING_PRICE_PER_MILLION_TOKENS_USD,
         };
@@ -180,7 +185,8 @@ export class OpenRouterEmbeddings extends Embeddings {
           if (attempt < 3) continue;
           throw new EmbeddingProviderError('MODEL_TIMEOUT', '嵌入服务请求超时。');
         }
-        if (attempt >= 3) throw new EmbeddingProviderError('MODEL_UNAVAILABLE', '无法连接嵌入服务。');
+        if (attempt >= 3)
+          throw new EmbeddingProviderError('MODEL_UNAVAILABLE', '无法连接嵌入服务。');
       } finally {
         clearTimeout(timeout);
       }

@@ -4,7 +4,7 @@
  * 集中公开 API 与移动端共同使用的 Zod schema 和推断类型，避免消费者绕过权威契约路径。
  *
  * Responsibilities:
- * - 导出 HelloWorld 与知识库网络契约。
+ * - 导出 HelloWorld、知识库与音频工作区网络契约。
  *
  * Notes:
  * - 不包含传输实现或应用业务逻辑。
@@ -41,11 +41,15 @@ export {
 export {
   KnowledgeBaseCreateRequestSchema,
   KnowledgeBaseDetailSchema,
+  KnowledgeBaseGroupLinkRequestSchema,
   KnowledgeBaseListResponseSchema,
+  KnowledgeBaseSettingsSchema,
   KnowledgeBaseSummarySchema,
   KnowledgeBaseUpdateRequestSchema,
   type KnowledgeBaseCreateRequest,
   type KnowledgeBaseDetail,
+  type KnowledgeBaseGroupLinkRequest,
+  type KnowledgeBaseSettings,
   type KnowledgeBaseSummary,
 } from './knowledgeBase.ts';
 export {
@@ -60,3 +64,54 @@ export {
   type RagQueryRequest,
   type RagQueryResponse,
 } from './rag.ts';
+export {
+  GroupCreateRequestSchema,
+  GroupDetailSchema,
+  GroupListResponseSchema,
+  GroupMetricsSchema,
+  GroupSummarySchema,
+  type GroupCreateRequest,
+  type GroupMetrics,
+  type GroupSummary,
+} from './group.ts';
+export {
+  AudioFailureStageSchema,
+  AudioFileListResponseSchema,
+  AudioFileSummarySchema,
+  AudioProcessingStatusSchema,
+  type AudioFailureStage,
+  type AudioFileSummary,
+  type AudioProcessingStatus,
+} from './audio.ts';
+export {
+  DataSourceAnalysisSettingsSchema,
+  DataSourceConnectionStatusSchema,
+  DataSourceDetailSchema,
+  DataSourceIngestionListResponseSchema,
+  DataSourceIngestionRecordSchema,
+  DataSourceListResponseSchema,
+  DataSourceLocationSchema,
+  DataSourceMetricsSchema,
+  DataSourceSummarySchema,
+  DataSourceTypeSchema,
+  LinkedDataSourceGroupListResponseSchema,
+  LinkedDataSourceGroupSchema,
+  type DataSourceDetail,
+  type DataSourceIngestionRecord,
+  type DataSourceSummary,
+  type LinkedDataSourceGroup,
+} from './dataSource.ts';
+export {
+  AnalysisInvalidSegmentSchema,
+  AnalysisSceneSchema,
+  AnalysisSummarySectionSchema,
+  AudioAnalysisDetailSchema,
+  SegmentAiTagSchema,
+  TranscriptSegmentSchema,
+  type AnalysisInvalidSegment,
+  type AnalysisScene,
+  type AnalysisSummarySection,
+  type AudioAnalysisDetail,
+  type SegmentAiTag,
+  type TranscriptSegment,
+} from './analysis.ts';

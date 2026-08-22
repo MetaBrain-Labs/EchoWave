@@ -17,11 +17,19 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { colors, fontFamilies, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
+import { PageHeader } from '@/shared/ui/PageHeader';
+
+import {
+  colors,
+  fontFamilies,
+  radii,
+  spacing,
+  textColors,
+  typography,
+} from '@/shared/theme/tokens';
 import { listQueryHistory, queryKnowledge } from '../apiClient';
 import { AnswerProgressCard } from '../components/AnswerProgressCard';
 import { CitationList } from '../components/CitationList';
-import { PageHeader } from '../components/PageHeader';
 import { QueryHistoryModal } from '../components/QueryHistoryModal';
 
 type Turn = {
@@ -80,25 +88,37 @@ export function KnowledgeQueryScreen({
       const response = await queryKnowledge(knowledgeId, value, conversationId);
       if (!mounted.current) return;
       setConversationId(response.conversationId);
-      setTurns((items) => items.map((item) => (
-        item.id === turnId ? { id: item.id, question: item.question, status: 'verified', response } : item
-      )));
+      setTurns((items) =>
+        items.map((item) =>
+          item.id === turnId
+            ? { id: item.id, question: item.question, status: 'verified', response }
+            : item,
+        ),
+      );
       // 短暂呈现可证实的引用数量，再把同一轮原位替换为最终回答。
       const timer = setTimeout(() => {
         completionTimers.current.delete(timer);
         if (!mounted.current) return;
-        setTurns((items) => items.map((item) => (
-          item.id === turnId ? { id: item.id, question: item.question, status: 'completed', response } : item
-        )));
+        setTurns((items) =>
+          items.map((item) =>
+            item.id === turnId
+              ? { id: item.id, question: item.question, status: 'completed', response }
+              : item,
+          ),
+        );
         setActiveTurnId(undefined);
       }, 420);
       completionTimers.current.add(timer);
     } catch (reason) {
       if (!mounted.current) return;
       const message = reason instanceof Error ? reason.message : '问答请求失败。';
-      setTurns((items) => items.map((item) => (
-        item.id === turnId ? { id: item.id, question: item.question, status: 'failed', error: message } : item
-      )));
+      setTurns((items) =>
+        items.map((item) =>
+          item.id === turnId
+            ? { id: item.id, question: item.question, status: 'failed', error: message }
+            : item,
+        ),
+      );
       setActiveTurnId(undefined);
     }
   };
@@ -117,9 +137,11 @@ export function KnowledgeQueryScreen({
 
   const retryTurn = (turn: Turn) => {
     if (activeTurnId !== undefined) return;
-    setTurns((items) => items.map((item) => (
-      item.id === turn.id ? { id: item.id, question: item.question, status: 'pending' } : item
-    )));
+    setTurns((items) =>
+      items.map((item) =>
+        item.id === turn.id ? { id: item.id, question: item.question, status: 'pending' } : item,
+      ),
+    );
     setActiveTurnId(turn.id);
     void runTurn(turn.id, turn.question);
   };
@@ -160,12 +182,16 @@ export function KnowledgeQueryScreen({
         {turns.map((turn) => (
           <View key={turn.id} style={styles.turn}>
             <View style={styles.questionBubble}>
-              <Text selectable style={styles.questionText}>{turn.question}</Text>
+              <Text selectable style={styles.questionText}>
+                {turn.question}
+              </Text>
             </View>
             {turn.status === 'pending' || turn.status === 'verified' ? (
               <AnswerProgressCard
                 onProgressChange={scrollToLatest}
-                sourceCount={turn.status === 'verified' ? turn.response.citations.length : undefined}
+                sourceCount={
+                  turn.status === 'verified' ? turn.response.citations.length : undefined
+                }
               />
             ) : null}
             {turn.status === 'failed' ? (
@@ -174,7 +200,9 @@ export function KnowledgeQueryScreen({
                   <Ionicons color="#b42318" name="alert-circle-outline" size={21} />
                   <Text style={styles.failureTitle}>请求未完成</Text>
                 </View>
-                <Text accessibilityRole="alert" style={styles.failureText}>{turn.error}</Text>
+                <Text accessibilityRole="alert" style={styles.failureText}>
+                  {turn.error}
+                </Text>
                 <Pressable
                   accessibilityLabel={`重新尝试：${turn.question}`}
                   accessibilityRole="button"
@@ -188,11 +216,10 @@ export function KnowledgeQueryScreen({
             ) : null}
             {turn.status === 'completed' ? (
               <View style={styles.answerCard}>
-                <Text selectable style={styles.answerText}>{turn.response.answer}</Text>
-                <CitationList
-                  citations={turn.response.citations}
-                  onOpenCitation={onOpenCitation}
-                />
+                <Text selectable style={styles.answerText}>
+                  {turn.response.answer}
+                </Text>
+                <CitationList citations={turn.response.citations} onOpenCitation={onOpenCitation} />
               </View>
             ) : null}
           </View>
@@ -216,7 +243,11 @@ export function KnowledgeQueryScreen({
           onPress={submit}
           style={({ pressed }) => [styles.send, pressed && styles.pressed]}
         >
-          <Ionicons color={colors.card} name={activeTurnId !== undefined ? 'hourglass-outline' : 'arrow-up'} size={22} />
+          <Ionicons
+            color={colors.card}
+            name={activeTurnId !== undefined ? 'hourglass-outline' : 'arrow-up'}
+            size={22}
+          />
         </Pressable>
       </View>
       <QueryHistoryModal
@@ -234,20 +265,89 @@ export function KnowledgeQueryScreen({
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.card, flex: 1 },
   content: { gap: spacing.md, padding: spacing.md, paddingBottom: spacing.xl },
-  hint: { ...typography.body, color: textColors.secondary, fontFamily: fontFamilies.sans, textAlign: 'center' },
+  hint: {
+    ...typography.body,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    textAlign: 'center',
+  },
   turn: { gap: spacing.sm },
-  questionBubble: { alignSelf: 'flex-end', backgroundColor: colors.ink, borderRadius: radii.default, maxWidth: '88%', padding: spacing.md },
+  questionBubble: {
+    alignSelf: 'flex-end',
+    backgroundColor: colors.ink,
+    borderRadius: radii.default,
+    maxWidth: '88%',
+    padding: spacing.md,
+  },
   questionText: { ...typography.body, color: colors.card, fontFamily: fontFamilies.sans },
-  answerCard: { alignSelf: 'flex-start', borderColor: colors.divider, borderRadius: radii.default, borderWidth: 1, gap: spacing.sm, maxWidth: '92%', padding: spacing.md },
+  answerCard: {
+    alignSelf: 'flex-start',
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    gap: spacing.sm,
+    maxWidth: '92%',
+    padding: spacing.md,
+  },
   answerText: { ...typography.body, color: textColors.primary, fontFamily: fontFamilies.sans },
-  failureCard: { alignSelf: 'flex-start', backgroundColor: '#fff4f2', borderColor: '#fecdca', borderRadius: radii.default, borderWidth: 1, gap: spacing.sm, maxWidth: '92%', padding: spacing.md },
+  failureCard: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#fff4f2',
+    borderColor: '#fecdca',
+    borderRadius: radii.default,
+    borderWidth: 1,
+    gap: spacing.sm,
+    maxWidth: '92%',
+    padding: spacing.md,
+  },
   failureTitleRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
-  failureTitle: { ...typography.heading5, color: '#b42318', fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
+  failureTitle: {
+    ...typography.heading5,
+    color: '#b42318',
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
   failureText: { ...typography.description, color: '#912018', fontFamily: fontFamilies.sans },
-  retryButton: { alignSelf: 'flex-start', backgroundColor: colors.ink, borderRadius: radii.default, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  retryText: { ...typography.description, color: colors.card, fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
-  composer: { alignItems: 'flex-end', borderTopColor: colors.divider, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: spacing.sm, padding: spacing.sm },
-  input: { ...typography.body, borderColor: colors.divider, borderRadius: radii.default, borderWidth: 1, color: textColors.primary, flex: 1, fontFamily: fontFamilies.sans, maxHeight: 120, minHeight: 48, padding: spacing.sm },
-  send: { alignItems: 'center', backgroundColor: colors.ink, borderRadius: 24, height: 48, justifyContent: 'center', width: 48 },
+  retryButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.ink,
+    borderRadius: radii.default,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  retryText: {
+    ...typography.description,
+    color: colors.card,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  composer: {
+    alignItems: 'flex-end',
+    borderTopColor: colors.divider,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    padding: spacing.sm,
+  },
+  input: {
+    ...typography.body,
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    color: textColors.primary,
+    flex: 1,
+    fontFamily: fontFamilies.sans,
+    maxHeight: 120,
+    minHeight: 48,
+    padding: spacing.sm,
+  },
+  send: {
+    alignItems: 'center',
+    backgroundColor: colors.ink,
+    borderRadius: 24,
+    height: 48,
+    justifyContent: 'center',
+    width: 48,
+  },
   pressed: { opacity: 0.72 },
 });

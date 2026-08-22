@@ -27,7 +27,16 @@ describe('BlockDetailScreen', () => {
   it('shows source and context, then navigates from fixed actions', async () => {
     const onNavigateBlock = jest.fn();
     const onLocateOriginal = jest.fn();
-    const screen = render(<BlockDetailScreen blockId={document.chunks[0]!.id} documentId={document.id} knowledgeId={knowledge.id} onBack={jest.fn()} onLocateOriginal={onLocateOriginal} onNavigateBlock={onNavigateBlock} />);
+    const screen = render(
+      <BlockDetailScreen
+        blockId={document.chunks[0]!.id}
+        documentId={document.id}
+        knowledgeId={knowledge.id}
+        onBack={jest.fn()}
+        onLocateOriginal={onLocateOriginal}
+        onNavigateBlock={onNavigateBlock}
+      />,
+    );
 
     expect(await screen.findAllByText('来源位置：研究背景，第 3-5 行')).toHaveLength(2);
     expect(screen.getByLabelText('下一块：核心需求')).toBeTruthy();
@@ -39,12 +48,25 @@ describe('BlockDetailScreen', () => {
   });
 
   it('toggles important state and exposes pagination boundaries', async () => {
-    const screen = render(<BlockDetailScreen blockId={document.chunks[1]!.id} documentId={document.id} knowledgeId={knowledge.id} onBack={jest.fn()} onLocateOriginal={jest.fn()} onNavigateBlock={jest.fn()} />);
+    const screen = render(
+      <BlockDetailScreen
+        blockId={document.chunks[1]!.id}
+        documentId={document.id}
+        knowledgeId={knowledge.id}
+        onBack={jest.fn()}
+        onLocateOriginal={jest.fn()}
+        onNavigateBlock={jest.fn()}
+      />,
+    );
     expect(await screen.findAllByText('回答需要关联原始证据。')).toHaveLength(2);
 
     fireEvent.press(screen.getByText('设为重点'));
     expect(screen.getByText('取消重点')).toBeTruthy();
-    expect(screen.getByRole('button', { name: '下一块' }).props.accessibilityState).toEqual({ disabled: true });
-    expect(screen.getByRole('button', { name: '上一块' }).props.accessibilityState).toEqual({ disabled: false });
+    expect(screen.getByRole('button', { name: '下一块' }).props.accessibilityState).toEqual({
+      disabled: true,
+    });
+    expect(screen.getByRole('button', { name: '上一块' }).props.accessibilityState).toEqual({
+      disabled: false,
+    });
   });
 });

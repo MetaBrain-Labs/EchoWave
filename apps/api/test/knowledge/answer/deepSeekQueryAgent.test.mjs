@@ -10,7 +10,8 @@ import { parseJsonObject } from '../../../dist/knowledge/answer/structuredOutput
 const kbId = '11111111-1111-4111-8111-111111111111';
 const conversationId = '22222222-2222-4222-8222-222222222222';
 const chunkId = '33333333-3333-4333-8333-333333333333';
-const retrievalLimitNotice = '提示：本轮检索已达到上限，回答仅基于当前已检索到的内容，证据可能不完整。';
+const retrievalLimitNotice =
+  '提示：本轮检索已达到上限，回答仅基于当前已检索到的内容，证据可能不完整。';
 
 function chatCompletion({ content, toolCalls } = {}) {
   const message = { role: 'assistant', content: content ?? null };
@@ -39,7 +40,14 @@ function searchToolCall(id, query = `测试问题 ${id}`) {
  * tool call, then with the given final answer; an optional correction answer
  * serves the citation-correction model call.
  */
-function createHarness({ enableThinking, finalAnswer, correctionAnswer, reporter, scriptedResponses, searchChunks }) {
+function createHarness({
+  enableThinking,
+  finalAnswer,
+  correctionAnswer,
+  reporter,
+  scriptedResponses,
+  searchChunks,
+}) {
   const requests = [];
   let searchCalls = 0;
   let embeddingCalls = 0;
@@ -53,9 +61,11 @@ function createHarness({ enableThinking, finalAnswer, correctionAnswer, reporter
       return Response.json(response);
     }
     if (index === 0) {
-      return Response.json(chatCompletion({
-        toolCalls: [searchToolCall('call_1', '测试问题')],
-      }));
+      return Response.json(
+        chatCompletion({
+          toolCalls: [searchToolCall('call_1', '测试问题')],
+        }),
+      );
     }
     if (index === 1) return Response.json(chatCompletion({ content: finalAnswer }));
     return Response.json(chatCompletion({ content: correctionAnswer }));
@@ -63,17 +73,24 @@ function createHarness({ enableThinking, finalAnswer, correctionAnswer, reporter
 
   const checkpointer = new MemorySaver();
   const repository = {
-    getOrCreateConversation: async () => ({ id: conversationId, threadId: `thread-${conversationId}` }),
+    getOrCreateConversation: async () => ({
+      id: conversationId,
+      threadId: `thread-${conversationId}`,
+    }),
     beginRun: async () => 'run-1',
     search: async () => {
       searchCalls += 1;
-      return searchChunks ?? [{
-        id: chunkId,
-        documentId: '44444444-4444-4444-8444-444444444444',
-        documentTitle: '研究.md',
-        locator: { kind: 'markdown', headingPath: ['结论'], lineStart: 3, lineEnd: 4 },
-        content: '答案为 A。',
-      }];
+      return (
+        searchChunks ?? [
+          {
+            id: chunkId,
+            documentId: '44444444-4444-4444-8444-444444444444',
+            documentTitle: '研究.md',
+            locator: { kind: 'markdown', headingPath: ['结论'], lineStart: 3, lineEnd: 4 },
+            content: '答案为 A。',
+          },
+        ]
+      );
     },
     completeRun: async () => undefined,
     failRun: async () => undefined,
@@ -132,7 +149,10 @@ function createHarness({ enableThinking, finalAnswer, correctionAnswer, reporter
 
 describe('parseJsonObject', () => {
   it('parses a plain JSON object', () => {
-    assert.deepEqual(parseJsonObject('{"answer":"A","grounded":true}'), { answer: 'A', grounded: true });
+    assert.deepEqual(parseJsonObject('{"answer":"A","grounded":true}'), {
+      answer: 'A',
+      grounded: true,
+    });
   });
 
   it('parses a fully fenced JSON block', () => {
@@ -140,7 +160,8 @@ describe('parseJsonObject', () => {
   });
 
   it('parses JSON surrounded by prose and markdown fences', () => {
-    const text = 'Here is the answer:\n```json\n{"answer":"C","grounded":false,"citedChunkIds":[]}\n```\nHope this helps.';
+    const text =
+      'Here is the answer:\n```json\n{"answer":"C","grounded":false,"citedChunkIds":[]}\n```\nHope this helps.';
     assert.deepEqual(parseJsonObject(text), { answer: 'C', grounded: false, citedChunkIds: [] });
   });
 
@@ -192,7 +213,10 @@ describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
       reporter,
     });
 
-    const result = await answers.answer({ knowledgeBaseId: kbId, request: { question: '答案是什么？' } });
+    const result = await answers.answer({
+      knowledgeBaseId: kbId,
+      request: { question: '答案是什么？' },
+    });
 
     assert.equal(getSearchCalls(), 4);
     assert.equal(getEmbeddingCalls(), 4);
@@ -225,7 +249,10 @@ describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
       ],
     });
 
-    const result = await answers.answer({ knowledgeBaseId: kbId, request: { question: '答案是什么？' } });
+    const result = await answers.answer({
+      knowledgeBaseId: kbId,
+      request: { question: '答案是什么？' },
+    });
 
     assert.equal(getSearchCalls(), 4);
     assert.equal(getEmbeddingCalls(), 4);
@@ -261,7 +288,10 @@ describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
       ],
     });
 
-    const result = await answers.answer({ knowledgeBaseId: kbId, request: { question: '答案是什么？' } });
+    const result = await answers.answer({
+      knowledgeBaseId: kbId,
+      request: { question: '答案是什么？' },
+    });
 
     assert.equal(getSearchCalls(), 4);
     assert.equal(result.grounded, true);
@@ -287,7 +317,11 @@ describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
     };
     const { answers } = createHarness({
       enableThinking: false,
-      finalAnswer: JSON.stringify({ answer: '依据显示答案为 A。[1]', grounded: true, citedChunkIds: [chunkId] }),
+      finalAnswer: JSON.stringify({
+        answer: '依据显示答案为 A。[1]',
+        grounded: true,
+        citedChunkIds: [chunkId],
+      }),
       reporter,
     });
 
@@ -305,10 +339,17 @@ describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
   it('answers grounded questions without sending tool_choice and with thinking disabled by default', async () => {
     const { answers, requests } = createHarness({
       enableThinking: false,
-      finalAnswer: JSON.stringify({ answer: '依据显示答案为 A。[1]', grounded: true, citedChunkIds: [chunkId] }),
+      finalAnswer: JSON.stringify({
+        answer: '依据显示答案为 A。[1]',
+        grounded: true,
+        citedChunkIds: [chunkId],
+      }),
     });
 
-    const result = await answers.answer({ knowledgeBaseId: kbId, request: { question: '答案是什么？' } });
+    const result = await answers.answer({
+      knowledgeBaseId: kbId,
+      request: { question: '答案是什么？' },
+    });
 
     assert.equal(result.answer, '依据显示答案为 A。[1]');
     assert.equal(result.grounded, true);
@@ -321,7 +362,10 @@ describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
     // The retrieval tool is bound; the structured-output schema tool is gone.
     const toolNames = requests[0].tools.map((tool) => tool.function.name);
     assert.ok(toolNames.includes('search_knowledge'));
-    assert.ok(!toolNames.some((name) => name.startsWith('extract-')), 'structured-output schema tool must not be bound');
+    assert.ok(
+      !toolNames.some((name) => name.startsWith('extract-')),
+      'structured-output schema tool must not be bound',
+    );
     assert.deepEqual(requests[0].thinking, { type: 'disabled' });
   });
 
@@ -367,7 +411,10 @@ describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
       searchChunks: chunks,
     });
 
-    const result = await answers.answer({ knowledgeBaseId: kbId, request: { question: '核心内容是什么？' } });
+    const result = await answers.answer({
+      knowledgeBaseId: kbId,
+      request: { question: '核心内容是什么？' },
+    });
 
     assert.equal(result.grounded, true);
     assert.equal(result.citations.length, 8);
@@ -403,7 +450,10 @@ describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
       searchChunks: chunks,
     });
 
-    const result = await answers.answer({ knowledgeBaseId: kbId, request: { question: '总结全部内容' } });
+    const result = await answers.answer({
+      knowledgeBaseId: kbId,
+      request: { question: '总结全部内容' },
+    });
 
     assert.equal(result.grounded, true);
     assert.equal(result.citations.length, 9);
@@ -413,10 +463,17 @@ describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
   it('sends thinking enabled when DEEPSEEK_ENABLE_THINKING is true', async () => {
     const { answers, requests } = createHarness({
       enableThinking: true,
-      finalAnswer: JSON.stringify({ answer: '依据显示答案为 A。[1]', grounded: true, citedChunkIds: [chunkId] }),
+      finalAnswer: JSON.stringify({
+        answer: '依据显示答案为 A。[1]',
+        grounded: true,
+        citedChunkIds: [chunkId],
+      }),
     });
 
-    const result = await answers.answer({ knowledgeBaseId: kbId, request: { question: '答案是什么？' } });
+    const result = await answers.answer({
+      knowledgeBaseId: kbId,
+      request: { question: '答案是什么？' },
+    });
 
     assert.equal(result.grounded, true);
     assert.deepEqual(requests[0].thinking, { type: 'enabled' });
@@ -429,16 +486,30 @@ describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
     const unknownId = '99999999-9999-4999-8999-999999999999';
     const { answers, requests } = createHarness({
       enableThinking: false,
-      finalAnswer: JSON.stringify({ answer: '依据显示答案为 A。[1]', grounded: true, citedChunkIds: [unknownId] }),
-      correctionAnswer: JSON.stringify({ answer: '依据显示答案为 A。[1]', grounded: true, citedChunkIds: [chunkId] }),
+      finalAnswer: JSON.stringify({
+        answer: '依据显示答案为 A。[1]',
+        grounded: true,
+        citedChunkIds: [unknownId],
+      }),
+      correctionAnswer: JSON.stringify({
+        answer: '依据显示答案为 A。[1]',
+        grounded: true,
+        citedChunkIds: [chunkId],
+      }),
     });
 
-    const result = await answers.answer({ knowledgeBaseId: kbId, request: { question: '答案是什么？' } });
+    const result = await answers.answer({
+      knowledgeBaseId: kbId,
+      request: { question: '答案是什么？' },
+    });
 
     assert.equal(result.citations[0].chunkId, chunkId);
     const correctionRequest = requests.at(-1);
     assert.deepEqual(correctionRequest.response_format, { type: 'json_object' });
-    assert.ok(!('tool_choice' in correctionRequest), 'correction request must not send tool_choice');
+    assert.ok(
+      !('tool_choice' in correctionRequest),
+      'correction request must not send tool_choice',
+    );
   });
 
   it('recovers malformed JSON with unescaped heading quotes without discarding grounded evidence', async () => {
@@ -467,7 +538,10 @@ describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
       reporter,
     });
 
-    const result = await answers.answer({ knowledgeBaseId: kbId, request: { question: '补充问题有哪些？' } });
+    const result = await answers.answer({
+      knowledgeBaseId: kbId,
+      request: { question: '补充问题有哪些？' },
+    });
 
     assert.equal(result.grounded, true);
     assert.equal(result.answer, '文档包含“三、补充问题”章节。[1]');
@@ -484,7 +558,10 @@ describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
       finalAnswer: 'Sorry, I could not find enough evidence.',
     });
 
-    const result = await answers.answer({ knowledgeBaseId: kbId, request: { question: '答案是什么？' } });
+    const result = await answers.answer({
+      knowledgeBaseId: kbId,
+      request: { question: '答案是什么？' },
+    });
 
     assert.equal(result.grounded, false);
     assert.equal(result.answer, '知识库中没有足够依据回答这个问题。');

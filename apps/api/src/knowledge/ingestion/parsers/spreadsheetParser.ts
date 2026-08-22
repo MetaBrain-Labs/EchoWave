@@ -105,4 +105,3 @@ export async function parseSpreadsheet(
   }
   return { sections, warnings };
 }
-

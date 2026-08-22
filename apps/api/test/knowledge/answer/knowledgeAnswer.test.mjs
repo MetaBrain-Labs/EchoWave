@@ -11,7 +11,14 @@ const knowledgeBaseId = '11111111-1111-4111-8111-111111111111';
 const conversationId = '22222222-2222-4222-8222-222222222222';
 const chunkId = '33333333-3333-4333-8333-333333333333';
 
-function createHarness({ agentOverrides = {}, createAbortSignal, embeddingOverrides = {}, repositoryOverrides = {}, expired = [], reporter } = {}) {
+function createHarness({
+  agentOverrides = {},
+  createAbortSignal,
+  embeddingOverrides = {},
+  repositoryOverrides = {},
+  expired = [],
+  reporter,
+} = {}) {
   const events = [];
   let cleanupTask;
   let cancelled = false;
@@ -26,13 +33,15 @@ function createHarness({ agentOverrides = {}, createAbortSignal, embeddingOverri
     },
     search: async () => {
       events.push('search');
-      return [{
-        id: chunkId,
-        documentId: '44444444-4444-4444-8444-444444444444',
-        documentTitle: '研究.md',
-        locator: { kind: 'markdown', headingPath: ['结论'], lineStart: 3, lineEnd: 4 },
-        content: '答案为 A。',
-      }];
+      return [
+        {
+          id: chunkId,
+          documentId: '44444444-4444-4444-8444-444444444444',
+          documentTitle: '研究.md',
+          locator: { kind: 'markdown', headingPath: ['结论'], lineStart: 3, lineEnd: 4 },
+          content: '答案为 A。',
+        },
+      ];
     },
     completeRun: async (_runId, result) => {
       events.push(['complete', result]);
@@ -124,7 +133,15 @@ describe('trusted knowledge answer module', () => {
   });
 
   it('records the trusted answer lifecycle without changing the response', async () => {
-    const recorded = { start: undefined, metadata: [], steps: [], models: [], tools: [], outputs: [], finishes: [] };
+    const recorded = {
+      start: undefined,
+      metadata: [],
+      steps: [],
+      models: [],
+      tools: [],
+      outputs: [],
+      finishes: [],
+    };
     const reporter = {
       start: (input) => {
         recorded.start = input;
@@ -151,7 +168,10 @@ describe('trusted knowledge answer module', () => {
     assert.equal(recorded.start.kind, 'rag-answer');
     assert.ok(recorded.metadata.some((value) => value.ragRunId === 'run-1'));
     assert.ok(recorded.steps.some((event) => event.name === 'citation-validation'));
-    assert.deepEqual(recorded.models.map((event) => event.name), ['query-embedding']);
+    assert.deepEqual(
+      recorded.models.map((event) => event.name),
+      ['query-embedding'],
+    );
     assert.equal(recorded.tools[0].summary.hitCount, 1);
     assert.equal(recorded.outputs[0].conversationId, conversationId);
     assert.equal(recorded.finishes[0].status, 'completed');
@@ -180,7 +200,11 @@ describe('trusted knowledge answer module', () => {
         generate: async (input) => {
           await input.searchKnowledge('测试问题');
           return {
-            candidate: { answer: '未经确认的答案。[1]', grounded: true, citedChunkIds: [unknownId] },
+            candidate: {
+              answer: '未经确认的答案。[1]',
+              grounded: true,
+              citedChunkIds: [unknownId],
+            },
             usage: { inputTokens: 3, outputTokens: 4 },
           };
         },

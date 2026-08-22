@@ -9,14 +9,7 @@
  * Notes:
  * - 只验证权威 token，不测试页面样式实现。
  */
-import {
-  colors,
-  fontFamilies,
-  radii,
-  spacing,
-  textColors,
-  typography,
-} from '../tokens';
+import { colors, fontFamilies, radii, spacing, textColors, typography } from '../tokens';
 
 describe('text color tokens', () => {
   it('uses the exact semantic text colors from docs/design-system.md', () => {

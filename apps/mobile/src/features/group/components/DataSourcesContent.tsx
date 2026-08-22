@@ -1,14 +1,15 @@
 /**
  * 分组数据源标签页内容。
  *
- * 呈现当前分组的 mock 数据源及连接状态。
+ * 呈现当前分组的服务端数据源及连接状态。
  *
  * Responsibilities:
  * - 只负责本标签页的内容渲染与局部交互。
  * - 由 GroupScreen 持有分页、导航和远端加载状态。
  */
-import Ionicons from "@expo/vector-icons/Ionicons";
-import { StyleSheet, Text, View } from "react-native";
+import Ionicons from '@expo/vector-icons/Ionicons';
+import type { DataSourceSummary } from '@echowave/contracts';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
   colors,
@@ -17,37 +18,71 @@ import {
   spacing,
   textColors,
   typography,
-} from "@/shared/theme/tokens";
-import { dataSources } from "../mockData";
-
-export function DataSourcesContent() {
+} from '@/shared/theme/tokens';
+export function DataSourcesContent({
+  error,
+  emptyMessage,
+  loading,
+  onRetry,
+  sources,
+}: {
+  error: string;
+  emptyMessage: string;
+  loading: boolean;
+  onRetry: () => void;
+  sources: DataSourceSummary[];
+}) {
+  if (loading) {
+    return <ActivityIndicator accessibilityLabel="正在加载分组数据源" color={colors.ink} />;
+  }
+  if (error) {
+    return (
+      <View style={styles.card}>
+        <Text accessibilityRole="alert" style={styles.description}>
+          {error}
+        </Text>
+        <Pressable accessibilityRole="button" onPress={onRetry}>
+          <Text style={styles.metaText}>重新加载</Text>
+        </Pressable>
+      </View>
+    );
+  }
   return (
     <>
       <Text style={[styles.sectionTitle, styles.sectionHeaderSolo]}>
-        共连接 {dataSources.length} 个数据源
+        共连接 {sources.length} 个数据源
       </Text>
-      {dataSources.map((source) => (
-        <View key={source.id} style={styles.card}>
-          <View style={styles.sourceTitleRow}>
-            <View style={styles.titleRow}>
-              <Ionicons
-                color={colors.ink}
-                name="git-network-outline"
-                size={typography.heading3.lineHeight}
-              />
-              <Text style={styles.cardTitle}>{source.name}</Text>
+      {sources.length ? (
+        sources.map((source) => (
+          <View key={source.id} style={styles.card}>
+            <View style={styles.sourceTitleRow}>
+              <View style={styles.titleRow}>
+                <Ionicons
+                  color={colors.ink}
+                  name="git-network-outline"
+                  size={typography.heading3.lineHeight}
+                />
+                <Text style={styles.cardTitle}>{source.name}</Text>
+              </View>
+              <View style={styles.connectedBadge}>
+                <Text style={styles.connectedText}>已连接</Text>
+              </View>
             </View>
-            <View style={styles.connectedBadge}>
-              <Text style={styles.connectedText}>已连接</Text>
-            </View>
+            <Text numberOfLines={2} style={styles.description}>
+              {source.description}
+            </Text>
+            <Text style={styles.metaText}>{source.connectionLabel}</Text>
+            <Text style={styles.metaText}>
+              最近上传{' '}
+              {source.lastUploadedAt ? new Date(source.lastUploadedAt).toLocaleString() : '暂无'}
+            </Text>
           </View>
-          <Text numberOfLines={2} style={styles.description}>
-            {source.description}
-          </Text>
-          <Text style={styles.metaText}>{source.connection}</Text>
-          <Text style={styles.metaText}>最近上传 {source.uploadedAt}</Text>
+        ))
+      ) : (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyText}>{emptyMessage}</Text>
         </View>
-      ))}
+      )}
     </>
   );
 }
@@ -60,7 +95,7 @@ const styles = StyleSheet.create({
     ...typography.heading2,
     color: textColors.primary,
     fontFamily: fontFamilies.sansBold,
-    fontWeight: "bold",
+    fontWeight: 'bold',
   },
   card: {
     backgroundColor: colors.card,
@@ -75,12 +110,23 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.035,
     shadowRadius: 5,
   },
+  emptyState: {
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xl,
+  },
+  emptyText: {
+    ...typography.body,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    textAlign: 'center',
+  },
   cardTitle: {
     ...typography.heading2,
     color: textColors.primary,
     flexShrink: 1,
     fontFamily: fontFamilies.sansBold,
-    fontWeight: "bold",
+    fontWeight: 'bold',
   },
   metaText: {
     ...typography.label,
@@ -88,14 +134,14 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sans,
   },
   titleRow: {
-    alignItems: "center",
-    flexDirection: "row",
+    alignItems: 'center',
+    flexDirection: 'row',
     gap: spacing.sm,
   },
   sourceTitleRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
   connectedBadge: {
     backgroundColor: colors.successSurface,
@@ -108,7 +154,7 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: textColors.primary,
     fontFamily: fontFamilies.sansBold,
-    fontWeight: "bold",
+    fontWeight: 'bold',
   },
   description: {
     ...typography.description,

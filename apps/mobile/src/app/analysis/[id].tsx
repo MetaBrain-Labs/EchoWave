@@ -8,7 +8,7 @@
  * - 隔离 Expo Router 导航调用。
  *
  * Notes:
- * - 分析内容仍为 presentation 数据。
+ * - 分析内容由 feature 通过共享工作区 API 读取。
  */
 import { useLocalSearchParams, useRouter } from 'expo-router';
 

@@ -1,29 +1,36 @@
 /**
  * 知识库详情页面。
  *
- * 组合知识库概览、文档列表、关联分组、上传和问答入口，并保持两个同级页面独立滚动。
+ * 组合知识库概览、文档列表和关联分组三个可滑动页面，并协调上传、关联和跨页切组。
  *
  * Responsibilities:
- * - 加载知识库与文档列表。
- * - 协调上传、重试、标签滑动和详情导航。
+ * - 加载知识库概览、文档和关联分组事实。
+ * - 协调上传轮询、文档重试、批量关联和目标分组确认。
+ * - 保持三个同级页面独立纵向滚动及固定操作栏。
  *
  * Notes:
- * - 关联分组展示仍为当前 presentation 范围。
+ * - 知识库配置当前只读；实际解析仍由服务端全局配置驱动。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { DocumentStatus, KnowledgeBaseDetail, KnowledgeDocument } from '@echowave/contracts';
+import type {
+  DocumentStatus,
+  GroupSummary,
+  KnowledgeBaseDetail,
+  KnowledgeDocument,
+} from '@echowave/contracts';
 
+import {
+  linkKnowledgeBaseGroups,
+  listGroups,
+  listKnowledgeBaseGroups,
+} from '@/shared/api/workspaceApi';
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
+import { PageHeader } from '@/shared/ui/PageHeader';
+import { PageTabs } from '@/shared/ui/PageTabs';
 import {
   colors,
   fontFamilies,
@@ -32,15 +39,24 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
-import { ActionButton, DocumentFormatIcon, DocumentStatusView } from '../components/DocumentUi';
+import { DocumentFormatIcon, DocumentStatusView } from '../components/DocumentUi';
 import { EmptyState } from '../components/EmptyState';
-import { PageHeader } from '../components/PageHeader';
-import { PageTabs } from '../components/PageTabs';
+import {
+  KnowledgeGroupPicker,
+  KnowledgeGroupSwitchDialog,
+} from '../components/KnowledgeGroupDialogs';
 import { SearchAndFilter } from '../components/SearchAndFilter';
 import { showComingSoon } from '../components/feedback';
-import { getDocument, getKnowledgeBase, listDocuments, retryDocument, uploadDocument } from '../apiClient';
+import {
+  getDocument,
+  getKnowledgeBase,
+  listDocuments,
+  retryDocument,
+  uploadDocument,
+} from '../apiClient';
 
 const detailTabs = [
+  { key: 'overview', label: '概览' },
   { key: 'files', label: '库文件' },
   { key: 'groups', label: '关联分组' },
 ] as const;
@@ -52,6 +68,12 @@ const formatLabels = {
   word: 'Word',
   spreadsheet: '表格',
 } as const;
+
+function formatBytes(sizeBytes: number) {
+  if (sizeBytes < 1024 * 1024) return `${(sizeBytes / 1024).toFixed(1)} KB`;
+  if (sizeBytes < 1024 * 1024 * 1024) return `${(sizeBytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(sizeBytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
+}
 
 function statusLabel(status: DocumentStatus) {
   switch (status.kind) {
@@ -73,6 +95,47 @@ function statusLabel(status: DocumentStatus) {
   }
 }
 
+function Metric({
+  divider = false,
+  label,
+  value,
+}: {
+  divider?: boolean;
+  label: string;
+  value: string;
+}) {
+  return (
+    <View style={[styles.metric, divider && styles.metricDivider]}>
+      <Text numberOfLines={1} style={styles.metricValue}>
+        {value}
+      </Text>
+      <Text style={styles.metricLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function InfoRow({
+  icon,
+  label,
+  value,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+}) {
+  return (
+    <View style={styles.infoRow}>
+      <View style={styles.infoLabelRow}>
+        <Ionicons color={colors.secondary} name={icon} size={typography.description.lineHeight} />
+        <Text style={styles.infoLabel}>{label}</Text>
+      </View>
+      <Text numberOfLines={1} style={styles.infoValue}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
 function DocumentRow({
   document,
   onOpen,
@@ -91,18 +154,26 @@ function DocumentRow({
           {document.title}
         </Text>
         <Text style={styles.documentMeta}>
-          {formatLabels[document.format]} · {(document.sizeBytes / 1024).toFixed(1)} KB
+          {formatLabels[document.format]} · {formatBytes(document.sizeBytes)}
         </Text>
-        <Text style={styles.documentUpdated}>更新于 {new Date(document.updatedAt).toLocaleDateString()}</Text>
+        <Text style={styles.documentUpdated}>
+          更新于 {new Date(document.updatedAt).toLocaleDateString()}
+        </Text>
         {document.status.kind === 'failed' ? (
-          <Text numberOfLines={2} style={styles.failureReason}>{document.status.message}</Text>
+          <Text numberOfLines={2} style={styles.failureReason}>
+            {document.status.message}
+          </Text>
         ) : null}
       </View>
       <View style={styles.documentStatus}>
         <DocumentStatusView document={document} />
       </View>
       <Pressable
-        accessibilityLabel={document.status.kind === 'failed' ? `重试文档：${document.title}` : `${document.title}更多操作`}
+        accessibilityLabel={
+          document.status.kind === 'failed'
+            ? `重试文档：${document.title}`
+            : `${document.title}更多操作`
+        }
         accessibilityRole="button"
         hitSlop={8}
         onPress={(event) => {
@@ -116,11 +187,7 @@ function DocumentRow({
       </Pressable>
     </>
   );
-
-  if (!enabled) {
-    return <View style={styles.documentRow}>{content}</View>;
-  }
-
+  if (!enabled) return <View style={styles.documentRow}>{content}</View>;
   return (
     <Pressable
       accessibilityLabel={`打开文件：${document.title}`}
@@ -133,48 +200,126 @@ function DocumentRow({
   );
 }
 
-/** 加载并展示知识库详情，协调上传、重试与问答入口。 */
+function GroupCard({ group, onSwitch }: { group: GroupSummary; onSwitch: () => void }) {
+  return (
+    <View style={styles.groupCard}>
+      <View style={styles.groupTitleRow}>
+        <Text numberOfLines={1} style={styles.groupTitle}>
+          {group.name}
+        </Text>
+        <Pressable
+          accessibilityLabel={`切换至分组：${group.name}`}
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={onSwitch}
+          style={({ pressed }) => [styles.switchButton, pressed && styles.pressed]}
+        >
+          <Ionicons
+            color={colors.secondary}
+            name="swap-horizontal"
+            size={typography.heading2.lineHeight}
+          />
+        </Pressable>
+      </View>
+      <View style={styles.groupStats}>
+        <Metric label="分析数" value={`${group.metrics.analysisCount}`} />
+        <Metric divider label="音频数" value={`${group.metrics.audioCount}`} />
+        <Metric divider label="知识库" value={`${group.metrics.knowledgeCount}`} />
+        <Metric divider label="数据源" value={`${group.metrics.sourceCount}`} />
+      </View>
+    </View>
+  );
+}
+
+function FixedActionButton({
+  disabled = false,
+  emphasized = false,
+  icon,
+  label,
+  onPress,
+}: {
+  disabled?: boolean;
+  emphasized?: boolean;
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.actionButton,
+        emphasized && styles.emphasizedAction,
+        disabled && styles.disabled,
+        pressed && styles.pressed,
+      ]}
+    >
+      <Ionicons
+        color={emphasized ? colors.white : colors.ink}
+        name={icon}
+        size={typography.body.lineHeight}
+      />
+      <Text style={[styles.actionText, emphasized && styles.emphasizedActionText]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+/** 加载并展示知识库详情，协调上传、关联、切组与问答入口。 */
 export function KnowledgeDetailScreen({
   knowledgeId,
   onBack,
   onAsk,
   onOpenDocument,
+  onSwitchGroup,
 }: {
   knowledgeId: string;
   onBack: () => void;
   onAsk?: () => void;
   onOpenDocument: (documentId: string) => void;
+  onSwitchGroup?: (groupId: string) => void;
 }) {
   const [knowledge, setKnowledge] = useState<KnowledgeBaseDetail>();
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
+  const [linkedGroups, setLinkedGroups] = useState<GroupSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [uploading, setUploading] = useState(false);
-  const [activeTab, setActiveTab] = useState<DetailTab>('files');
+  const [activeTab, setActiveTab] = useState<DetailTab>('overview');
   const [query, setQuery] = useState('');
-  const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } =
-    useSwipePager({
-      activeTab,
-      onTabChange: setActiveTab,
-      tabs: detailTabKeys,
-    });
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [availableGroups, setAvailableGroups] = useState<GroupSummary[]>([]);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [pickerError, setPickerError] = useState('');
+  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(() => new Set());
+  const [linking, setLinking] = useState(false);
+  const [switchTarget, setSwitchTarget] = useState<GroupSummary>();
+  const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } = useSwipePager({
+    activeTab,
+    onTabChange: setActiveTab,
+    tabs: detailTabKeys,
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [nextKnowledge, nextDocuments] = await Promise.all([
+      const [nextKnowledge, nextDocuments, nextGroups] = await Promise.all([
         getKnowledgeBase(knowledgeId),
         listDocuments(knowledgeId),
+        listKnowledgeBaseGroups(knowledgeId),
       ]);
       setKnowledge(nextKnowledge);
       setDocuments(nextDocuments.items);
+      setLinkedGroups(nextGroups.items);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '知识库加载失败。');
     } finally {
       setLoading(false);
     }
   }, [knowledgeId]);
+
   useEffect(() => {
     const task = setTimeout(() => void load(), 0);
     return () => clearTimeout(task);
@@ -182,17 +327,27 @@ export function KnowledgeDetailScreen({
 
   const filteredDocuments = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
-    if (!normalized) {
-      return documents;
-    }
+    if (!normalized) return documents;
     return documents.filter((document) =>
-      [
-        document.title,
-        formatLabels[document.format],
-        statusLabel(document.status),
-      ].some((value) => value.toLocaleLowerCase().includes(normalized)),
+      [document.title, formatLabels[document.format], statusLabel(document.status)].some((value) =>
+        value.toLocaleLowerCase().includes(normalized),
+      ),
     );
   }, [documents, query]);
+  const linkedGroupIds = useMemo(
+    () => new Set(linkedGroups.map((group) => group.id)),
+    [linkedGroups],
+  );
+
+  const retry = (document: KnowledgeDocument) => {
+    void retryDocument(knowledgeId, document.id)
+      .then((current) =>
+        setDocuments((items) => items.map((item) => (item.id === current.id ? current : item))),
+      )
+      .catch((reason) =>
+        setError(reason instanceof Error ? reason.message : '重试失败，请重新上传文件。'),
+      );
+  };
 
   const pickAndUpload = async () => {
     const selection = await DocumentPicker.getDocumentAsync({
@@ -217,10 +372,11 @@ export function KnowledgeDetailScreen({
       for (let attempt = 0; attempt < 60; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, delay));
         const current = await getDocument(knowledgeId, uploaded.document.id);
-        setDocuments((items) => items.map((item) => item.id === current.id ? current : item));
+        setDocuments((items) => items.map((item) => (item.id === current.id ? current : item)));
         if (current.status.kind === 'ready' || current.status.kind === 'failed') break;
         if (attempt >= 4) delay = 5_000;
       }
+      setKnowledge(await getKnowledgeBase(knowledgeId));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '文档上传失败。');
     } finally {
@@ -228,33 +384,177 @@ export function KnowledgeDetailScreen({
     }
   };
 
+  const loadAvailableGroups = useCallback(async () => {
+    setPickerLoading(true);
+    setPickerError('');
+    setAvailableGroups([]);
+    try {
+      setAvailableGroups((await listGroups()).items);
+    } catch (reason) {
+      setPickerError(reason instanceof Error ? reason.message : '分组加载失败。');
+    } finally {
+      setPickerLoading(false);
+    }
+  }, []);
+
+  const openGroupPicker = () => {
+    setSelectedGroupIds(new Set());
+    setPickerError('');
+    setPickerVisible(true);
+    void loadAvailableGroups();
+  };
+
+  const toggleGroup = (id: string) => {
+    setSelectedGroupIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const confirmLinks = async () => {
+    if (!selectedGroupIds.size || linking) return;
+    setLinking(true);
+    setPickerError('');
+    try {
+      const response = await linkKnowledgeBaseGroups(knowledgeId, {
+        groupIds: [...selectedGroupIds],
+      });
+      setLinkedGroups(response.items);
+      setKnowledge(await getKnowledgeBase(knowledgeId));
+      setSelectedGroupIds(new Set());
+      setPickerVisible(false);
+    } catch (reason) {
+      setPickerError(reason instanceof Error ? reason.message : '关联分组失败。');
+    } finally {
+      setLinking(false);
+    }
+  };
+
   if (loading && !knowledge) {
     return (
-      <SafeAreaView style={styles.safeArea}>
-        <PageHeader onBack={onBack} title="知识库详情" />
-        <EmptyState description="正在从服务器读取知识库与文档。" title="正在加载" />
+      <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
+        <PageHeader onBack={onBack} onMore={() => showComingSoon('更多操作')} title="知识库详情" />
+        <ActivityIndicator
+          accessibilityLabel="正在加载知识库详情"
+          color={colors.ink}
+          style={styles.loading}
+        />
       </SafeAreaView>
     );
   }
 
   if (!knowledge) {
     return (
-      <SafeAreaView style={styles.safeArea}>
-        <PageHeader onBack={onBack} title="知识库详情" />
+      <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
+        <PageHeader onBack={onBack} onMore={() => showComingSoon('更多操作')} title="知识库详情" />
         <EmptyState
           description="该知识库可能已被移除，请返回知识库列表。"
-          title={error || "未找到知识库"}
+          title={error || '未找到知识库'}
         />
       </SafeAreaView>
     );
   }
 
+  const renderTabs = () => (
+    <View style={styles.tabsSurface}>
+      <PageTabs activeTab={activeTab} onChange={selectTab} tabs={detailTabs} />
+    </View>
+  );
+  const renderHero = () => (
+    <View style={styles.hero}>
+      <Text accessibilityRole="header" style={styles.displayTitle}>
+        {knowledge.name}
+      </Text>
+      <Text numberOfLines={3} style={styles.heroDescription}>
+        {knowledge.description || '暂无描述'}
+      </Text>
+      <Text style={styles.heroMeta}>
+        {knowledge.documentCount} 份文档 · 关联 {knowledge.linkedGroupCount} 个分组
+      </Text>
+    </View>
+  );
+  const fixedActions =
+    activeTab === 'groups' ? (
+      <FixedActionButton emphasized icon="add" label="关联新分组" onPress={openGroupPicker} />
+    ) : activeTab === 'files' ? (
+      <>
+        <FixedActionButton
+          disabled={uploading}
+          icon="cloud-upload-outline"
+          label={uploading ? '正在上传并解析…' : '上传文档'}
+          onPress={() => {
+            void pickAndUpload();
+          }}
+        />
+        <FixedActionButton
+          emphasized
+          icon="chatbubble-ellipses-outline"
+          label="问知识库"
+          onPress={() => onAsk?.()}
+        />
+      </>
+    ) : (
+      <>
+        <FixedActionButton
+          icon="analytics-outline"
+          label="全部解析"
+          onPress={() => showComingSoon('全部解析')}
+        />
+        <FixedActionButton
+          disabled={uploading}
+          emphasized
+          icon="cloud-upload-outline"
+          label={uploading ? '正在上传并解析…' : '上传文档'}
+          onPress={() => {
+            void pickAndUpload();
+          }}
+        />
+      </>
+    );
+
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <PageHeader onBack={onBack} title={knowledge.name} />
+    <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
+      <KnowledgeGroupPicker
+        allGroups={availableGroups}
+        error={pickerError}
+        linkedGroupIds={linkedGroupIds}
+        loading={pickerLoading}
+        onClose={() => {
+          if (!linking) setPickerVisible(false);
+        }}
+        onConfirm={() => {
+          void confirmLinks();
+        }}
+        onRetry={() => {
+          void loadAvailableGroups();
+        }}
+        onToggle={toggleGroup}
+        pending={linking}
+        selectedGroupIds={selectedGroupIds}
+        visible={pickerVisible}
+      />
+      <KnowledgeGroupSwitchDialog
+        group={switchTarget}
+        onCancel={() => setSwitchTarget(undefined)}
+        onConfirm={() => {
+          const target = switchTarget;
+          setSwitchTarget(undefined);
+          if (target) onSwitchGroup?.(target.id);
+        }}
+      />
+      <PageHeader
+        onBack={onBack}
+        onMore={() => showComingSoon('知识库更多操作')}
+        onSearch={() => showComingSoon('知识库详情搜索')}
+        searchLabel="搜索知识库内容"
+        title={knowledge.name}
+      />
       <ScrollView
+        directionalLockEnabled
         horizontal
-        keyboardShouldPersistTaps="handled"
+        nestedScrollEnabled
         onMomentumScrollEnd={handleMomentumScrollEnd}
         pagingEnabled
         ref={pagerRef}
@@ -264,32 +564,107 @@ export function KnowledgeDetailScreen({
       >
         <ScrollView
           contentContainerStyle={styles.pageContent}
-          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           stickyHeaderIndices={[1]}
-          style={{ width: pageWidth }}
+          style={[styles.page, { width: pageWidth }]}
+          testID="knowledge-overview-scroll"
+        >
+          {renderHero()}
+          {renderTabs()}
+          {error ? (
+            <Text accessibilityRole="alert" style={styles.failureReason}>
+              {error}
+            </Text>
+          ) : null}
+          <View style={styles.overviewContent}>
+            <Text style={styles.sectionTitle}>知识库详情</Text>
+            <Text style={styles.recentUpload}>
+              最近上传　
+              {knowledge.lastUploadedAt
+                ? new Date(knowledge.lastUploadedAt).toLocaleString('zh-CN', { hour12: false })
+                : '暂无'}
+            </Text>
+            <View style={styles.metrics}>
+              <Metric label="文档数" value={`${knowledge.documentCount}`} />
+              <Metric divider label="总大小" value={formatBytes(knowledge.totalSizeBytes)} />
+              <Metric divider label="已解析" value={`${knowledge.parsedDocumentCount}`} />
+              <Metric divider label="待处理" value={`${knowledge.pendingDocumentCount}`} />
+            </View>
+            <View style={styles.infoSection}>
+              <Text style={styles.sectionTitle}>内容存储</Text>
+              <InfoRow
+                icon="grid-outline"
+                label="存储位置"
+                value={knowledge.settings.storageLocation === 'local' ? '本地' : '云端'}
+              />
+            </View>
+            <View style={styles.infoSection}>
+              <Text style={styles.sectionTitle}>知识解析</Text>
+              <InfoRow
+                icon="git-network-outline"
+                label="索引方式"
+                value={
+                  knowledge.settings.indexingMode === 'rag'
+                    ? '检索增强（RAG）'
+                    : '上下文注入（Full Context）'
+                }
+              />
+              <InfoRow
+                icon="hardware-chip-outline"
+                label="嵌入模型"
+                value={knowledge.settings.embeddingModel}
+              />
+              <InfoRow
+                icon="hardware-chip-outline"
+                label="重排序模型"
+                value={knowledge.settings.rerankerModel ?? '未启用'}
+              />
+            </View>
+            <View style={styles.infoSection}>
+              <Text style={styles.sectionTitle}>解析处理</Text>
+              <InfoRow
+                icon="analytics-outline"
+                label="解析方式"
+                value={knowledge.settings.parsingMode === 'automatic' ? '自动解析' : '手动解析'}
+              />
+            </View>
+            <View style={styles.recentDocuments}>
+              <Text style={styles.sectionTitle}>近期文档</Text>
+              {documents.length ? (
+                documents
+                  .slice(0, 3)
+                  .map((document) => (
+                    <DocumentRow
+                      key={document.id}
+                      document={document}
+                      onOpen={() => onOpenDocument(document.id)}
+                      onRetry={() => retry(document)}
+                    />
+                  ))
+              ) : (
+                <Text style={styles.emptyText}>暂无近期文档</Text>
+              )}
+            </View>
+          </View>
+        </ScrollView>
+
+        <ScrollView
+          contentContainerStyle={styles.pageContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          stickyHeaderIndices={[0]}
+          style={[styles.page, { width: pageWidth }]}
           testID="knowledge-files-scroll"
         >
-          <View style={styles.hero}>
-            <Text accessibilityRole="header" style={styles.displayTitle}>
-              {knowledge.name}
-            </Text>
-            <Text numberOfLines={3} style={styles.heroDescription}>
-              {knowledge.description}
-            </Text>
-            <Text style={styles.heroMeta}>
-              {documents.length} 份文档 · 关联 {knowledge.linkedGroupCount} 个分组
-            </Text>
-          </View>
-          {error ? <Text accessibilityRole="alert" style={styles.failureReason}>{error}</Text> : null}
+          {renderTabs()}
           <View style={styles.stickySearch}>
-            <SearchAndFilter
-              onChangeText={setQuery}
-              placeholder="搜索文档..."
-              value={query}
-            />
+            <SearchAndFilter onChangeText={setQuery} placeholder="搜索文档..." value={query} />
           </View>
-          <PageTabs activeTab={activeTab} onChange={selectTab} tabs={detailTabs} />
+          {error ? (
+            <Text accessibilityRole="alert" style={styles.failureReason}>
+              {error}
+            </Text>
+          ) : null}
           <View style={styles.documentList}>
             {filteredDocuments.length ? (
               filteredDocuments.map((document) => (
@@ -297,72 +672,52 @@ export function KnowledgeDetailScreen({
                   key={document.id}
                   document={document}
                   onOpen={() => onOpenDocument(document.id)}
-                  onRetry={() => {
-                    void retryDocument(knowledgeId, document.id)
-                      .then((current) => setDocuments((items) => items.map((item) => item.id === current.id ? current : item)))
-                      .catch((reason) => setError(reason instanceof Error ? reason.message : '重试失败，请重新上传文件。'));
-                  }}
+                  onRetry={() => retry(document)}
                 />
               ))
             ) : (
-              <View style={styles.inlineEmpty}>
-                <Text style={styles.emptyText}>没有匹配的文档</Text>
-              </View>
+              <Text style={styles.emptyText}>{query.trim() ? '没有匹配的文档' : '暂无文档'}</Text>
             )}
           </View>
-          <ActionButton
-            icon="cloud-upload-outline"
-            label={uploading ? "正在上传并解析…" : "上传文档"}
-            onPress={() => { if (!uploading) void pickAndUpload(); }}
-          />
-          <ActionButton icon="chatbubble-ellipses-outline" label="问知识库" onPress={() => onAsk?.()} />
         </ScrollView>
 
-        <View style={[styles.pagerPage, { width: pageWidth }]}>
-          <ScrollView
-            contentContainerStyle={styles.groupPageContent}
-            showsVerticalScrollIndicator={false}
-            style={styles.groupScroll}
-          >
-            <PageTabs activeTab={activeTab} onChange={selectTab} tabs={detailTabs} />
-            <View style={styles.groupList}>
-              <EmptyState description="首期暂不提供分组关联数据。" title="暂无关联分组" />
-            </View>
-          </ScrollView>
-          <View style={styles.groupFixedAction} testID="knowledge-groups-fixed-action">
-            <ActionButton
-              icon="add"
-              label="关联新分组"
-              onPress={() => showComingSoon('关联新分组')}
-            />
+        <ScrollView
+          contentContainerStyle={styles.pageContent}
+          showsVerticalScrollIndicator={false}
+          stickyHeaderIndices={[0]}
+          style={[styles.page, { width: pageWidth }]}
+          testID="knowledge-groups-scroll"
+        >
+          {renderTabs()}
+          <View style={styles.groupList}>
+            {linkedGroups.length ? (
+              linkedGroups.map((group) => (
+                <GroupCard group={group} key={group.id} onSwitch={() => setSwitchTarget(group)} />
+              ))
+            ) : (
+              <EmptyState description="使用下方按钮将知识库关联到已有分组。" title="暂无关联分组" />
+            )}
           </View>
-        </View>
+        </ScrollView>
       </ScrollView>
+      <View style={styles.fixedActions} testID="knowledge-fixed-actions">
+        {fixedActions}
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    backgroundColor: colors.card,
-    flex: 1,
-  },
-  pager: {
-    flex: 1,
-  },
-  pagerPage: {
-    flex: 1,
-    height: '100%',
-  },
-  pageContent: {
-    gap: spacing.md,
-    paddingBottom: spacing.lg,
-    paddingHorizontal: spacing.md,
-  },
+  safeArea: { backgroundColor: colors.card, flex: 1 },
+  loading: { marginTop: spacing.xl },
+  pager: { flex: 1 },
+  page: { flex: 1 },
+  pageContent: { flexGrow: 1, paddingBottom: spacing.lg },
   hero: {
     gap: spacing.md,
-    paddingBottom: spacing.md,
+    padding: spacing.md,
     paddingTop: spacing.lg,
+    backgroundColor: colors.background,
   },
   displayTitle: {
     ...typography.contentDisplay,
@@ -374,20 +729,56 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: textColors.primary,
     fontFamily: fontFamilies.sans,
+    minHeight: 40,
   },
-  heroMeta: {
-    ...typography.body,
+  heroMeta: { ...typography.body, color: textColors.secondary, fontFamily: fontFamilies.sans },
+  tabsSurface: { backgroundColor: colors.card, zIndex: 1 },
+  overviewContent: { gap: spacing.md, paddingHorizontal: spacing.md, paddingTop: spacing.md },
+  sectionTitle: {
+    ...typography.heading1,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  recentUpload: {
+    ...typography.description,
+    color: textColors.tertiary,
+    fontFamily: fontFamilies.sans,
+  },
+  metrics: { flexDirection: 'row', paddingVertical: spacing.sm },
+  metric: { alignItems: 'center', flex: 1, gap: spacing.sm, minWidth: 0 },
+  metricDivider: { borderLeftColor: colors.divider, borderLeftWidth: StyleSheet.hairlineWidth },
+  metricValue: {
+    ...typography.heading1,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  metricLabel: {
+    ...typography.description,
     color: textColors.secondary,
     fontFamily: fontFamilies.sans,
   },
-  stickySearch: {
-    backgroundColor: colors.card,
-    paddingVertical: spacing.sm,
-    zIndex: 1,
+  infoSection: { gap: spacing.sm },
+  infoRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    minHeight: 32,
   },
-  documentList: {
-    marginHorizontal: -spacing.md,
+  infoLabelRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
+  infoLabel: { ...typography.body, color: textColors.secondary, fontFamily: fontFamilies.sans },
+  infoValue: {
+    ...typography.body,
+    color: textColors.secondary,
+    flexShrink: 1,
+    fontFamily: fontFamilies.sans,
+    marginLeft: spacing.md,
+    textAlign: 'right',
   },
+  recentDocuments: { gap: spacing.sm, marginTop: spacing.sm },
+  stickySearch: { backgroundColor: colors.card, padding: spacing.md, paddingBottom: spacing.sm },
+  documentList: { paddingHorizontal: spacing.md },
   documentRow: {
     alignItems: 'center',
     borderBottomColor: colors.divider,
@@ -395,13 +786,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
     minHeight: 92,
-    paddingHorizontal: spacing.md,
     paddingVertical: spacing.base,
   },
-  documentMain: {
-    flex: 1,
-    gap: spacing.xs,
-  },
+  documentMain: { flex: 1, gap: spacing.xs },
   documentTitle: {
     ...typography.heading2,
     color: textColors.primary,
@@ -422,60 +809,30 @@ const styles = StyleSheet.create({
     ...typography.description,
     color: textColors.secondary,
     fontFamily: fontFamilies.sans,
+    paddingHorizontal: spacing.md,
   },
-  documentStatus: {
-    alignItems: 'flex-end',
-    maxWidth: 100,
-  },
-  moreButton: {
-    alignItems: 'center',
-    height: 44,
-    justifyContent: 'center',
-    width: 36,
-  },
-  pressed: {
-    backgroundColor: colors.background,
-  },
-  inlineEmpty: {
-    alignItems: 'center',
-    minHeight: 120,
-    justifyContent: 'center',
-  },
+  documentStatus: { alignItems: 'flex-end', maxWidth: 100 },
+  moreButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 36 },
   emptyText: {
     ...typography.body,
     color: textColors.secondary,
     fontFamily: fontFamilies.sans,
+    padding: spacing.lg,
+    textAlign: 'center',
   },
-  groupList: {
-    gap: spacing.md,
-  },
-  groupScroll: {
-    flex: 1,
-  },
-  groupPageContent: {
-    flexGrow: 1,
-    gap: spacing.md,
-    paddingHorizontal: spacing.md,
-  },
-  groupFixedAction: {
-    backgroundColor: colors.card,
-    borderTopColor: colors.divider,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    padding: spacing.md,
-  },
+  groupList: { gap: spacing.md, padding: spacing.md, backgroundColor: colors.white },
   groupCard: {
     backgroundColor: colors.canvas,
     borderColor: colors.divider,
     borderRadius: radii.default,
     borderWidth: StyleSheet.hairlineWidth,
     gap: spacing.lg,
-    padding: spacing.lg,
+    paddingTop: spacing.base,
+    paddingBottom: spacing.base,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.md,
   },
-  groupTitleRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
+  groupTitleRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
   groupTitle: {
     ...typography.heading1,
     color: textColors.primary,
@@ -483,27 +840,37 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sansBold,
     fontWeight: 'bold',
   },
-  groupStats: {
+  switchButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
+  groupStats: { flexDirection: 'row' },
+  fixedActions: {
+    backgroundColor: colors.card,
+    borderTopColor: colors.divider,
+    borderTopWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
-  },
-  groupStat: {
-    alignItems: 'center',
-    flex: 1,
     gap: spacing.sm,
+    padding: spacing.md,
   },
-  groupStatDivider: {
-    borderLeftColor: colors.divider,
-    borderLeftWidth: StyleSheet.hairlineWidth,
+  actionButton: {
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: StyleSheet.hairlineWidth,
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'center',
+    minHeight: 56,
+    paddingHorizontal: spacing.md,
   },
-  groupStatValue: {
-    ...typography.heading1,
+  emphasizedAction: { backgroundColor: colors.ink, borderColor: colors.ink },
+  actionText: {
+    ...typography.body,
     color: textColors.primary,
     fontFamily: fontFamilies.sansBold,
     fontWeight: 'bold',
   },
-  groupStatLabel: {
-    ...typography.description,
-    color: textColors.secondary,
-    fontFamily: fontFamilies.sans,
-  },
+  emphasizedActionText: { color: colors.white },
+  disabled: { opacity: 0.45 },
+  pressed: { backgroundColor: colors.background },
 });

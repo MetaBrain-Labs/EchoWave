@@ -65,6 +65,39 @@ Use the repository's pinned toolchain and existing scripts. Do not change depend
 - `pnpm start` is the interactive local workflow and uses Turbo TUI. `pnpm dev` is the streamed Turbo workflow. `pnpm dev:api` and `pnpm dev:mobile` start individual applications.
 - Preserve strict TypeScript, ESM conventions, package exports, and existing workspace boundaries.
 
+### Formatting
+
+- After completing one batch of code changes, run `pnpm format` exactly once from the repository root before tests or final verification. Do not rerun it after every file edit or after every `dev`, `test`, `build`, or `check` command.
+- Before running any formatting command, verify that both root files `.prettierrc` and `.prettierignore` exist. If either file is missing, do not format anything and explicitly tell the user which file is missing.
+- Treat `.prettierrc` and `.prettierignore` as the authoritative formatting configuration. If either configuration is intentionally changed, update the snapshots in this section in the same change.
+- After formatting, inspect the working-tree and staged diffs. Do not automatically stage formatter output, overwrite unrelated user changes, or revert existing work.
+
+Current `.prettierrc` snapshot:
+
+```json
+{
+  "semi": true,
+  "singleQuote": true,
+  "trailingComma": "all",
+  "tabWidth": 2,
+  "printWidth": 100
+}
+```
+
+Current `.prettierignore` snapshot:
+
+```text
+node_modules
+dist
+build
+coverage
+.next
+.expo
+.turbo
+
+pnpm-lock.yaml
+```
+
 ### Mobile Application
 
 - Preserve Expo Router and React Native primitives. Do not introduce Vite, Tailwind CSS, a web-only UI library, or a second routing system.
@@ -124,6 +157,7 @@ Use the repository's pinned toolchain and existing scripts. Do not change depend
    * - <边界说明>
    */
   ```
+
 - Do not commit generated build output, caches, runtime state, secrets, or local environment files.
 
 ## Verification

@@ -21,16 +21,14 @@ describe('knowledge query API client', () => {
     jest.useFakeTimers();
     let requestSignal: AbortSignal | undefined;
     jest.spyOn(globalThis, 'fetch').mockImplementation(
-      (_input, init) => new Promise((_resolve, reject) => {
-        requestSignal = init?.signal ?? undefined;
-        requestSignal?.addEventListener('abort', () => reject(new Error('aborted')));
-      }),
+      (_input, init) =>
+        new Promise((_resolve, reject) => {
+          requestSignal = init?.signal ?? undefined;
+          requestSignal?.addEventListener('abort', () => reject(new Error('aborted')));
+        }),
     );
 
-    const request = queryKnowledge(
-      '11111111-1111-4111-8111-111111111111',
-      '答案是什么？',
-    );
+    const request = queryKnowledge('11111111-1111-4111-8111-111111111111', '答案是什么？');
     const rejection = expect(request).rejects.toMatchObject({ code: 'TIMEOUT' });
 
     await jest.advanceTimersByTimeAsync(49_999);

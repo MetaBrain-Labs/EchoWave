@@ -13,7 +13,7 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 
 import { KnowledgeListScreen } from '../KnowledgeListScreen';
 import { createKnowledgeBase, listKnowledgeBases } from '../../apiClient';
-import { knowledgeSummary } from '../../testing/fixtures';
+import { knowledge, knowledgeSummary } from '../../testing/fixtures';
 
 jest.mock('../../apiClient');
 
@@ -36,11 +36,17 @@ describe('KnowledgeListScreen', () => {
 
   it('creates a knowledge base and opens it', async () => {
     jest.mocked(listKnowledgeBases).mockResolvedValue({ items: [] });
-    jest.mocked(createKnowledgeBase).mockResolvedValue(knowledgeSummary);
+    jest.mocked(createKnowledgeBase).mockResolvedValue(knowledge);
     const onOpenKnowledge = jest.fn();
     const screen = render(<KnowledgeListScreen onOpenKnowledge={onOpenKnowledge} />);
     await waitFor(() => expect(screen.queryByLabelText('正在加载知识库')).toBeNull());
     fireEvent.press(screen.getByLabelText('新建知识库'));
+    expect(screen.getByLabelText('存储位置：本地，不可修改').props.accessibilityState).toEqual({
+      disabled: true,
+    });
+    expect(
+      screen.getByLabelText('索引方式：检索增强（RAG），不可修改').props.accessibilityState,
+    ).toEqual({ disabled: true });
     fireEvent.changeText(screen.getByLabelText('知识库名称'), '产品研究知识库');
     fireEvent.changeText(screen.getByLabelText('知识库描述'), '真实 API 知识库');
     fireEvent.press(screen.getByText('创建并打开'));

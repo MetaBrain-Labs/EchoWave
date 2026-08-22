@@ -27,13 +27,24 @@ export function EmptyState({ description, title }: { description: string; title:
 }
 
 const styles = StyleSheet.create({
-  emptyState: { alignItems: 'center', flex: 1, justifyContent: 'center', paddingHorizontal: spacing.md },
+  emptyState: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+  },
   emptyTitle: {
-    ...typography.heading2, color: textColors.primary, fontFamily: fontFamilies.sansBold,
-    fontWeight: 'bold', marginTop: spacing.md,
+    ...typography.heading2,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+    marginTop: spacing.md,
   },
   emptyDescription: {
-    ...typography.description, color: textColors.secondary, fontFamily: fontFamilies.sans,
-    marginTop: spacing.sm, textAlign: 'center',
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    marginTop: spacing.sm,
+    textAlign: 'center',
   },
 });

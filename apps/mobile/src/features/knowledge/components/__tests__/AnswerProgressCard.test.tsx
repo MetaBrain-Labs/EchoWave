@@ -16,9 +16,11 @@ describe('AnswerProgressCard', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
-    jest.spyOn(AccessibilityInfo, 'addEventListener').mockReturnValue(
-      { remove: jest.fn() } as unknown as ReturnType<typeof AccessibilityInfo.addEventListener>,
-    );
+    jest
+      .spyOn(AccessibilityInfo, 'addEventListener')
+      .mockReturnValue({ remove: jest.fn() } as unknown as ReturnType<
+        typeof AccessibilityInfo.addEventListener
+      >);
   });
 
   afterEach(() => {

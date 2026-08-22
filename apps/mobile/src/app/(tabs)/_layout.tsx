@@ -54,11 +54,7 @@ export default function TabsLayout() {
           title: '分组',
           tabBarAccessibilityLabel: '分组',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              color={color}
-              name={focused ? 'albums' : 'albums-outline'}
-              size={27}
-            />
+            <Ionicons color={color} name={focused ? 'albums' : 'albums-outline'} size={27} />
           ),
         }}
       />
@@ -68,11 +64,7 @@ export default function TabsLayout() {
           title: '知识库',
           tabBarAccessibilityLabel: '知识库',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              color={color}
-              name={focused ? 'book' : 'book-outline'}
-              size={27}
-            />
+            <Ionicons color={color} name={focused ? 'book' : 'book-outline'} size={27} />
           ),
         }}
       />
@@ -89,10 +81,10 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="analysis"
+        name="sources"
         options={{
-          title: '分析',
-          tabBarAccessibilityLabel: '分析',
+          title: '数据源',
+          tabBarAccessibilityLabel: '数据源',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               color={color}
@@ -108,11 +100,7 @@ export default function TabsLayout() {
           title: '更多',
           tabBarAccessibilityLabel: '更多',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              color={color}
-              name={focused ? 'grid' : 'grid-outline'}
-              size={27}
-            />
+            <Ionicons color={color} name={focused ? 'grid' : 'grid-outline'} size={27} />
           ),
         }}
       />

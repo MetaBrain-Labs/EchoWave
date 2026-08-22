@@ -15,17 +15,31 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import type { DocumentFormat, KnowledgeDocument } from '@echowave/contracts';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { colors, fontFamilies, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
+import {
+  colors,
+  fontFamilies,
+  radii,
+  spacing,
+  textColors,
+  typography,
+} from '@/shared/theme/tokens';
 
 /** 渲染具有统一图标与反馈语义的操作按钮。 */
-export function ActionButton({ icon, label, onPress }: {
+export function ActionButton({
+  icon,
+  label,
+  onPress,
+}: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   onPress: () => void;
 }) {
   return (
-    <Pressable accessibilityRole="button" onPress={onPress}
-      style={({ pressed }) => [styles.actionButton, pressed && styles.pressed]}>
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.actionButton, pressed && styles.pressed]}
+    >
       <Ionicons color={colors.ink} name={icon} size={typography.body.lineHeight} />
       <Text style={styles.actionButtonText}>{label}</Text>
     </Pressable>
@@ -33,14 +47,26 @@ export function ActionButton({ icon, label, onPress }: {
 }
 
 /** 按文档格式渲染一致的 Expo 图标。 */
-export function DocumentFormatIcon({ format, size = 36 }: { format: DocumentFormat; size?: number }) {
+export function DocumentFormatIcon({
+  format,
+  size = 36,
+}: {
+  format: DocumentFormat;
+  size?: number;
+}) {
   const config: Record<DocumentFormat, { color: string; icon: keyof typeof Ionicons.glyphMap }> = {
     markdown: { color: '#526071', icon: 'document-text-outline' },
     word: { color: '#1768c4', icon: 'document-outline' },
     spreadsheet: { color: '#078449', icon: 'grid-outline' },
   };
-  return <Ionicons accessibilityLabel={`${format} 文件`} color={config[format].color}
-    name={config[format].icon} size={size} />;
+  return (
+    <Ionicons
+      accessibilityLabel={`${format} 文件`}
+      color={config[format].color}
+      name={config[format].icon}
+      size={size}
+    />
+  );
 }
 
 /** 将服务器文档处理状态映射为稳定、可理解的中文展示。 */
@@ -62,7 +88,11 @@ export function DocumentStatusView({ document }: { document: KnowledgeDocument }
     case 'failed':
       return (
         <View style={styles.failedStatus}>
-          <Ionicons color="#ff5964" name="alert-circle-outline" size={typography.label.lineHeight} />
+          <Ionicons
+            color="#ff5964"
+            name="alert-circle-outline"
+            size={typography.label.lineHeight}
+          />
           <Text style={styles.statusText}>解析失败</Text>
         </View>
       );
@@ -81,18 +111,34 @@ function InlineStatus({ icon, label }: { icon: keyof typeof Ionicons.glyphMap; l
 const styles = StyleSheet.create({
   pressed: { backgroundColor: colors.background },
   actionButton: {
-    alignItems: 'center', backgroundColor: colors.background, borderColor: colors.divider,
-    borderRadius: radii.default, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row',
-    gap: spacing.sm, justifyContent: 'center', minHeight: 56, paddingHorizontal: spacing.md,
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'center',
+    minHeight: 56,
+    paddingHorizontal: spacing.md,
   },
   actionButtonText: {
-    ...typography.body, color: textColors.primary, fontFamily: fontFamilies.sansBold, fontWeight: 'bold',
+    ...typography.body,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
   },
   statusText: { ...typography.label, color: textColors.primary, fontFamily: fontFamilies.sans },
   inlineStatus: { alignItems: 'center', flexDirection: 'row', gap: spacing.xs },
   failedStatus: {
-    alignItems: 'center', backgroundColor: colors.background, borderColor: '#ff5964',
-    borderRadius: radii.default, borderWidth: 1, flexDirection: 'row', gap: spacing.xs,
-    paddingHorizontal: spacing.xs, paddingVertical: spacing.xs,
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderColor: '#ff5964',
+    borderRadius: radii.default,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xs,
   },
 });

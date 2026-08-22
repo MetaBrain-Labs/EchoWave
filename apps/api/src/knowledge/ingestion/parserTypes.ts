@@ -25,15 +25,26 @@ export class DocumentParseError extends Error {
 
 /** 尚未持久化、但已包含来源定位与 embedding 文本的文档块草稿。 */
 export type ParsedChunkDraft = {
-  index: number; title: string; headingPath: string[]; content: string;
-  embeddingText: string; contentSha256: string; locator: SourceLocator;
+  index: number;
+  title: string;
+  headingPath: string[];
+  content: string;
+  embeddingText: string;
+  contentSha256: string;
+  locator: SourceLocator;
 };
 
 /** 一次文档解析产生的预览、文档块与非致命警告。 */
-export type ParsedDocument = { chunks: ParsedChunkDraft[]; previewText: string; warnings: string[] };
+export type ParsedDocument = {
+  chunks: ParsedChunkDraft[];
+  previewText: string;
+  warnings: string[];
+};
 
 /** 格式解析器返回给统一分块器的可追溯语义段。 */
 export type SemanticSection = {
-  title: string; headingPath: string[]; content: string; locator: SourceLocator;
+  title: string;
+  headingPath: string[];
+  content: string;
+  locator: SourceLocator;
 };
-

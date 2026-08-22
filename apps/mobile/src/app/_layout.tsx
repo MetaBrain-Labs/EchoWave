@@ -13,23 +13,12 @@
 import { useFonts } from 'expo-font';
 import { Slot } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import {
-  ActivityIndicator,
-  Platform,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { NavigationLoadingProvider } from '@/shared/navigation/NavigationLoadingProvider';
-import {
-  colors,
-  fontFamilies,
-  spacing,
-  textColors,
-  typography,
-} from '@/shared/theme/tokens';
+import { colors, fontFamilies, spacing, textColors, typography } from '@/shared/theme/tokens';
+import { StatusBarBackdrop } from '@/shared/ui/StatusBarBackdrop';
 
 /** 装载应用级 provider、字体门禁与根路由栈。 */
 export default function RootLayout() {
@@ -40,12 +29,7 @@ export default function RootLayout() {
   });
 
   if (fontError) {
-    return (
-      <FontGateState
-        description="请重新启动应用后重试。"
-        title="字体加载失败"
-      />
-    );
+    return <FontGateState description="请重新启动应用后重试。" title="字体加载失败" />;
   }
 
   if (!fontsLoaded) {
@@ -59,6 +43,7 @@ export default function RootLayout() {
           <NavigationLoadingProvider>
             <Slot />
             <StatusBar style="dark" />
+            <StatusBarBackdrop />
           </NavigationLoadingProvider>
         </View>
       </View>
@@ -80,9 +65,7 @@ function FontGateState({
       <View accessibilityRole="alert" style={styles.fontGate}>
         {loading ? <ActivityIndicator color={colors.ink} /> : null}
         <Text style={styles.fontGateTitle}>{title}</Text>
-        {description ? (
-          <Text style={styles.fontGateDescription}>{description}</Text>
-        ) : null}
+        {description ? <Text style={styles.fontGateDescription}>{description}</Text> : null}
       </View>
     </SafeAreaProvider>
   );

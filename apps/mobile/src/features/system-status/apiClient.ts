@@ -10,10 +10,7 @@
  * Notes:
  * - 不缓存服务状态。
  */
-import {
-  HelloResponseSchema,
-  type HelloResponse,
-} from '@echowave/contracts';
+import { HelloResponseSchema, type HelloResponse } from '@echowave/contracts';
 
 import { apiUrl } from '@/shared/api/apiUrl';
 
@@ -31,10 +28,7 @@ export class ServiceRequestError extends Error {
   }
 }
 
-export async function fetchHello(
-  baseUrl = apiUrl,
-  timeoutMs = 5_000,
-): Promise<HelloResponse> {
+export async function fetchHello(baseUrl = apiUrl, timeoutMs = 5_000): Promise<HelloResponse> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -45,10 +39,7 @@ export async function fetchHello(
     });
 
     if (!response.ok) {
-      throw new ServiceRequestError(
-        'NETWORK',
-        `API returned HTTP ${response.status}.`,
-      );
+      throw new ServiceRequestError('NETWORK', `API returned HTTP ${response.status}.`);
     }
 
     const result = HelloResponseSchema.safeParse(await response.json());

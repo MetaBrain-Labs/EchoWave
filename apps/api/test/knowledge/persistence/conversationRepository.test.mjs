@@ -18,15 +18,17 @@ describe('ConversationRepository history', () => {
       query: async (sql, values) => {
         calls.push({ sql, values });
         return {
-          rows: [{
-            id: '11111111-1111-4111-8111-111111111111',
-            conversation_id: '22222222-2222-4222-8222-222222222222',
-            question: '问题',
-            answer: '回答',
-            grounded: true,
-            citation_count: 2,
-            created_at: new Date('2026-08-20T12:00:00.000Z'),
-          }],
+          rows: [
+            {
+              id: '11111111-1111-4111-8111-111111111111',
+              conversation_id: '22222222-2222-4222-8222-222222222222',
+              question: '问题',
+              answer: '回答',
+              grounded: true,
+              citation_count: 2,
+              created_at: new Date('2026-08-20T12:00:00.000Z'),
+            },
+          ],
         };
       },
     };

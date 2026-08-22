@@ -10,15 +10,8 @@
  * Notes:
  * - 不替代页面自身的数据错误与重试状态。
  */
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
-import { Animated, Easing, StyleSheet, Text, View } from "react-native";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 
 import {
   colors,
@@ -27,18 +20,15 @@ import {
   spacing,
   textColors,
   typography,
-} from "@/shared/theme/tokens";
+} from '@/shared/theme/tokens';
 
 export const minimumNavigationLoadingMs = 700;
 
 type NavigationLoadingContextValue = {
-  runWithLoading: <Result>(
-    operation: () => Result | Promise<Result>,
-  ) => Promise<Result>;
+  runWithLoading: <Result>(operation: () => Result | Promise<Result>) => Promise<Result>;
 };
 
-const NavigationLoadingContext =
-  createContext<NavigationLoadingContextValue | null>(null);
+const NavigationLoadingContext = createContext<NavigationLoadingContextValue | null>(null);
 
 function wait(milliseconds: number) {
   return new Promise<void>((resolve) => {
@@ -46,12 +36,10 @@ function wait(milliseconds: number) {
   });
 }
 
-const barColors = ["#22B8CF", colors.success, "#5B8CFF", "#B47CF6", "#FFB84D"];
+const barColors = ['#22B8CF', colors.success, '#5B8CFF', '#B47CF6', '#FFB84D'];
 
 function LivelyLoadingMark() {
-  const [barValues] = useState(() =>
-    barColors.map(() => new Animated.Value(0)),
-  );
+  const [barValues] = useState(() => barColors.map(() => new Animated.Value(0)));
   const [pulseValue] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
@@ -151,36 +139,26 @@ function LivelyLoadingMark() {
 }
 
 /** 为子树提供可计数、具有最短展示时长的导航加载状态。 */
-export function NavigationLoadingProvider({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export function NavigationLoadingProvider({ children }: { children: React.ReactNode }) {
   const [visible, setVisible] = useState(false);
   const operationId = useRef(0);
 
-  const runWithLoading = useCallback(
-    async <Result,>(operation: () => Result | Promise<Result>) => {
-      const currentOperationId = operationId.current + 1;
-      operationId.current = currentOperationId;
-      const startedAt = Date.now();
-      setVisible(true);
+  const runWithLoading = useCallback(async <Result,>(operation: () => Result | Promise<Result>) => {
+    const currentOperationId = operationId.current + 1;
+    operationId.current = currentOperationId;
+    const startedAt = Date.now();
+    setVisible(true);
 
-      try {
-        return await operation();
-      } finally {
-        const remainingTime = Math.max(
-          minimumNavigationLoadingMs - (Date.now() - startedAt),
-          0,
-        );
-        await wait(remainingTime);
-        if (operationId.current === currentOperationId) {
-          setVisible(false);
-        }
+    try {
+      return await operation();
+    } finally {
+      const remainingTime = Math.max(minimumNavigationLoadingMs - (Date.now() - startedAt), 0);
+      await wait(remainingTime);
+      if (operationId.current === currentOperationId) {
+        setVisible(false);
       }
-    },
-    [],
-  );
+    }
+  }, []);
 
   return (
     <NavigationLoadingContext.Provider value={{ runWithLoading }}>
@@ -207,37 +185,35 @@ export function NavigationLoadingProvider({
 export function useNavigationLoading() {
   const context = useContext(NavigationLoadingContext);
   if (!context) {
-    throw new Error(
-      "useNavigationLoading must be used within NavigationLoadingProvider",
-    );
+    throw new Error('useNavigationLoading must be used within NavigationLoadingProvider');
   }
   return context;
 }
 
 const styles = StyleSheet.create({
   overlay: {
-    alignItems: "center",
-    backgroundColor: "rgba(250, 250, 250, 0.92)",
+    alignItems: 'center',
+    backgroundColor: 'rgba(250, 250, 250, 0.92)',
     bottom: 0,
     elevation: 20,
-    justifyContent: "center",
+    justifyContent: 'center',
     left: 0,
-    position: "absolute",
+    position: 'absolute',
     right: 0,
     top: 0,
     zIndex: 100,
   },
   indicatorCard: {
-    alignItems: "center",
-    backgroundColor: "transparent",
+    alignItems: 'center',
+    backgroundColor: 'transparent',
     gap: spacing.base,
     minWidth: 128,
     padding: spacing.lg,
   },
   loadingMark: {
-    alignItems: "center",
+    alignItems: 'center',
     height: 64,
-    justifyContent: "center",
+    justifyContent: 'center',
     width: 72,
   },
   pulseRing: {
@@ -245,12 +221,12 @@ const styles = StyleSheet.create({
     borderRadius: radii.round,
     borderWidth: 2,
     height: 56,
-    position: "absolute",
+    position: 'absolute',
     width: 56,
   },
   barRow: {
-    alignItems: "center",
-    flexDirection: "row",
+    alignItems: 'center',
+    flexDirection: 'row',
     gap: spacing.xs,
     height: 36,
   },
@@ -263,6 +239,6 @@ const styles = StyleSheet.create({
     ...typography.heading2,
     color: textColors.primary,
     fontFamily: fontFamilies.sansBold,
-    fontWeight: "bold",
+    fontWeight: 'bold',
   },
 });

@@ -16,11 +16,14 @@
     "lint": "turbo run lint",
     "start": "turbo run dev --ui=tui",
     "test": "turbo run test",
-    "typecheck": "turbo run typecheck"
+    "typecheck": "turbo run typecheck",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check"
   },
   "devDependencies": {
     "eslint": "9.39.3",
     "eslint-config-expo": "57.0.1",
+    "prettier": "3.9.6",
     "turbo": "2.10.10",
     "typescript": "5.9.3"
   }

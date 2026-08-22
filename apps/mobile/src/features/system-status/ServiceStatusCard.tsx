@@ -12,13 +12,7 @@
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
   colors,
@@ -55,8 +49,7 @@ export function ServiceStatusCard() {
       if (version === requestVersion.current) {
         setState({
           phase: 'offline',
-          message:
-            error instanceof Error ? error.message : '无法连接 EchoWave API。',
+          message: error instanceof Error ? error.message : '无法连接 EchoWave API。',
         });
       }
     }
@@ -74,8 +67,7 @@ export function ServiceStatusCard() {
         if (version === requestVersion.current) {
           setState({
             phase: 'offline',
-            message:
-              error instanceof Error ? error.message : '无法连接 EchoWave API。',
+            message: error instanceof Error ? error.message : '无法连接 EchoWave API。',
           });
         }
       });
@@ -97,16 +89,10 @@ export function ServiceStatusCard() {
         </View>
         <View
           accessibilityLabel={isLoading ? '检测中' : isOnline ? '在线' : '离线'}
-          style={[
-            styles.statusBadge,
-            isOnline ? styles.onlineBadge : styles.neutralBadge,
-          ]}
+          style={[styles.statusBadge, isOnline ? styles.onlineBadge : styles.neutralBadge]}
         >
           {isLoading ? (
-            <ActivityIndicator
-              color={colors.secondary}
-              size={typography.label.lineHeight}
-            />
+            <ActivityIndicator color={colors.secondary} size={typography.label.lineHeight} />
           ) : (
             <Ionicons
               color={isOnline ? colors.success : colors.secondary}
@@ -114,9 +100,7 @@ export function ServiceStatusCard() {
               size={typography.label.lineHeight}
             />
           )}
-          <Text
-            style={[styles.statusLabel, isOnline && styles.onlineStatusLabel]}
-          >
+          <Text style={[styles.statusLabel, isOnline && styles.onlineStatusLabel]}>
             {isLoading ? '检测中' : isOnline ? '在线' : '离线'}
           </Text>
         </View>
@@ -148,11 +132,7 @@ export function ServiceStatusCard() {
           pressed && styles.pressedButton,
         ]}
       >
-        <Ionicons
-          color={colors.ink}
-          name="refresh"
-          size={typography.body.lineHeight}
-        />
+        <Ionicons color={colors.ink} name="refresh" size={typography.body.lineHeight} />
         <Text style={styles.retryText}>重试连接</Text>
       </Pressable>
     </View>

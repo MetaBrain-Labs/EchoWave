@@ -62,11 +62,17 @@ describe('AI execution reporter', () => {
     await run.finish({ status: 'completed' });
 
     assert.equal(writes.length, 1);
-    assert.match(writes[0].filePath, /\.ai-execution-reports[\\/]2026-08-20[\\/].*rag-answer-run-1\.md$/);
+    assert.match(
+      writes[0].filePath,
+      /\.ai-execution-reports[\\/]2026-08-20[\\/].*rag-answer-run-1\.md$/,
+    );
     assert.match(writes[0].content, /"apiKey": "\[REDACTED\]"/);
     assert.match(writes[0].content, /"inputTokens": 12/);
     assert.match(writes[0].content, /"hitCount": 2/);
-    assert.doesNotMatch(writes[0].content, /private question|private source|private prompt|private reasoning|private output/);
+    assert.doesNotMatch(
+      writes[0].content,
+      /private question|private source|private prompt|private reasoning|private output/,
+    );
     assert.doesNotMatch(writes[0].content, /## Context|## Reasoning|## Output/);
   });
 
@@ -93,7 +99,10 @@ describe('AI execution reporter', () => {
     run.recordContext({ left: shared, right: shared, circular });
     run.recordReasoning('contains ``` a nested fence');
     run.recordOutput('x'.repeat(120_100));
-    await run.finish({ status: 'failed', error: Object.assign(new Error('failed'), { code: 'MODEL_ERROR' }) });
+    await run.finish({
+      status: 'failed',
+      error: Object.assign(new Error('failed'), { code: 'MODEL_ERROR' }),
+    });
     await run.finish({ status: 'completed' });
 
     assert.equal(writes.length, 1);
@@ -139,7 +148,9 @@ describe('AI execution reporter', () => {
       warn: (message) => warnings.push(message),
     });
 
-    await reporter.start({ kind: 'rag-answer', name: 'failed write' }).finish({ status: 'completed' });
+    await reporter
+      .start({ kind: 'rag-answer', name: 'failed write' })
+      .finish({ status: 'completed' });
 
     assert.deepEqual(warnings, ['[ai-execution-report] failed to write execution report']);
   });

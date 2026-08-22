@@ -34,11 +34,12 @@ packages/
 docs/
   README.md            文档索引
   architecture.md      架构与技术决策
+  database-schema.md   数据库表、关系与生命周期
   design-system.md     移动端设计规范
   domain-language.md   领域术语
 ```
 
-模块职责和依赖方向详见 [架构说明](./docs/architecture.md)，领域名词以 [领域语言](./docs/domain-language.md) 为准。
+模块职责和依赖方向详见 [架构说明](./docs/architecture.md)，数据库表与关系详见 [数据库结构](./docs/database-schema.md)，领域名词以 [领域语言](./docs/domain-language.md) 为准。
 
 ## 本地启动
 
@@ -100,6 +101,14 @@ AI_EXECUTION_REPORT_REASONING_ENABLED="false"
 ```powershell
 pnpm --filter @echowave/api migrate
 ```
+
+如需在本地还原移动端音频工作区演示内容，请在迁移完成后执行幂等开发 seed：
+
+```powershell
+pnpm --filter @echowave/api seed:dev
+```
+
+开发 seed 使用固定演示 UUID，可安全重复执行；它不会写入 migration，也不保存音频二进制或连接凭据。
 
 迁移会创建业务 schema、`vector(1024)` HNSW 索引、固定开发租户和独立 LangGraph checkpoint schema。PostgreSQL 必须已经安装 `vector` 扩展。
 
@@ -190,11 +199,13 @@ pnpm check
 
 ## 当前功能
 
-- 分组主界面的音频分析、关联知识库和连接数据源标签
+- 分组主界面的目录切换、创建与归档，以及音频分析、关联知识库和连接数据源标签
+- 分组内跨标签搜索、音频创建时间排序与多状态筛选
 - 音频完成、跨分组、待分析、上传中、分析中状态示例
 - 分组、知识库、新建、分析、更多五项导航
 - Markdown、DOCX、XLSX 单文件上传、异步解析、分块、嵌入与状态轮询
 - PostgreSQL 租户隔离、revision 原子发布、HNSW 检索和引用回溯
+- PostgreSQL 分组生命周期，以及数据源、音频、上传时间线和版本化分析结果查询纵切片
 - DeepSeek + DeepAgents 知识问答、无证据拒答与短会话 checkpoint
 - 可选的知识问答与入库 Markdown 执行诊断报告
 - 移动端知识库列表、文档/块详情、上传、动态问答反馈、最近六轮只读历史和可返回聊天的引用跳转
@@ -203,6 +214,6 @@ pnpm check
 
 ## 当前边界
 
-本里程碑不包含真实鉴权、真实音频上传或分析、数据源同步、Redis、对象存储、OCR、PDF、旧版 Office、多 API 实例部署或 EAS Build。入库 worker 与临时文件仅支持单 API 实例；横向扩容前必须迁移到对象存储和独立 worker。详见 [文档索引](./docs/README.md) 与 [架构说明](./docs/architecture.md)。
+本里程碑不包含真实鉴权、真实音频上传或分析 worker、数据源同步、Redis、对象存储、OCR、PDF、旧版 Office、多 API 实例部署或 EAS Build。入库 worker 与临时文件仅支持单 API 实例；横向扩容前必须迁移到对象存储和独立 worker。详见 [文档索引](./docs/README.md) 与 [架构说明](./docs/architecture.md)。
 
 在 Windows 上无法运行 iOS Simulator；iOS 本轮通过 Expo bundle 导出、TypeScript 检查和应用配置校验，最终原生运行验收需在 macOS/Xcode 环境完成。

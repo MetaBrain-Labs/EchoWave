@@ -15,15 +15,24 @@ import type { RagQueryResponse } from '@echowave/contracts';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { colors, fontFamilies, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
+import {
+  colors,
+  fontFamilies,
+  radii,
+  spacing,
+  textColors,
+  typography,
+} from '@/shared/theme/tokens';
 
 const COLLAPSED_CITATION_COUNT = 4;
 
 type Citation = RagQueryResponse['citations'][number];
 
 function locatorLabel(locator: Citation['locator']) {
-  if (locator.kind === 'spreadsheet') return `${locator.sheet} · 第 ${locator.rowStart}-${locator.rowEnd} 行`;
-  if (locator.kind === 'word') return `${locator.headingPath.join(' / ') || '正文'} · 第 ${locator.paragraphStart}-${locator.paragraphEnd} 段`;
+  if (locator.kind === 'spreadsheet')
+    return `${locator.sheet} · 第 ${locator.rowStart}-${locator.rowEnd} 行`;
+  if (locator.kind === 'word')
+    return `${locator.headingPath.join(' / ') || '正文'} · 第 ${locator.paragraphStart}-${locator.paragraphEnd} 段`;
   return `${locator.headingPath.join(' / ') || '正文'} · 第 ${locator.lineStart}-${locator.lineEnd} 行`;
 }
 
@@ -37,9 +46,7 @@ export function CitationList({
 }) {
   const [expanded, setExpanded] = useState(false);
   const hiddenCount = Math.max(0, citations.length - COLLAPSED_CITATION_COUNT);
-  const visibleCitations = expanded
-    ? citations
-    : citations.slice(0, COLLAPSED_CITATION_COUNT);
+  const visibleCitations = expanded ? citations : citations.slice(0, COLLAPSED_CITATION_COUNT);
 
   return (
     <View style={styles.list}>
@@ -50,9 +57,13 @@ export function CitationList({
           onPress={() => onOpenCitation(citation.documentId, citation.chunkId)}
           style={({ pressed }) => [styles.citation, pressed && styles.pressed]}
         >
-          <Text style={styles.citationTitle}>[{citation.number}] {citation.documentTitle}</Text>
+          <Text style={styles.citationTitle}>
+            [{citation.number}] {citation.documentTitle}
+          </Text>
           <Text style={styles.citationMeta}>{locatorLabel(citation.locator)}</Text>
-          <Text numberOfLines={3} style={styles.citationExcerpt}>{citation.excerpt}</Text>
+          <Text numberOfLines={3} style={styles.citationExcerpt}>
+            {citation.excerpt}
+          </Text>
         </Pressable>
       ))}
       {hiddenCount > 0 ? (
@@ -79,11 +90,37 @@ export function CitationList({
 
 const styles = StyleSheet.create({
   list: { gap: spacing.sm },
-  citation: { backgroundColor: colors.background, borderRadius: radii.default, gap: spacing.xs, padding: spacing.sm },
-  citationTitle: { ...typography.description, color: textColors.primary, fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
+  citation: {
+    backgroundColor: colors.background,
+    borderRadius: radii.default,
+    gap: spacing.xs,
+    padding: spacing.sm,
+  },
+  citationTitle: {
+    ...typography.description,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
   citationMeta: { ...typography.label, color: textColors.secondary, fontFamily: fontFamilies.sans },
-  citationExcerpt: { ...typography.description, color: textColors.secondary, fontFamily: fontFamilies.sans },
-  toggle: { alignItems: 'center', alignSelf: 'center', flexDirection: 'row', gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  toggleText: { ...typography.description, color: textColors.secondary, fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
+  citationExcerpt: {
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+  },
+  toggle: {
+    alignItems: 'center',
+    alignSelf: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  toggleText: {
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
   pressed: { opacity: 0.72 },
 });

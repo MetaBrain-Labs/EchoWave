@@ -12,30 +12,30 @@
  * Notes:
  * - 当前 worker 与 API 同进程，尚不支持多实例协调。
  */
-import { readFile, readdir, stat, unlink } from "node:fs/promises";
-import path from "node:path";
+import { readFile, readdir, stat, unlink } from 'node:fs/promises';
+import path from 'node:path';
 
-import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
+import { Annotation, END, START, StateGraph } from '@langchain/langgraph';
 
 import {
   noOpAiExecutionReporter,
   type AiExecutionRecorder,
   type AiExecutionReporter,
-} from "../../ai-observability/executionReporter.ts";
+} from '../../ai-observability/executionReporter.ts';
 import {
   DocumentParseError,
   parseKnowledgeDocument,
   type ParsedDocument,
-} from "./documentParser.ts";
+} from './documentParser.ts';
 import {
   EmbeddingProviderError,
   OpenRouterEmbeddings,
   type EmbeddingBatchResult,
-} from "../embeddings/openRouterEmbeddings.ts";
+} from '../embeddings/openRouterEmbeddings.ts';
 import {
   IngestionRepository,
   type ClaimedIngestionJob,
-} from "../persistence/ingestionRepository.ts";
+} from '../persistence/ingestionRepository.ts';
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
@@ -63,12 +63,12 @@ async function runReportedStep<T>(
   summarize?: (result: T) => Record<string, unknown>,
 ): Promise<T> {
   const startedAt = Date.now();
-  report.recordStep({ name, status: "started" });
+  report.recordStep({ name, status: 'started' });
   try {
     const result = await operation();
     report.recordStep({
       name,
-      status: "completed",
+      status: 'completed',
       durationMs: Date.now() - startedAt,
       metadata: summarize?.(result),
     });
@@ -76,7 +76,7 @@ async function runReportedStep<T>(
   } catch (error) {
     report.recordStep({
       name,
-      status: "failed",
+      status: 'failed',
       durationMs: Date.now() - startedAt,
     });
     throw error;
@@ -95,32 +95,39 @@ export class IngestionWorker {
   constructor(private readonly options: WorkerOptions) {
     this.concurrency = options.concurrency ?? 2;
     this.graph = new StateGraph(IngestionState)
-      .addNode("validate", async ({ job, report }) => {
-        const source = await runReportedStep(report, "validate", async () => {
-          await options.repository.setJobStage(job, "validate", "validating");
-          const value = await readFile(job.stagedPath);
-          if (
-            value.byteLength !== job.sizeBytes ||
-            value.byteLength > MAX_FILE_BYTES
-          ) {
-            throw new DocumentParseError(
-              "DOCUMENT_TOO_LARGE",
-              "文件超过 20 MB 或上传内容不完整。",
-            );
-          }
-          return value;
-        }, (value) => ({ sizeBytes: value.byteLength }));
+      .addNode('validate', async ({ job, report }) => {
+        const source = await runReportedStep(
+          report,
+          'validate',
+          async () => {
+            await options.repository.setJobStage(job, 'validate', 'validating');
+            const value = await readFile(job.stagedPath);
+            if (value.byteLength !== job.sizeBytes || value.byteLength > MAX_FILE_BYTES) {
+              throw new DocumentParseError(
+                'DOCUMENT_TOO_LARGE',
+                '文件超过 20 MB 或上传内容不完整。',
+              );
+            }
+            return value;
+          },
+          (value) => ({ sizeBytes: value.byteLength }),
+        );
         return { source };
       })
-      .addNode("parse", async ({ job, source, report }) => {
-        const parsed = await runReportedStep(report, "parse", async () => {
-          await options.repository.setJobStage(job, "parse", "parsing");
-          return parseKnowledgeDocument(source, job.format, job.title);
-        }, (value) => ({
-          chunkCount: value.chunks.length,
-          warningCount: value.warnings.length,
-          previewLength: value.previewText.length,
-        }));
+      .addNode('parse', async ({ job, source, report }) => {
+        const parsed = await runReportedStep(
+          report,
+          'parse',
+          async () => {
+            await options.repository.setJobStage(job, 'parse', 'parsing');
+            return parseKnowledgeDocument(source, job.format, job.title);
+          },
+          (value) => ({
+            chunkCount: value.chunks.length,
+            warningCount: value.warnings.length,
+            previewLength: value.previewText.length,
+          }),
+        );
         report.recordContext({
           title: job.title,
           previewText: parsed.previewText,
@@ -129,111 +136,123 @@ export class IngestionWorker {
         });
         return { parsed };
       })
-      .addNode("normalize", async ({ job, report }) => {
-        await runReportedStep(report, "normalize", () =>
-          options.repository.setJobStage(job, "normalize", "parsing"));
+      .addNode('normalize', async ({ job, report }) => {
+        await runReportedStep(report, 'normalize', () =>
+          options.repository.setJobStage(job, 'normalize', 'parsing'),
+        );
         return {};
       })
-      .addNode("chunk", async ({ job, parsed, report }) => {
+      .addNode('chunk', async ({ job, parsed, report }) => {
         await runReportedStep(
           report,
-          "chunk",
-          () => options.repository.setJobStage(job, "chunk", "chunking"),
+          'chunk',
+          () => options.repository.setJobStage(job, 'chunk', 'chunking'),
           () => ({ chunkCount: parsed.chunks.length }),
         );
         return {};
       })
-      .addNode("embed", async ({ job, parsed, report }) => {
-        const embedding = await runReportedStep(report, "embed", async () => {
-          await options.repository.setJobStage(job, "embed", "embedding", 5);
-          const modelStartedAt = Date.now();
-          let result;
-          try {
-            result = await options.embeddings.embedBatches(
-              parsed.chunks.map((chunk) => chunk.embeddingText),
-            );
-            report.recordModelCall({
-              name: "document-embedding",
-              provider: result.provider,
-              model: result.model,
-              status: "completed",
-              durationMs: Date.now() - modelStartedAt,
-              inputTokens: result.tokens,
-              estimatedCostUsd: result.estimatedCostUsd,
-              metadata: {
-                inputCount: parsed.chunks.length,
-                vectorCount: result.vectors.length,
-                dimensions: result.vectors[0]?.length ?? 0,
-              },
-            });
-          } catch (error) {
-            report.recordModelCall({
-              name: "document-embedding",
-              provider: "openrouter",
-              model: options.embeddingModel,
-              status: "failed",
-              durationMs: Date.now() - modelStartedAt,
-              metadata: { inputCount: parsed.chunks.length },
-            });
-            throw error;
-          }
-          await options.repository.setJobStage(job, "embed", "embedding", 95);
-          return result;
-        }, (value) => ({
-          provider: value.provider,
-          model: value.model,
-          tokens: value.tokens,
-          estimatedCostUsd: value.estimatedCostUsd,
-          vectorCount: value.vectors.length,
-        }));
+      .addNode('embed', async ({ job, parsed, report }) => {
+        const embedding = await runReportedStep(
+          report,
+          'embed',
+          async () => {
+            await options.repository.setJobStage(job, 'embed', 'embedding', 5);
+            const modelStartedAt = Date.now();
+            let result;
+            try {
+              result = await options.embeddings.embedBatches(
+                parsed.chunks.map((chunk) => chunk.embeddingText),
+              );
+              report.recordModelCall({
+                name: 'document-embedding',
+                provider: result.provider,
+                model: result.model,
+                status: 'completed',
+                durationMs: Date.now() - modelStartedAt,
+                inputTokens: result.tokens,
+                estimatedCostUsd: result.estimatedCostUsd,
+                metadata: {
+                  inputCount: parsed.chunks.length,
+                  vectorCount: result.vectors.length,
+                  dimensions: result.vectors[0]?.length ?? 0,
+                },
+              });
+            } catch (error) {
+              report.recordModelCall({
+                name: 'document-embedding',
+                provider: 'openrouter',
+                model: options.embeddingModel,
+                status: 'failed',
+                durationMs: Date.now() - modelStartedAt,
+                metadata: { inputCount: parsed.chunks.length },
+              });
+              throw error;
+            }
+            await options.repository.setJobStage(job, 'embed', 'embedding', 95);
+            return result;
+          },
+          (value) => ({
+            provider: value.provider,
+            model: value.model,
+            tokens: value.tokens,
+            estimatedCostUsd: value.estimatedCostUsd,
+            vectorCount: value.vectors.length,
+          }),
+        );
         return { embedding };
       })
-      .addNode("publish", async ({ job, parsed, embedding, report }) => {
-        await runReportedStep(report, "publish", () =>
-          options.repository.publishRevision({
-            job,
-            chunks: parsed.chunks,
-            vectors: embedding.vectors,
-            previewText: parsed.previewText,
-            warnings: parsed.warnings,
-            provider: embedding.provider,
-            embeddingTokens: embedding.tokens,
-            estimatedCostUsd: embedding.estimatedCostUsd,
-            embeddingModel: options.embeddingModel,
-          }), () => ({
+      .addNode('publish', async ({ job, parsed, embedding, report }) => {
+        await runReportedStep(
+          report,
+          'publish',
+          () =>
+            options.repository.publishRevision({
+              job,
+              chunks: parsed.chunks,
+              vectors: embedding.vectors,
+              previewText: parsed.previewText,
+              warnings: parsed.warnings,
+              provider: embedding.provider,
+              embeddingTokens: embedding.tokens,
+              estimatedCostUsd: embedding.estimatedCostUsd,
+              embeddingModel: options.embeddingModel,
+            }),
+          () => ({
             revisionId: job.revisionId,
             chunkCount: parsed.chunks.length,
             warningCount: parsed.warnings.length,
-          }));
+          }),
+        );
         return {};
       })
-      .addNode("cleanup", async ({ job, report }) => {
+      .addNode('cleanup', async ({ job, report }) => {
         await runReportedStep(
           report,
-          "cleanup",
-          async () => unlink(job.stagedPath).then(
-            () => ({ removed: true }),
-            (error: NodeJS.ErrnoException) => {
-              if (error.code !== "ENOENT")
-                console.warn("Failed to remove staged upload", { jobId: job.id });
-              return {
-                removed: false,
-                reason: error.code === "ENOENT" ? "already-missing" : "unlink-failed",
-              };
-            },
-          ),
+          'cleanup',
+          async () =>
+            unlink(job.stagedPath).then(
+              () => ({ removed: true }),
+              (error: NodeJS.ErrnoException) => {
+                if (error.code !== 'ENOENT')
+                  console.warn('Failed to remove staged upload', { jobId: job.id });
+                return {
+                  removed: false,
+                  reason: error.code === 'ENOENT' ? 'already-missing' : 'unlink-failed',
+                };
+              },
+            ),
           (result) => result,
         );
         return {};
       })
-      .addEdge(START, "validate")
-      .addEdge("validate", "parse")
-      .addEdge("parse", "normalize")
-      .addEdge("normalize", "chunk")
-      .addEdge("chunk", "embed")
-      .addEdge("embed", "publish")
-      .addEdge("publish", "cleanup")
-      .addEdge("cleanup", END)
+      .addEdge(START, 'validate')
+      .addEdge('validate', 'parse')
+      .addEdge('parse', 'normalize')
+      .addEdge('normalize', 'chunk')
+      .addEdge('chunk', 'embed')
+      .addEdge('embed', 'publish')
+      .addEdge('publish', 'cleanup')
+      .addEdge('cleanup', END)
       .compile();
   }
 
@@ -264,13 +283,11 @@ export class IngestionWorker {
         try {
           job = await this.options.repository.claimIngestionJob();
         } catch (error) {
-          console.error("Failed to claim ingestion job", error);
+          console.error('Failed to claim ingestion job', error);
           return;
         }
         if (!job) return;
-        const execution = this.execute(job).finally(() =>
-          this.active.delete(execution),
-        );
+        const execution = this.execute(job).finally(() => this.active.delete(execution));
         this.active.add(execution);
       }
     } finally {
@@ -281,8 +298,8 @@ export class IngestionWorker {
   private async execute(job: ClaimedIngestionJob): Promise<void> {
     const startedAt = Date.now();
     const report = (this.options.reporter ?? noOpAiExecutionReporter).start({
-      kind: "knowledge-ingestion",
-      name: "EchoWave knowledge ingestion",
+      kind: 'knowledge-ingestion',
+      name: 'EchoWave knowledge ingestion',
       metadata: {
         jobId: job.id,
         knowledgeBaseId: job.knowledgeBaseId,
@@ -297,58 +314,55 @@ export class IngestionWorker {
     try {
       await this.graph.invoke({ job, report });
       const durationMs = Date.now() - startedAt;
-      report.recordOutput({ status: "completed", documentId: job.documentId });
+      report.recordOutput({ status: 'completed', documentId: job.documentId });
       await report.finish({
-        status: "completed",
+        status: 'completed',
         metadata: { durationMs },
       });
-      console.info("Ingestion completed", {
+      console.info('Ingestion completed', {
         jobId: job.id,
         documentId: job.documentId,
         durationMs,
       });
     } catch (error) {
-      const known =
-        error instanceof DocumentParseError ||
-        error instanceof EmbeddingProviderError;
-      const code = known ? error.code : "INTERNAL_ERROR";
-      const retryable =
-        error instanceof EmbeddingProviderError || (!known && job.attempts < 3);
-      const message = known ? error.message : "文档处理失败，请稍后重试。";
+      const known = error instanceof DocumentParseError || error instanceof EmbeddingProviderError;
+      const code = known ? error.code : 'INTERNAL_ERROR';
+      const retryable = error instanceof EmbeddingProviderError || (!known && job.attempts < 3);
+      const message = known ? error.message : '文档处理失败，请稍后重试。';
       const failurePersistenceStartedAt = Date.now();
-      report.recordStep({ name: "persist-failure", status: "started" });
+      report.recordStep({ name: 'persist-failure', status: 'started' });
       try {
         await this.options.repository.failJob(job, code, message, retryable);
         report.recordStep({
-          name: "persist-failure",
-          status: "completed",
+          name: 'persist-failure',
+          status: 'completed',
           durationMs: Date.now() - failurePersistenceStartedAt,
         });
       } catch (persistenceError) {
         report.recordStep({
-          name: "persist-failure",
-          status: "failed",
+          name: 'persist-failure',
+          status: 'failed',
           durationMs: Date.now() - failurePersistenceStartedAt,
         });
         await report.finish({
-          status: "failed",
+          status: 'failed',
           error,
           metadata: {
             code,
             retryable,
             failurePersistenceError:
-              persistenceError instanceof Error ? persistenceError.name : "UnknownError",
+              persistenceError instanceof Error ? persistenceError.name : 'UnknownError',
           },
         });
         throw persistenceError;
       }
       if (!retryable) await unlink(job.stagedPath).catch(() => undefined);
       await report.finish({
-        status: "failed",
+        status: 'failed',
         error,
         metadata: { code, retryable, durationMs: Date.now() - startedAt },
       });
-      console.error("Ingestion failed", {
+      console.error('Ingestion failed', {
         jobId: job.id,
         documentId: job.documentId,
         code,
@@ -359,9 +373,7 @@ export class IngestionWorker {
 
   private async cleanupOrphanedFiles(): Promise<void> {
     const directory = path.resolve(this.options.uploadTempDirectory);
-    const entries = await readdir(directory, { withFileTypes: true }).catch(
-      () => [],
-    );
+    const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
     const cutoff = Date.now() - 24 * 60 * 60 * 1000;
     await Promise.all(
       entries
@@ -369,8 +381,7 @@ export class IngestionWorker {
         .map(async (entry) => {
           const filePath = path.join(directory, entry.name);
           const details = await stat(filePath).catch(() => undefined);
-          if (details && details.mtimeMs < cutoff)
-            await unlink(filePath).catch(() => undefined);
+          if (details && details.mtimeMs < cutoff) await unlink(filePath).catch(() => undefined);
         }),
     );
   }

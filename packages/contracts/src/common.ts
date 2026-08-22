@@ -17,9 +17,16 @@ export const EntityIdSchema = z.string().uuid();
 
 /** EchoWave HTTP API 允许使用的稳定错误码 schema。 */
 export const ApiErrorCodeSchema = z.enum([
-  'BAD_REQUEST', 'CONFLICT', 'DOCUMENT_TOO_LARGE', 'DUPLICATE_DOCUMENT',
-  'INTERNAL_ERROR', 'INVALID_FILE', 'MODEL_TIMEOUT', 'MODEL_UNAVAILABLE',
-  'NOT_FOUND', 'UNSUPPORTED_FORMAT',
+  'BAD_REQUEST',
+  'CONFLICT',
+  'DOCUMENT_TOO_LARGE',
+  'DUPLICATE_DOCUMENT',
+  'INTERNAL_ERROR',
+  'INVALID_FILE',
+  'MODEL_TIMEOUT',
+  'MODEL_UNAVAILABLE',
+  'NOT_FOUND',
+  'UNSUPPORTED_FORMAT',
 ]);
 
 /** 不泄露内部实现的统一 HTTP 错误响应 schema。 */

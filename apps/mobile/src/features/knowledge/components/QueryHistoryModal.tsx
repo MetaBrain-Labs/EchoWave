@@ -9,9 +9,24 @@
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { RagHistoryItem } from '@echowave/contracts';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
-import { colors, fontFamilies, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
+import {
+  colors,
+  fontFamilies,
+  radii,
+  spacing,
+  textColors,
+  typography,
+} from '@/shared/theme/tokens';
 
 function historyTime(value: string) {
   return new Date(value).toLocaleString('zh-CN', {
@@ -47,7 +62,13 @@ export function QueryHistoryModal({
               <Text style={styles.title}>最近问答</Text>
               <Text style={styles.subtitle}>仅展示最近 6 个已完成问答</Text>
             </View>
-            <Pressable accessibilityLabel="关闭历史记录" accessibilityRole="button" hitSlop={8} onPress={onClose} style={({ pressed }) => [styles.close, pressed && styles.pressed]}>
+            <Pressable
+              accessibilityLabel="关闭历史记录"
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={onClose}
+              style={({ pressed }) => [styles.close, pressed && styles.pressed]}
+            >
               <Ionicons color={colors.ink} name="close" size={26} />
             </Pressable>
           </View>
@@ -58,7 +79,9 @@ export function QueryHistoryModal({
             </View>
           ) : error ? (
             <View style={styles.state}>
-              <Text accessibilityRole="alert" style={styles.error}>{error}</Text>
+              <Text accessibilityRole="alert" style={styles.error}>
+                {error}
+              </Text>
               <Pressable accessibilityRole="button" onPress={onRetry} style={styles.retryButton}>
                 <Text style={styles.retryText}>重新加载</Text>
               </Pressable>
@@ -74,10 +97,16 @@ export function QueryHistoryModal({
                 <View key={item.id} style={styles.item}>
                   <Text style={styles.time}>{historyTime(item.createdAt)}</Text>
                   <Text style={styles.role}>你</Text>
-                  <Text selectable style={styles.question}>{item.question}</Text>
+                  <Text selectable style={styles.question}>
+                    {item.question}
+                  </Text>
                   <Text style={styles.role}>Assistant</Text>
-                  <Text selectable style={styles.answer}>{item.answer}</Text>
-                  <Text style={styles.meta}>{item.citationCount > 0 ? `${item.citationCount} 条引用来源` : '无引用来源'}</Text>
+                  <Text selectable style={styles.answer}>
+                    {item.answer}
+                  </Text>
+                  <Text style={styles.meta}>
+                    {item.citationCount > 0 ? `${item.citationCount} 条引用来源` : '无引用来源'}
+                  </Text>
                 </View>
               ))}
             </ScrollView>
@@ -90,22 +119,101 @@ export function QueryHistoryModal({
 
 const styles = StyleSheet.create({
   overlay: { backgroundColor: 'rgba(16, 24, 40, 0.28)', flex: 1, justifyContent: 'flex-end' },
-  sheet: { backgroundColor: colors.card, borderTopLeftRadius: spacing.lg, borderTopRightRadius: spacing.lg, maxHeight: '82%', minHeight: '45%', paddingBottom: spacing.xl },
-  header: { alignItems: 'center', borderBottomColor: colors.divider, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', justifyContent: 'space-between', padding: spacing.md },
-  title: { ...typography.heading1, color: textColors.primary, fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
-  subtitle: { ...typography.label, color: textColors.tertiary, fontFamily: fontFamilies.sans, marginTop: spacing.xs },
-  close: { alignItems: 'center', borderRadius: radii.round, height: 44, justifyContent: 'center', width: 44 },
+  sheet: {
+    backgroundColor: colors.card,
+    borderTopLeftRadius: spacing.lg,
+    borderTopRightRadius: spacing.lg,
+    maxHeight: '82%',
+    minHeight: '45%',
+    paddingBottom: spacing.xl,
+  },
+  header: {
+    alignItems: 'center',
+    borderBottomColor: colors.divider,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: spacing.md,
+  },
+  title: {
+    ...typography.heading1,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  subtitle: {
+    ...typography.label,
+    color: textColors.tertiary,
+    fontFamily: fontFamilies.sans,
+    marginTop: spacing.xs,
+  },
+  close: {
+    alignItems: 'center',
+    borderRadius: radii.round,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
   pressed: { backgroundColor: colors.background },
-  state: { alignItems: 'center', flex: 1, gap: spacing.md, justifyContent: 'center', minHeight: 220, padding: spacing.xl },
-  stateText: { ...typography.body, color: textColors.secondary, fontFamily: fontFamilies.sans, textAlign: 'center' },
-  error: { ...typography.body, color: '#b42318', fontFamily: fontFamilies.sans, textAlign: 'center' },
-  retryButton: { backgroundColor: colors.ink, borderRadius: radii.default, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  retryText: { ...typography.description, color: colors.card, fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
+  state: {
+    alignItems: 'center',
+    flex: 1,
+    gap: spacing.md,
+    justifyContent: 'center',
+    minHeight: 220,
+    padding: spacing.xl,
+  },
+  stateText: {
+    ...typography.body,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    textAlign: 'center',
+  },
+  error: {
+    ...typography.body,
+    color: '#b42318',
+    fontFamily: fontFamilies.sans,
+    textAlign: 'center',
+  },
+  retryButton: {
+    backgroundColor: colors.ink,
+    borderRadius: radii.default,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  retryText: {
+    ...typography.description,
+    color: colors.card,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
   list: { gap: spacing.md, padding: spacing.md },
-  item: { borderColor: colors.divider, borderRadius: radii.default, borderWidth: StyleSheet.hairlineWidth, gap: spacing.xs, padding: spacing.md },
+  item: {
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: spacing.xs,
+    padding: spacing.md,
+  },
   time: { ...typography.label, color: textColors.tertiary, fontFamily: fontFamilies.sans },
-  role: { ...typography.label, color: colors.success, fontFamily: fontFamilies.sansBold, fontWeight: 'bold', marginTop: spacing.xs },
-  question: { ...typography.body, color: textColors.primary, fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
+  role: {
+    ...typography.label,
+    color: colors.success,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+    marginTop: spacing.xs,
+  },
+  question: {
+    ...typography.body,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
   answer: { ...typography.description, color: textColors.secondary, fontFamily: fontFamilies.sans },
-  meta: { ...typography.label, color: textColors.tertiary, fontFamily: fontFamilies.sans, marginTop: spacing.xs },
+  meta: {
+    ...typography.label,
+    color: textColors.tertiary,
+    fontFamily: fontFamilies.sans,
+    marginTop: spacing.xs,
+  },
 });

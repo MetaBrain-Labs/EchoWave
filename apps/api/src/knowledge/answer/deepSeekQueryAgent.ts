@@ -78,7 +78,7 @@ function recoverAgentCandidate(value: unknown, maxCitations: number) {
 
 function knowledgeAgentSystemPrompt(maxSearchCalls: number, maxCitations: number): string {
   return [
-    'You are EchoWave\'s Chinese knowledge-base question-answering agent.',
+    "You are EchoWave's Chinese knowledge-base question-answering agent.",
     `You must call search_knowledge before answering and may call it at most ${maxSearchCalls} times.`,
     'Use only retrieved passages. Never answer from general knowledge or speculate.',
     'If a tool message says the search limit was exceeded, stop calling tools and return the best supported final JSON using passages already retrieved.',
@@ -165,13 +165,16 @@ function usageFromMessages(messages: unknown[]): AgentTokenUsage {
 
 function countBlockedRetrievalCalls(messages: unknown[]): number {
   const lastHumanIndex = findCurrentRunStart(messages);
-  return messages.slice(lastHumanIndex).filter((message) => (
-    message instanceof ToolMessage &&
-    message.name === 'search_knowledge' &&
-    message.status === 'error' &&
-    typeof message.content === 'string' &&
-    message.content.startsWith('Tool call limit exceeded.')
-  )).length;
+  return messages
+    .slice(lastHumanIndex)
+    .filter(
+      (message) =>
+        message instanceof ToolMessage &&
+        message.name === 'search_knowledge' &&
+        message.status === 'error' &&
+        typeof message.content === 'string' &&
+        message.content.startsWith('Tool call limit exceeded.'),
+    ).length;
 }
 
 function findCurrentRunStart(messages: unknown[]): number {
@@ -193,9 +196,7 @@ export class DeepSeekQueryAgent {
 
   constructor(private readonly options: QueryAgentOptions) {
     // DeepSeek V4 默认可能开启 thinking；显式配置可避免 sampling 与 tool_choice 语义漂移。
-    const thinking = options.ragConfig.enableThinking
-      ? { type: 'enabled' }
-      : { type: 'disabled' };
+    const thinking = options.ragConfig.enableThinking ? { type: 'enabled' } : { type: 'disabled' };
     this.model = new ChatDeepSeek({
       apiKey: options.ragConfig.deepSeekApiKey,
       model: options.ragConfig.deepSeekChatModel,
@@ -227,7 +228,8 @@ export class DeepSeekQueryAgent {
       async ({ query }) => JSON.stringify(await input.searchKnowledge(query)),
       {
         name: 'search_knowledge',
-        description: 'Search the current Chinese knowledge base for source passages that can support the answer.',
+        description:
+          'Search the current Chinese knowledge base for source passages that can support the answer.',
         schema: z.object({ query: z.string().min(1).max(2_000) }),
       },
     );
@@ -320,9 +322,7 @@ export class DeepSeekQueryAgent {
     input.diagnostics?.recordOutput({ rawText: text });
 
     if (recovered.candidate === null) {
-      const currentRunMessages = resultMessages.slice(
-        findCurrentRunStart(resultMessages),
-      );
+      const currentRunMessages = resultMessages.slice(findCurrentRunStart(resultMessages));
       const currentModelCalls = currentRunMessages.filter(
         (message) => message instanceof AIMessage,
       ).length;
@@ -330,12 +330,10 @@ export class DeepSeekQueryAgent {
         throw new Error('Knowledge answer model call limit reached before finalization.');
       }
 
-      const recoveryReason = blockedRetrievalCalls > 0
-        ? 'retrieval-limit'
-        : 'invalid-structured-output';
-      const recoveryName = blockedRetrievalCalls > 0
-        ? 'retrieval-limit-finalization'
-        : 'structured-output-recovery';
+      const recoveryReason =
+        blockedRetrievalCalls > 0 ? 'retrieval-limit' : 'invalid-structured-output';
+      const recoveryName =
+        blockedRetrievalCalls > 0 ? 'retrieval-limit-finalization' : 'structured-output-recovery';
       const finalizationPrompt = [
         blockedRetrievalCalls > 0
           ? 'The search limit has been reached. Do not call any tools.'
@@ -360,10 +358,9 @@ export class DeepSeekQueryAgent {
               method: 'jsonMode',
               includeRaw: true,
             })
-            .invoke(
-              [new SystemMessage(finalizationPrompt), ...currentRunMessages],
-              { signal: input.signal ?? AbortSignal.timeout(18_000) },
-            );
+            .invoke([new SystemMessage(finalizationPrompt), ...currentRunMessages], {
+              signal: input.signal ?? AbortSignal.timeout(18_000),
+            });
         } catch (error) {
           input.diagnostics?.recordModelCall({
             name: recoveryName,
@@ -381,9 +378,10 @@ export class DeepSeekQueryAgent {
         outputTokens: usage.outputTokens + finalizationUsage.outputTokens,
       };
       const finalizationRaw = extractFinalMessageText([finalization.raw]);
-      const finalizationValue = finalization.parsed
-        ?? parseJsonObject(finalizationRaw.text)
-        ?? parseJsonObject(finalizationRaw.reasoning);
+      const finalizationValue =
+        finalization.parsed ??
+        parseJsonObject(finalizationRaw.text) ??
+        parseJsonObject(finalizationRaw.reasoning);
       recovered = recoverAgentCandidate(finalizationValue, input.maxCitations);
       input.diagnostics?.recordModelCall({
         name: recoveryName,
@@ -429,11 +427,17 @@ export class DeepSeekQueryAgent {
     const correction = await (async () => {
       try {
         return await this.model
-          .withStructuredOutput(boundedAgentResponseSchema(maxCitations), { method: 'jsonMode', includeRaw: true })
+          .withStructuredOutput(boundedAgentResponseSchema(maxCitations), {
+            method: 'jsonMode',
+            includeRaw: true,
+          })
           .invoke(
             [
               ['system', systemPrompt],
-              ['user', `Previous output: ${JSON.stringify(candidate)}\nAllowed IDs: ${JSON.stringify(allowedIds)}`],
+              [
+                'user',
+                `Previous output: ${JSON.stringify(candidate)}\nAllowed IDs: ${JSON.stringify(allowedIds)}`,
+              ],
             ],
             { signal: signal ?? AbortSignal.timeout(18_000) },
           );
@@ -450,9 +454,8 @@ export class DeepSeekQueryAgent {
     })();
     const usage = usageFromMessages([correction.raw]);
     const raw = extractFinalMessageText([correction.raw]);
-    const correctionValue = correction.parsed
-      ?? parseJsonObject(raw.text)
-      ?? parseJsonObject(raw.reasoning);
+    const correctionValue =
+      correction.parsed ?? parseJsonObject(raw.text) ?? parseJsonObject(raw.reasoning);
     const recovered = recoverAgentCandidate(correctionValue, maxCitations);
     diagnostics?.recordModelCall({
       name: 'citation-correction',

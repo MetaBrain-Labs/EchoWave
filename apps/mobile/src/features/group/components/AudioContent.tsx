@@ -7,8 +7,9 @@
  * - 只负责本标签页的内容渲染与局部交互。
  * - 由 GroupScreen 持有分页、导航和远端加载状态。
  */
-import Ionicons from "@expo/vector-icons/Ionicons";
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import Ionicons from '@expo/vector-icons/Ionicons';
+import type { AudioFileSummary, AudioProcessingStatus } from '@echowave/contracts';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
   colors,
@@ -17,18 +18,24 @@ import {
   spacing,
   textColors,
   typography,
-} from "@/shared/theme/tokens";
-import { audioItems, type AudioItem } from "../mockData";
-
-function showComingSoon(feature: string) {
-  Alert.alert("功能建设中", `${feature}将在后续版本开放。`);
+} from '@/shared/theme/tokens';
+function formatDuration(durationMs: number | null) {
+  if (durationMs === null) return '--:--';
+  const seconds = Math.floor(durationMs / 1_000);
+  return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`;
 }
 
-function AudioStatusView({ status }: Pick<AudioItem, "status">) {
+function AudioStatusView({
+  durationMs,
+  status,
+}: {
+  durationMs: number | null;
+  status: AudioProcessingStatus;
+}) {
   switch (status.kind) {
-    case "complete":
-      return <Text style={styles.statusText}>{status.duration}</Text>;
-    case "waiting":
+    case 'ready':
+      return <Text style={styles.statusText}>{formatDuration(durationMs)}</Text>;
+    case 'waiting':
       return (
         <View style={styles.inlineStatus}>
           <Ionicons
@@ -39,18 +46,23 @@ function AudioStatusView({ status }: Pick<AudioItem, "status">) {
           <Text style={styles.statusText}>待分析</Text>
         </View>
       );
-    case "uploading":
+    case 'uploading':
       return (
         <View style={styles.inlineStatus}>
-          <ActivityIndicator
-            color={colors.ink}
-            size={typography.label.lineHeight}
-          />
+          <ActivityIndicator color={colors.ink} size={typography.label.lineHeight} />
           <Text style={styles.statusText}>上传中</Text>
         </View>
       );
-    case "analyzing":
+    case 'analyzing':
       return <Text style={styles.statusText}>分析中 ({status.progress}%)</Text>;
+    case 'transcribing':
+      return <Text style={styles.statusText}>转写中 ({status.progress}%)</Text>;
+    case 'failed':
+      return (
+        <Text accessibilityRole="alert" style={styles.statusText}>
+          {status.message}
+        </Text>
+      );
   }
 }
 
@@ -58,15 +70,15 @@ function AudioCard({
   item,
   onOpenAudio,
 }: {
-  item: AudioItem;
+  item: AudioFileSummary;
   onOpenAudio?: (id: string) => void;
 }) {
   const content = (
     <>
       <Text style={styles.cardTitle}>{item.title}</Text>
       <View style={styles.audioMetaRow}>
-        <Text style={styles.metaText}>时间 {item.createdAt}</Text>
-        <AudioStatusView status={item.status} />
+        <Text style={styles.metaText}>时间 {new Date(item.createdAt).toLocaleString()}</Text>
+        <AudioStatusView durationMs={item.durationMs} status={item.status} />
       </View>
       {item.sharedFrom ? (
         <View style={styles.sharedRow}>
@@ -81,7 +93,7 @@ function AudioCard({
     </>
   );
 
-  if (item.status.kind !== "complete") {
+  if (item.status.kind !== 'ready') {
     return <View style={styles.card}>{content}</View>;
   }
 
@@ -99,22 +111,46 @@ function AudioCard({
 }
 
 export function AudioContent({
+  error,
+  emptyMessage,
+  items,
+  loading,
+  onOpenFilter,
   onOpenAudio,
+  onRetry,
 }: {
+  error: string;
+  emptyMessage: string;
+  items: AudioFileSummary[];
+  loading: boolean;
+  onOpenFilter: () => void;
   onOpenAudio?: (id: string) => void;
+  onRetry: () => void;
 }) {
+  if (loading) {
+    return <ActivityIndicator accessibilityLabel="正在加载分组音频" color={colors.ink} />;
+  }
+  if (error) {
+    return (
+      <View style={styles.card}>
+        <Text accessibilityRole="alert" style={styles.metaText}>
+          {error}
+        </Text>
+        <Pressable accessibilityRole="button" onPress={onRetry}>
+          <Text style={styles.filterText}>重新加载</Text>
+        </Pressable>
+      </View>
+    );
+  }
   return (
     <>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>共 {audioItems.length} 份音频</Text>
+        <Text style={styles.sectionTitle}>共 {items.length} 份音频</Text>
         <Pressable
           accessibilityLabel="排序筛选"
           accessibilityRole="button"
-          onPress={() => showComingSoon("排序筛选")}
-          style={({ pressed }) => [
-            styles.filterButton,
-            pressed && styles.pressed,
-          ]}
+          onPress={onOpenFilter}
+          style={({ pressed }) => [styles.filterButton, pressed && styles.pressed]}
         >
           <Text style={styles.filterText}>排序筛选</Text>
           <Ionicons
@@ -124,9 +160,13 @@ export function AudioContent({
           />
         </Pressable>
       </View>
-      {audioItems.map((item) => (
-        <AudioCard key={item.id} item={item} onOpenAudio={onOpenAudio} />
-      ))}
+      {items.length ? (
+        items.map((item) => <AudioCard key={item.id} item={item} onOpenAudio={onOpenAudio} />)
+      ) : (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyText}>{emptyMessage}</Text>
+        </View>
+      )}
     </>
   );
 }
@@ -137,20 +177,20 @@ const styles = StyleSheet.create({
     borderRadius: radii.default,
   },
   sectionHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     marginBottom: spacing.lg,
   },
   sectionTitle: {
     ...typography.heading2,
     color: textColors.primary,
     fontFamily: fontFamilies.sansBold,
-    fontWeight: "bold",
+    fontWeight: 'bold',
   },
   filterButton: {
-    alignItems: "center",
-    flexDirection: "row",
+    alignItems: 'center',
+    flexDirection: 'row',
     gap: spacing.xs,
     minHeight: 40,
   },
@@ -172,17 +212,28 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.035,
     shadowRadius: 5,
   },
+  emptyState: {
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xl,
+  },
+  emptyText: {
+    ...typography.body,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    textAlign: 'center',
+  },
   cardTitle: {
     ...typography.heading2,
     color: textColors.primary,
     flexShrink: 1,
     fontFamily: fontFamilies.sansBold,
-    fontWeight: "bold",
+    fontWeight: 'bold',
   },
   audioMetaRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     marginTop: spacing.md,
   },
   metaText: {
@@ -196,15 +247,14 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sans,
   },
   inlineStatus: {
-    alignItems: "center",
-    flexDirection: "row",
+    alignItems: 'center',
+    flexDirection: 'row',
     gap: spacing.xs,
   },
   sharedRow: {
-    alignItems: "center",
-    flexDirection: "row",
+    alignItems: 'center',
+    flexDirection: 'row',
     gap: spacing.xs,
     marginTop: spacing.xs,
   },
 });
-

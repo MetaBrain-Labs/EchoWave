@@ -22,22 +22,44 @@ import { ConversationRepository } from '../knowledge/persistence/conversationRep
 import { IngestionRepository } from '../knowledge/persistence/ingestionRepository.ts';
 import { KnowledgeRepository } from '../knowledge/persistence/knowledgeRepository.ts';
 import { DefaultKnowledgeService } from '../knowledge/service.ts';
+import { WorkspaceRepository } from '../workspace/persistence/workspaceRepository.ts';
+import { DefaultWorkspaceService } from '../workspace/service.ts';
 
 /** 装配完整 RAG 运行时，并返回服务器所需的应用接口、worker 与关闭函数。 */
 export function createRagRuntime(config: ApiConfig) {
   const executionReporter = createAiExecutionReporter(config.aiExecutionReports);
   const pool = createDatabasePool(config.database);
-  const knowledgeRepository = new KnowledgeRepository(pool, config.database.schema, config.rag.tenantId);
-  const ingestionRepository = new IngestionRepository(pool, config.database.schema, config.rag.tenantId);
-  const conversationRepository = new ConversationRepository(pool, config.database.schema, config.rag.tenantId);
+  const knowledgeRepository = new KnowledgeRepository(
+    pool,
+    config.database.schema,
+    config.rag.tenantId,
+  );
+  const ingestionRepository = new IngestionRepository(
+    pool,
+    config.database.schema,
+    config.rag.tenantId,
+  );
+  const conversationRepository = new ConversationRepository(
+    pool,
+    config.database.schema,
+    config.rag.tenantId,
+  );
+  const workspaceRepository = new WorkspaceRepository(
+    pool,
+    config.database.schema,
+    config.rag.tenantId,
+  );
   const embeddings = new OpenRouterEmbeddings({
     apiKey: config.rag.openRouterApiKey,
     model: config.rag.embeddingModel,
     dimensions: config.rag.embeddingDimensions,
   });
-  const checkpointer = PostgresSaver.fromConnString(createPostgresConnectionString(config.database), {
-    schema: config.rag.langGraphSchema,
-  });
+  const checkpointer = PostgresSaver.fromConnString(
+    createPostgresConnectionString(config.database),
+    {
+      schema: config.rag.langGraphSchema,
+    },
+  );
   const queryAgent = new DeepSeekQueryAgent({ ragConfig: config.rag, checkpointer });
   const answers = createKnowledgeAnswerModule({
     knowledgeRepository,
@@ -64,8 +86,10 @@ export function createRagRuntime(config: ApiConfig) {
     config.rag.uploadTempDir,
     config.rag.embeddingModel,
   );
+  const workspaceService = new DefaultWorkspaceService(workspaceRepository);
   return {
     service,
+    workspaceService,
     worker,
     async close() {
       await answers.dispose();

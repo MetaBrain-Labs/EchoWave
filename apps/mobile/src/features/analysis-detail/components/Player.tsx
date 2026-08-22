@@ -7,8 +7,8 @@
  * - 封装稳定的展示职责与局部交互。
  * - 页面级状态和导航仍由 AnalysisDetailScreen 统一协调。
  */
-import Ionicons from "@expo/vector-icons/Ionicons";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
   colors,
@@ -17,13 +17,13 @@ import {
   spacing,
   textColors,
   typography,
-} from "@/shared/theme/tokens";
-import { IconButton } from "./AnalysisControls";
-import { formatTime, showComingSoon } from "./utils";
+} from '@/shared/theme/tokens';
+import { IconButton } from './AnalysisControls';
+import { formatTime, showComingSoon } from './utils';
 
 const waveformHeights = [
-  8, 12, 17, 23, 14, 29, 19, 34, 22, 16, 27, 38, 25, 31, 18, 13, 24, 36,
-  20, 28, 16, 33, 26, 14, 22, 30, 17, 25, 12, 20, 10, 16,
+  8, 12, 17, 23, 14, 29, 19, 34, 22, 16, 27, 38, 25, 31, 18, 13, 24, 36, 20, 28, 16, 33, 26, 14, 22,
+  30, 17, 25, 12, 20, 10, 16,
 ] as const;
 
 function Waveform({ expanded = false }: { expanded?: boolean }) {
@@ -72,25 +72,15 @@ export function CompactPlayer({
           accessibilityLabel={isPlaying ? '暂停模拟播放' : '开始模拟播放'}
           accessibilityRole="button"
           onPress={onPlayPause}
-          style={({ pressed }) => [
-            styles.compactPlayButton,
-            pressed && styles.pressed,
-          ]}
+          style={({ pressed }) => [styles.compactPlayButton, pressed && styles.pressed]}
         >
-          <Ionicons
-            color={colors.ink}
-            name={isPlaying ? 'pause' : 'play'}
-            size={22}
-          />
+          <Ionicons color={colors.ink} name={isPlaying ? 'pause' : 'play'} size={22} />
         </Pressable>
         <Pressable
           accessibilityLabel="展开播放器"
           accessibilityRole="button"
           onPress={onExpand}
-          style={({ pressed }) => [
-            styles.compactWaveformButton,
-            pressed && styles.pressed,
-          ]}
+          style={({ pressed }) => [styles.compactWaveformButton, pressed && styles.pressed]}
         >
           <Waveform />
         </Pressable>
@@ -161,11 +151,7 @@ export function ExpandedPlayer({
           onPress={onPlayPause}
           style={({ pressed }) => [styles.largePlayButton, pressed && styles.pressed]}
         >
-          <Ionicons
-            color={colors.ink}
-            name={isPlaying ? 'pause' : 'play'}
-            size={36}
-          />
+          <Ionicons color={colors.ink} name={isPlaying ? 'pause' : 'play'} size={36} />
         </Pressable>
         <IconButton icon="play-forward" label="前进 15 秒" onPress={() => onJump(15)} />
         <IconButton icon="contract-outline" label="收起播放器" onPress={onCollapse} />
@@ -288,4 +274,3 @@ const styles = StyleSheet.create({
     width: 64,
   },
 });
-

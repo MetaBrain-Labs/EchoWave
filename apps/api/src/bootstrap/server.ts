@@ -21,15 +21,21 @@ import { createRagRuntime } from './runtime.ts';
 
 const config = readApiConfigFile(new URL('../../.env', import.meta.url));
 const ragRuntime = createRagRuntime(config);
-const app = createApp(config, { knowledgeService: ragRuntime.service });
+const app = createApp(config, {
+  knowledgeService: ragRuntime.service,
+  workspaceService: ragRuntime.workspaceService,
+});
 ragRuntime.worker.start();
 
-const server = serve({
-  fetch: app.fetch,
-  port: config.port,
-}, () => {
-  console.log(`EchoWave API listening on http://localhost:${config.port}`);
-});
+const server = serve(
+  {
+    fetch: app.fetch,
+    port: config.port,
+  },
+  () => {
+    console.log(`EchoWave API listening on http://localhost:${config.port}`);
+  },
+);
 
 server.once('error', (error) => {
   console.error(formatServerStartError(error, config.port));

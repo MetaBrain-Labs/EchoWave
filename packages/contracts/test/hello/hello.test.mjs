@@ -20,9 +20,7 @@ describe('HelloResponseSchema', () => {
   });
 
   it('rejects missing or incompatible fields', () => {
-    assert.throws(() =>
-      HelloResponseSchema.parse({ ok: true, message: 'HelloWorld' }),
-    );
+    assert.throws(() => HelloResponseSchema.parse({ ok: true, message: 'HelloWorld' }));
     assert.throws(() =>
       HelloResponseSchema.parse({
         ok: false,

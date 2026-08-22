@@ -13,7 +13,15 @@ function createReporter() {
     records,
     reporter: {
       start: (input) => {
-        const record = { input, metadata: [], steps: [], models: [], contexts: [], outputs: [], finishes: [] };
+        const record = {
+          input,
+          metadata: [],
+          steps: [],
+          models: [],
+          contexts: [],
+          outputs: [],
+          finishes: [],
+        };
         records.push(record);
         return {
           recordMetadata: (value) => record.metadata.push(value),
@@ -87,11 +95,20 @@ describe('knowledge ingestion execution diagnostics', () => {
     assert.equal(records[0].models[0].inputTokens, 9);
     assert.equal(records[0].models[0].metadata.vectorCount, 1);
     assert.equal(
-      records[0].steps.find((event) => event.name === 'cleanup' && event.status === 'completed').metadata.removed,
+      records[0].steps.find((event) => event.name === 'cleanup' && event.status === 'completed')
+        .metadata.removed,
       true,
     );
     assert.equal(records[0].finishes[0].status, 'completed');
-    assert.deepEqual(repositoryEvents, ['validate', 'parse', 'normalize', 'chunk', 'embed', 'embed', 'publish:1']);
+    assert.deepEqual(repositoryEvents, [
+      'validate',
+      'parse',
+      'normalize',
+      'chunk',
+      'embed',
+      'embed',
+      'publish:1',
+    ]);
   });
 
   it('records a retryable embedding failure after persisting the job failure', async () => {
@@ -127,8 +144,14 @@ describe('knowledge ingestion execution diagnostics', () => {
 
     assert.deepEqual(failures, [{ code: 'INTERNAL_ERROR', retryable: true }]);
     assert.equal(records[0].models[0].status, 'failed');
-    assert.ok(records[0].steps.some((event) => event.name === 'embed' && event.status === 'failed'));
-    assert.ok(records[0].steps.some((event) => event.name === 'persist-failure' && event.status === 'completed'));
+    assert.ok(
+      records[0].steps.some((event) => event.name === 'embed' && event.status === 'failed'),
+    );
+    assert.ok(
+      records[0].steps.some(
+        (event) => event.name === 'persist-failure' && event.status === 'completed',
+      ),
+    );
     assert.equal(records[0].finishes[0].status, 'failed');
     assert.equal(records[0].finishes[0].metadata.retryable, true);
   });
@@ -172,7 +195,9 @@ describe('knowledge ingestion execution diagnostics', () => {
     }
 
     assert.deepEqual(failures, [{ code: 'INTERNAL_ERROR', retryable: false }]);
-    assert.ok(records[0].steps.some((event) => event.name === 'publish' && event.status === 'failed'));
+    assert.ok(
+      records[0].steps.some((event) => event.name === 'publish' && event.status === 'failed'),
+    );
     assert.equal(records[0].finishes[0].status, 'failed');
     assert.equal(records[0].finishes[0].metadata.retryable, false);
   });

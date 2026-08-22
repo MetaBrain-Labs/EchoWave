@@ -14,12 +14,24 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { type RefObject, useRef } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { colors, fontFamilies, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
+import {
+  colors,
+  fontFamilies,
+  radii,
+  spacing,
+  textColors,
+  typography,
+} from '@/shared/theme/tokens';
 
 import { showComingSoon } from './feedback';
 
 /** 渲染知识库页面复用的搜索框与筛选入口。 */
-export function SearchAndFilter({ inputRef, onChangeText, placeholder, value }: {
+export function SearchAndFilter({
+  inputRef,
+  onChangeText,
+  placeholder,
+  value,
+}: {
   inputRef?: RefObject<TextInput | null>;
   onChangeText: (value: string) => void;
   placeholder: string;
@@ -30,14 +42,33 @@ export function SearchAndFilter({ inputRef, onChangeText, placeholder, value }: 
   return (
     <View style={styles.searchRow}>
       <Pressable onPress={() => resolvedInputRef.current?.focus()} style={styles.searchBox}>
-        <Ionicons color={colors.secondary} name="search-outline" size={typography.description.lineHeight} />
-        <TextInput accessibilityLabel={placeholder} onChangeText={onChangeText} placeholder={placeholder}
-          placeholderTextColor={textColors.tertiary} ref={resolvedInputRef} style={styles.searchInput} value={value} />
+        <Ionicons
+          color={colors.secondary}
+          name="search-outline"
+          size={typography.description.lineHeight}
+        />
+        <TextInput
+          accessibilityLabel={placeholder}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={textColors.tertiary}
+          ref={resolvedInputRef}
+          style={styles.searchInput}
+          value={value}
+        />
       </Pressable>
-      <Pressable accessibilityLabel="筛选" accessibilityRole="button" onPress={() => showComingSoon('筛选')}
-        style={({ pressed }) => [styles.filterButton, pressed && styles.pressed]}>
+      <Pressable
+        accessibilityLabel="筛选"
+        accessibilityRole="button"
+        onPress={() => showComingSoon('筛选')}
+        style={({ pressed }) => [styles.filterButton, pressed && styles.pressed]}
+      >
         <Text style={styles.filterText}>筛选</Text>
-        <Ionicons color={colors.secondary} name="filter-outline" size={typography.heading5.lineHeight} />
+        <Ionicons
+          color={colors.secondary}
+          name="filter-outline"
+          size={typography.heading5.lineHeight}
+        />
       </Pressable>
     </View>
   );
@@ -47,17 +78,35 @@ const styles = StyleSheet.create({
   pressed: { backgroundColor: colors.background },
   searchRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
   searchBox: {
-    alignItems: 'center', backgroundColor: colors.background, borderRadius: radii.default,
-    flex: 1, flexDirection: 'row', gap: spacing.sm, minHeight: 40, paddingHorizontal: spacing.md,
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderRadius: radii.default,
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 40,
+    paddingHorizontal: spacing.md,
   },
   searchInput: {
-    ...typography.body, color: textColors.primary, flex: 1, fontFamily: fontFamilies.sans,
-    height: typography.body.lineHeight, includeFontPadding: false, paddingVertical: 0,
+    ...typography.body,
+    color: textColors.primary,
+    flex: 1,
+    fontFamily: fontFamilies.sans,
+    height: typography.body.lineHeight,
+    includeFontPadding: false,
+    paddingVertical: 0,
     textAlignVertical: 'center',
   },
   filterButton: {
-    alignItems: 'center', flexDirection: 'row', gap: spacing.xs, minHeight: 44,
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+    minHeight: 44,
     paddingHorizontal: spacing.sm,
   },
-  filterText: { ...typography.heading5, color: textColors.secondary, fontFamily: fontFamilies.sans },
+  filterText: {
+    ...typography.heading5,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+  },
 });

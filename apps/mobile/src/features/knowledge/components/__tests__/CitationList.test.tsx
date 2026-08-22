@@ -18,7 +18,12 @@ const citations = Array.from({ length: 6 }, (_, index) => {
     documentId: `44444444-4444-4444-8444-${String(number).padStart(12, '0')}`,
     documentTitle: `来源 ${number}`,
     chunkId: `33333333-3333-4333-8333-${String(number).padStart(12, '0')}`,
-    locator: { kind: 'markdown' as const, headingPath: ['结论'], lineStart: number, lineEnd: number },
+    locator: {
+      kind: 'markdown' as const,
+      headingPath: ['结论'],
+      lineStart: number,
+      lineEnd: number,
+    },
     excerpt: `第 ${number} 条依据`,
   };
 });
@@ -26,9 +31,7 @@ const citations = Array.from({ length: 6 }, (_, index) => {
 describe('CitationList', () => {
   it('shows four citations by default and expands or collapses the remainder', () => {
     const onOpenCitation = jest.fn();
-    const screen = render(
-      <CitationList citations={citations} onOpenCitation={onOpenCitation} />,
-    );
+    const screen = render(<CitationList citations={citations} onOpenCitation={onOpenCitation} />);
 
     expect(screen.getByText('[4] 来源 4')).toBeTruthy();
     expect(screen.queryByText('[5] 来源 5')).toBeNull();
