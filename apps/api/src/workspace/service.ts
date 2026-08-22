@@ -1,17 +1,133 @@
 /**
  * 音频工作区应用服务。
  *
- * 向 HTTP 层暴露分组生命周期，以及数据源、音频与分析详情查询用例。
+ * 向 HTTP 层暴露分组、数据源、音频上传与分析详情用例。
  *
  * Responsibilities:
  * - 保持传输层与 PostgreSQL 查询实现解耦。
  *
  * Notes:
- * - 真实上传、同步和音频处理不属于当前服务边界。
+ * - 本地上传文件由本服务可靠保存；同步、ASR 和分析处理仍不属于当前边界。
  */
-import type { GroupCreateRequest, KnowledgeBaseGroupLinkRequest } from '@echowave/contracts';
+import { randomUUID } from 'node:crypto';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 
-import type { WorkspaceRepository } from './persistence/workspaceRepository.ts';
+import { parseBuffer } from 'music-metadata';
+
+import type {
+  DataSourceCreateRequest,
+  DataSourceAudioUploadResponse,
+  DataSourceGroupLinkRequest,
+  DataSourceUpdateRequest,
+  GroupCreateRequest,
+  KnowledgeBaseGroupLinkRequest,
+} from '@echowave/contracts';
+
+import type { StoredAudioUpload, WorkspaceRepository } from './persistence/workspaceRepository.ts';
+
+const MAX_AUDIO_FILES = 20;
+const MAX_AUDIO_BYTES = 200 * 1024 * 1024;
+const audioMimeTypes: Record<string, Set<string>> = {
+  '.mp3': new Set(['audio/mpeg', 'audio/mp3']),
+  '.wav': new Set(['audio/wav', 'audio/x-wav', 'audio/wave']),
+  '.m4a': new Set(['audio/mp4', 'audio/x-m4a']),
+  '.aac': new Set(['audio/aac']),
+  '.flac': new Set(['audio/flac', 'audio/x-flac']),
+  '.ogg': new Set(['audio/ogg', 'application/ogg']),
+  '.webm': new Set(['audio/webm']),
+};
+const audioContainers: Record<string, string[]> = {
+  '.mp3': ['mpeg'],
+  '.wav': ['wav', 'wave'],
+  '.m4a': ['mp4', 'm4a', 'quicktime'],
+  '.aac': ['adts', 'aac'],
+  '.flac': ['flac'],
+  '.ogg': ['ogg'],
+  '.webm': ['webm'],
+};
+
+/** 音频上传信任边界使用的稳定验证错误。 */
+export class AudioUploadValidationError extends Error {
+  constructor(
+    public readonly code:
+      'AUDIO_TOO_LARGE' | 'INVALID_FILE' | 'TOO_MANY_FILES' | 'UNSUPPORTED_FORMAT',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'AudioUploadValidationError';
+  }
+}
+
+function validateBatch(files: File[]) {
+  if (files.length === 0) {
+    throw new AudioUploadValidationError('INVALID_FILE', '至少选择一个音频文件。');
+  }
+  if (files.length > MAX_AUDIO_FILES) {
+    throw new AudioUploadValidationError('TOO_MANY_FILES', '单批最多上传 20 个音频文件。');
+  }
+  const totalBytes = files.reduce((total, file) => total + file.size, 0);
+  if (files.some((file) => file.size > MAX_AUDIO_BYTES) || totalBytes > MAX_AUDIO_BYTES) {
+    throw new AudioUploadValidationError(
+      'AUDIO_TOO_LARGE',
+      '单个文件和整批文件总大小均不能超过 200 MB。',
+    );
+  }
+}
+
+async function inspectAudio(file: File): Promise<{ buffer: Buffer; item: StoredAudioUpload }> {
+  if (file.size === 0) {
+    throw new AudioUploadValidationError('INVALID_FILE', '不能上传空音频文件。');
+  }
+  const originalFilename = path.basename(file.name);
+  const extension = path.extname(originalFilename).toLowerCase();
+  const allowedMimes = audioMimeTypes[extension];
+  if (!allowedMimes) {
+    throw new AudioUploadValidationError(
+      'UNSUPPORTED_FORMAT',
+      '仅支持 MP3、WAV、M4A、AAC、FLAC、OGG 和 WebM 音频。',
+    );
+  }
+  const mimeType = file.type.toLowerCase().split(';')[0]?.trim() || 'application/octet-stream';
+  if (mimeType !== 'application/octet-stream' && !allowedMimes.has(mimeType)) {
+    throw new AudioUploadValidationError('INVALID_FILE', '文件扩展名与 MIME 类型不一致。');
+  }
+  const buffer = Buffer.from(await file.arrayBuffer());
+  let durationMs: number;
+  try {
+    const metadata = await parseBuffer(buffer, {
+      mimeType: mimeType === 'application/octet-stream' ? undefined : mimeType,
+      path: originalFilename,
+      size: buffer.byteLength,
+    });
+    const container = metadata.format.container?.toLowerCase() ?? '';
+    if (!audioContainers[extension]!.some((candidate) => container.includes(candidate))) {
+      throw new Error('container mismatch');
+    }
+    if (
+      metadata.format.duration === undefined ||
+      !Number.isFinite(metadata.format.duration) ||
+      metadata.format.duration <= 0
+    ) {
+      throw new Error('duration unavailable');
+    }
+    durationMs = Math.round(metadata.format.duration * 1_000);
+  } catch {
+    throw new AudioUploadValidationError('INVALID_FILE', '无法识别有效的音频文件结构。');
+  }
+  const storageKey = `${randomUUID()}${extension}`;
+  return {
+    buffer,
+    item: {
+      title: path.basename(originalFilename, extension),
+      originalFilename,
+      mimeType: mimeType === 'application/octet-stream' ? [...allowedMimes][0]! : mimeType,
+      sizeBytes: buffer.byteLength,
+      durationMs,
+      storageKey,
+    },
+  };
+}
 
 /** HTTP 传输层依赖的音频工作区接口。 */
 export interface WorkspaceService {
@@ -28,18 +144,42 @@ export interface WorkspaceService {
   ): ReturnType<WorkspaceRepository['linkKnowledgeBaseGroups']>;
   listGroupDataSources(id: string): ReturnType<WorkspaceRepository['listGroupDataSources']>;
   listDataSources(): ReturnType<WorkspaceRepository['listDataSources']>;
+  createDataSource(
+    input: DataSourceCreateRequest,
+  ): ReturnType<WorkspaceRepository['createDataSource']>;
   getDataSource(id: string): ReturnType<WorkspaceRepository['getDataSource']>;
+  updateDataSource(
+    id: string,
+    input: DataSourceUpdateRequest,
+  ): ReturnType<WorkspaceRepository['updateDataSource']>;
+  archiveDataSource(id: string): ReturnType<WorkspaceRepository['archiveDataSource']>;
   listDataSourceAudioFiles(id: string): ReturnType<WorkspaceRepository['listDataSourceAudioFiles']>;
   listDataSourceIngestionRecords(
     id: string,
   ): ReturnType<WorkspaceRepository['listDataSourceIngestionRecords']>;
   listDataSourceGroups(id: string): ReturnType<WorkspaceRepository['listDataSourceGroups']>;
+  linkDataSourceGroups(
+    id: string,
+    input: DataSourceGroupLinkRequest,
+  ): ReturnType<WorkspaceRepository['linkDataSourceGroups']>;
+  unlinkDataSourceGroup(
+    id: string,
+    groupId: string,
+  ): ReturnType<WorkspaceRepository['unlinkDataSourceGroup']>;
+  uploadDataSourceAudioFiles(id: string, files: File[]): Promise<DataSourceAudioUploadResponse>;
+  archiveDataSourceAudioFile(
+    id: string,
+    audioFileId: string,
+  ): ReturnType<WorkspaceRepository['archiveDataSourceAudioFile']>;
   getAudioAnalysis(id: string): ReturnType<WorkspaceRepository['getAudioAnalysis']>;
 }
 
 /** 直接组合窄仓储分组生命周期与读取能力的默认工作区服务。 */
 export class DefaultWorkspaceService implements WorkspaceService {
-  constructor(private readonly repository: WorkspaceRepository) {}
+  constructor(
+    private readonly repository: WorkspaceRepository,
+    private readonly audioStorageDirectory: string,
+  ) {}
 
   listGroups() {
     return this.repository.listGroups();
@@ -71,8 +211,17 @@ export class DefaultWorkspaceService implements WorkspaceService {
   listDataSources() {
     return this.repository.listDataSources();
   }
+  createDataSource(input: DataSourceCreateRequest) {
+    return this.repository.createDataSource(input);
+  }
   getDataSource(id: string) {
     return this.repository.getDataSource(id);
+  }
+  updateDataSource(id: string, input: DataSourceUpdateRequest) {
+    return this.repository.updateDataSource(id, input);
+  }
+  archiveDataSource(id: string) {
+    return this.repository.archiveDataSource(id);
   }
   listDataSourceAudioFiles(id: string) {
     return this.repository.listDataSourceAudioFiles(id);
@@ -82,6 +231,43 @@ export class DefaultWorkspaceService implements WorkspaceService {
   }
   listDataSourceGroups(id: string) {
     return this.repository.listDataSourceGroups(id);
+  }
+  linkDataSourceGroups(id: string, input: DataSourceGroupLinkRequest) {
+    return this.repository.linkDataSourceGroups(id, input);
+  }
+  unlinkDataSourceGroup(id: string, groupId: string) {
+    return this.repository.unlinkDataSourceGroup(id, groupId);
+  }
+
+  /** 校验并持久保存整批音频，仅在全部文件和数据库事实成功后发布响应。 */
+  async uploadDataSourceAudioFiles(id: string, files: File[]) {
+    validateBatch(files);
+    await this.repository.getDataSource(id);
+    const inspected = await Promise.all(files.map((file) => inspectAudio(file)));
+    const root = path.resolve(this.audioStorageDirectory);
+    await mkdir(root, { recursive: true });
+    const writtenPaths: string[] = [];
+    try {
+      for (const audio of inspected) {
+        const target = path.resolve(root, audio.item.storageKey);
+        if (!target.startsWith(`${root}${path.sep}`)) {
+          throw new AudioUploadValidationError('INVALID_FILE', '音频存储路径无效。');
+        }
+        await writeFile(target, audio.buffer, { flag: 'wx', mode: 0o600 });
+        writtenPaths.push(target);
+      }
+      return await this.repository.createDataSourceAudioUpload(
+        id,
+        inspected.map((audio) => audio.item),
+      );
+    } catch (error) {
+      await Promise.all(writtenPaths.map((target) => unlink(target).catch(() => undefined)));
+      throw error;
+    }
+  }
+
+  archiveDataSourceAudioFile(id: string, audioFileId: string) {
+    return this.repository.archiveDataSourceAudioFile(id, audioFileId);
   }
   getAudioAnalysis(id: string) {
     return this.repository.getAudioAnalysis(id);

@@ -48,6 +48,7 @@ const EnvironmentSchema = z.object({
   DEEPSEEK_ENABLE_THINKING: BooleanStringSchema,
   LANGGRAPH_SCHEMA: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
   UPLOAD_TEMP_DIR: z.string().min(1),
+  AUDIO_STORAGE_DIR: z.string().min(1),
   AI_EXECUTION_REPORT_ENABLED: BooleanStringSchema,
   AI_EXECUTION_REPORT_OUTPUT_DIR: z.string().min(1),
   AI_EXECUTION_REPORT_CONTEXT_ENABLED: BooleanStringSchema,
@@ -88,6 +89,7 @@ export type ApiConfig = {
     enableThinking: boolean;
     langGraphSchema: string;
     uploadTempDir: string;
+    audioStorageDir: string;
   };
   aiExecutionReports: {
     enabled: boolean;
@@ -141,6 +143,7 @@ export function readApiConfig(values: Record<string, string | undefined>): ApiCo
       enableThinking: parsed.DEEPSEEK_ENABLE_THINKING,
       langGraphSchema: parsed.LANGGRAPH_SCHEMA,
       uploadTempDir: parsed.UPLOAD_TEMP_DIR,
+      audioStorageDir: parsed.AUDIO_STORAGE_DIR,
     },
     aiExecutionReports: {
       enabled: parsed.AI_EXECUTION_REPORT_ENABLED,

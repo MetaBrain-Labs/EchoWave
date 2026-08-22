@@ -31,6 +31,7 @@ describe('API environment', () => {
       DEEPSEEK_ENABLE_THINKING: 'false',
       LANGGRAPH_SCHEMA: 'echowave_graph',
       UPLOAD_TEMP_DIR: '.tmp/uploads',
+      AUDIO_STORAGE_DIR: '.data/audio',
       AI_EXECUTION_REPORT_ENABLED: 'false',
       AI_EXECUTION_REPORT_OUTPUT_DIR: '.ai-execution-reports',
       AI_EXECUTION_REPORT_CONTEXT_ENABLED: 'false',
@@ -70,6 +71,7 @@ describe('API environment', () => {
         enableThinking: false,
         langGraphSchema: 'echowave_graph',
         uploadTempDir: '.tmp/uploads',
+        audioStorageDir: '.data/audio',
       },
       aiExecutionReports: {
         enabled: false,

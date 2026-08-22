@@ -16,6 +16,7 @@
 import {
   AudioAnalysisDetailSchema,
   AudioFileListResponseSchema,
+  DataSourceAudioUploadResponseSchema,
   DataSourceDetailSchema,
   DataSourceIngestionListResponseSchema,
   DataSourceListResponseSchema,
@@ -24,6 +25,9 @@ import {
   KnowledgeBaseListResponseSchema,
   LinkedDataSourceGroupListResponseSchema,
   type AudioProcessingStatus,
+  type DataSourceCreateRequest,
+  type DataSourceGroupLinkRequest,
+  type DataSourceUpdateRequest,
   type GroupCreateRequest,
   type KnowledgeBaseGroupLinkRequest,
 } from '@echowave/contracts';
@@ -86,6 +90,16 @@ function audioItem(row: Record<string, any>) {
   };
 }
 
+/** 文件系统已经可靠写入、等待在数据库事务中发布的音频元数据。 */
+export type StoredAudioUpload = {
+  title: string;
+  originalFilename: string;
+  mimeType: string;
+  sizeBytes: number;
+  durationMs: number | null;
+  storageKey: string;
+};
+
 const visibleAudioCte = `
   visible_audio AS (
     SELECT gal.tenant_id, gal.group_id, gal.audio_file_id
@@ -93,6 +107,10 @@ const visibleAudioCte = `
     UNION
     SELECT gds.tenant_id, gds.group_id, af.id
     FROM group_data_sources gds
+    JOIN __active_data_sources__ ds
+      ON ds.tenant_id = gds.tenant_id
+     AND ds.id = gds.data_source_id
+     AND ds.deleted_at IS NULL
     JOIN audio_files af
       ON af.tenant_id = gds.tenant_id
      AND af.data_source_id = gds.data_source_id
@@ -119,6 +137,7 @@ export class WorkspaceRepository {
     return visibleAudioCte
       .replaceAll('group_audio_links', this.table('group_audio_links'))
       .replaceAll('group_data_sources', this.table('group_data_sources'))
+      .replaceAll('__active_data_sources__', this.table('data_sources'))
       .replaceAll('audio_files', this.table('audio_files'));
   }
 
@@ -142,13 +161,16 @@ export class WorkspaceRepository {
               coalesce(gas.analysis_count, 0)::int AS analysis_count,
               coalesce(gas.audio_count, 0)::int AS audio_count,
               count(DISTINCT gkb.knowledge_base_id)::int AS knowledge_count,
-              count(DISTINCT gds.data_source_id)::int AS source_count
+              count(DISTINCT linked_source.id)::int AS source_count
        FROM ${this.table('groups')} g
        LEFT JOIN group_audio_stats gas ON gas.group_id = g.id
        LEFT JOIN ${this.table('group_knowledge_bases')} gkb
          ON gkb.tenant_id = g.tenant_id AND gkb.group_id = g.id
        LEFT JOIN ${this.table('group_data_sources')} gds
          ON gds.tenant_id = g.tenant_id AND gds.group_id = g.id
+       LEFT JOIN ${this.table('data_sources')} linked_source
+         ON linked_source.tenant_id = gds.tenant_id AND linked_source.id = gds.data_source_id
+        AND linked_source.deleted_at IS NULL
        WHERE g.tenant_id = $1 AND g.deleted_at IS NULL
        GROUP BY g.id, gas.analysis_count, gas.audio_count
        ORDER BY g.updated_at DESC`,
@@ -234,10 +256,13 @@ export class WorkspaceRepository {
              SELECT 1 FROM ${this.table('group_audio_links')} gal
              WHERE gal.tenant_id = af.tenant_id AND gal.group_id = $2 AND gal.audio_file_id = af.id
            )
-           OR EXISTS (
-             SELECT 1 FROM ${this.table('group_data_sources')} gds
-             WHERE gds.tenant_id = af.tenant_id AND gds.group_id = $2
-               AND gds.data_source_id = af.data_source_id
+            OR EXISTS (
+              SELECT 1 FROM ${this.table('group_data_sources')} gds
+              JOIN ${this.table('data_sources')} ds
+                ON ds.tenant_id = gds.tenant_id AND ds.id = gds.data_source_id
+               AND ds.deleted_at IS NULL
+              WHERE gds.tenant_id = af.tenant_id AND gds.group_id = $2
+                AND gds.data_source_id = af.data_source_id
            )
          )
        ORDER BY af.created_at DESC`,
@@ -372,6 +397,8 @@ export class WorkspaceRepository {
        LEFT JOIN LATERAL (
          SELECT count(*)::int AS linked_group_count
          FROM ${this.table('group_data_sources')} gds
+         JOIN ${this.table('groups')} g
+           ON g.tenant_id = gds.tenant_id AND g.id = gds.group_id AND g.deleted_at IS NULL
          WHERE gds.tenant_id = ds.tenant_id AND gds.data_source_id = ds.id
        ) group_stats ON true
        LEFT JOIN LATERAL (
@@ -393,6 +420,199 @@ export class WorkspaceRepository {
        ORDER BY ds.updated_at DESC`,
       values,
     );
+  }
+
+  /** 创建仅支持本地手动上传的空数据源，连接和分析设置使用服务器固定默认值。 */
+  async createDataSource(input: DataSourceCreateRequest) {
+    const result = await this.pool.query(
+      `INSERT INTO ${this.table('data_sources')}
+         (tenant_id, name, description, source_type, location, connection_label,
+          connection_status, transcription_model)
+       VALUES ($1, $2, $3, 'manual_upload', 'local', '本地手动上传',
+               'connected', 'Echo ASR Standard')
+       RETURNING id`,
+      [this.tenantId, input.name, input.description],
+    );
+    return this.getDataSource(String(result.rows[0].id));
+  }
+
+  /** 只更新数据源展示字段，接入与分析配置在本轮保持只读。 */
+  async updateDataSource(dataSourceId: string, input: DataSourceUpdateRequest) {
+    const result = await this.pool.query(
+      `UPDATE ${this.table('data_sources')}
+       SET name = coalesce($3, name), description = coalesce($4, description), updated_at = now()
+       WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+       RETURNING id`,
+      [this.tenantId, dataSourceId, input.name ?? null, input.description ?? null],
+    );
+    if (!result.rowCount) {
+      throw new WorkspaceRepositoryError('NOT_FOUND', '数据源不存在或已归档。');
+    }
+    return this.getDataSource(dataSourceId);
+  }
+
+  /** 软归档活动数据源，保留关联、音频事实和存储键供未来恢复。 */
+  async archiveDataSource(dataSourceId: string) {
+    const result = await this.pool.query(
+      `UPDATE ${this.table('data_sources')}
+       SET deleted_at = now(), updated_at = now()
+       WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+       RETURNING id`,
+      [this.tenantId, dataSourceId],
+    );
+    if (!result.rowCount) {
+      throw new WorkspaceRepositoryError('NOT_FOUND', '数据源不存在或已归档。');
+    }
+  }
+
+  /** 在事务中验证并幂等关联多个活动分组。 */
+  async linkDataSourceGroups(dataSourceId: string, input: DataSourceGroupLinkRequest) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const source = await client.query(
+        `SELECT id FROM ${this.table('data_sources')}
+         WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL FOR SHARE`,
+        [this.tenantId, dataSourceId],
+      );
+      if (!source.rowCount) {
+        throw new WorkspaceRepositoryError('NOT_FOUND', '数据源不存在或已归档。');
+      }
+      const groups = await client.query(
+        `SELECT id FROM ${this.table('groups')}
+         WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL FOR SHARE`,
+        [this.tenantId, input.groupIds],
+      );
+      if (groups.rows.length !== input.groupIds.length) {
+        throw new WorkspaceRepositoryError('NOT_FOUND', '一个或多个分组不存在或已归档。');
+      }
+      await client.query(
+        `INSERT INTO ${this.table('group_data_sources')} (tenant_id, group_id, data_source_id)
+         SELECT $1, requested.group_id, $2
+         FROM unnest($3::uuid[]) AS requested(group_id)
+         ON CONFLICT (tenant_id, group_id, data_source_id) DO NOTHING`,
+        [this.tenantId, dataSourceId, input.groupIds],
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    return this.listDataSourceGroups(dataSourceId);
+  }
+
+  /** 硬删除单条关系，不影响数据源、分组、音频或显式分享事实。 */
+  async unlinkDataSourceGroup(dataSourceId: string, groupId: string) {
+    const result = await this.pool.query(
+      `DELETE FROM ${this.table('group_data_sources')} gds
+       WHERE gds.tenant_id = $1 AND gds.data_source_id = $2 AND gds.group_id = $3
+         AND EXISTS (
+           SELECT 1 FROM ${this.table('data_sources')} ds
+           WHERE ds.tenant_id = gds.tenant_id AND ds.id = gds.data_source_id
+             AND ds.deleted_at IS NULL
+         )
+         AND EXISTS (
+           SELECT 1 FROM ${this.table('groups')} g
+           WHERE g.tenant_id = gds.tenant_id AND g.id = gds.group_id AND g.deleted_at IS NULL
+         )
+       RETURNING gds.group_id`,
+      [this.tenantId, dataSourceId, groupId],
+    );
+    if (!result.rowCount) {
+      throw new WorkspaceRepositoryError('NOT_FOUND', '数据源与分组的关联不存在。');
+    }
+  }
+
+  /** 原子发布一次成功上传批次及其全部音频元数据。 */
+  async createDataSourceAudioUpload(dataSourceId: string, items: StoredAudioUpload[]) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const source = await client.query(
+        `SELECT id FROM ${this.table('data_sources')}
+         WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL FOR SHARE`,
+        [this.tenantId, dataSourceId],
+      );
+      if (!source.rowCount) {
+        throw new WorkspaceRepositoryError('NOT_FOUND', '数据源不存在或已归档。');
+      }
+      const run = await client.query(
+        `INSERT INTO ${this.table('data_source_ingestion_runs')}
+           (tenant_id, data_source_id, trigger_kind, status, completed_at)
+         VALUES ($1, $2, 'manual', 'succeeded', now()) RETURNING id`,
+        [this.tenantId, dataSourceId],
+      );
+      const ingestionRunId = String(run.rows[0].id);
+      const uploaded = [];
+      for (const item of items) {
+        const audio = await client.query(
+          `INSERT INTO ${this.table('audio_files')}
+             (tenant_id, data_source_id, ingestion_run_id, title, original_filename,
+              mime_type, size_bytes, duration_ms, storage_key, upload_status, upload_progress)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'ready', 100)
+           RETURNING id, title, duration_ms, created_at`,
+          [
+            this.tenantId,
+            dataSourceId,
+            ingestionRunId,
+            item.title,
+            item.originalFilename,
+            item.mimeType,
+            item.sizeBytes,
+            item.durationMs,
+            item.storageKey,
+          ],
+        );
+        uploaded.push({
+          id: audio.rows[0].id,
+          sourceId: dataSourceId,
+          title: audio.rows[0].title,
+          durationMs:
+            audio.rows[0].duration_ms === null ? null : integer(audio.rows[0].duration_ms),
+          createdAt: iso(audio.rows[0].created_at),
+          sharedFrom: null,
+          status: { kind: 'waiting' as const },
+        });
+      }
+      await client.query(
+        `UPDATE ${this.table('data_sources')} SET updated_at = now()
+         WHERE tenant_id = $1 AND id = $2`,
+        [this.tenantId, dataSourceId],
+      );
+      const response = DataSourceAudioUploadResponseSchema.parse({
+        ingestionRunId,
+        items: uploaded,
+      });
+      await client.query('COMMIT');
+      return response;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /** 软归档指定数据源中的活动音频，不物理删除本地文件。 */
+  async archiveDataSourceAudioFile(dataSourceId: string, audioFileId: string) {
+    const result = await this.pool.query(
+      `UPDATE ${this.table('audio_files')} af
+       SET deleted_at = now(), updated_at = now()
+       WHERE af.tenant_id = $1 AND af.data_source_id = $2 AND af.id = $3
+         AND af.deleted_at IS NULL
+         AND EXISTS (
+           SELECT 1 FROM ${this.table('data_sources')} ds
+           WHERE ds.tenant_id = af.tenant_id AND ds.id = af.data_source_id
+             AND ds.deleted_at IS NULL
+         )
+       RETURNING af.id`,
+      [this.tenantId, dataSourceId, audioFileId],
+    );
+    if (!result.rowCount) {
+      throw new WorkspaceRepositoryError('NOT_FOUND', '音频不存在或已归档。');
+    }
   }
 
   async listDataSources() {

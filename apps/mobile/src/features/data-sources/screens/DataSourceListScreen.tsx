@@ -5,7 +5,7 @@
  *
  * Responsibilities:
  * - 呈现数据源名称、说明、连接方式、分组数和最近上传时间。
- * - 提供搜索、新增占位反馈和详情导航入口。
+ * - 提供搜索、新增数据源和详情导航入口。
  *
  * Notes:
  * - 所有响应均由共享契约在客户端边界校验。
@@ -32,7 +32,9 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
-import { listDataSources } from '@/shared/api/workspaceApi';
+import { createDataSource, listDataSources } from '@/shared/api/workspaceApi';
+
+import { DataSourceFormSheet, type DataSourceFormValue } from '../components/DataSourceDialogs';
 
 function showComingSoon(feature: string) {
   Alert.alert('功能建设中', `${feature}将在后续版本开放。`);
@@ -70,7 +72,7 @@ function DataSourceCard({ onOpen, source }: { onOpen: () => void; source: DataSo
         </View>
       </View>
       <Text numberOfLines={2} style={styles.description}>
-        {source.description}
+        {source.description || '暂无描述'}
       </Text>
       <Text numberOfLines={1} style={styles.metaText}>
         接入 {source.linkedGroupCount} 个分组 · {source.connectionLabel}
@@ -92,6 +94,9 @@ export function DataSourceListScreen({
   const [dataSources, setDataSources] = useState<DataSourceSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [formVisible, setFormVisible] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [creating, setCreating] = useState(false);
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -108,8 +113,36 @@ export function DataSourceListScreen({
     return () => clearTimeout(task);
   }, [load]);
 
+  const create = async (value: DataSourceFormValue) => {
+    setCreating(true);
+    setFormError('');
+    try {
+      const created = await createDataSource(value);
+      setDataSources((items) => [created, ...items]);
+      setFormVisible(false);
+      onOpenSource(created.id);
+    } catch (reason) {
+      setFormError(reason instanceof Error ? reason.message : '数据源创建失败。');
+    } finally {
+      setCreating(false);
+    }
+  };
+
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
+      <DataSourceFormSheet
+        error={formError}
+        initialValue={{ name: '', description: '' }}
+        mode="create"
+        onClose={() => {
+          if (!creating) setFormVisible(false);
+        }}
+        onSubmit={(value) => {
+          void create(value);
+        }}
+        pending={creating}
+        visible={formVisible}
+      />
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -132,7 +165,10 @@ export function DataSourceListScreen({
             <Pressable
               accessibilityLabel="新增数据源"
               accessibilityRole="button"
-              onPress={() => showComingSoon('新增数据源')}
+              onPress={() => {
+                setFormError('');
+                setFormVisible(true);
+              }}
               style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}
             >
               <Ionicons color={colors.ink} name="add" size={typography.heading3.lineHeight} />
@@ -287,6 +323,7 @@ const styles = StyleSheet.create({
     color: textColors.secondary,
     fontFamily: fontFamilies.sans,
     marginTop: spacing.lg,
+    minHeight: 40,
   },
   metaText: {
     ...typography.description,

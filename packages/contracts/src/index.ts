@@ -85,8 +85,11 @@ export {
 } from './audio.ts';
 export {
   DataSourceAnalysisSettingsSchema,
+  DataSourceAudioUploadResponseSchema,
   DataSourceConnectionStatusSchema,
+  DataSourceCreateRequestSchema,
   DataSourceDetailSchema,
+  DataSourceGroupLinkRequestSchema,
   DataSourceIngestionListResponseSchema,
   DataSourceIngestionRecordSchema,
   DataSourceListResponseSchema,
@@ -94,11 +97,16 @@ export {
   DataSourceMetricsSchema,
   DataSourceSummarySchema,
   DataSourceTypeSchema,
+  DataSourceUpdateRequestSchema,
   LinkedDataSourceGroupListResponseSchema,
   LinkedDataSourceGroupSchema,
+  type DataSourceAudioUploadResponse,
+  type DataSourceCreateRequest,
   type DataSourceDetail,
+  type DataSourceGroupLinkRequest,
   type DataSourceIngestionRecord,
   type DataSourceSummary,
+  type DataSourceUpdateRequest,
   type LinkedDataSourceGroup,
 } from './dataSource.ts';
 export {

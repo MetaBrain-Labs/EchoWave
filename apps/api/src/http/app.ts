@@ -14,6 +14,9 @@
  */
 import {
   ApiErrorResponseSchema,
+  DataSourceCreateRequestSchema,
+  DataSourceGroupLinkRequestSchema,
+  DataSourceUpdateRequestSchema,
   EntityIdSchema,
   GroupCreateRequestSchema,
   HelloResponseSchema,
@@ -32,7 +35,7 @@ import { KnowledgeAnswerError } from '../knowledge/answer/knowledgeAnswer.ts';
 import { RagRepositoryError } from '../knowledge/persistence/errors.ts';
 import { UploadValidationError, type KnowledgeService } from '../knowledge/service.ts';
 import { WorkspaceRepositoryError } from '../workspace/persistence/errors.ts';
-import type { WorkspaceService } from '../workspace/service.ts';
+import { AudioUploadValidationError, type WorkspaceService } from '../workspace/service.ts';
 
 type ErrorStatus = 400 | 404 | 409 | 413 | 500 | 503 | 504;
 
@@ -195,12 +198,45 @@ export function createApp(
     app.get('/api/data-sources', async (context) =>
       context.json(await workspace.listDataSources()),
     );
+    app.post('/api/data-sources', async (context) => {
+      const input = DataSourceCreateRequestSchema.parse(await context.req.json());
+      return context.json(await workspace.createDataSource(input), 201);
+    });
     app.get('/api/data-sources/:dataSourceId', async (context) =>
       context.json(await workspace.getDataSource(id(context.req.param('dataSourceId')))),
     );
+    app.patch('/api/data-sources/:dataSourceId', async (context) => {
+      const input = DataSourceUpdateRequestSchema.parse(await context.req.json());
+      return context.json(
+        await workspace.updateDataSource(id(context.req.param('dataSourceId')), input),
+      );
+    });
+    app.delete('/api/data-sources/:dataSourceId', async (context) => {
+      await workspace.archiveDataSource(id(context.req.param('dataSourceId')));
+      return context.body(null, 204);
+    });
     app.get('/api/data-sources/:dataSourceId/audio-files', async (context) =>
       context.json(await workspace.listDataSourceAudioFiles(id(context.req.param('dataSourceId')))),
     );
+    app.post('/api/data-sources/:dataSourceId/audio-files', async (context) => {
+      const contentLength = Number(context.req.header('content-length') ?? 0);
+      if (contentLength > 201 * 1024 * 1024) {
+        return context.json(errorBody('AUDIO_TOO_LARGE', '整批文件总大小不能超过 200 MB。'), 413);
+      }
+      const form = await context.req.formData();
+      const files = form.getAll('files').filter((item): item is File => item instanceof File);
+      return context.json(
+        await workspace.uploadDataSourceAudioFiles(id(context.req.param('dataSourceId')), files),
+        201,
+      );
+    });
+    app.delete('/api/data-sources/:dataSourceId/audio-files/:audioFileId', async (context) => {
+      await workspace.archiveDataSourceAudioFile(
+        id(context.req.param('dataSourceId')),
+        id(context.req.param('audioFileId')),
+      );
+      return context.body(null, 204);
+    });
     app.get('/api/data-sources/:dataSourceId/ingestion-records', async (context) =>
       context.json(
         await workspace.listDataSourceIngestionRecords(id(context.req.param('dataSourceId'))),
@@ -209,6 +245,19 @@ export function createApp(
     app.get('/api/data-sources/:dataSourceId/groups', async (context) =>
       context.json(await workspace.listDataSourceGroups(id(context.req.param('dataSourceId')))),
     );
+    app.post('/api/data-sources/:dataSourceId/groups', async (context) => {
+      const input = DataSourceGroupLinkRequestSchema.parse(await context.req.json());
+      return context.json(
+        await workspace.linkDataSourceGroups(id(context.req.param('dataSourceId')), input),
+      );
+    });
+    app.delete('/api/data-sources/:dataSourceId/groups/:groupId', async (context) => {
+      await workspace.unlinkDataSourceGroup(
+        id(context.req.param('dataSourceId')),
+        id(context.req.param('groupId')),
+      );
+      return context.body(null, 204);
+    });
     app.get('/api/audio-files/:audioFileId/analysis', async (context) =>
       context.json(await workspace.getAudioAnalysis(id(context.req.param('audioFileId')))),
     );
@@ -234,6 +283,10 @@ export function createApp(
       message = error.message;
     } else if (error instanceof WorkspaceRepositoryError) {
       status = 404;
+      code = error.code;
+      message = error.message;
+    } else if (error instanceof AudioUploadValidationError) {
+      status = error.code === 'AUDIO_TOO_LARGE' ? 413 : 400;
       code = error.code;
       message = error.message;
     } else if (error instanceof UploadValidationError) {

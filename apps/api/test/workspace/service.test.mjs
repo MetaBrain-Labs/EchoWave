@@ -1,0 +1,142 @@
+/**
+ * 数据源音频上传服务测试。
+ *
+ * 验证音频结构识别、批次限制、持久化写入与数据库失败后的文件补偿清理。
+ *
+ * Responsibilities:
+ * - 锁定本地音频存储的全成全败边界。
+ */
+import assert from 'node:assert/strict';
+import { Buffer, File } from 'node:buffer';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { describe, it } from 'node:test';
+
+import {
+  AudioUploadValidationError,
+  DefaultWorkspaceService,
+} from '../../dist/workspace/service.js';
+
+const sourceId = '11111111-1111-4111-8111-111111111111';
+
+function wavFile(name = 'sample.wav') {
+  const sampleCount = 800;
+  const buffer = Buffer.alloc(44 + sampleCount * 2);
+  buffer.write('RIFF', 0);
+  buffer.writeUInt32LE(buffer.length - 8, 4);
+  buffer.write('WAVE', 8);
+  buffer.write('fmt ', 12);
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(1, 22);
+  buffer.writeUInt32LE(8_000, 24);
+  buffer.writeUInt32LE(16_000, 28);
+  buffer.writeUInt16LE(2, 32);
+  buffer.writeUInt16LE(16, 34);
+  buffer.write('data', 36);
+  buffer.writeUInt32LE(sampleCount * 2, 40);
+  return new File([buffer], name, { type: 'audio/wav' });
+}
+
+function repository(overrides = {}) {
+  return {
+    getDataSource: async () => ({ id: sourceId }),
+    createDataSourceAudioUpload: async (_id, items) => ({
+      ingestionRunId: sourceId,
+      items,
+    }),
+    ...overrides,
+  };
+}
+
+describe('DefaultWorkspaceService audio uploads', () => {
+  it('stores a structurally valid audio file and publishes extracted metadata', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'echowave-audio-'));
+    let storedItems;
+    const service = new DefaultWorkspaceService(
+      repository({
+        createDataSourceAudioUpload: async (_id, items) => {
+          storedItems = items;
+          return { ingestionRunId: sourceId, items: [] };
+        },
+      }),
+      root,
+    );
+    try {
+      await service.uploadDataSourceAudioFiles(sourceId, [wavFile('customer.wav')]);
+      assert.equal(storedItems.length, 1);
+      assert.equal(storedItems[0].originalFilename, 'customer.wav');
+      assert.equal(storedItems[0].mimeType, 'audio/wav');
+      assert.equal(storedItems[0].durationMs, 100);
+      assert.match(storedItems[0].storageKey, /^[0-9a-f-]+\.wav$/);
+      assert.deepEqual(await readdir(root), [storedItems[0].storageKey]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects unsupported, malformed, and oversized batches before database publication', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'echowave-audio-'));
+    let publications = 0;
+    const service = new DefaultWorkspaceService(
+      repository({
+        createDataSourceAudioUpload: async () => {
+          publications += 1;
+        },
+      }),
+      root,
+    );
+    try {
+      await assert.rejects(
+        () => service.uploadDataSourceAudioFiles(sourceId, [new File(['text'], 'note.txt')]),
+        (error) =>
+          error instanceof AudioUploadValidationError && error.code === 'UNSUPPORTED_FORMAT',
+      );
+      await assert.rejects(
+        () =>
+          service.uploadDataSourceAudioFiles(sourceId, [
+            new File(['not audio'], 'fake.wav', { type: 'audio/wav' }),
+          ]),
+        (error) => error instanceof AudioUploadValidationError && error.code === 'INVALID_FILE',
+      );
+      await assert.rejects(
+        () =>
+          service.uploadDataSourceAudioFiles(
+            sourceId,
+            Array.from({ length: 21 }, () => wavFile()),
+          ),
+        (error) => error instanceof AudioUploadValidationError && error.code === 'TOO_MANY_FILES',
+      );
+      await assert.rejects(
+        () => service.uploadDataSourceAudioFiles(sourceId, [{ size: 200 * 1024 * 1024 + 1 }]),
+        (error) => error instanceof AudioUploadValidationError && error.code === 'AUDIO_TOO_LARGE',
+      );
+      assert.equal(publications, 0);
+      assert.deepEqual(await readdir(root), []);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('removes every newly written file when database publication fails', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'echowave-audio-'));
+    const service = new DefaultWorkspaceService(
+      repository({
+        createDataSourceAudioUpload: async () => {
+          throw new Error('database unavailable');
+        },
+      }),
+      root,
+    );
+    try {
+      await assert.rejects(
+        () => service.uploadDataSourceAudioFiles(sourceId, [wavFile()]),
+        /database unavailable/,
+      );
+      assert.deepEqual(await readdir(root), []);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});

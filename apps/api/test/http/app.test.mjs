@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import { HelloResponseSchema } from '@echowave/contracts';
 
 import { createApp } from '../../dist/http/app.js';
+import { AudioUploadValidationError } from '../../dist/workspace/service.js';
 
 const app = createApp({ corsOrigins: ['http://localhost:8081'] });
 const groupId = '11111111-1111-4111-8111-111111111111';
@@ -40,6 +41,13 @@ describe('workspace routes', () => {
   let archivedGroupId;
   let createdGroupInput;
   let linkedKnowledgeInput;
+  let createdDataSourceInput;
+  let updatedDataSourceInput;
+  let archivedDataSourceId;
+  let linkedDataSourceInput;
+  let unlinkedDataSourceInput;
+  let archivedAudioInput;
+  let uploadedAudioInput;
   const workspaceService = {
     listGroups: async () => ({
       items: [
@@ -78,10 +86,35 @@ describe('workspace routes', () => {
     },
     listGroupDataSources: async () => ({ items: [] }),
     listDataSources: async () => ({ items: [] }),
-    getDataSource: async () => ({}),
+    createDataSource: async (input) => {
+      createdDataSourceInput = input;
+      return { id: groupId, name: input.name, description: input.description };
+    },
+    getDataSource: async () => ({ id: groupId }),
+    updateDataSource: async (id, input) => {
+      updatedDataSourceInput = { id, input };
+      return { id, ...input };
+    },
+    archiveDataSource: async (id) => {
+      archivedDataSourceId = id;
+    },
     listDataSourceAudioFiles: async () => ({ items: [] }),
+    uploadDataSourceAudioFiles: async (id, files) => {
+      uploadedAudioInput = { id, files };
+      return { ingestionRunId: groupId, items: [] };
+    },
+    archiveDataSourceAudioFile: async (id, audioFileId) => {
+      archivedAudioInput = { id, audioFileId };
+    },
     listDataSourceIngestionRecords: async () => ({ items: [] }),
     listDataSourceGroups: async () => ({ items: [] }),
+    linkDataSourceGroups: async (id, input) => {
+      linkedDataSourceInput = { id, input };
+      return { items: [] };
+    },
+    unlinkDataSourceGroup: async (id, linkedGroupId) => {
+      unlinkedDataSourceInput = { id, groupId: linkedGroupId };
+    },
     getAudioAnalysis: async () => ({}),
   };
   const workspaceApp = createApp({ corsOrigins: ['http://localhost:8081'] }, { workspaceService });
@@ -141,5 +174,102 @@ describe('workspace routes', () => {
       body: JSON.stringify({ groupIds: [] }),
     });
     assert.equal(invalid.status, 400);
+  });
+
+  it('routes data-source create, update, archive, and group lifecycle writes', async () => {
+    const created = await workspaceApp.request('/api/data-sources', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: '  本地访谈  ', description: '  用户声音  ' }),
+    });
+    assert.equal(created.status, 201);
+    assert.deepEqual(createdDataSourceInput, { name: '本地访谈', description: '用户声音' });
+
+    const updated = await workspaceApp.request(`/api/data-sources/${groupId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: '  新描述  ' }),
+    });
+    assert.equal(updated.status, 200);
+    assert.deepEqual(updatedDataSourceInput, {
+      id: groupId,
+      input: { description: '新描述' },
+    });
+
+    const invalidUpdate = await workspaceApp.request(`/api/data-sources/${groupId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    assert.equal(invalidUpdate.status, 400);
+
+    const linked = await workspaceApp.request(`/api/data-sources/${groupId}/groups`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groupIds: [groupId] }),
+    });
+    assert.equal(linked.status, 200);
+    assert.deepEqual(linkedDataSourceInput, { id: groupId, input: { groupIds: [groupId] } });
+
+    const unlinked = await workspaceApp.request(`/api/data-sources/${groupId}/groups/${groupId}`, {
+      method: 'DELETE',
+    });
+    assert.equal(unlinked.status, 204);
+    assert.deepEqual(unlinkedDataSourceInput, { id: groupId, groupId });
+
+    const archived = await workspaceApp.request(`/api/data-sources/${groupId}`, {
+      method: 'DELETE',
+    });
+    assert.equal(archived.status, 204);
+    assert.equal(archivedDataSourceId, groupId);
+  });
+
+  it('routes multipart audio uploads and audio archives', async () => {
+    const form = new FormData();
+    form.append(
+      'files',
+      new File([new Uint8Array([1, 2, 3])], 'sample.mp3', { type: 'audio/mpeg' }),
+    );
+    const uploaded = await workspaceApp.request(`/api/data-sources/${groupId}/audio-files`, {
+      method: 'POST',
+      body: form,
+    });
+    assert.equal(uploaded.status, 201);
+    assert.equal(uploadedAudioInput.id, groupId);
+    assert.equal(uploadedAudioInput.files[0].name, 'sample.mp3');
+
+    const archived = await workspaceApp.request(
+      `/api/data-sources/${groupId}/audio-files/${groupId}`,
+      { method: 'DELETE' },
+    );
+    assert.equal(archived.status, 204);
+    assert.deepEqual(archivedAudioInput, { id: groupId, audioFileId: groupId });
+  });
+
+  it('returns stable audio validation errors', async () => {
+    const validationApp = createApp(
+      { corsOrigins: ['http://localhost:8081'] },
+      {
+        workspaceService: {
+          ...workspaceService,
+          uploadDataSourceAudioFiles: async () => {
+            throw new AudioUploadValidationError('TOO_MANY_FILES', '单批最多上传 20 个音频文件。');
+          },
+        },
+      },
+    );
+    const response = await validationApp.request(`/api/data-sources/${groupId}/audio-files`, {
+      method: 'POST',
+      body: new FormData(),
+    });
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      ok: false,
+      error: {
+        code: 'TOO_MANY_FILES',
+        message: '单批最多上传 20 个音频文件。',
+        retryable: false,
+      },
+    });
   });
 });

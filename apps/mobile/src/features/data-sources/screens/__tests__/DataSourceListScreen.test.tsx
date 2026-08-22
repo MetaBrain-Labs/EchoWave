@@ -14,9 +14,12 @@ import { Alert, StyleSheet } from 'react-native';
 
 import { DataSourceListScreen } from '../DataSourceListScreen';
 import * as workspaceApi from '@/shared/api/workspaceApi';
-import { sourceFixtures } from '@/test/workspaceFixtures';
+import { dataSourceDetailFixture, sourceFixtures } from '@/test/workspaceFixtures';
 
-jest.mock('@/shared/api/workspaceApi', () => ({ listDataSources: jest.fn() }));
+jest.mock('@/shared/api/workspaceApi', () => ({
+  createDataSource: jest.fn(),
+  listDataSources: jest.fn(),
+}));
 
 async function renderList(onOpenSource = jest.fn()) {
   const screen = render(<DataSourceListScreen onOpenSource={onOpenSource} />);
@@ -28,6 +31,10 @@ describe('DataSourceListScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.mocked(workspaceApi.listDataSources).mockResolvedValue({ items: sourceFixtures });
+    jest.mocked(workspaceApi.createDataSource).mockResolvedValue({
+      ...dataSourceDetailFixture,
+      id: '20000000-0000-4000-8000-000000000099',
+    });
   });
 
   it('renders source summaries with the required typography and location icons', async () => {
@@ -52,15 +59,25 @@ describe('DataSourceListScreen', () => {
     expect(onOpenSource).toHaveBeenCalledWith(sourceFixtures[0].id);
   });
 
-  it('provides explicit feedback for search and create placeholders', async () => {
+  it('keeps search feedback and creates a trimmed local data source', async () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
-    const screen = await renderList();
+    const onOpenSource = jest.fn();
+    const screen = await renderList(onOpenSource);
 
     fireEvent.press(screen.getByLabelText('搜索数据源'));
     fireEvent.press(screen.getByLabelText('新增数据源'));
+    fireEvent.changeText(screen.getByLabelText('数据源名称'), '  本地访谈  ');
+    fireEvent.changeText(screen.getByLabelText('数据源描述'), '  用户声音  ');
+    fireEvent.press(screen.getByText('确认'));
 
     expect(alert).toHaveBeenNthCalledWith(1, '功能建设中', '数据源搜索将在后续版本开放。');
-    expect(alert).toHaveBeenNthCalledWith(2, '功能建设中', '新增数据源将在后续版本开放。');
+    await waitFor(() =>
+      expect(workspaceApi.createDataSource).toHaveBeenCalledWith({
+        name: '本地访谈',
+        description: '用户声音',
+      }),
+    );
+    expect(onOpenSource).toHaveBeenCalledWith('20000000-0000-4000-8000-000000000099');
     alert.mockRestore();
   });
 
