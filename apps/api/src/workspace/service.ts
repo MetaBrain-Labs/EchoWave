@@ -30,7 +30,9 @@ export interface WorkspaceService {
   listDataSources(): ReturnType<WorkspaceRepository['listDataSources']>;
   getDataSource(id: string): ReturnType<WorkspaceRepository['getDataSource']>;
   listDataSourceAudioFiles(id: string): ReturnType<WorkspaceRepository['listDataSourceAudioFiles']>;
-  listDataSourceIngestionRecords(id: string): ReturnType<WorkspaceRepository['listDataSourceIngestionRecords']>;
+  listDataSourceIngestionRecords(
+    id: string,
+  ): ReturnType<WorkspaceRepository['listDataSourceIngestionRecords']>;
   listDataSourceGroups(id: string): ReturnType<WorkspaceRepository['listDataSourceGroups']>;
   getAudioAnalysis(id: string): ReturnType<WorkspaceRepository['getAudioAnalysis']>;
 }
@@ -39,21 +41,49 @@ export interface WorkspaceService {
 export class DefaultWorkspaceService implements WorkspaceService {
   constructor(private readonly repository: WorkspaceRepository) {}
 
-  listGroups() { return this.repository.listGroups(); }
-  getGroup(id: string) { return this.repository.getGroup(id); }
-  createGroup(input: GroupCreateRequest) { return this.repository.createGroup(input); }
-  archiveGroup(id: string) { return this.repository.archiveGroup(id); }
-  listGroupAudioFiles(id: string) { return this.repository.listGroupAudioFiles(id); }
-  listGroupKnowledgeBases(id: string) { return this.repository.listGroupKnowledgeBases(id); }
-  listKnowledgeBaseGroups(id: string) { return this.repository.listKnowledgeBaseGroups(id); }
+  listGroups() {
+    return this.repository.listGroups();
+  }
+  getGroup(id: string) {
+    return this.repository.getGroup(id);
+  }
+  createGroup(input: GroupCreateRequest) {
+    return this.repository.createGroup(input);
+  }
+  archiveGroup(id: string) {
+    return this.repository.archiveGroup(id);
+  }
+  listGroupAudioFiles(id: string) {
+    return this.repository.listGroupAudioFiles(id);
+  }
+  listGroupKnowledgeBases(id: string) {
+    return this.repository.listGroupKnowledgeBases(id);
+  }
+  listKnowledgeBaseGroups(id: string) {
+    return this.repository.listKnowledgeBaseGroups(id);
+  }
   linkKnowledgeBaseGroups(id: string, input: KnowledgeBaseGroupLinkRequest) {
     return this.repository.linkKnowledgeBaseGroups(id, input);
   }
-  listGroupDataSources(id: string) { return this.repository.listGroupDataSources(id); }
-  listDataSources() { return this.repository.listDataSources(); }
-  getDataSource(id: string) { return this.repository.getDataSource(id); }
-  listDataSourceAudioFiles(id: string) { return this.repository.listDataSourceAudioFiles(id); }
-  listDataSourceIngestionRecords(id: string) { return this.repository.listDataSourceIngestionRecords(id); }
-  listDataSourceGroups(id: string) { return this.repository.listDataSourceGroups(id); }
-  getAudioAnalysis(id: string) { return this.repository.getAudioAnalysis(id); }
+  listGroupDataSources(id: string) {
+    return this.repository.listGroupDataSources(id);
+  }
+  listDataSources() {
+    return this.repository.listDataSources();
+  }
+  getDataSource(id: string) {
+    return this.repository.getDataSource(id);
+  }
+  listDataSourceAudioFiles(id: string) {
+    return this.repository.listDataSourceAudioFiles(id);
+  }
+  listDataSourceIngestionRecords(id: string) {
+    return this.repository.listDataSourceIngestionRecords(id);
+  }
+  listDataSourceGroups(id: string) {
+    return this.repository.listDataSourceGroups(id);
+  }
+  getAudioAnalysis(id: string) {
+    return this.repository.getAudioAnalysis(id);
+  }
 }

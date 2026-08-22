@@ -116,7 +116,8 @@ export class WorkspaceRepository {
   }
 
   private scopedVisibleAudioCte(): string {
-    return visibleAudioCte.replaceAll('group_audio_links', this.table('group_audio_links'))
+    return visibleAudioCte
+      .replaceAll('group_audio_links', this.table('group_audio_links'))
       .replaceAll('group_data_sources', this.table('group_data_sources'))
       .replaceAll('audio_files', this.table('audio_files'));
   }
@@ -243,10 +244,13 @@ export class WorkspaceRepository {
       [this.tenantId, groupId],
     );
     return AudioFileListResponseSchema.parse({
-      items: result.rows.map((row) => audioItem({
-        ...row,
-        shared_from: row.origin_group_id && row.origin_group_id !== groupId ? row.shared_from : null,
-      })),
+      items: result.rows.map((row) =>
+        audioItem({
+          ...row,
+          shared_from:
+            row.origin_group_id && row.origin_group_id !== groupId ? row.shared_from : null,
+        }),
+      ),
     });
   }
 
@@ -393,7 +397,9 @@ export class WorkspaceRepository {
 
   async listDataSources() {
     const result = await this.dataSourceRows();
-    return DataSourceListResponseSchema.parse({ items: result.rows.map((row) => this.dataSourceSummary(row)) });
+    return DataSourceListResponseSchema.parse({
+      items: result.rows.map((row) => this.dataSourceSummary(row)),
+    });
   }
 
   async getDataSource(dataSourceId: string) {
@@ -431,7 +437,9 @@ export class WorkspaceRepository {
        )`,
       [this.tenantId, groupId],
     );
-    return DataSourceListResponseSchema.parse({ items: result.rows.map((row) => this.dataSourceSummary(row)) });
+    return DataSourceListResponseSchema.parse({
+      items: result.rows.map((row) => this.dataSourceSummary(row)),
+    });
   }
 
   async listDataSourceAudioFiles(dataSourceId: string) {
@@ -511,11 +519,13 @@ export class WorkspaceRepository {
     );
     const selected = new Set(result.rows.map((row) => row.group_id));
     return LinkedDataSourceGroupListResponseSchema.parse({
-      items: groups.items.filter((group) => selected.has(group.id)).map((group) => ({
-        id: group.id,
-        name: group.name,
-        ...group.metrics,
-      })),
+      items: groups.items
+        .filter((group) => selected.has(group.id))
+        .map((group) => ({
+          id: group.id,
+          name: group.name,
+          ...group.metrics,
+        })),
     });
   }
 
@@ -584,12 +594,14 @@ export class WorkspaceRepository {
           startMs: integer(item.start_ms),
           endMs: integer(item.end_ms),
           text: item.text,
-          aiTag: item.tag_id ? {
-            id: item.tag_id,
-            title: item.tag_title,
-            summary: item.tag_summary,
-            details: item.details,
-          } : null,
+          aiTag: item.tag_id
+            ? {
+                id: item.tag_id,
+                title: item.tag_title,
+                summary: item.tag_summary,
+                details: item.details,
+              }
+            : null,
         });
       }
     }

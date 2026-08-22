@@ -10,13 +10,21 @@
  * Notes:
  * - 只展示服务端已经原子发布的当前分析修订版。
  */
-import Ionicons from "@expo/vector-icons/Ionicons";
-import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  BackHandler,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { useSwipePager } from "@/shared/hooks/useSwipePager";
-import { getAudioAnalysis } from "@/shared/api/workspaceApi";
+import { useSwipePager } from '@/shared/hooks/useSwipePager';
+import { getAudioAnalysis } from '@/shared/api/workspaceApi';
 import {
   colors,
   fontFamilies,
@@ -24,15 +32,18 @@ import {
   spacing,
   textColors,
   typography,
-} from "@/shared/theme/tokens";
-import { toAnalysisDetailView, type AnalysisDetailView, type TranscriptSegment } from "./model";
-import { getHideIrrelevantSegmentsPreference, setHideIrrelevantSegmentsPreference } from "./preferences";
-import { AiTagPanel } from "./components/AiTagPanel";
-import { IconButton } from "./components/AnalysisControls";
-import { analysisTabKeys, DetailTabs, type AnalysisTab } from "./components/AnalysisTabs";
-import { CompactPlayer, ExpandedPlayer } from "./components/Player";
-import { SummaryContent } from "./components/SummaryContent";
-import { TranscriptContent } from "./components/TranscriptContent";
+} from '@/shared/theme/tokens';
+import { toAnalysisDetailView, type AnalysisDetailView, type TranscriptSegment } from './model';
+import {
+  getHideIrrelevantSegmentsPreference,
+  setHideIrrelevantSegmentsPreference,
+} from './preferences';
+import { AiTagPanel } from './components/AiTagPanel';
+import { IconButton } from './components/AnalysisControls';
+import { analysisTabKeys, DetailTabs, type AnalysisTab } from './components/AnalysisTabs';
+import { CompactPlayer, ExpandedPlayer } from './components/Player';
+import { SummaryContent } from './components/SummaryContent';
+import { TranscriptContent } from './components/TranscriptContent';
 
 const playbackRates = [1, 1.5, 2] as const;
 
@@ -52,9 +63,7 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
   const [playbackRateIndex, setPlaybackRateIndex] = useState(0);
   const [positionSeconds, setPositionSeconds] = useState(0);
   const [selectedSegment, setSelectedSegment] = useState<TranscriptSegment>();
-  const [hideIrrelevant, setHideIrrelevant] = useState(
-    getHideIrrelevantSegmentsPreference,
-  );
+  const [hideIrrelevant, setHideIrrelevant] = useState(getHideIrrelevantSegmentsPreference);
   const changeHideIrrelevant = (value: boolean) => {
     setHideIrrelevantSegmentsPreference(value);
     setHideIrrelevant(value);
@@ -66,12 +75,11 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
       setSelectedSegment(undefined);
     }
   };
-  const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } =
-    useSwipePager({
-      activeTab,
-      onTabChange: applyTabChange,
-      tabs: analysisTabKeys,
-    });
+  const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } = useSwipePager({
+    activeTab,
+    onTabChange: applyTabChange,
+    tabs: analysisTabKeys,
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -109,7 +117,11 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
         <View style={styles.unknownTopBar}>
           <IconButton icon="chevron-back" label="返回" onPress={onBack} />
         </View>
-        <ActivityIndicator accessibilityLabel="正在加载分析详情" color={colors.ink} style={styles.loading} />
+        <ActivityIndicator
+          accessibilityLabel="正在加载分析详情"
+          color={colors.ink}
+          style={styles.loading}
+        />
       </SafeAreaView>
     );
   }
@@ -123,8 +135,14 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
         <View accessibilityRole="alert" style={styles.emptyState}>
           <Ionicons color={colors.secondary} name="document-outline" size={36} />
           <Text style={styles.emptyTitle}>未找到分析详情</Text>
-          <Text accessibilityRole="alert" style={styles.emptyDescription}>{error || '该音频可能尚未完成分析，请返回后重试。'}</Text>
-          <Pressable accessibilityRole="button" onPress={() => void load()} style={({ pressed }) => [styles.returnButton, pressed && styles.pressed]}>
+          <Text accessibilityRole="alert" style={styles.emptyDescription}>
+            {error || '该音频可能尚未完成分析，请返回后重试。'}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => void load()}
+            style={({ pressed }) => [styles.returnButton, pressed && styles.pressed]}
+          >
             <Text style={styles.returnButtonText}>重新加载</Text>
           </Pressable>
           <Pressable
@@ -156,9 +174,7 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
           onCollapse={() => setExpandedPlayer(false)}
           onJump={jump}
           onPlayPause={() => setIsPlaying((value) => !value)}
-          onRateChange={() =>
-            setPlaybackRateIndex((index) => (index + 1) % playbackRates.length)
-          }
+          onRateChange={() => setPlaybackRateIndex((index) => (index + 1) % playbackRates.length)}
           playbackRate={playbackRate}
           positionSeconds={positionSeconds}
         />

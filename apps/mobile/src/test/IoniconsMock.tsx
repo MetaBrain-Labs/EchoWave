@@ -17,11 +17,7 @@ type IoniconsMockProps = {
   size?: number;
 };
 
-export default function IoniconsMock({
-  accessibilityLabel,
-  name,
-  size,
-}: IoniconsMockProps) {
+export default function IoniconsMock({ accessibilityLabel, name, size }: IoniconsMockProps) {
   return (
     <Text
       accessibilityLabel={accessibilityLabel}

@@ -17,22 +17,31 @@ import { SourceLocatorSchema } from './document.ts';
 
 /** 用户提交知识库问题的最终 JSON 请求 schema。 */
 export const RagQueryRequestSchema = z.object({
-  question: z.string().trim().min(1).max(2_000), conversationId: EntityIdSchema.optional(),
+  question: z.string().trim().min(1).max(2_000),
+  conversationId: EntityIdSchema.optional(),
 });
 /** 可信回答中一个已验证引用的 schema。 */
 export const RagCitationSchema = z.object({
-  number: z.number().int().positive(), documentId: EntityIdSchema, documentTitle: z.string(),
-  chunkId: EntityIdSchema, locator: SourceLocatorSchema, excerpt: z.string(),
+  number: z.number().int().positive(),
+  documentId: EntityIdSchema,
+  documentTitle: z.string(),
+  chunkId: EntityIdSchema,
+  locator: SourceLocatorSchema,
+  excerpt: z.string(),
 });
 /** 一次可信回答产生的 embedding 与模型 token 用量 schema。 */
 export const RagUsageSchema = z.object({
-  embeddingTokens: z.number().int().nonnegative(), inputTokens: z.number().int().nonnegative(),
+  embeddingTokens: z.number().int().nonnegative(),
+  inputTokens: z.number().int().nonnegative(),
   outputTokens: z.number().int().nonnegative(),
 });
 /** 服务端完成引用校验和审计后返回的可信回答 schema。 */
 export const RagQueryResponseSchema = z.object({
-  conversationId: EntityIdSchema, answer: z.string(), grounded: z.boolean(),
-  citations: z.array(RagCitationSchema), usage: RagUsageSchema,
+  conversationId: EntityIdSchema,
+  answer: z.string(),
+  grounded: z.boolean(),
+  citations: z.array(RagCitationSchema),
+  usage: RagUsageSchema,
 });
 
 /** 最近一次已完成问答的只读历史记录 schema。 */

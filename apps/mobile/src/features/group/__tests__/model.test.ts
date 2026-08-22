@@ -18,7 +18,9 @@ import {
 describe('group local query model', () => {
   it('uses one query across audio, knowledge bases, and data sources', () => {
     expect(selectAudioItems(audioFixtures, '上传中', new Set(), 'newest')).toHaveLength(2);
-    expect(selectKnowledgeBases(knowledgeFixtures, '研究资料').map((item) => item.name)).toEqual(['产品研究知识库']);
+    expect(selectKnowledgeBases(knowledgeFixtures, '研究资料').map((item) => item.name)).toEqual([
+      '产品研究知识库',
+    ]);
     expect(selectDataSources(sourceFixtures, '已连接')).toHaveLength(4);
   });
 
@@ -34,6 +36,8 @@ describe('group local query model', () => {
       audioFixtures[0].id,
       audioFixtures[1].id,
     ]);
-    expect(selectAudioItems(audioFixtures, '', new Set(), 'newest')).toHaveLength(audioFixtures.length);
+    expect(selectAudioItems(audioFixtures, '', new Set(), 'newest')).toHaveLength(
+      audioFixtures.length,
+    );
   });
 });

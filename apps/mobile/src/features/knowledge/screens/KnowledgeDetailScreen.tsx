@@ -14,14 +14,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type {
   DocumentStatus,
@@ -54,7 +47,13 @@ import {
 } from '../components/KnowledgeGroupDialogs';
 import { SearchAndFilter } from '../components/SearchAndFilter';
 import { showComingSoon } from '../components/feedback';
-import { getDocument, getKnowledgeBase, listDocuments, retryDocument, uploadDocument } from '../apiClient';
+import {
+  getDocument,
+  getKnowledgeBase,
+  listDocuments,
+  retryDocument,
+  uploadDocument,
+} from '../apiClient';
 
 const detailTabs = [
   { key: 'overview', label: '概览' },
@@ -78,27 +77,48 @@ function formatBytes(sizeBytes: number) {
 
 function statusLabel(status: DocumentStatus) {
   switch (status.kind) {
-    case 'ready': return '解析完成';
-    case 'queued': return '待解析';
-    case 'validating': return '校验中';
+    case 'ready':
+      return '解析完成';
+    case 'queued':
+      return '待解析';
+    case 'validating':
+      return '校验中';
     case 'parsing':
-    case 'chunking': return '解析中';
-    case 'embedding': return `向量化 ${status.progress}%`;
-    case 'failed': return '解析失败';
-    case 'deleting': return '删除中';
+    case 'chunking':
+      return '解析中';
+    case 'embedding':
+      return `向量化 ${status.progress}%`;
+    case 'failed':
+      return '解析失败';
+    case 'deleting':
+      return '删除中';
   }
 }
 
-function Metric({ divider = false, label, value }: { divider?: boolean; label: string; value: string }) {
+function Metric({
+  divider = false,
+  label,
+  value,
+}: {
+  divider?: boolean;
+  label: string;
+  value: string;
+}) {
   return (
     <View style={[styles.metric, divider && styles.metricDivider]}>
-      <Text numberOfLines={1} style={styles.metricValue}>{value}</Text>
+      <Text numberOfLines={1} style={styles.metricValue}>
+        {value}
+      </Text>
       <Text style={styles.metricLabel}>{label}</Text>
     </View>
   );
 }
 
-function InfoRow({ icon, label, value }: {
+function InfoRow({
+  icon,
+  label,
+  value,
+}: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   value: string;
@@ -109,12 +129,18 @@ function InfoRow({ icon, label, value }: {
         <Ionicons color={colors.secondary} name={icon} size={typography.description.lineHeight} />
         <Text style={styles.infoLabel}>{label}</Text>
       </View>
-      <Text numberOfLines={1} style={styles.infoValue}>{value}</Text>
+      <Text numberOfLines={1} style={styles.infoValue}>
+        {value}
+      </Text>
     </View>
   );
 }
 
-function DocumentRow({ document, onOpen, onRetry }: {
+function DocumentRow({
+  document,
+  onOpen,
+  onRetry,
+}: {
   document: KnowledgeDocument;
   onOpen: () => void;
   onRetry: () => void;
@@ -124,16 +150,30 @@ function DocumentRow({ document, onOpen, onRetry }: {
     <>
       <DocumentFormatIcon format={document.format} size={40} />
       <View style={styles.documentMain}>
-        <Text numberOfLines={1} style={styles.documentTitle}>{document.title}</Text>
-        <Text style={styles.documentMeta}>{formatLabels[document.format]} · {formatBytes(document.sizeBytes)}</Text>
-        <Text style={styles.documentUpdated}>更新于 {new Date(document.updatedAt).toLocaleDateString()}</Text>
+        <Text numberOfLines={1} style={styles.documentTitle}>
+          {document.title}
+        </Text>
+        <Text style={styles.documentMeta}>
+          {formatLabels[document.format]} · {formatBytes(document.sizeBytes)}
+        </Text>
+        <Text style={styles.documentUpdated}>
+          更新于 {new Date(document.updatedAt).toLocaleDateString()}
+        </Text>
         {document.status.kind === 'failed' ? (
-          <Text numberOfLines={2} style={styles.failureReason}>{document.status.message}</Text>
+          <Text numberOfLines={2} style={styles.failureReason}>
+            {document.status.message}
+          </Text>
         ) : null}
       </View>
-      <View style={styles.documentStatus}><DocumentStatusView document={document} /></View>
+      <View style={styles.documentStatus}>
+        <DocumentStatusView document={document} />
+      </View>
       <Pressable
-        accessibilityLabel={document.status.kind === 'failed' ? `重试文档：${document.title}` : `${document.title}更多操作`}
+        accessibilityLabel={
+          document.status.kind === 'failed'
+            ? `重试文档：${document.title}`
+            : `${document.title}更多操作`
+        }
         accessibilityRole="button"
         hitSlop={8}
         onPress={(event) => {
@@ -149,7 +189,12 @@ function DocumentRow({ document, onOpen, onRetry }: {
   );
   if (!enabled) return <View style={styles.documentRow}>{content}</View>;
   return (
-    <Pressable accessibilityLabel={`打开文件：${document.title}`} accessibilityRole="button" onPress={onOpen} style={({ pressed }) => [styles.documentRow, pressed && styles.pressed]}>
+    <Pressable
+      accessibilityLabel={`打开文件：${document.title}`}
+      accessibilityRole="button"
+      onPress={onOpen}
+      style={({ pressed }) => [styles.documentRow, pressed && styles.pressed]}
+    >
       {content}
     </Pressable>
   );
@@ -159,9 +204,21 @@ function GroupCard({ group, onSwitch }: { group: GroupSummary; onSwitch: () => v
   return (
     <View style={styles.groupCard}>
       <View style={styles.groupTitleRow}>
-        <Text numberOfLines={1} style={styles.groupTitle}>{group.name}</Text>
-        <Pressable accessibilityLabel={`切换至分组：${group.name}`} accessibilityRole="button" hitSlop={8} onPress={onSwitch} style={({ pressed }) => [styles.switchButton, pressed && styles.pressed]}>
-          <Ionicons color={colors.secondary} name="swap-horizontal" size={typography.heading2.lineHeight} />
+        <Text numberOfLines={1} style={styles.groupTitle}>
+          {group.name}
+        </Text>
+        <Pressable
+          accessibilityLabel={`切换至分组：${group.name}`}
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={onSwitch}
+          style={({ pressed }) => [styles.switchButton, pressed && styles.pressed]}
+        >
+          <Ionicons
+            color={colors.secondary}
+            name="swap-horizontal"
+            size={typography.heading2.lineHeight}
+          />
         </Pressable>
       </View>
       <View style={styles.groupStats}>
@@ -174,7 +231,13 @@ function GroupCard({ group, onSwitch }: { group: GroupSummary; onSwitch: () => v
   );
 }
 
-function FixedActionButton({ disabled = false, emphasized = false, icon, label, onPress }: {
+function FixedActionButton({
+  disabled = false,
+  emphasized = false,
+  icon,
+  label,
+  onPress,
+}: {
   disabled?: boolean;
   emphasized?: boolean;
   icon: keyof typeof Ionicons.glyphMap;
@@ -186,9 +249,18 @@ function FixedActionButton({ disabled = false, emphasized = false, icon, label, 
       accessibilityRole="button"
       disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [styles.actionButton, emphasized && styles.emphasizedAction, disabled && styles.disabled, pressed && styles.pressed]}
+      style={({ pressed }) => [
+        styles.actionButton,
+        emphasized && styles.emphasizedAction,
+        disabled && styles.disabled,
+        pressed && styles.pressed,
+      ]}
     >
-      <Ionicons color={emphasized ? colors.white : colors.ink} name={icon} size={typography.body.lineHeight} />
+      <Ionicons
+        color={emphasized ? colors.white : colors.ink}
+        name={icon}
+        size={typography.body.lineHeight}
+      />
       <Text style={[styles.actionText, emphasized && styles.emphasizedActionText]}>{label}</Text>
     </Pressable>
   );
@@ -256,18 +328,25 @@ export function KnowledgeDetailScreen({
   const filteredDocuments = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
     if (!normalized) return documents;
-    return documents.filter((document) => [
-      document.title,
-      formatLabels[document.format],
-      statusLabel(document.status),
-    ].some((value) => value.toLocaleLowerCase().includes(normalized)));
+    return documents.filter((document) =>
+      [document.title, formatLabels[document.format], statusLabel(document.status)].some((value) =>
+        value.toLocaleLowerCase().includes(normalized),
+      ),
+    );
   }, [documents, query]);
-  const linkedGroupIds = useMemo(() => new Set(linkedGroups.map((group) => group.id)), [linkedGroups]);
+  const linkedGroupIds = useMemo(
+    () => new Set(linkedGroups.map((group) => group.id)),
+    [linkedGroups],
+  );
 
   const retry = (document: KnowledgeDocument) => {
     void retryDocument(knowledgeId, document.id)
-      .then((current) => setDocuments((items) => items.map((item) => item.id === current.id ? current : item)))
-      .catch((reason) => setError(reason instanceof Error ? reason.message : '重试失败，请重新上传文件。'));
+      .then((current) =>
+        setDocuments((items) => items.map((item) => (item.id === current.id ? current : item))),
+      )
+      .catch((reason) =>
+        setError(reason instanceof Error ? reason.message : '重试失败，请重新上传文件。'),
+      );
   };
 
   const pickAndUpload = async () => {
@@ -293,7 +372,7 @@ export function KnowledgeDetailScreen({
       for (let attempt = 0; attempt < 60; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, delay));
         const current = await getDocument(knowledgeId, uploaded.document.id);
-        setDocuments((items) => items.map((item) => item.id === current.id ? current : item));
+        setDocuments((items) => items.map((item) => (item.id === current.id ? current : item)));
         if (current.status.kind === 'ready' || current.status.kind === 'failed') break;
         if (attempt >= 4) delay = 5_000;
       }
@@ -339,7 +418,9 @@ export function KnowledgeDetailScreen({
     setLinking(true);
     setPickerError('');
     try {
-      const response = await linkKnowledgeBaseGroups(knowledgeId, { groupIds: [...selectedGroupIds] });
+      const response = await linkKnowledgeBaseGroups(knowledgeId, {
+        groupIds: [...selectedGroupIds],
+      });
       setLinkedGroups(response.items);
       setKnowledge(await getKnowledgeBase(knowledgeId));
       setSelectedGroupIds(new Set());
@@ -355,7 +436,11 @@ export function KnowledgeDetailScreen({
     return (
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
         <PageHeader onBack={onBack} onMore={() => showComingSoon('更多操作')} title="知识库详情" />
-        <ActivityIndicator accessibilityLabel="正在加载知识库详情" color={colors.ink} style={styles.loading} />
+        <ActivityIndicator
+          accessibilityLabel="正在加载知识库详情"
+          color={colors.ink}
+          style={styles.loading}
+        />
       </SafeAreaView>
     );
   }
@@ -364,34 +449,70 @@ export function KnowledgeDetailScreen({
     return (
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
         <PageHeader onBack={onBack} onMore={() => showComingSoon('更多操作')} title="知识库详情" />
-        <EmptyState description="该知识库可能已被移除，请返回知识库列表。" title={error || '未找到知识库'} />
+        <EmptyState
+          description="该知识库可能已被移除，请返回知识库列表。"
+          title={error || '未找到知识库'}
+        />
       </SafeAreaView>
     );
   }
 
   const renderTabs = () => (
-    <View style={styles.tabsSurface}><PageTabs activeTab={activeTab} onChange={selectTab} tabs={detailTabs} /></View>
+    <View style={styles.tabsSurface}>
+      <PageTabs activeTab={activeTab} onChange={selectTab} tabs={detailTabs} />
+    </View>
   );
   const renderHero = () => (
     <View style={styles.hero}>
-      <Text accessibilityRole="header" style={styles.displayTitle}>{knowledge.name}</Text>
-      <Text numberOfLines={3} style={styles.heroDescription}>{knowledge.description}</Text>
-      <Text style={styles.heroMeta}>{knowledge.documentCount} 份文档 · 关联 {knowledge.linkedGroupCount} 个分组</Text>
+      <Text accessibilityRole="header" style={styles.displayTitle}>
+        {knowledge.name}
+      </Text>
+      <Text numberOfLines={3} style={styles.heroDescription}>
+        {knowledge.description}
+      </Text>
+      <Text style={styles.heroMeta}>
+        {knowledge.documentCount} 份文档 · 关联 {knowledge.linkedGroupCount} 个分组
+      </Text>
     </View>
   );
-  const fixedActions = activeTab === 'groups' ? (
-    <FixedActionButton emphasized icon="add" label="关联新分组" onPress={openGroupPicker} />
-  ) : activeTab === 'files' ? (
-    <>
-      <FixedActionButton disabled={uploading} icon="cloud-upload-outline" label={uploading ? '正在上传并解析…' : '上传文档'} onPress={() => { void pickAndUpload(); }} />
-      <FixedActionButton emphasized icon="chatbubble-ellipses-outline" label="问知识库" onPress={() => onAsk?.()} />
-    </>
-  ) : (
-    <>
-      <FixedActionButton icon="analytics-outline" label="全部解析" onPress={() => showComingSoon('全部解析')} />
-      <FixedActionButton disabled={uploading} emphasized icon="cloud-upload-outline" label={uploading ? '正在上传并解析…' : '上传文档'} onPress={() => { void pickAndUpload(); }} />
-    </>
-  );
+  const fixedActions =
+    activeTab === 'groups' ? (
+      <FixedActionButton emphasized icon="add" label="关联新分组" onPress={openGroupPicker} />
+    ) : activeTab === 'files' ? (
+      <>
+        <FixedActionButton
+          disabled={uploading}
+          icon="cloud-upload-outline"
+          label={uploading ? '正在上传并解析…' : '上传文档'}
+          onPress={() => {
+            void pickAndUpload();
+          }}
+        />
+        <FixedActionButton
+          emphasized
+          icon="chatbubble-ellipses-outline"
+          label="问知识库"
+          onPress={() => onAsk?.()}
+        />
+      </>
+    ) : (
+      <>
+        <FixedActionButton
+          icon="analytics-outline"
+          label="全部解析"
+          onPress={() => showComingSoon('全部解析')}
+        />
+        <FixedActionButton
+          disabled={uploading}
+          emphasized
+          icon="cloud-upload-outline"
+          label={uploading ? '正在上传并解析…' : '上传文档'}
+          onPress={() => {
+            void pickAndUpload();
+          }}
+        />
+      </>
+    );
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
@@ -400,9 +521,15 @@ export function KnowledgeDetailScreen({
         error={pickerError}
         linkedGroupIds={linkedGroupIds}
         loading={pickerLoading}
-        onClose={() => { if (!linking) setPickerVisible(false); }}
-        onConfirm={() => { void confirmLinks(); }}
-        onRetry={() => { void loadAvailableGroups(); }}
+        onClose={() => {
+          if (!linking) setPickerVisible(false);
+        }}
+        onConfirm={() => {
+          void confirmLinks();
+        }}
+        onRetry={() => {
+          void loadAvailableGroups();
+        }}
         onToggle={toggleGroup}
         pending={linking}
         selectedGroupIds={selectedGroupIds}
@@ -435,13 +562,28 @@ export function KnowledgeDetailScreen({
         style={styles.pager}
         testID="knowledge-detail-pager"
       >
-        <ScrollView contentContainerStyle={styles.pageContent} showsVerticalScrollIndicator={false} stickyHeaderIndices={[1]} style={[styles.page, { width: pageWidth }]} testID="knowledge-overview-scroll">
+        <ScrollView
+          contentContainerStyle={styles.pageContent}
+          showsVerticalScrollIndicator={false}
+          stickyHeaderIndices={[1]}
+          style={[styles.page, { width: pageWidth }]}
+          testID="knowledge-overview-scroll"
+        >
           {renderHero()}
           {renderTabs()}
-          {error ? <Text accessibilityRole="alert" style={styles.failureReason}>{error}</Text> : null}
+          {error ? (
+            <Text accessibilityRole="alert" style={styles.failureReason}>
+              {error}
+            </Text>
+          ) : null}
           <View style={styles.overviewContent}>
             <Text style={styles.sectionTitle}>知识库详情</Text>
-            <Text style={styles.recentUpload}>最近上传　{knowledge.lastUploadedAt ? new Date(knowledge.lastUploadedAt).toLocaleString('zh-CN', { hour12: false }) : '暂无'}</Text>
+            <Text style={styles.recentUpload}>
+              最近上传　
+              {knowledge.lastUploadedAt
+                ? new Date(knowledge.lastUploadedAt).toLocaleString('zh-CN', { hour12: false })
+                : '暂无'}
+            </Text>
             <View style={styles.metrics}>
               <Metric label="文档数" value={`${knowledge.documentCount}`} />
               <Metric divider label="总大小" value={formatBytes(knowledge.totalSizeBytes)} />
@@ -450,48 +592,117 @@ export function KnowledgeDetailScreen({
             </View>
             <View style={styles.infoSection}>
               <Text style={styles.sectionTitle}>内容存储</Text>
-              <InfoRow icon="grid-outline" label="存储位置" value={knowledge.settings.storageLocation === 'local' ? '本地' : '云端'} />
+              <InfoRow
+                icon="grid-outline"
+                label="存储位置"
+                value={knowledge.settings.storageLocation === 'local' ? '本地' : '云端'}
+              />
             </View>
             <View style={styles.infoSection}>
               <Text style={styles.sectionTitle}>知识解析</Text>
-              <InfoRow icon="git-network-outline" label="索引方式" value={knowledge.settings.indexingMode === 'rag' ? '检索增强（RAG）' : '上下文注入（Full Context）'} />
-              <InfoRow icon="hardware-chip-outline" label="嵌入模型" value={knowledge.settings.embeddingModel} />
-              <InfoRow icon="hardware-chip-outline" label="重排序模型" value={knowledge.settings.rerankerModel ?? '未启用'} />
+              <InfoRow
+                icon="git-network-outline"
+                label="索引方式"
+                value={
+                  knowledge.settings.indexingMode === 'rag'
+                    ? '检索增强（RAG）'
+                    : '上下文注入（Full Context）'
+                }
+              />
+              <InfoRow
+                icon="hardware-chip-outline"
+                label="嵌入模型"
+                value={knowledge.settings.embeddingModel}
+              />
+              <InfoRow
+                icon="hardware-chip-outline"
+                label="重排序模型"
+                value={knowledge.settings.rerankerModel ?? '未启用'}
+              />
             </View>
             <View style={styles.infoSection}>
               <Text style={styles.sectionTitle}>解析处理</Text>
-              <InfoRow icon="analytics-outline" label="解析方式" value={knowledge.settings.parsingMode === 'automatic' ? '自动解析' : '手动解析'} />
+              <InfoRow
+                icon="analytics-outline"
+                label="解析方式"
+                value={knowledge.settings.parsingMode === 'automatic' ? '自动解析' : '手动解析'}
+              />
             </View>
             <View style={styles.recentDocuments}>
               <Text style={styles.sectionTitle}>近期文档</Text>
-              {documents.length ? documents.slice(0, 3).map((document) => (
-                <DocumentRow key={document.id} document={document} onOpen={() => onOpenDocument(document.id)} onRetry={() => retry(document)} />
-              )) : <Text style={styles.emptyText}>暂无近期文档</Text>}
+              {documents.length ? (
+                documents
+                  .slice(0, 3)
+                  .map((document) => (
+                    <DocumentRow
+                      key={document.id}
+                      document={document}
+                      onOpen={() => onOpenDocument(document.id)}
+                      onRetry={() => retry(document)}
+                    />
+                  ))
+              ) : (
+                <Text style={styles.emptyText}>暂无近期文档</Text>
+              )}
             </View>
           </View>
         </ScrollView>
 
-        <ScrollView contentContainerStyle={styles.pageContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} stickyHeaderIndices={[0]} style={[styles.page, { width: pageWidth }]} testID="knowledge-files-scroll">
+        <ScrollView
+          contentContainerStyle={styles.pageContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          stickyHeaderIndices={[0]}
+          style={[styles.page, { width: pageWidth }]}
+          testID="knowledge-files-scroll"
+        >
           {renderTabs()}
-          <View style={styles.stickySearch}><SearchAndFilter onChangeText={setQuery} placeholder="搜索文档..." value={query} /></View>
-          {error ? <Text accessibilityRole="alert" style={styles.failureReason}>{error}</Text> : null}
+          <View style={styles.stickySearch}>
+            <SearchAndFilter onChangeText={setQuery} placeholder="搜索文档..." value={query} />
+          </View>
+          {error ? (
+            <Text accessibilityRole="alert" style={styles.failureReason}>
+              {error}
+            </Text>
+          ) : null}
           <View style={styles.documentList}>
-            {filteredDocuments.length ? filteredDocuments.map((document) => (
-              <DocumentRow key={document.id} document={document} onOpen={() => onOpenDocument(document.id)} onRetry={() => retry(document)} />
-            )) : <Text style={styles.emptyText}>{query.trim() ? '没有匹配的文档' : '暂无文档'}</Text>}
+            {filteredDocuments.length ? (
+              filteredDocuments.map((document) => (
+                <DocumentRow
+                  key={document.id}
+                  document={document}
+                  onOpen={() => onOpenDocument(document.id)}
+                  onRetry={() => retry(document)}
+                />
+              ))
+            ) : (
+              <Text style={styles.emptyText}>{query.trim() ? '没有匹配的文档' : '暂无文档'}</Text>
+            )}
           </View>
         </ScrollView>
 
-        <ScrollView contentContainerStyle={styles.pageContent} showsVerticalScrollIndicator={false} stickyHeaderIndices={[0]} style={[styles.page, { width: pageWidth }]} testID="knowledge-groups-scroll">
+        <ScrollView
+          contentContainerStyle={styles.pageContent}
+          showsVerticalScrollIndicator={false}
+          stickyHeaderIndices={[0]}
+          style={[styles.page, { width: pageWidth }]}
+          testID="knowledge-groups-scroll"
+        >
           {renderTabs()}
           <View style={styles.groupList}>
-            {linkedGroups.length ? linkedGroups.map((group) => (
-              <GroupCard group={group} key={group.id} onSwitch={() => setSwitchTarget(group)} />
-            )) : <EmptyState description="使用下方按钮将知识库关联到已有分组。" title="暂无关联分组" />}
+            {linkedGroups.length ? (
+              linkedGroups.map((group) => (
+                <GroupCard group={group} key={group.id} onSwitch={() => setSwitchTarget(group)} />
+              ))
+            ) : (
+              <EmptyState description="使用下方按钮将知识库关联到已有分组。" title="暂无关联分组" />
+            )}
           </View>
         </ScrollView>
       </ScrollView>
-      <View style={styles.fixedActions} testID="knowledge-fixed-actions">{fixedActions}</View>
+      <View style={styles.fixedActions} testID="knowledge-fixed-actions">
+        {fixedActions}
+      </View>
     </SafeAreaView>
   );
 }
@@ -503,45 +714,149 @@ const styles = StyleSheet.create({
   page: { flex: 1 },
   pageContent: { flexGrow: 1, paddingBottom: spacing.lg },
   hero: { gap: spacing.md, padding: spacing.md, paddingTop: spacing.lg },
-  displayTitle: { ...typography.contentDisplay, color: textColors.primary, fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
+  displayTitle: {
+    ...typography.contentDisplay,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
   heroDescription: { ...typography.body, color: textColors.primary, fontFamily: fontFamilies.sans },
   heroMeta: { ...typography.body, color: textColors.secondary, fontFamily: fontFamilies.sans },
   tabsSurface: { backgroundColor: colors.card, zIndex: 1 },
   overviewContent: { gap: spacing.md, paddingHorizontal: spacing.md },
-  sectionTitle: { ...typography.heading1, color: textColors.primary, fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
-  recentUpload: { ...typography.description, color: textColors.tertiary, fontFamily: fontFamilies.sans },
+  sectionTitle: {
+    ...typography.heading1,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  recentUpload: {
+    ...typography.description,
+    color: textColors.tertiary,
+    fontFamily: fontFamilies.sans,
+  },
   metrics: { flexDirection: 'row', paddingVertical: spacing.sm },
   metric: { alignItems: 'center', flex: 1, gap: spacing.sm, minWidth: 0 },
   metricDivider: { borderLeftColor: colors.divider, borderLeftWidth: StyleSheet.hairlineWidth },
-  metricValue: { ...typography.heading1, color: textColors.primary, fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
-  metricLabel: { ...typography.description, color: textColors.secondary, fontFamily: fontFamilies.sans },
+  metricValue: {
+    ...typography.heading1,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  metricLabel: {
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+  },
   infoSection: { gap: spacing.sm },
-  infoRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', minHeight: 32 },
+  infoRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    minHeight: 32,
+  },
   infoLabelRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
   infoLabel: { ...typography.body, color: textColors.secondary, fontFamily: fontFamilies.sans },
-  infoValue: { ...typography.body, color: textColors.secondary, flexShrink: 1, fontFamily: fontFamilies.sans, marginLeft: spacing.md, textAlign: 'right' },
+  infoValue: {
+    ...typography.body,
+    color: textColors.secondary,
+    flexShrink: 1,
+    fontFamily: fontFamilies.sans,
+    marginLeft: spacing.md,
+    textAlign: 'right',
+  },
   recentDocuments: { gap: spacing.sm, marginTop: spacing.sm },
   stickySearch: { backgroundColor: colors.card, padding: spacing.md, paddingBottom: spacing.sm },
   documentList: { paddingHorizontal: spacing.md },
-  documentRow: { alignItems: 'center', borderBottomColor: colors.divider, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: spacing.sm, minHeight: 92, paddingVertical: spacing.base },
+  documentRow: {
+    alignItems: 'center',
+    borderBottomColor: colors.divider,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 92,
+    paddingVertical: spacing.base,
+  },
   documentMain: { flex: 1, gap: spacing.xs },
-  documentTitle: { ...typography.heading2, color: textColors.primary, fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
-  documentMeta: { ...typography.description, color: textColors.secondary, fontFamily: fontFamilies.sans },
-  documentUpdated: { ...typography.label, color: textColors.tertiary, fontFamily: fontFamilies.sans },
-  failureReason: { ...typography.description, color: textColors.secondary, fontFamily: fontFamilies.sans, paddingHorizontal: spacing.md },
+  documentTitle: {
+    ...typography.heading2,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  documentMeta: {
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+  },
+  documentUpdated: {
+    ...typography.label,
+    color: textColors.tertiary,
+    fontFamily: fontFamilies.sans,
+  },
+  failureReason: {
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    paddingHorizontal: spacing.md,
+  },
   documentStatus: { alignItems: 'flex-end', maxWidth: 100 },
   moreButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 36 },
-  emptyText: { ...typography.body, color: textColors.secondary, fontFamily: fontFamilies.sans, padding: spacing.lg, textAlign: 'center' },
+  emptyText: {
+    ...typography.body,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    padding: spacing.lg,
+    textAlign: 'center',
+  },
   groupList: { gap: spacing.md, padding: spacing.md },
-  groupCard: { backgroundColor: colors.canvas, borderColor: colors.divider, borderRadius: radii.default, borderWidth: StyleSheet.hairlineWidth, gap: spacing.lg, padding: spacing.lg },
+  groupCard: {
+    backgroundColor: colors.canvas,
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: spacing.lg,
+    padding: spacing.lg,
+  },
   groupTitleRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
-  groupTitle: { ...typography.heading1, color: textColors.primary, flex: 1, fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
+  groupTitle: {
+    ...typography.heading1,
+    color: textColors.primary,
+    flex: 1,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
   switchButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
   groupStats: { flexDirection: 'row' },
-  fixedActions: { backgroundColor: colors.card, borderTopColor: colors.divider, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: spacing.sm, padding: spacing.md },
-  actionButton: { alignItems: 'center', backgroundColor: colors.background, borderColor: colors.divider, borderRadius: radii.default, borderWidth: StyleSheet.hairlineWidth, flex: 1, flexDirection: 'row', gap: spacing.sm, justifyContent: 'center', minHeight: 56, paddingHorizontal: spacing.md },
+  fixedActions: {
+    backgroundColor: colors.card,
+    borderTopColor: colors.divider,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  actionButton: {
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: StyleSheet.hairlineWidth,
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'center',
+    minHeight: 56,
+    paddingHorizontal: spacing.md,
+  },
   emphasizedAction: { backgroundColor: colors.ink, borderColor: colors.ink },
-  actionText: { ...typography.body, color: textColors.primary, fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
+  actionText: {
+    ...typography.body,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
   emphasizedActionText: { color: colors.white },
   disabled: { opacity: 0.45 },
   pressed: { backgroundColor: colors.background },

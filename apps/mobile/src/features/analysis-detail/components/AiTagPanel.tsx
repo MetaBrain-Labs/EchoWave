@@ -7,8 +7,8 @@
  * - 封装稳定的展示职责与局部交互。
  * - 页面级状态和导航仍由 AnalysisDetailScreen 统一协调。
  */
-import Ionicons from "@expo/vector-icons/Ionicons";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import {
   colors,
@@ -17,10 +17,10 @@ import {
   spacing,
   textColors,
   typography,
-} from "@/shared/theme/tokens";
-import type { AiTagAnalysis } from "../model";
-import { Checkbox } from "./AnalysisControls";
-import { formatTime } from "./utils";
+} from '@/shared/theme/tokens';
+import type { AiTagAnalysis } from '../model';
+import { Checkbox } from './AnalysisControls';
+import { formatTime } from './utils';
 
 export function AiTagPanel({
   analysis,

@@ -55,7 +55,13 @@ function documentStatus(row: Record<string, unknown>) {
       retryable: Boolean(row.error_retryable),
     } as const;
   }
-  if (kind === 'queued' || kind === 'validating' || kind === 'parsing' || kind === 'chunking' || kind === 'deleting') {
+  if (
+    kind === 'queued' ||
+    kind === 'validating' ||
+    kind === 'parsing' ||
+    kind === 'chunking' ||
+    kind === 'deleting'
+  ) {
     return { kind } as const;
   }
   throw new Error(`Unknown document status: ${kind}`);
@@ -334,7 +340,8 @@ export class KnowledgeRepository {
       for (const row of result.rows) {
         if (hashes.has(row.content_sha256)) continue;
         const count = perDocument.get(row.document_id) ?? 0;
-        if (count >= 3 || selected.length >= 8 || characters + row.content.length > 12_000) continue;
+        if (count >= 3 || selected.length >= 8 || characters + row.content.length > 12_000)
+          continue;
         hashes.add(row.content_sha256);
         perDocument.set(row.document_id, count + 1);
         characters += row.content.length;
@@ -361,5 +368,4 @@ export class KnowledgeRepository {
       client.release();
     }
   }
-
 }

@@ -60,10 +60,12 @@ export function toAnalysisDetailView(detail: AudioAnalysisDetail): AnalysisDetai
     title: detail.title,
     durationSeconds: detail.durationMs / 1_000,
     generatedAt: new Date(detail.generatedAt).toLocaleString(),
-    invalidSegment: invalid ? {
-      startSeconds: invalid.startMs / 1_000,
-      durationSeconds: (invalid.endMs - invalid.startMs) / 1_000,
-    } : undefined,
+    invalidSegment: invalid
+      ? {
+          startSeconds: invalid.startMs / 1_000,
+          durationSeconds: (invalid.endMs - invalid.startMs) / 1_000,
+        }
+      : undefined,
     scenes: detail.scenes.map((scene) => ({
       id: scene.id,
       title: scene.title,
@@ -76,11 +78,13 @@ export function toAnalysisDetailView(detail: AudioAnalysisDetail): AnalysisDetai
         startSeconds: segment.startMs / 1_000,
         endSeconds: segment.endMs / 1_000,
         text: segment.text,
-        aiTag: segment.aiTag ? {
-          title: segment.aiTag.title,
-          summary: segment.aiTag.summary,
-          details: segment.aiTag.details,
-        } : undefined,
+        aiTag: segment.aiTag
+          ? {
+              title: segment.aiTag.title,
+              summary: segment.aiTag.summary,
+              details: segment.aiTag.details,
+            }
+          : undefined,
       })),
     })),
     summarySections: detail.summarySections.map((section) => ({

@@ -20,19 +20,21 @@ export const SegmentAiTagSchema = z.object({
   details: z.array(z.string()),
 });
 
-export const TranscriptSegmentSchema = z.object({
-  id: EntityIdSchema,
-  index: z.number().int().positive(),
-  speakerKey: z.string(),
-  speakerLabel: z.string(),
-  emotion: z.string(),
-  startMs: z.number().int().nonnegative(),
-  endMs: z.number().int().positive(),
-  text: z.string(),
-  aiTag: SegmentAiTagSchema.nullable(),
-}).refine((segment) => segment.endMs > segment.startMs, {
-  message: 'endMs must be greater than startMs.',
-});
+export const TranscriptSegmentSchema = z
+  .object({
+    id: EntityIdSchema,
+    index: z.number().int().positive(),
+    speakerKey: z.string(),
+    speakerLabel: z.string(),
+    emotion: z.string(),
+    startMs: z.number().int().nonnegative(),
+    endMs: z.number().int().positive(),
+    text: z.string(),
+    aiTag: SegmentAiTagSchema.nullable(),
+  })
+  .refine((segment) => segment.endMs > segment.startMs, {
+    message: 'endMs must be greater than startMs.',
+  });
 
 export const AnalysisSceneSchema = z.object({
   id: EntityIdSchema,
@@ -42,14 +44,16 @@ export const AnalysisSceneSchema = z.object({
   segments: z.array(TranscriptSegmentSchema),
 });
 
-export const AnalysisInvalidSegmentSchema = z.object({
-  id: EntityIdSchema,
-  startMs: z.number().int().nonnegative(),
-  endMs: z.number().int().positive(),
-  reason: z.string(),
-}).refine((segment) => segment.endMs > segment.startMs, {
-  message: 'endMs must be greater than startMs.',
-});
+export const AnalysisInvalidSegmentSchema = z
+  .object({
+    id: EntityIdSchema,
+    startMs: z.number().int().nonnegative(),
+    endMs: z.number().int().positive(),
+    reason: z.string(),
+  })
+  .refine((segment) => segment.endMs > segment.startMs, {
+    message: 'endMs must be greater than startMs.',
+  });
 
 export const AnalysisSummarySectionSchema = z.object({
   id: EntityIdSchema,

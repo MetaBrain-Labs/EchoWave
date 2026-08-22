@@ -52,12 +52,14 @@ export function selectAudioItems(
   sortOrder: AudioSortOrder,
 ) {
   return items
-    .filter((item) => includesQuery(query, [
-      item.title,
-      item.sharedFrom,
-      audioStatusLabels[item.status.kind],
-      item.status.kind === 'failed' ? item.status.message : null,
-    ]))
+    .filter((item) =>
+      includesQuery(query, [
+        item.title,
+        item.sharedFrom,
+        audioStatusLabels[item.status.kind],
+        item.status.kind === 'failed' ? item.status.message : null,
+      ]),
+    )
     .filter((item) => statuses.size === 0 || statuses.has(item.status.kind))
     .sort((left, right) => {
       const difference = new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
@@ -72,10 +74,12 @@ export function selectKnowledgeBases(items: KnowledgeBaseSummary[], query: strin
 
 /** 按名称、描述、连接标签和中文连接状态搜索当前分组的数据源。 */
 export function selectDataSources(items: DataSourceSummary[], query: string) {
-  return items.filter((item) => includesQuery(query, [
-    item.name,
-    item.description,
-    item.connectionLabel,
-    connectionStatusLabels[item.connectionStatus],
-  ]));
+  return items.filter((item) =>
+    includesQuery(query, [
+      item.name,
+      item.description,
+      item.connectionLabel,
+      connectionStatusLabels[item.connectionStatus],
+    ]),
+  );
 }

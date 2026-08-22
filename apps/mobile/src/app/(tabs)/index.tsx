@@ -29,9 +29,7 @@ export default function GroupRoute() {
       initialGroupId={initialGroupId}
       initialTab={initialTab}
       onOpenAudio={(id) => {
-        void runWithLoading(() =>
-          router.push({ pathname: '/analysis/[id]', params: { id } }),
-        );
+        void runWithLoading(() => router.push({ pathname: '/analysis/[id]', params: { id } }));
       }}
     />
   );

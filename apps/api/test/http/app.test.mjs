@@ -41,12 +41,16 @@ describe('workspace routes', () => {
   let createdGroupInput;
   let linkedKnowledgeInput;
   const workspaceService = {
-    listGroups: async () => ({ items: [{
-      id: groupId,
-      name: '产品研究组',
-      metrics: { analysisCount: 1, audioCount: 2, knowledgeCount: 1, sourceCount: 1 },
-      updatedAt: '2026-08-21T10:00:00.000Z',
-    }] }),
+    listGroups: async () => ({
+      items: [
+        {
+          id: groupId,
+          name: '产品研究组',
+          metrics: { analysisCount: 1, audioCount: 2, knowledgeCount: 1, sourceCount: 1 },
+          updatedAt: '2026-08-21T10:00:00.000Z',
+        },
+      ],
+    }),
     getGroup: async () => ({
       id: groupId,
       name: '产品研究组',
@@ -62,7 +66,9 @@ describe('workspace routes', () => {
         updatedAt: '2026-08-21T10:00:00.000Z',
       };
     },
-    archiveGroup: async (id) => { archivedGroupId = id; },
+    archiveGroup: async (id) => {
+      archivedGroupId = id;
+    },
     listGroupAudioFiles: async () => ({ items: [] }),
     listGroupKnowledgeBases: async () => ({ items: [] }),
     listKnowledgeBaseGroups: async () => ({ items: [] }),
@@ -78,10 +84,7 @@ describe('workspace routes', () => {
     listDataSourceGroups: async () => ({ items: [] }),
     getAudioAnalysis: async () => ({}),
   };
-  const workspaceApp = createApp(
-    { corsOrigins: ['http://localhost:8081'] },
-    { workspaceService },
-  );
+  const workspaceApp = createApp({ corsOrigins: ['http://localhost:8081'] }, { workspaceService });
 
   it('exposes group summaries and validates route identifiers', async () => {
     const response = await workspaceApp.request('/api/groups');

@@ -29,14 +29,16 @@ const response = {
   conversationId: '55555555-5555-4555-8555-555555555555',
   answer: '回答需要关联原始证据。[1]',
   grounded: true,
-  citations: [{
-    number: 1,
-    documentId: document.id,
-    documentTitle: document.title,
-    chunkId: document.chunks[0]!.id,
-    locator: document.chunks[0]!.locator,
-    excerpt: document.chunks[0]!.content,
-  }],
+  citations: [
+    {
+      number: 1,
+      documentId: document.id,
+      documentTitle: document.title,
+      chunkId: document.chunks[0]!.id,
+      locator: document.chunks[0]!.locator,
+      excerpt: document.chunks[0]!.content,
+    },
+  ],
   usage: { embeddingTokens: 4, inputTokens: 12, outputTokens: 8 },
 };
 
@@ -54,12 +56,18 @@ describe('KnowledgeQueryScreen', () => {
 
   it('sends the question immediately and replaces progress with the final answer', async () => {
     let resolveQuery!: (value: typeof response) => void;
-    jest.mocked(queryKnowledge).mockReturnValue(new Promise((resolve) => {
-      resolveQuery = resolve;
-    }));
+    jest.mocked(queryKnowledge).mockReturnValue(
+      new Promise((resolve) => {
+        resolveQuery = resolve;
+      }),
+    );
     const onOpenCitation = jest.fn();
     const screen = render(
-      <KnowledgeQueryScreen knowledgeId={knowledge.id} onBack={jest.fn()} onOpenCitation={onOpenCitation} />,
+      <KnowledgeQueryScreen
+        knowledgeId={knowledge.id}
+        onBack={jest.fn()}
+        onOpenCitation={onOpenCitation}
+      />,
     );
 
     fireEvent.changeText(screen.getByLabelText('输入知识库问题'), '证据是什么？');
@@ -82,11 +90,16 @@ describe('KnowledgeQueryScreen', () => {
   });
 
   it('keeps a failed user message and retries the same turn without duplication', async () => {
-    jest.mocked(queryKnowledge)
+    jest
+      .mocked(queryKnowledge)
       .mockRejectedValueOnce(new Error('网络暂时不可用'))
       .mockResolvedValueOnce(response);
     const screen = render(
-      <KnowledgeQueryScreen knowledgeId={knowledge.id} onBack={jest.fn()} onOpenCitation={jest.fn()} />,
+      <KnowledgeQueryScreen
+        knowledgeId={knowledge.id}
+        onBack={jest.fn()}
+        onOpenCitation={jest.fn()}
+      />,
     );
 
     fireEvent.changeText(screen.getByLabelText('输入知识库问题'), '请重试这个问题');
@@ -104,18 +117,24 @@ describe('KnowledgeQueryScreen', () => {
 
   it('loads the latest six completed questions through the read-only history action', async () => {
     jest.mocked(listQueryHistory).mockResolvedValue({
-      items: [{
-        id: '66666666-6666-4666-8666-666666666666',
-        conversationId: response.conversationId,
-        question: '历史问题',
-        answer: '历史回答',
-        grounded: true,
-        citationCount: 2,
-        createdAt: '2026-08-20T12:00:00.000Z',
-      }],
+      items: [
+        {
+          id: '66666666-6666-4666-8666-666666666666',
+          conversationId: response.conversationId,
+          question: '历史问题',
+          answer: '历史回答',
+          grounded: true,
+          citationCount: 2,
+          createdAt: '2026-08-20T12:00:00.000Z',
+        },
+      ],
     });
     const screen = render(
-      <KnowledgeQueryScreen knowledgeId={knowledge.id} onBack={jest.fn()} onOpenCitation={jest.fn()} />,
+      <KnowledgeQueryScreen
+        knowledgeId={knowledge.id}
+        onBack={jest.fn()}
+        onOpenCitation={jest.fn()}
+      />,
     );
 
     fireEvent.press(screen.getByLabelText('查看历史记录'));

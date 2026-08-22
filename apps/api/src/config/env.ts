@@ -12,14 +12,12 @@
  * Notes:
  * - 不合并系统环境变量，也不提供隐式默认值。
  */
-import { readFileSync } from "node:fs";
+import { readFileSync } from 'node:fs';
 
-import { parse } from "dotenv";
-import { z } from "zod";
+import { parse } from 'dotenv';
+import { z } from 'zod';
 
-const BooleanStringSchema = z
-  .enum(["true", "false"])
-  .transform((value) => value === "true");
+const BooleanStringSchema = z.enum(['true', 'false']).transform((value) => value === 'true');
 
 const EnvironmentSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65_535),
@@ -39,11 +37,14 @@ const EnvironmentSchema = z.object({
   REDIS_TLS: BooleanStringSchema,
   DEV_TENANT_ID: z.string().uuid(),
   OPENROUTER_API_KEY: z.string().min(1),
-  RAG_EMBEDDING_MODEL: z.literal("qwen/qwen3-embedding-8b"),
-  RAG_EMBEDDING_DIMENSIONS: z.coerce.number().int().refine((value) => value === 1024),
+  RAG_EMBEDDING_MODEL: z.literal('qwen/qwen3-embedding-8b'),
+  RAG_EMBEDDING_DIMENSIONS: z.coerce
+    .number()
+    .int()
+    .refine((value) => value === 1024),
   DEEPSEEK_API_KEY: z.string().min(1),
   DEEPSEEK_BASE_URL: z.string().url(),
-  DEEPSEEK_CHAT_MODEL: z.literal("deepseek-v4-flash"),
+  DEEPSEEK_CHAT_MODEL: z.literal('deepseek-v4-flash'),
   DEEPSEEK_ENABLE_THINKING: BooleanStringSchema,
   LANGGRAPH_SCHEMA: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
   UPLOAD_TEMP_DIR: z.string().min(1),
@@ -101,12 +102,12 @@ export type ApiConfig = {
 /** 将显式键值集合解析为无默认值的强类型 API 配置。 */
 export function readApiConfig(values: Record<string, string | undefined>): ApiConfig {
   const parsed = EnvironmentSchema.parse(values);
-  const corsOrigins = parsed.CORS_ORIGINS.split(",")
+  const corsOrigins = parsed.CORS_ORIGINS.split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
 
   if (corsOrigins.length === 0) {
-    throw new Error("CORS_ORIGINS must contain at least one origin.");
+    throw new Error('CORS_ORIGINS must contain at least one origin.');
   }
 
   return {
@@ -135,7 +136,7 @@ export function readApiConfig(values: Record<string, string | undefined>): ApiCo
       embeddingModel: parsed.RAG_EMBEDDING_MODEL,
       embeddingDimensions: parsed.RAG_EMBEDDING_DIMENSIONS,
       deepSeekApiKey: parsed.DEEPSEEK_API_KEY,
-      deepSeekBaseUrl: parsed.DEEPSEEK_BASE_URL.replace(/\/$/, ""),
+      deepSeekBaseUrl: parsed.DEEPSEEK_BASE_URL.replace(/\/$/, ''),
       deepSeekChatModel: parsed.DEEPSEEK_CHAT_MODEL,
       enableThinking: parsed.DEEPSEEK_ENABLE_THINKING,
       langGraphSchema: parsed.LANGGRAPH_SCHEMA,
@@ -157,11 +158,7 @@ export function readApiConfigFile(fileUrl: URL): ApiConfig {
   try {
     return readApiConfig(parse(readFileSync(fileUrl)));
   } catch (error) {
-    if (
-      error instanceof Error &&
-      "code" in error &&
-      error.code === "ENOENT"
-    ) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
       throw new Error(`Required API configuration file was not found: ${fileUrl.pathname}`, {
         cause: error,
       });

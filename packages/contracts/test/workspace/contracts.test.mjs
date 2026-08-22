@@ -48,10 +48,12 @@ describe('workspace contracts', () => {
     });
 
     assert.equal(audio.status.kind, 'failed');
-    assert.throws(() => AudioFileSummarySchema.parse({
-      ...audio,
-      status: { kind: 'analyzing', progress: 101 },
-    }));
+    assert.throws(() =>
+      AudioFileSummarySchema.parse({
+        ...audio,
+        status: { kind: 'analyzing', progress: 101 },
+      }),
+    );
   });
 
   it('validates data-source settings without accepting credentials', () => {
@@ -88,34 +90,42 @@ describe('workspace contracts', () => {
       title: '产品访谈分析',
       durationMs: 10_000,
       generatedAt: '2026-08-21T10:00:00.000Z',
-      scenes: [{
-        id: thirdId,
-        index: 1,
-        title: '开场',
-        startMs: 0,
-        segments: [{
-          id: firstId,
+      scenes: [
+        {
+          id: thirdId,
           index: 1,
-          speakerKey: 'host',
-          speakerLabel: '主持人',
-          emotion: '专注',
+          title: '开场',
           startMs: 0,
-          endMs: 1_000,
-          text: '你好。',
-          aiTag: null,
-        }],
-      }],
+          segments: [
+            {
+              id: firstId,
+              index: 1,
+              speakerKey: 'host',
+              speakerLabel: '主持人',
+              emotion: '专注',
+              startMs: 0,
+              endMs: 1_000,
+              text: '你好。',
+              aiTag: null,
+            },
+          ],
+        },
+      ],
       invalidSegments: [],
       summarySections: [],
     };
 
     assert.equal(AudioAnalysisDetailSchema.parse(detail).scenes.length, 1);
-    assert.throws(() => AudioAnalysisDetailSchema.parse({
-      ...detail,
-      scenes: [{
-        ...detail.scenes[0],
-        segments: [{ ...detail.scenes[0].segments[0], startMs: 1_000, endMs: 500 }],
-      }],
-    }));
+    assert.throws(() =>
+      AudioAnalysisDetailSchema.parse({
+        ...detail,
+        scenes: [
+          {
+            ...detail.scenes[0],
+            segments: [{ ...detail.scenes[0].segments[0], startMs: 1_000, endMs: 500 }],
+          },
+        ],
+      }),
+    );
   });
 });

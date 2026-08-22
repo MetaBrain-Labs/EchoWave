@@ -103,18 +103,16 @@ describe('AnalysisDetailScreen', () => {
       nativeEvent: { contentOffset: { x: 480, y: 0 } },
     });
 
-    expect(
-      screen.getByRole('tab', { name: '分析总结' }).props.accessibilityState,
-    ).toEqual({ selected: true });
+    expect(screen.getByRole('tab', { name: '分析总结' }).props.accessibilityState).toEqual({
+      selected: true,
+    });
     expect(screen.queryByLabelText('收起播放器')).toBeNull();
   });
 
   it('opens and closes the selected AI tag sheet', async () => {
     const screen = await renderAnalysis();
 
-    fireEvent.press(
-      screen.getByLabelText('查看 AI 标签：高频访谈记录场景'),
-    );
+    fireEvent.press(screen.getByLabelText('查看 AI 标签：高频访谈记录场景'));
 
     expect(screen.getByText('高频访谈记录场景')).toBeTruthy();
     expect(screen.getByText('隐藏无关片段')).toBeTruthy();
@@ -130,9 +128,7 @@ describe('AnalysisDetailScreen', () => {
     const segmentId = analysisFixture.scenes[0].segments[0].id;
     const rail = screen.getByTestId(`timeline-rail-${segmentId}`);
 
-    expect(
-      within(rail).getByLabelText('查看 AI 标签：高频访谈记录场景'),
-    ).toBeTruthy();
+    expect(within(rail).getByLabelText('查看 AI 标签：高频访谈记录场景')).toBeTruthy();
     expect(screen.getByTestId(`ai-tag-timeline-marker-${segmentId}`)).toBeTruthy();
   });
 
@@ -143,9 +139,7 @@ describe('AnalysisDetailScreen', () => {
     const unrelatedText =
       '最常见的是用户访谈和每周复盘。我会先完整录音，结束后再回听并整理重点，但在很长的录音里寻找关键内容会花不少时间。';
 
-    fireEvent.press(
-      screen.getByLabelText('查看 AI 标签：高频访谈记录场景'),
-    );
+    fireEvent.press(screen.getByLabelText('查看 AI 标签：高频访谈记录场景'));
 
     expect(StyleSheet.flatten(screen.getByText(selectedText).props.style)).toEqual(
       expect.objectContaining({ color: textColors.primary }),
@@ -163,48 +157,34 @@ describe('AnalysisDetailScreen', () => {
   it('keeps the hide preference across analysis records in the app session', async () => {
     const firstScreen = await renderAnalysis();
 
-    fireEvent.press(
-      firstScreen.getByLabelText('查看 AI 标签：高频访谈记录场景'),
-    );
+    fireEvent.press(firstScreen.getByLabelText('查看 AI 标签：高频访谈记录场景'));
     fireEvent.press(firstScreen.getByText('隐藏无关片段'));
     firstScreen.unmount();
 
     const secondScreen = await renderAnalysis('40000000-0000-4000-8000-000000000002');
-    fireEvent.press(
-      secondScreen.getByLabelText('查看 AI 标签：高频访谈记录场景'),
-    );
+    fireEvent.press(secondScreen.getByLabelText('查看 AI 标签：高频访谈记录场景'));
 
     expect(
-      secondScreen.getByRole('checkbox', { name: '隐藏无关片段' }).props
-        .accessibilityState,
+      secondScreen.getByRole('checkbox', { name: '隐藏无关片段' }).props.accessibilityState,
     ).toEqual({ checked: true });
   });
 
   it('keeps the fixed preference row outside the independently scrollable panel', async () => {
     const screen = await renderAnalysis();
 
-    fireEvent.press(
-      screen.getByLabelText('查看 AI 标签：高频访谈记录场景'),
-    );
+    fireEvent.press(screen.getByLabelText('查看 AI 标签：高频访谈记录场景'));
 
     expect(
-      within(screen.getByTestId('ai-tag-fixed-header')).getByText(
-        '隐藏无关片段',
-      ),
+      within(screen.getByTestId('ai-tag-fixed-header')).getByText('隐藏无关片段'),
     ).toBeTruthy();
     expect(
-      within(screen.getByTestId('ai-tag-scroll-content')).queryByText(
-        '隐藏无关片段',
-      ),
+      within(screen.getByTestId('ai-tag-scroll-content')).queryByText('隐藏无关片段'),
     ).toBeNull();
   });
 
   it('limits the analysis panel according to the audio player state', async () => {
     const screen = await renderAnalysis();
-    const openTag = () =>
-      fireEvent.press(
-        screen.getByLabelText('查看 AI 标签：高频访谈记录场景'),
-      );
+    const openTag = () => fireEvent.press(screen.getByLabelText('查看 AI 标签：高频访谈记录场景'));
 
     openTag();
     expect(StyleSheet.flatten(screen.getByTestId('ai-tag-sheet').props.style)).toEqual(
@@ -222,7 +202,9 @@ describe('AnalysisDetailScreen', () => {
 
   it('renders an actionable state for unknown detail ids', async () => {
     const onBack = jest.fn();
-    jest.mocked(workspaceApi.getAudioAnalysis).mockRejectedValueOnce(new Error('请求的数据不存在。'));
+    jest
+      .mocked(workspaceApi.getAudioAnalysis)
+      .mockRejectedValueOnce(new Error('请求的数据不存在。'));
     const screen = await renderAnalysis('missing', onBack);
 
     expect(screen.getByText('未找到分析详情')).toBeTruthy();

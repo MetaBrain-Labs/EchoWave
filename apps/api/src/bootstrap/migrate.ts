@@ -41,9 +41,7 @@ async function migrate() {
   `);
 
   const migrationUrl = new URL('../../migrations/', import.meta.url);
-  const migrations = (await readdir(migrationUrl))
-    .filter((name) => name.endsWith('.sql'))
-    .sort();
+  const migrations = (await readdir(migrationUrl)).filter((name) => name.endsWith('.sql')).sort();
 
   for (const name of migrations) {
     const alreadyApplied = await pool.query(

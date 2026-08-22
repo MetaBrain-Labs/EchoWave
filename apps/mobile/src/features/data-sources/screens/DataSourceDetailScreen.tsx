@@ -64,7 +64,15 @@ function showComingSoon(feature: string) {
   Alert.alert('功能建设中', `${feature}将在后续版本开放。`);
 }
 
-function Metric({ divider = false, label, value }: { divider?: boolean; label: string; value: string }) {
+function Metric({
+  divider = false,
+  label,
+  value,
+}: {
+  divider?: boolean;
+  label: string;
+  value: string;
+}) {
   return (
     <View style={[styles.metric, divider && styles.metricDivider]}>
       <Text style={styles.metricValue}>{value}</Text>
@@ -96,14 +104,22 @@ function AudioStatusView({ status }: { status: SourceAudioStatus }) {
     case 'upload-failed':
       return (
         <View accessibilityRole="alert" style={styles.inlineStatus}>
-          <Ionicons color={colors.ink} name="alert-circle-outline" size={typography.body.lineHeight} />
+          <Ionicons
+            color={colors.ink}
+            name="alert-circle-outline"
+            size={typography.body.lineHeight}
+          />
           <Text style={styles.failureStatusText}>上传失败</Text>
         </View>
       );
     case 'transcription-failed':
       return (
         <View accessibilityRole="alert" style={styles.inlineStatus}>
-          <Ionicons color={colors.ink} name="alert-circle-outline" size={typography.body.lineHeight} />
+          <Ionicons
+            color={colors.ink}
+            name="alert-circle-outline"
+            size={typography.body.lineHeight}
+          />
           <Text style={styles.failureStatusText}>转写失败</Text>
         </View>
       );
@@ -122,8 +138,12 @@ function AudioRow({ item }: { item: SourceAudioItem }) {
         <Ionicons color={colors.secondary} name="play" size={typography.heading1.lineHeight} />
       </Pressable>
       <View style={styles.audioMain}>
-        <Text numberOfLines={1} style={styles.audioTitle}>{item.title}</Text>
-        <Text style={styles.audioMeta}>{item.duration} · {item.createdAt}</Text>
+        <Text numberOfLines={1} style={styles.audioTitle}>
+          {item.title}
+        </Text>
+        <Text style={styles.audioMeta}>
+          {item.duration} · {item.createdAt}
+        </Text>
       </View>
       <AudioStatusView status={item.status} />
       <Pressable
@@ -154,7 +174,9 @@ function InfoRow({
         <Ionicons color={colors.secondary} name={icon} size={typography.description.lineHeight} />
         <Text style={styles.infoLabel}>{label}</Text>
       </View>
-      <Text numberOfLines={1} style={styles.infoValue}>{value}</Text>
+      <Text numberOfLines={1} style={styles.infoValue}>
+        {value}
+      </Text>
     </View>
   );
 }
@@ -186,20 +208,42 @@ function OverviewContent({ source }: { source: DataSourceDetailView }) {
       <View style={styles.infoSection}>
         <Text style={styles.sectionTitle}>音频分析</Text>
         <InfoRow icon="hardware-chip-outline" label="转写模型" value={source.analysisModel} />
-        <InfoRow icon="happy-outline" label="情绪分析" value={source.emotionAnalysis ? '已开启' : '未开启'} />
-        <InfoRow icon="people-outline" label="角色分离" value={source.roleSeparation ? '已开启' : '未开启'} />
-        <InfoRow icon="copy-outline" label="场景分离" value={source.sceneSeparation ? '已开启' : '未开启'} />
+        <InfoRow
+          icon="happy-outline"
+          label="情绪分析"
+          value={source.emotionAnalysis ? '已开启' : '未开启'}
+        />
+        <InfoRow
+          icon="people-outline"
+          label="角色分离"
+          value={source.roleSeparation ? '已开启' : '未开启'}
+        />
+        <InfoRow
+          icon="copy-outline"
+          label="场景分离"
+          value={source.sceneSeparation ? '已开启' : '未开启'}
+        />
       </View>
 
       <View style={styles.infoSection}>
         <Text style={styles.sectionTitle}>音频处理</Text>
-        <InfoRow icon="stats-chart-outline" label="转写方式" value={source.autoTranscribe ? '自动转写' : '手动转写'} />
-        <InfoRow icon="arrow-redo-outline" label="跳过无效音频" value={source.skipInvalidAudio ? '已开启' : '未开启'} />
+        <InfoRow
+          icon="stats-chart-outline"
+          label="转写方式"
+          value={source.autoTranscribe ? '自动转写' : '手动转写'}
+        />
+        <InfoRow
+          icon="arrow-redo-outline"
+          label="跳过无效音频"
+          value={source.skipInvalidAudio ? '已开启' : '未开启'}
+        />
       </View>
 
       <View style={styles.recentAudioSection}>
         <Text style={styles.sectionTitle}>近期音频</Text>
-        {source.audioItems.slice(0, 3).map((item) => <AudioRow item={item} key={item.id} />)}
+        {source.audioItems.slice(0, 3).map((item) => (
+          <AudioRow item={item} key={item.id} />
+        ))}
       </View>
     </View>
   );
@@ -207,11 +251,12 @@ function OverviewContent({ source }: { source: DataSourceDetailView }) {
 
 function UploadRecordRow({ record }: { record: UploadRecord }) {
   const failed = record.kind !== 'upload-success';
-  const title = record.kind === 'upload-success'
-    ? '上传成功'
-    : record.kind === 'upload-failed'
-      ? '上传失败'
-      : '转写失败';
+  const title =
+    record.kind === 'upload-success'
+      ? '上传成功'
+      : record.kind === 'upload-failed'
+        ? '上传失败'
+        : '转写失败';
   const actionLabel = record.kind === 'upload-failed' ? '重新上传' : '重新转写';
   return (
     <View style={styles.recordRow}>
@@ -225,7 +270,9 @@ function UploadRecordRow({ record }: { record: UploadRecord }) {
         />
       </View>
       <View style={[styles.recordContent, failed && styles.failedRecordContent]}>
-        <Text accessibilityRole={failed ? 'alert' : undefined} style={styles.recordTitle}>{title}</Text>
+        <Text accessibilityRole={failed ? 'alert' : undefined} style={styles.recordTitle}>
+          {title}
+        </Text>
         <Text style={styles.recordDescription}>{record.description}</Text>
         <Text style={styles.recordDescription}>{record.detail}</Text>
       </View>
@@ -258,7 +305,11 @@ function GroupCard({ group }: { group: LinkedDataSourceGroup }) {
     <View style={styles.groupCard}>
       <View style={styles.groupTitleRow}>
         <Text style={styles.groupTitle}>{group.name}</Text>
-        <Ionicons color={colors.secondary} name="swap-horizontal" size={typography.heading2.lineHeight} />
+        <Ionicons
+          color={colors.secondary}
+          name="swap-horizontal"
+          size={typography.heading2.lineHeight}
+        />
       </View>
       <View style={styles.groupMetrics}>
         <Metric label="分析数" value={`${group.analysisCount}`} />
@@ -301,21 +352,40 @@ function FixedActions({ activeTab }: { activeTab: DetailTab }) {
   if (activeTab === 'groups') {
     return (
       <View style={styles.fixedActions} testID="data-source-fixed-actions">
-        <ActionButton emphasized icon="add" label="关联新分组" onPress={() => showComingSoon('关联新分组')} />
+        <ActionButton
+          emphasized
+          icon="add"
+          label="关联新分组"
+          onPress={() => showComingSoon('关联新分组')}
+        />
       </View>
     );
   }
   if (activeTab === 'uploads') {
     return (
       <View style={styles.fixedActions} testID="data-source-fixed-actions">
-        <ActionButton emphasized icon="cloud-upload-outline" label="上传音频" onPress={() => showComingSoon('上传音频')} />
+        <ActionButton
+          emphasized
+          icon="cloud-upload-outline"
+          label="上传音频"
+          onPress={() => showComingSoon('上传音频')}
+        />
       </View>
     );
   }
   return (
     <View style={styles.fixedActions} testID="data-source-fixed-actions">
-      <ActionButton icon="create-outline" label="全部转写" onPress={() => showComingSoon('全部转写')} />
-      <ActionButton emphasized icon="cloud-upload-outline" label="上传音频" onPress={() => showComingSoon('上传音频')} />
+      <ActionButton
+        icon="create-outline"
+        label="全部转写"
+        onPress={() => showComingSoon('全部转写')}
+      />
+      <ActionButton
+        emphasized
+        icon="cloud-upload-outline"
+        label="上传音频"
+        onPress={() => showComingSoon('上传音频')}
+      />
     </View>
   );
 }
@@ -365,7 +435,11 @@ export function DataSourceDetailScreen({
     return (
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
         <PageHeader onBack={onBack} onMore={() => showComingSoon('更多操作')} title="数据源详情" />
-        <ActivityIndicator accessibilityLabel="正在加载数据源详情" color={colors.ink} style={styles.loading} />
+        <ActivityIndicator
+          accessibilityLabel="正在加载数据源详情"
+          color={colors.ink}
+          style={styles.loading}
+        />
       </SafeAreaView>
     );
   }
@@ -376,9 +450,17 @@ export function DataSourceDetailScreen({
         <PageHeader onBack={onBack} onMore={() => showComingSoon('更多操作')} title="数据源详情" />
         <View style={styles.emptyState}>
           <Ionicons color={colors.secondary} name="git-network-outline" size={40} />
-          <Text style={styles.emptyTitle}>{error.includes('不存在') ? '未找到数据源' : '数据源加载失败'}</Text>
-          <Text accessibilityRole="alert" style={styles.emptyDescription}>{error || '该数据源可能已移除，请返回数据源列表。'}</Text>
-          <Pressable accessibilityRole="button" onPress={() => void load()} style={styles.retryButton}>
+          <Text style={styles.emptyTitle}>
+            {error.includes('不存在') ? '未找到数据源' : '数据源加载失败'}
+          </Text>
+          <Text accessibilityRole="alert" style={styles.emptyDescription}>
+            {error || '该数据源可能已移除，请返回数据源列表。'}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => void load()}
+            style={styles.retryButton}
+          >
             <Text style={styles.retryText}>重新加载</Text>
           </Pressable>
         </View>
@@ -421,9 +503,13 @@ export function DataSourceDetailScreen({
           testID="data-source-overview-scroll"
         >
           <View style={styles.hero}>
-            <Text accessibilityRole="header" style={styles.heroTitle}>{source.name}</Text>
+            <Text accessibilityRole="header" style={styles.heroTitle}>
+              {source.name}
+            </Text>
             <Text style={styles.heroDescription}>{source.description}</Text>
-            <Text style={styles.heroMeta}>{source.connection}　接入 {source.linkedGroupCount} 个分组</Text>
+            <Text style={styles.heroMeta}>
+              {source.connection}　接入 {source.linkedGroupCount} 个分组
+            </Text>
           </View>
           {renderTabs()}
           <OverviewContent source={source} />
@@ -438,7 +524,9 @@ export function DataSourceDetailScreen({
         >
           {renderTabs()}
           <View style={styles.audioList}>
-            {source.audioItems.map((item) => <AudioRow item={item} key={item.id} />)}
+            {source.audioItems.map((item) => (
+              <AudioRow item={item} key={item.id} />
+            ))}
           </View>
         </ScrollView>
 
@@ -456,7 +544,9 @@ export function DataSourceDetailScreen({
                 <Text style={styles.recordDate}>{date}</Text>
                 {source.uploadRecords
                   .filter((record) => record.date === date)
-                  .map((record) => <UploadRecordRow key={record.id} record={record} />)}
+                  .map((record) => (
+                    <UploadRecordRow key={record.id} record={record} />
+                  ))}
               </View>
             ))}
           </View>
@@ -471,7 +561,9 @@ export function DataSourceDetailScreen({
         >
           {renderTabs()}
           <View style={styles.groupList}>
-            {source.linkedGroups.map((group) => <GroupCard group={group} key={group.id} />)}
+            {source.linkedGroups.map((group) => (
+              <GroupCard group={group} key={group.id} />
+            ))}
           </View>
         </ScrollView>
       </ScrollView>
@@ -611,7 +703,13 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sansBold,
     fontWeight: 'bold',
   },
-  moreButton: { alignItems: 'center', height: 44, justifyContent: 'center', marginLeft: spacing.sm, width: 28 },
+  moreButton: {
+    alignItems: 'center',
+    height: 44,
+    justifyContent: 'center',
+    marginLeft: spacing.sm,
+    width: 28,
+  },
   pressed: { backgroundColor: colors.divider, borderRadius: radii.default },
   recordsList: { paddingHorizontal: spacing.md },
   recordGroup: { paddingBottom: spacing.md, paddingTop: spacing.lg },

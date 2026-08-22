@@ -17,23 +17,27 @@ describe('KnowledgeRepository overview', () => {
     const pool = {
       query: async (sql, values) => {
         calls.push({ sql, values });
-        return { rows: [{
-          id: knowledgeId,
-          name: '产品知识库',
-          description: '',
-          updated_at: new Date('2026-08-21T10:00:00.000Z'),
-          storage_location: 'local',
-          indexing_mode: 'rag',
-          embedding_model: 'qwen/qwen3-embedding-8b',
-          reranker_model: null,
-          parsing_mode: 'automatic',
-          document_count: 4,
-          total_size_bytes: '4096',
-          parsed_document_count: 2,
-          pending_document_count: 2,
-          last_uploaded_at: new Date('2026-08-21T09:30:00.000Z'),
-          linked_group_count: 1,
-        }] };
+        return {
+          rows: [
+            {
+              id: knowledgeId,
+              name: '产品知识库',
+              description: '',
+              updated_at: new Date('2026-08-21T10:00:00.000Z'),
+              storage_location: 'local',
+              indexing_mode: 'rag',
+              embedding_model: 'qwen/qwen3-embedding-8b',
+              reranker_model: null,
+              parsing_mode: 'automatic',
+              document_count: 4,
+              total_size_bytes: '4096',
+              parsed_document_count: 2,
+              pending_document_count: 2,
+              last_uploaded_at: new Date('2026-08-21T09:30:00.000Z'),
+              linked_group_count: 1,
+            },
+          ],
+        };
       },
     };
     const repository = new KnowledgeRepository(pool, 'echowave', tenantId);

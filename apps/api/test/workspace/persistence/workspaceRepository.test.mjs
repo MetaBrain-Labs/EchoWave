@@ -23,33 +23,41 @@ describe('WorkspaceRepository group audio', () => {
       query: async (sql, values) => {
         calls.push({ sql, values });
         if (calls.length === 1) {
-          return { rows: [{
-            id: groupId,
-            name: '产品研究组',
-            updated_at: new Date('2026-08-21T10:00:00.000Z'),
-            analysis_count: 0,
-            audio_count: 1,
-            knowledge_count: 0,
-            source_count: 1,
-          }] };
+          return {
+            rows: [
+              {
+                id: groupId,
+                name: '产品研究组',
+                updated_at: new Date('2026-08-21T10:00:00.000Z'),
+                analysis_count: 0,
+                audio_count: 1,
+                knowledge_count: 0,
+                source_count: 1,
+              },
+            ],
+          };
         }
-        return { rows: [{
-          id: audioId,
-          data_source_id: null,
-          title: '待处理访谈',
-          duration_ms: 10_000,
-          created_at: new Date('2026-08-21T10:00:00.000Z'),
-          origin_group_id: null,
-          shared_from: null,
-          upload_status: 'ready',
-          upload_progress: 100,
-          analysis_status: 'failed',
-          analysis_progress: 0,
-          analysis_error_stage: 'transcription',
-          analysis_error_code: 'UNSUPPORTED_CODEC',
-          analysis_error_message: '音频编码不支持。',
-          analysis_error_retryable: false,
-        }] };
+        return {
+          rows: [
+            {
+              id: audioId,
+              data_source_id: null,
+              title: '待处理访谈',
+              duration_ms: 10_000,
+              created_at: new Date('2026-08-21T10:00:00.000Z'),
+              origin_group_id: null,
+              shared_from: null,
+              upload_status: 'ready',
+              upload_progress: 100,
+              analysis_status: 'failed',
+              analysis_progress: 0,
+              analysis_error_stage: 'transcription',
+              analysis_error_code: 'UNSUPPORTED_CODEC',
+              analysis_error_message: '音频编码不支持。',
+              analysis_error_retryable: false,
+            },
+          ],
+        };
       },
     };
     const repository = new WorkspaceRepository(pool, 'echowave', tenantId);
@@ -71,7 +79,11 @@ describe('WorkspaceRepository group lifecycle', () => {
     const pool = {
       query: async (sql, values) => {
         calls.push({ sql, values });
-        return { rows: [{ id: groupId, name: '客户研究组', updated_at: new Date('2026-08-21T10:00:00.000Z') }] };
+        return {
+          rows: [
+            { id: groupId, name: '客户研究组', updated_at: new Date('2026-08-21T10:00:00.000Z') },
+          ],
+        };
       },
     };
     const repository = new WorkspaceRepository(pool, 'echowave', tenantId);
@@ -79,7 +91,12 @@ describe('WorkspaceRepository group lifecycle', () => {
     const created = await repository.createGroup({ name: '客户研究组' });
 
     assert.equal(created.name, '客户研究组');
-    assert.deepEqual(created.metrics, { analysisCount: 0, audioCount: 0, knowledgeCount: 0, sourceCount: 0 });
+    assert.deepEqual(created.metrics, {
+      analysisCount: 0,
+      audioCount: 0,
+      knowledgeCount: 0,
+      sourceCount: 0,
+    });
     assert.match(calls[0].sql, /INSERT INTO/);
     assert.deepEqual(calls[0].values, [tenantId, '客户研究组']);
   });
@@ -110,27 +127,36 @@ describe('WorkspaceRepository knowledge group links', () => {
     const client = {
       query: async (sql, values) => {
         clientCalls.push({ sql, values });
-        if (/FROM [^\n]+\."knowledge_bases"/.test(sql)) return { rowCount: 1, rows: [{ id: knowledgeId }] };
+        if (/FROM [^\n]+\."knowledge_bases"/.test(sql))
+          return { rowCount: 1, rows: [{ id: knowledgeId }] };
         if (/FROM .*groups/.test(sql)) return { rowCount: 1, rows: [{ id: groupId }] };
         return { rowCount: 1, rows: [] };
       },
-      release: () => { client.released = true; },
+      release: () => {
+        client.released = true;
+      },
       released: false,
     };
     const pool = {
       connect: async () => client,
       query: async (sql, values) => {
         poolCalls.push({ sql, values });
-        if (/FROM [^\n]+\."knowledge_bases"/.test(sql)) return { rowCount: 1, rows: [{ id: knowledgeId }] };
-        if (/WITH/.test(sql)) return { rows: [{
-          id: groupId,
-          name: '产品研究组',
-          updated_at: new Date('2026-08-21T10:00:00.000Z'),
-          analysis_count: 1,
-          audio_count: 2,
-          knowledge_count: 1,
-          source_count: 1,
-        }] };
+        if (/FROM [^\n]+\."knowledge_bases"/.test(sql))
+          return { rowCount: 1, rows: [{ id: knowledgeId }] };
+        if (/WITH/.test(sql))
+          return {
+            rows: [
+              {
+                id: groupId,
+                name: '产品研究组',
+                updated_at: new Date('2026-08-21T10:00:00.000Z'),
+                analysis_count: 1,
+                audio_count: 2,
+                knowledge_count: 1,
+                source_count: 1,
+              },
+            ],
+          };
         return { rows: [{ group_id: groupId }] };
       },
     };
@@ -150,19 +176,27 @@ describe('WorkspaceRepository knowledge group links', () => {
     const client = {
       query: async (sql) => {
         calls.push(sql);
-        if (/FROM [^\n]+\."knowledge_bases"/.test(sql)) return { rowCount: 1, rows: [{ id: knowledgeId }] };
+        if (/FROM [^\n]+\."knowledge_bases"/.test(sql))
+          return { rowCount: 1, rows: [{ id: knowledgeId }] };
         if (/FROM .*groups/.test(sql)) return { rowCount: 0, rows: [] };
         return { rows: [] };
       },
       release: () => {},
     };
-    const repository = new WorkspaceRepository({ connect: async () => client }, 'echowave', tenantId);
+    const repository = new WorkspaceRepository(
+      { connect: async () => client },
+      'echowave',
+      tenantId,
+    );
 
     await assert.rejects(
       () => repository.linkKnowledgeBaseGroups(knowledgeId, { groupIds: [groupId] }),
       /不存在或已归档/,
     );
     assert.equal(calls.at(-1), 'ROLLBACK');
-    assert.equal(calls.some((sql) => /INSERT INTO/.test(sql)), false);
+    assert.equal(
+      calls.some((sql) => /INSERT INTO/.test(sql)),
+      false,
+    );
   });
 });

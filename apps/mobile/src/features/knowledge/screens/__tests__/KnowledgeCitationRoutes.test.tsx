@@ -8,11 +8,7 @@
  * - 保持普通文档导航不受聊天来源逻辑影响。
  */
 import { fireEvent, render } from '@testing-library/react-native';
-import {
-  Pressable as MockPressable,
-  Text as MockText,
-  View as MockView,
-} from 'react-native';
+import { Pressable as MockPressable, Text as MockText, View as MockView } from 'react-native';
 
 import KnowledgeQueryRoute from '../../../../app/knowledge/[knowledgeId]/ask';
 import DocumentDetailRoute from '../../../../app/knowledge/[knowledgeId]/files/[fileId]';
@@ -37,32 +33,58 @@ jest.mock('@/shared/navigation/NavigationLoadingProvider', () => ({
 }));
 jest.mock('@/features/knowledge/screens/KnowledgeQueryScreen', () => {
   return {
-    KnowledgeQueryScreen: ({ onOpenCitation }: { onOpenCitation: (documentId: string, chunkId: string) => void }) => (
-      <MockPressable onPress={() => onOpenCitation('document-id', 'chunk-id')}><MockText>打开引用</MockText></MockPressable>
+    KnowledgeQueryScreen: ({
+      onOpenCitation,
+    }: {
+      onOpenCitation: (documentId: string, chunkId: string) => void;
+    }) => (
+      <MockPressable onPress={() => onOpenCitation('document-id', 'chunk-id')}>
+        <MockText>打开引用</MockText>
+      </MockPressable>
     ),
   };
 });
 jest.mock('@/features/knowledge/screens/BlockDetailScreen', () => {
   return {
-    BlockDetailScreen: ({ onBack, onLocateOriginal, onNavigateBlock }: {
+    BlockDetailScreen: ({
+      onBack,
+      onLocateOriginal,
+      onNavigateBlock,
+    }: {
       onBack: () => void;
       onLocateOriginal: (id: string) => void;
       onNavigateBlock: (id: string) => void;
     }) => (
       <MockView>
-        <MockPressable onPress={onBack}><MockText>引用返回</MockText></MockPressable>
-        <MockPressable onPress={() => onNavigateBlock('next-chunk')}><MockText>相邻块</MockText></MockPressable>
-        <MockPressable onPress={() => onLocateOriginal('chunk-id')}><MockText>定位原文</MockText></MockPressable>
+        <MockPressable onPress={onBack}>
+          <MockText>引用返回</MockText>
+        </MockPressable>
+        <MockPressable onPress={() => onNavigateBlock('next-chunk')}>
+          <MockText>相邻块</MockText>
+        </MockPressable>
+        <MockPressable onPress={() => onLocateOriginal('chunk-id')}>
+          <MockText>定位原文</MockText>
+        </MockPressable>
       </MockView>
     ),
   };
 });
 jest.mock('@/features/knowledge/screens/DocumentDetailScreen', () => {
   return {
-    DocumentDetailScreen: ({ onBack, onOpenBlock }: { onBack: () => void; onOpenBlock: (id: string) => void }) => (
+    DocumentDetailScreen: ({
+      onBack,
+      onOpenBlock,
+    }: {
+      onBack: () => void;
+      onOpenBlock: (id: string) => void;
+    }) => (
       <MockView>
-        <MockPressable onPress={onBack}><MockText>原文返回</MockText></MockPressable>
-        <MockPressable onPress={() => onOpenBlock('another-chunk')}><MockText>原文打开块</MockText></MockPressable>
+        <MockPressable onPress={onBack}>
+          <MockText>原文返回</MockText>
+        </MockPressable>
+        <MockPressable onPress={() => onOpenBlock('another-chunk')}>
+          <MockText>原文打开块</MockText>
+        </MockPressable>
       </MockView>
     ),
   };
@@ -105,14 +127,18 @@ describe('knowledge citation routes', () => {
     expect(mockRouter.replace).not.toHaveBeenCalled();
 
     fireEvent.press(screen.getByText('相邻块'));
-    expect(mockRouter.replace).toHaveBeenCalledWith(expect.objectContaining({
-      params: expect.objectContaining({ returnTo: 'knowledge-query', blockId: 'next-chunk' }),
-    }));
+    expect(mockRouter.replace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        params: expect.objectContaining({ returnTo: 'knowledge-query', blockId: 'next-chunk' }),
+      }),
+    );
 
     fireEvent.press(screen.getByText('定位原文'));
-    expect(mockRouter.replace).toHaveBeenCalledWith(expect.objectContaining({
-      params: expect.objectContaining({ returnTo: 'knowledge-query', tab: 'original' }),
-    }));
+    expect(mockRouter.replace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        params: expect.objectContaining({ returnTo: 'knowledge-query', tab: 'original' }),
+      }),
+    );
   });
 
   it('returns from original content to chat and keeps the marker when opening another block', () => {
@@ -129,8 +155,10 @@ describe('knowledge citation routes', () => {
     expect(mockRouter.back).toHaveBeenCalledTimes(1);
 
     fireEvent.press(screen.getByText('原文打开块'));
-    expect(mockRouter.push).toHaveBeenCalledWith(expect.objectContaining({
-      params: expect.objectContaining({ returnTo: 'knowledge-query', blockId: 'another-chunk' }),
-    }));
+    expect(mockRouter.push).toHaveBeenCalledWith(
+      expect.objectContaining({
+        params: expect.objectContaining({ returnTo: 'knowledge-query', blockId: 'another-chunk' }),
+      }),
+    );
   });
 });

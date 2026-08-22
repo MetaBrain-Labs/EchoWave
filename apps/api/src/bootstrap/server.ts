@@ -27,12 +27,15 @@ const app = createApp(config, {
 });
 ragRuntime.worker.start();
 
-const server = serve({
-  fetch: app.fetch,
-  port: config.port,
-}, () => {
-  console.log(`EchoWave API listening on http://localhost:${config.port}`);
-});
+const server = serve(
+  {
+    fetch: app.fetch,
+    port: config.port,
+  },
+  () => {
+    console.log(`EchoWave API listening on http://localhost:${config.port}`);
+  },
+);
 
 server.once('error', (error) => {
   console.error(formatServerStartError(error, config.port));

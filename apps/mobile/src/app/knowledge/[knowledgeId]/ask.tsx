@@ -23,16 +23,20 @@ export default function KnowledgeQueryRoute() {
   return (
     <KnowledgeQueryScreen
       knowledgeId={knowledgeId}
-      onBack={() => router.replace({ pathname: '/knowledge/[knowledgeId]', params: { knowledgeId } })}
-      onOpenCitation={(documentId, chunkId) => router.push({
-        pathname: '/knowledge/[knowledgeId]/files/[fileId]/blocks/[blockId]',
-        params: {
-          knowledgeId,
-          fileId: documentId,
-          blockId: chunkId,
-          returnTo: 'knowledge-query',
-        },
-      })}
+      onBack={() =>
+        router.replace({ pathname: '/knowledge/[knowledgeId]', params: { knowledgeId } })
+      }
+      onOpenCitation={(documentId, chunkId) =>
+        router.push({
+          pathname: '/knowledge/[knowledgeId]/files/[fileId]/blocks/[blockId]',
+          params: {
+            knowledgeId,
+            fileId: documentId,
+            blockId: chunkId,
+            returnTo: 'knowledge-query',
+          },
+        })
+      }
     />
   );
 }

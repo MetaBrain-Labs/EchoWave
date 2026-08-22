@@ -38,4 +38,3 @@ export async function inspectOfficeArchive(buffer: Buffer, requiredEntry: string
     }
   }
 }
-

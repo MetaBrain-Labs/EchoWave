@@ -61,12 +61,16 @@ export function createApp(
   );
 
   app.get('/api/hello', (context) =>
-    context.json(HelloResponseSchema.parse({ ok: true, service: 'echowave-api', message: 'HelloWorld' })),
+    context.json(
+      HelloResponseSchema.parse({ ok: true, service: 'echowave-api', message: 'HelloWorld' }),
+    ),
   );
 
   const service = dependencies.knowledgeService;
   if (service) {
-    app.get('/api/knowledge-bases', async (context) => context.json(await service.listKnowledgeBases()));
+    app.get('/api/knowledge-bases', async (context) =>
+      context.json(await service.listKnowledgeBases()),
+    );
     app.post('/api/knowledge-bases', async (context) => {
       const input = KnowledgeBaseCreateRequestSchema.parse(await context.req.json());
       return context.json(await service.createKnowledgeBase(input), 201);
@@ -76,7 +80,9 @@ export function createApp(
     );
     app.patch('/api/knowledge-bases/:knowledgeBaseId', async (context) => {
       const input = KnowledgeBaseUpdateRequestSchema.parse(await context.req.json());
-      return context.json(await service.updateKnowledgeBase(id(context.req.param('knowledgeBaseId')), input));
+      return context.json(
+        await service.updateKnowledgeBase(id(context.req.param('knowledgeBaseId')), input),
+      );
     });
     app.delete('/api/knowledge-bases/:knowledgeBaseId', async (context) => {
       await service.deleteKnowledgeBase(id(context.req.param('knowledgeBaseId')));
@@ -93,37 +99,55 @@ export function createApp(
       }
       const form = await context.req.formData();
       const file = form.get('file');
-      if (!(file instanceof File)) return context.json(errorBody('BAD_REQUEST', '缺少文件字段 file。'), 400);
-      return context.json(await service.uploadDocument(id(context.req.param('knowledgeBaseId')), file), 202);
+      if (!(file instanceof File))
+        return context.json(errorBody('BAD_REQUEST', '缺少文件字段 file。'), 400);
+      return context.json(
+        await service.uploadDocument(id(context.req.param('knowledgeBaseId')), file),
+        202,
+      );
     });
     app.get('/api/knowledge-bases/:knowledgeBaseId/documents/:documentId', async (context) =>
-      context.json(await service.getDocument(
-        id(context.req.param('knowledgeBaseId')),
-        id(context.req.param('documentId')),
-      )),
+      context.json(
+        await service.getDocument(
+          id(context.req.param('knowledgeBaseId')),
+          id(context.req.param('documentId')),
+        ),
+      ),
     );
     app.delete('/api/knowledge-bases/:knowledgeBaseId/documents/:documentId', async (context) => {
-      await service.deleteDocument(id(context.req.param('knowledgeBaseId')), id(context.req.param('documentId')));
+      await service.deleteDocument(
+        id(context.req.param('knowledgeBaseId')),
+        id(context.req.param('documentId')),
+      );
       return context.body(null, 204);
     });
-    app.post('/api/knowledge-bases/:knowledgeBaseId/documents/:documentId/retry', async (context) => {
-      const knowledgeBaseId = id(context.req.param('knowledgeBaseId'));
-      const documentId = id(context.req.param('documentId'));
-      await service.retryDocument(knowledgeBaseId, documentId);
-      return context.json(await service.getDocument(knowledgeBaseId, documentId), 202);
-    });
-    app.get('/api/knowledge-bases/:knowledgeBaseId/documents/:documentId/chunks', async (context) =>
-      context.json(await service.listChunks(
-        id(context.req.param('knowledgeBaseId')),
-        id(context.req.param('documentId')),
-      )),
+    app.post(
+      '/api/knowledge-bases/:knowledgeBaseId/documents/:documentId/retry',
+      async (context) => {
+        const knowledgeBaseId = id(context.req.param('knowledgeBaseId'));
+        const documentId = id(context.req.param('documentId'));
+        await service.retryDocument(knowledgeBaseId, documentId);
+        return context.json(await service.getDocument(knowledgeBaseId, documentId), 202);
+      },
     );
-    app.get('/api/knowledge-bases/:knowledgeBaseId/documents/:documentId/chunks/:chunkId', async (context) =>
-      context.json(await service.getChunk(
-        id(context.req.param('knowledgeBaseId')),
-        id(context.req.param('documentId')),
-        id(context.req.param('chunkId')),
-      )),
+    app.get('/api/knowledge-bases/:knowledgeBaseId/documents/:documentId/chunks', async (context) =>
+      context.json(
+        await service.listChunks(
+          id(context.req.param('knowledgeBaseId')),
+          id(context.req.param('documentId')),
+        ),
+      ),
+    );
+    app.get(
+      '/api/knowledge-bases/:knowledgeBaseId/documents/:documentId/chunks/:chunkId',
+      async (context) =>
+        context.json(
+          await service.getChunk(
+            id(context.req.param('knowledgeBaseId')),
+            id(context.req.param('documentId')),
+            id(context.req.param('chunkId')),
+          ),
+        ),
     );
     app.get('/api/knowledge-bases/:knowledgeBaseId/query-history', async (context) =>
       context.json(await service.listQueryHistory(id(context.req.param('knowledgeBaseId')))),
@@ -137,14 +161,15 @@ export function createApp(
   const workspace = dependencies.workspaceService;
   if (workspace) {
     app.get('/api/knowledge-bases/:knowledgeBaseId/groups', async (context) =>
-      context.json(await workspace.listKnowledgeBaseGroups(id(context.req.param('knowledgeBaseId')))),
+      context.json(
+        await workspace.listKnowledgeBaseGroups(id(context.req.param('knowledgeBaseId'))),
+      ),
     );
     app.post('/api/knowledge-bases/:knowledgeBaseId/groups', async (context) => {
       const input = KnowledgeBaseGroupLinkRequestSchema.parse(await context.req.json());
-      return context.json(await workspace.linkKnowledgeBaseGroups(
-        id(context.req.param('knowledgeBaseId')),
-        input,
-      ));
+      return context.json(
+        await workspace.linkKnowledgeBaseGroups(id(context.req.param('knowledgeBaseId')), input),
+      );
     });
     app.get('/api/groups', async (context) => context.json(await workspace.listGroups()));
     app.post('/api/groups', async (context) => {
@@ -167,7 +192,9 @@ export function createApp(
     app.get('/api/groups/:groupId/data-sources', async (context) =>
       context.json(await workspace.listGroupDataSources(id(context.req.param('groupId')))),
     );
-    app.get('/api/data-sources', async (context) => context.json(await workspace.listDataSources()));
+    app.get('/api/data-sources', async (context) =>
+      context.json(await workspace.listDataSources()),
+    );
     app.get('/api/data-sources/:dataSourceId', async (context) =>
       context.json(await workspace.getDataSource(id(context.req.param('dataSourceId')))),
     );
@@ -175,7 +202,9 @@ export function createApp(
       context.json(await workspace.listDataSourceAudioFiles(id(context.req.param('dataSourceId')))),
     );
     app.get('/api/data-sources/:dataSourceId/ingestion-records', async (context) =>
-      context.json(await workspace.listDataSourceIngestionRecords(id(context.req.param('dataSourceId')))),
+      context.json(
+        await workspace.listDataSourceIngestionRecords(id(context.req.param('dataSourceId'))),
+      ),
     );
     app.get('/api/data-sources/:dataSourceId/groups', async (context) =>
       context.json(await workspace.listDataSourceGroups(id(context.req.param('dataSourceId')))),
@@ -192,7 +221,10 @@ export function createApp(
     let code: ApiErrorCode = 'INTERNAL_ERROR';
     let message = '服务暂时无法完成请求。';
     let retryable = false;
-    if (error instanceof ZodError || (error instanceof SyntaxError && error.message.includes('JSON'))) {
+    if (
+      error instanceof ZodError ||
+      (error instanceof SyntaxError && error.message.includes('JSON'))
+    ) {
       status = 400;
       code = 'BAD_REQUEST';
       message = '请求参数无效。';

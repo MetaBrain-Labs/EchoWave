@@ -29,18 +29,37 @@ import { DefaultWorkspaceService } from '../workspace/service.ts';
 export function createRagRuntime(config: ApiConfig) {
   const executionReporter = createAiExecutionReporter(config.aiExecutionReports);
   const pool = createDatabasePool(config.database);
-  const knowledgeRepository = new KnowledgeRepository(pool, config.database.schema, config.rag.tenantId);
-  const ingestionRepository = new IngestionRepository(pool, config.database.schema, config.rag.tenantId);
-  const conversationRepository = new ConversationRepository(pool, config.database.schema, config.rag.tenantId);
-  const workspaceRepository = new WorkspaceRepository(pool, config.database.schema, config.rag.tenantId);
+  const knowledgeRepository = new KnowledgeRepository(
+    pool,
+    config.database.schema,
+    config.rag.tenantId,
+  );
+  const ingestionRepository = new IngestionRepository(
+    pool,
+    config.database.schema,
+    config.rag.tenantId,
+  );
+  const conversationRepository = new ConversationRepository(
+    pool,
+    config.database.schema,
+    config.rag.tenantId,
+  );
+  const workspaceRepository = new WorkspaceRepository(
+    pool,
+    config.database.schema,
+    config.rag.tenantId,
+  );
   const embeddings = new OpenRouterEmbeddings({
     apiKey: config.rag.openRouterApiKey,
     model: config.rag.embeddingModel,
     dimensions: config.rag.embeddingDimensions,
   });
-  const checkpointer = PostgresSaver.fromConnString(createPostgresConnectionString(config.database), {
-    schema: config.rag.langGraphSchema,
-  });
+  const checkpointer = PostgresSaver.fromConnString(
+    createPostgresConnectionString(config.database),
+    {
+      schema: config.rag.langGraphSchema,
+    },
+  );
   const queryAgent = new DeepSeekQueryAgent({ ragConfig: config.rag, checkpointer });
   const answers = createKnowledgeAnswerModule({
     knowledgeRepository,

@@ -13,7 +13,15 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { DataSourceSummary } from '@echowave/contracts';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -30,13 +38,7 @@ function showComingSoon(feature: string) {
   Alert.alert('功能建设中', `${feature}将在后续版本开放。`);
 }
 
-function DataSourceCard({
-  onOpen,
-  source,
-}: {
-  onOpen: () => void;
-  source: DataSourceSummary;
-}) {
+function DataSourceCard({ onOpen, source }: { onOpen: () => void; source: DataSourceSummary }) {
   return (
     <Pressable
       accessibilityHint="打开该数据源的详情"
@@ -56,7 +58,10 @@ function DataSourceCard({
             {source.name}
           </Text>
         </View>
-        <View accessibilityLabel={source.location === 'local' ? '本地来源' : '云端来源'} style={styles.locationIcon}>
+        <View
+          accessibilityLabel={source.location === 'local' ? '本地来源' : '云端来源'}
+          style={styles.locationIcon}
+        >
           <Ionicons
             color={colors.ink}
             name={source.location === 'local' ? 'folder-outline' : 'cloud-outline'}
@@ -71,7 +76,8 @@ function DataSourceCard({
         接入 {source.linkedGroupCount} 个分组 · {source.connectionLabel}
       </Text>
       <Text style={styles.uploadedAt}>
-        最近上传　{source.lastUploadedAt ? new Date(source.lastUploadedAt).toLocaleString() : '暂无'}
+        最近上传　
+        {source.lastUploadedAt ? new Date(source.lastUploadedAt).toLocaleString() : '暂无'}
       </Text>
     </Pressable>
   );
@@ -135,10 +141,14 @@ export function DataSourceListScreen({
           </View>
         </View>
         <View style={styles.list}>
-          {loading ? <ActivityIndicator accessibilityLabel="正在加载数据源" color={colors.ink} /> : null}
+          {loading ? (
+            <ActivityIndicator accessibilityLabel="正在加载数据源" color={colors.ink} />
+          ) : null}
           {error ? (
             <View style={styles.errorCard}>
-              <Text accessibilityRole="alert" style={styles.description}>{error}</Text>
+              <Text accessibilityRole="alert" style={styles.description}>
+                {error}
+              </Text>
               <Pressable accessibilityRole="button" onPress={() => void load()}>
                 <Text style={styles.retryText}>重新加载</Text>
               </Pressable>
@@ -147,13 +157,15 @@ export function DataSourceListScreen({
           {!loading && !error && dataSources.length === 0 ? (
             <Text style={styles.description}>暂无数据源。</Text>
           ) : null}
-          {!loading && !error ? dataSources.map((source) => (
-            <DataSourceCard
-              key={source.id}
-              onOpen={() => onOpenSource(source.id)}
-              source={source}
-            />
-          )) : null}
+          {!loading && !error
+            ? dataSources.map((source) => (
+                <DataSourceCard
+                  key={source.id}
+                  onOpen={() => onOpenSource(source.id)}
+                  source={source}
+                />
+              ))
+            : null}
         </View>
       </ScrollView>
     </SafeAreaView>

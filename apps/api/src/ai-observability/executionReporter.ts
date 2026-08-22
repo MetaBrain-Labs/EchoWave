@@ -267,12 +267,9 @@ class MarkdownExecutionRecorder implements AiExecutionRecorder {
       renderJsonSection('Tool Calls', this.toolCalls),
     ];
 
-    if (this.config.includeContext)
-      sections.push(renderJsonSection('Context', this.contexts));
-    if (this.config.includeReasoning)
-      sections.push(renderJsonSection('Reasoning', this.reasoning));
-    if (this.config.includeOutput)
-      sections.push(renderJsonSection('Output', this.outputs));
+    if (this.config.includeContext) sections.push(renderJsonSection('Context', this.contexts));
+    if (this.config.includeReasoning) sections.push(renderJsonSection('Reasoning', this.reasoning));
+    if (this.config.includeOutput) sections.push(renderJsonSection('Output', this.outputs));
     if (result.error !== undefined)
       sections.push(renderJsonSection('Error', normalizeError(result.error)));
 
@@ -290,9 +287,10 @@ function inline(value: unknown): string {
 
 function renderJsonSection(title: string, value: unknown): string {
   const serialized = safeSerialize(value);
-  const truncated = serialized.length > MAX_SECTION_CHARACTERS
-    ? `${serialized.slice(0, MAX_SECTION_CHARACTERS)}\n... [truncated]`
-    : serialized;
+  const truncated =
+    serialized.length > MAX_SECTION_CHARACTERS
+      ? `${serialized.slice(0, MAX_SECTION_CHARACTERS)}\n... [truncated]`
+      : serialized;
   const fence = '`'.repeat(Math.max(3, longestBacktickRun(truncated) + 1));
   return `## ${title}\n\n${fence}json\n${truncated}\n${fence}\n`;
 }
@@ -324,9 +322,7 @@ function normalizeValue(value: unknown, ancestors: Set<object>): unknown {
     ancestors.add(value);
     const normalized: Record<string, unknown> = {};
     for (const [key, item] of Object.entries(value)) {
-      normalized[key] = isSensitiveKey(key)
-        ? '[REDACTED]'
-        : normalizeValue(item, ancestors);
+      normalized[key] = isSensitiveKey(key) ? '[REDACTED]' : normalizeValue(item, ancestors);
     }
     ancestors.delete(value);
     return normalized;
@@ -354,10 +350,7 @@ function isSensitiveKey(key: string): boolean {
 function redactString(value: string): string {
   let redacted = value.replace(/(Bearer\s+)[^\s"']+/gi, '$1[REDACTED]');
   if (redacted.includes('://')) {
-    redacted = redacted.replace(
-      /([a-z][a-z0-9+.-]*:\/\/[^:\s/]+:)[^@\s/]+@/gi,
-      '$1[REDACTED]@',
-    );
+    redacted = redacted.replace(/([a-z][a-z0-9+.-]*:\/\/[^:\s/]+:)[^@\s/]+@/gi, '$1[REDACTED]@');
   }
   return redacted;
 }

@@ -74,11 +74,16 @@ export function formatDuration(durationMs: number) {
 
 function sourceAudioStatus(audio: AudioFileSummary): SourceAudioStatus {
   switch (audio.status.kind) {
-    case 'ready': return { kind: 'complete' };
-    case 'uploading': return { kind: 'uploading' };
-    case 'waiting': return { kind: 'waiting' };
-    case 'transcribing': return { kind: 'transcribing', progress: audio.status.progress };
-    case 'analyzing': return { kind: 'transcribing', progress: audio.status.progress };
+    case 'ready':
+      return { kind: 'complete' };
+    case 'uploading':
+      return { kind: 'uploading' };
+    case 'waiting':
+      return { kind: 'waiting' };
+    case 'transcribing':
+      return { kind: 'transcribing', progress: audio.status.progress };
+    case 'analyzing':
+      return { kind: 'transcribing', progress: audio.status.progress };
     case 'failed':
       return audio.status.stage === 'upload'
         ? { kind: 'upload-failed' }
@@ -126,7 +131,11 @@ export function toDataSourceDetailView(
         description: failed
           ? (record.errorMessage ?? '处理失败')
           : `收到 ${record.audioCount} 条音频，共 ${formatDuration(record.totalDurationMs)}`,
-        detail: failed ? (record.retryable ? '可以重试' : '请检查音频或来源配置') : '已按数据源设置继续处理',
+        detail: failed
+          ? record.retryable
+            ? '可以重试'
+            : '请检查音频或来源配置'
+          : '已按数据源设置继续处理',
       };
     }),
     linkedGroups: groups,

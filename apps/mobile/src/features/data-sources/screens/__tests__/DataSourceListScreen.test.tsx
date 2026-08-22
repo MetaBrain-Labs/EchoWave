@@ -65,7 +65,8 @@ describe('DataSourceListScreen', () => {
   });
 
   it('shows an API failure and reloads the list on request', async () => {
-    jest.mocked(workspaceApi.listDataSources)
+    jest
+      .mocked(workspaceApi.listDataSources)
       .mockRejectedValueOnce(new Error('数据源服务暂时不可用。'))
       .mockResolvedValueOnce({ items: sourceFixtures });
     const screen = await renderList();

@@ -59,7 +59,9 @@ describe('KnowledgeDetailScreen', () => {
   it('opens on overview with server statistics, settings, and recent documents', async () => {
     const screen = await renderDetail();
     const overview = within(screen.getByTestId('knowledge-overview-scroll'));
-    expect(overview.getByRole('tab', { name: '概览' }).props.accessibilityState).toEqual({ selected: true });
+    expect(overview.getByRole('tab', { name: '概览' }).props.accessibilityState).toEqual({
+      selected: true,
+    });
     expect(screen.getByText('1.0 KB')).toBeTruthy();
     expect(screen.getByText('检索增强（RAG）')).toBeTruthy();
     expect(screen.getByText('qwen/qwen3-embedding-8b')).toBeTruthy();
@@ -70,7 +72,9 @@ describe('KnowledgeDetailScreen', () => {
   it('filters files and opens ready content', async () => {
     const onOpenDocument = jest.fn();
     const screen = await renderDetail({ onOpenDocument });
-    fireEvent.press(within(screen.getByTestId('knowledge-overview-scroll')).getByRole('tab', { name: '库文件' }));
+    fireEvent.press(
+      within(screen.getByTestId('knowledge-overview-scroll')).getByRole('tab', { name: '库文件' }),
+    );
     const files = within(screen.getByTestId('knowledge-files-scroll'));
     fireEvent.changeText(files.getByLabelText('搜索文档...'), '执行计划');
     fireEvent.press(files.getByLabelText('打开文件：用户研究执行计划'));
@@ -80,7 +84,9 @@ describe('KnowledgeDetailScreen', () => {
   it('opens the grounded query page from the files action bar', async () => {
     const onAsk = jest.fn();
     const screen = await renderDetail({ onAsk });
-    fireEvent.press(within(screen.getByTestId('knowledge-overview-scroll')).getByRole('tab', { name: '库文件' }));
+    fireEvent.press(
+      within(screen.getByTestId('knowledge-overview-scroll')).getByRole('tab', { name: '库文件' }),
+    );
     fireEvent.press(screen.getByText('问知识库'));
     expect(onAsk).toHaveBeenCalled();
   });
@@ -88,7 +94,11 @@ describe('KnowledgeDetailScreen', () => {
   it('keeps linked groups disabled and batches new associations', async () => {
     jest.mocked(listKnowledgeBaseGroups).mockResolvedValue({ items: [groupFixture] });
     const screen = await renderDetail();
-    fireEvent.press(within(screen.getByTestId('knowledge-overview-scroll')).getByRole('tab', { name: '关联分组' }));
+    fireEvent.press(
+      within(screen.getByTestId('knowledge-overview-scroll')).getByRole('tab', {
+        name: '关联分组',
+      }),
+    );
     fireEvent.press(screen.getByText('关联新分组'));
 
     const linked = await screen.findByLabelText(`已关联分组：${groupFixture.name}`);
@@ -96,7 +106,11 @@ describe('KnowledgeDetailScreen', () => {
     fireEvent.press(screen.getByLabelText(`选择分组：${secondGroup.name}`));
     fireEvent.press(screen.getByLabelText('确认关联所选分组'));
 
-    await waitFor(() => expect(linkKnowledgeBaseGroups).toHaveBeenCalledWith(knowledge.id, { groupIds: [secondGroup.id] }));
+    await waitFor(() =>
+      expect(linkKnowledgeBaseGroups).toHaveBeenCalledWith(knowledge.id, {
+        groupIds: [secondGroup.id],
+      }),
+    );
     await waitFor(() => expect(screen.queryByLabelText('关闭分组选择抽屉')).toBeNull());
   });
 
@@ -104,7 +118,11 @@ describe('KnowledgeDetailScreen', () => {
     jest.mocked(listKnowledgeBaseGroups).mockResolvedValue({ items: [groupFixture] });
     const onSwitchGroup = jest.fn();
     const screen = await renderDetail({ onSwitchGroup });
-    fireEvent.press(within(screen.getByTestId('knowledge-overview-scroll')).getByRole('tab', { name: '关联分组' }));
+    fireEvent.press(
+      within(screen.getByTestId('knowledge-overview-scroll')).getByRole('tab', {
+        name: '关联分组',
+      }),
+    );
     fireEvent.press(screen.getByLabelText(`切换至分组：${groupFixture.name}`));
     expect(screen.getByText(`是否切换至“${groupFixture.name}”分组并返回主页面？`)).toBeTruthy();
     fireEvent.press(screen.getByLabelText('确认切换分组'));

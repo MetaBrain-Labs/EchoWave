@@ -25,16 +25,20 @@ describe('workspace API client', () => {
   });
 
   it('parses valid group responses and rejects incompatible payloads', async () => {
-    jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ items: [groupFixture] }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    }));
+    jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ items: [groupFixture] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
     await expect(listGroups()).resolves.toEqual({ items: [groupFixture] });
 
-    jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ items: [{ id: 'bad' }] }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    }));
+    jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ items: [{ id: 'bad' }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
     await expect(listGroups()).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 
@@ -42,10 +46,11 @@ describe('workspace API client', () => {
     jest.useFakeTimers();
     let requestSignal: AbortSignal | undefined;
     jest.spyOn(globalThis, 'fetch').mockImplementation(
-      (_input, init) => new Promise((_resolve, reject) => {
-        requestSignal = init?.signal ?? undefined;
-        requestSignal?.addEventListener('abort', () => reject(new Error('aborted')));
-      }),
+      (_input, init) =>
+        new Promise((_resolve, reject) => {
+          requestSignal = init?.signal ?? undefined;
+          requestSignal?.addEventListener('abort', () => reject(new Error('aborted')));
+        }),
     );
 
     const request = listGroups();
@@ -58,31 +63,41 @@ describe('workspace API client', () => {
   });
 
   it('sends validated group creation JSON and accepts archive 204 responses', async () => {
-    const fetch = jest.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify(groupFixture), {
-        status: 201,
-        headers: { 'Content-Type': 'application/json' },
-      }))
+    const fetch = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(groupFixture), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
       .mockResolvedValueOnce(new Response(null, { status: 204 }));
 
     await expect(createGroup({ name: '  产品研究组  ' })).resolves.toEqual(groupFixture);
-    expect(fetch.mock.calls[0][1]).toEqual(expect.objectContaining({
-      body: JSON.stringify({ name: '产品研究组' }),
-      method: 'POST',
-    }));
+    expect(fetch.mock.calls[0][1]).toEqual(
+      expect.objectContaining({
+        body: JSON.stringify({ name: '产品研究组' }),
+        method: 'POST',
+      }),
+    );
 
     await expect(archiveGroup(groupFixture.id)).resolves.toBeUndefined();
     expect(fetch.mock.calls[1][1]).toEqual(expect.objectContaining({ method: 'DELETE' }));
   });
 
   it('preserves structured server errors for group writes', async () => {
-    jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
-      ok: false,
-      error: { code: 'NOT_FOUND', message: '分组不存在或已归档。', retryable: false },
-    }), {
-      status: 404,
-      headers: { 'Content-Type': 'application/json' },
-    }));
+    jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          ok: false,
+          error: { code: 'NOT_FOUND', message: '分组不存在或已归档。', retryable: false },
+        }),
+        {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
 
     await expect(archiveGroup(groupFixture.id)).rejects.toMatchObject({
       code: 'NOT_FOUND',
@@ -93,22 +108,31 @@ describe('workspace API client', () => {
 
   it('reads and posts knowledge-base group links with validated IDs', async () => {
     const response = { items: [groupFixture] };
-    const fetch = jest.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify(response), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(response), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }));
+    const fetch = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(response), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(response), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
 
     await expect(listKnowledgeBaseGroups(groupFixture.id)).resolves.toEqual(response);
-    await expect(linkKnowledgeBaseGroups(groupFixture.id, { groupIds: [groupFixture.id] })).resolves.toEqual(response);
-    expect(fetch.mock.calls[1][1]).toEqual(expect.objectContaining({
-      body: JSON.stringify({ groupIds: [groupFixture.id] }),
-      method: 'POST',
-    }));
+    await expect(
+      linkKnowledgeBaseGroups(groupFixture.id, { groupIds: [groupFixture.id] }),
+    ).resolves.toEqual(response);
+    expect(fetch.mock.calls[1][1]).toEqual(
+      expect.objectContaining({
+        body: JSON.stringify({ groupIds: [groupFixture.id] }),
+        method: 'POST',
+      }),
+    );
     expect(() => linkKnowledgeBaseGroups(groupFixture.id, { groupIds: [] })).toThrow();
   });
 });

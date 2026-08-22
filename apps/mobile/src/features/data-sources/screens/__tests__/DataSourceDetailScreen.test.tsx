@@ -38,8 +38,12 @@ describe('DataSourceDetailScreen', () => {
   beforeEach(() => {
     jest.mocked(workspaceApi.getDataSource).mockResolvedValue(dataSourceDetailFixture);
     jest.mocked(workspaceApi.listDataSourceAudioFiles).mockResolvedValue({ items: audioFixtures });
-    jest.mocked(workspaceApi.listDataSourceIngestionRecords).mockResolvedValue({ items: ingestionFixtures });
-    jest.mocked(workspaceApi.listDataSourceGroups).mockResolvedValue({ items: linkedGroupFixtures });
+    jest
+      .mocked(workspaceApi.listDataSourceIngestionRecords)
+      .mockResolvedValue({ items: ingestionFixtures });
+    jest
+      .mocked(workspaceApi.listDataSourceGroups)
+      .mockResolvedValue({ items: linkedGroupFixtures });
   });
 
   it('renders the overview hero and keeps its tabs sticky after the hero', async () => {
@@ -48,10 +52,12 @@ describe('DataSourceDetailScreen', () => {
     expect(screen.getAllByText('团队录音空间')).toHaveLength(2);
     expect(screen.getByText('数据源详情')).toBeTruthy();
     expect(screen.getByText(/最近上传/)).toBeTruthy();
-    expect(screen.getByTestId('data-source-overview-scroll').props.stickyHeaderIndices).toEqual([1]);
-    expect(
-      screen.getAllByRole('tab', { name: '概览' })[0]?.props.accessibilityState,
-    ).toEqual({ selected: true });
+    expect(screen.getByTestId('data-source-overview-scroll').props.stickyHeaderIndices).toEqual([
+      1,
+    ]);
+    expect(screen.getAllByRole('tab', { name: '概览' })[0]?.props.accessibilityState).toEqual({
+      selected: true,
+    });
   });
 
   it('switches tabs by press and horizontal swipe and updates fixed actions', async () => {
@@ -66,9 +72,9 @@ describe('DataSourceDetailScreen', () => {
       nativeEvent: { contentOffset: { x: 480, y: 0 } },
     });
 
-    expect(
-      screen.getAllByRole('tab', { name: '音频文件' })[0]?.props.accessibilityState,
-    ).toEqual({ selected: true });
+    expect(screen.getAllByRole('tab', { name: '音频文件' })[0]?.props.accessibilityState).toEqual({
+      selected: true,
+    });
     const actions = within(screen.getByTestId('data-source-fixed-actions'));
     expect(actions.getByText('全部转写')).toBeTruthy();
     expect(actions.getByText('上传音频')).toBeTruthy();

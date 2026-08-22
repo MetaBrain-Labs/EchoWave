@@ -21,9 +21,7 @@ describe('knowledge contracts', () => {
       }).sheet,
       '销售明细',
     );
-    assert.throws(() =>
-      SourceLocatorSchema.parse({ kind: 'word', page: 1, line: 4 }),
-    );
+    assert.throws(() => SourceLocatorSchema.parse({ kind: 'word', page: 1, line: 4 }));
   });
 
   it('rejects empty knowledge-base names', () => {
@@ -53,10 +51,12 @@ describe('knowledge contracts', () => {
     });
 
     assert.equal(detail.settings.rerankerModel, null);
-    assert.throws(() => KnowledgeBaseDetailSchema.parse({
-      ...detail,
-      settings: { ...detail.settings, indexingMode: 'hybrid' },
-    }));
+    assert.throws(() =>
+      KnowledgeBaseDetailSchema.parse({
+        ...detail,
+        settings: { ...detail.settings, indexingMode: 'hybrid' },
+      }),
+    );
   });
 
   it('requires a bounded unique list of group IDs for knowledge links', () => {
@@ -68,10 +68,14 @@ describe('knowledge contracts', () => {
     assert.throws(() => KnowledgeBaseGroupLinkRequestSchema.parse({ groupIds: [] }));
     assert.throws(() => KnowledgeBaseGroupLinkRequestSchema.parse({ groupIds: [first, first] }));
     assert.throws(() => KnowledgeBaseGroupLinkRequestSchema.parse({ groupIds: ['invalid'] }));
-    assert.throws(() => KnowledgeBaseGroupLinkRequestSchema.parse({
-      groupIds: Array.from({ length: 101 }, (_, index) =>
-        `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`),
-    }));
+    assert.throws(() =>
+      KnowledgeBaseGroupLinkRequestSchema.parse({
+        groupIds: Array.from(
+          { length: 101 },
+          (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+        ),
+      }),
+    );
   });
 
   it('validates grounded answers with typed citations', () => {
@@ -104,23 +108,29 @@ describe('knowledge contracts', () => {
   it('validates at most six read-only completed history items', () => {
     const id = '00000000-0000-4000-8000-000000000001';
     const history = RagHistoryResponseSchema.parse({
-      items: [{
-        id,
-        conversationId: id,
-        question: '结论是什么？',
-        answer: '结论来自资料。',
-        grounded: true,
-        citationCount: 2,
-        createdAt: '2026-08-20T12:00:00.000Z',
-      }],
+      items: [
+        {
+          id,
+          conversationId: id,
+          question: '结论是什么？',
+          answer: '结论来自资料。',
+          grounded: true,
+          citationCount: 2,
+          createdAt: '2026-08-20T12:00:00.000Z',
+        },
+      ],
     });
 
     assert.equal(history.items[0].citationCount, 2);
-    assert.throws(() => RagHistoryResponseSchema.parse({
-      items: [{ ...history.items[0], citationCount: -1 }],
-    }));
-    assert.throws(() => RagHistoryResponseSchema.parse({
-      items: Array.from({ length: 7 }, () => history.items[0]),
-    }));
+    assert.throws(() =>
+      RagHistoryResponseSchema.parse({
+        items: [{ ...history.items[0], citationCount: -1 }],
+      }),
+    );
+    assert.throws(() =>
+      RagHistoryResponseSchema.parse({
+        items: Array.from({ length: 7 }, () => history.items[0]),
+      }),
+    );
   });
 });

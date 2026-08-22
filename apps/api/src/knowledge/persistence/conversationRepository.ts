@@ -52,9 +52,8 @@ export class ConversationRepository {
         answer: row.answer,
         grounded: row.grounded,
         citationCount: Number(row.citation_count),
-        createdAt: row.created_at instanceof Date
-          ? row.created_at.toISOString()
-          : String(row.created_at),
+        createdAt:
+          row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
       })),
     });
   }
@@ -87,31 +86,59 @@ export class ConversationRepository {
 
   /** 在调用模型前创建 running 审计记录，使失败请求也拥有可追踪的运行标识。 */
   async beginRun(input: {
-    knowledgeBaseId: string; conversationId: string; question: string;
-    embeddingModel: string; chatModel: string; chatProvider: string;
+    knowledgeBaseId: string;
+    conversationId: string;
+    question: string;
+    embeddingModel: string;
+    chatModel: string;
+    chatProvider: string;
   }): Promise<string> {
     const result = await this.pool.query(
       `INSERT INTO ${this.table('rag_runs')}
          (tenant_id, knowledge_base_id, conversation_id, question, embedding_model, chat_model, chat_provider, status)
        VALUES ($1,$2,$3,$4,$5,$6,$7,'running') RETURNING id`,
-      [this.tenantId, input.knowledgeBaseId, input.conversationId, input.question,
-        input.embeddingModel, input.chatModel, input.chatProvider],
+      [
+        this.tenantId,
+        input.knowledgeBaseId,
+        input.conversationId,
+        input.question,
+        input.embeddingModel,
+        input.chatModel,
+        input.chatProvider,
+      ],
     );
     return result.rows[0].id as string;
   }
 
   /** 在可信性校验完成后一次性写入答案、引用、用量与耗时，并标记运行成功。 */
-  async completeRun(runId: string, input: {
-    answer: string; grounded: boolean; citedChunkIds: string[]; embeddingTokens: number;
-    inputTokens: number; outputTokens: number; durationMs: number;
-  }): Promise<void> {
+  async completeRun(
+    runId: string,
+    input: {
+      answer: string;
+      grounded: boolean;
+      citedChunkIds: string[];
+      embeddingTokens: number;
+      inputTokens: number;
+      outputTokens: number;
+      durationMs: number;
+    },
+  ): Promise<void> {
     await this.pool.query(
       `UPDATE ${this.table('rag_runs')}
        SET answer=$3, grounded=$4, cited_chunk_ids=$5::jsonb, embedding_tokens=$6,
            input_tokens=$7, output_tokens=$8, duration_ms=$9, status='completed', completed_at=now()
        WHERE tenant_id=$1 AND id=$2`,
-      [this.tenantId, runId, input.answer, input.grounded, JSON.stringify(input.citedChunkIds),
-        input.embeddingTokens, input.inputTokens, input.outputTokens, input.durationMs],
+      [
+        this.tenantId,
+        runId,
+        input.answer,
+        input.grounded,
+        JSON.stringify(input.citedChunkIds),
+        input.embeddingTokens,
+        input.inputTokens,
+        input.outputTokens,
+        input.durationMs,
+      ],
     );
   }
 

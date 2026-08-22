@@ -57,9 +57,7 @@ export function useSwipePager<Tab extends string>({
     onTabChange(tab);
   };
 
-  const handleMomentumScrollEnd = (
-    event: NativeSyntheticEvent<NativeScrollEvent>,
-  ) => {
+  const handleMomentumScrollEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const index = Math.round(event.nativeEvent.contentOffset.x / pageWidth);
     const tab = tabs[index];
 

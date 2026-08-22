@@ -13,5 +13,4 @@
 
 /** 当前移动端请求使用的 EchoWave API 根地址。 */
 export const apiUrl =
-  process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '') ??
-  'http://localhost:3001';
+  process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '') ?? 'http://localhost:3001';

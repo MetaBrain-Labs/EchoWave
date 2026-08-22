@@ -44,7 +44,12 @@ type RuntimeSchema<T> = {
   safeParse(value: unknown): { success: true; data: T } | { success: false };
 };
 
-async function request<T>(path: string, schema: RuntimeSchema<T>, init?: RequestInit, timeoutMs = 20_000): Promise<T> {
+async function request<T>(
+  path: string,
+  schema: RuntimeSchema<T>,
+  init?: RequestInit,
+  timeoutMs = 20_000,
+): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -63,32 +68,46 @@ async function request<T>(path: string, schema: RuntimeSchema<T>, init?: Request
       );
     }
     const parsed = schema.safeParse(body);
-    if (!parsed.success) throw new KnowledgeRequestError('INVALID_RESPONSE', '服务返回了无法识别的数据。');
+    if (!parsed.success)
+      throw new KnowledgeRequestError('INVALID_RESPONSE', '服务返回了无法识别的数据。');
     return parsed.data;
   } catch (error) {
     if (error instanceof KnowledgeRequestError) throw error;
-    if (controller.signal.aborted) throw new KnowledgeRequestError('TIMEOUT', '请求超时，请重试。', true);
+    if (controller.signal.aborted)
+      throw new KnowledgeRequestError('TIMEOUT', '请求超时，请重试。', true);
     throw new KnowledgeRequestError('NETWORK', '无法连接服务，请检查网络。', true);
   } finally {
     clearTimeout(timeout);
   }
 }
 
-export const listKnowledgeBases = () => request('/api/knowledge-bases', KnowledgeBaseListResponseSchema);
+export const listKnowledgeBases = () =>
+  request('/api/knowledge-bases', KnowledgeBaseListResponseSchema);
 export const createKnowledgeBase = (name: string, description: string) =>
   request('/api/knowledge-bases', KnowledgeBaseDetailSchema, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, description }),
   });
-export const getKnowledgeBase = (id: string) => request(`/api/knowledge-bases/${id}`, KnowledgeBaseDetailSchema);
-export const listDocuments = (id: string) => request(`/api/knowledge-bases/${id}/documents`, KnowledgeDocumentListResponseSchema);
+export const getKnowledgeBase = (id: string) =>
+  request(`/api/knowledge-bases/${id}`, KnowledgeBaseDetailSchema);
+export const listDocuments = (id: string) =>
+  request(`/api/knowledge-bases/${id}/documents`, KnowledgeDocumentListResponseSchema);
 export const getDocument = (knowledgeId: string, documentId: string) =>
-  request(`/api/knowledge-bases/${knowledgeId}/documents/${documentId}`, KnowledgeDocumentDetailSchema);
+  request(
+    `/api/knowledge-bases/${knowledgeId}/documents/${documentId}`,
+    KnowledgeDocumentDetailSchema,
+  );
 export const listChunks = (knowledgeId: string, documentId: string) =>
-  request(`/api/knowledge-bases/${knowledgeId}/documents/${documentId}/chunks`, DocumentChunkListResponseSchema);
+  request(
+    `/api/knowledge-bases/${knowledgeId}/documents/${documentId}/chunks`,
+    DocumentChunkListResponseSchema,
+  );
 export const getChunk = (knowledgeId: string, documentId: string, chunkId: string) =>
-  request(`/api/knowledge-bases/${knowledgeId}/documents/${documentId}/chunks/${chunkId}`, DocumentChunkSchema);
+  request(
+    `/api/knowledge-bases/${knowledgeId}/documents/${documentId}/chunks/${chunkId}`,
+    DocumentChunkSchema,
+  );
 
 export async function uploadDocument(knowledgeId: string, asset: DocumentPickerAsset) {
   const form = new FormData();
@@ -131,7 +150,4 @@ export const queryKnowledge = (knowledgeId: string, question: string, conversati
 
 /** 读取当前知识库最近六个已完成问答。 */
 export const listQueryHistory = (knowledgeId: string) =>
-  request(
-    `/api/knowledge-bases/${knowledgeId}/query-history`,
-    RagHistoryResponseSchema,
-  );
+  request(`/api/knowledge-bases/${knowledgeId}/query-history`, RagHistoryResponseSchema);

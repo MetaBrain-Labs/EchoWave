@@ -28,7 +28,11 @@ export function parseMarkdown(buffer: Buffer): { sections: SemanticSection[]; wa
   const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?=\r?\n|$)/.exec(source);
   if (frontmatter) {
     frontmatterTitle =
-      /^title:\s*(?:["']([^"']+)["']|(.+))$/im.exec(frontmatter[1] ?? '')?.slice(1).find(Boolean)?.trim() ?? '';
+      /^title:\s*(?:["']([^"']+)["']|(.+))$/im
+        .exec(frontmatter[1] ?? '')
+        ?.slice(1)
+        .find(Boolean)
+        ?.trim() ?? '';
     markdown = `${frontmatter[0].replace(/[^\r\n]/g, ' ')}${source.slice(frontmatter[0].length)}`;
   }
   const tree = unified()
@@ -75,4 +79,3 @@ export function parseMarkdown(buffer: Buffer): { sections: SemanticSection[]; wa
   flush(tree.position?.end.line ?? lineStart);
   return { sections, warnings: [] };
 }
-

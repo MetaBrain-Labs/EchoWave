@@ -7,9 +7,9 @@
  * - 只负责本标签页的内容渲染与局部交互。
  * - 由 GroupScreen 持有分页、导航和远端加载状态。
  */
-import Ionicons from "@expo/vector-icons/Ionicons";
-import type { AudioFileSummary, AudioProcessingStatus } from "@echowave/contracts";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import Ionicons from '@expo/vector-icons/Ionicons';
+import type { AudioFileSummary, AudioProcessingStatus } from '@echowave/contracts';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
   colors,
@@ -18,18 +18,24 @@ import {
   spacing,
   textColors,
   typography,
-} from "@/shared/theme/tokens";
+} from '@/shared/theme/tokens';
 function formatDuration(durationMs: number | null) {
   if (durationMs === null) return '--:--';
   const seconds = Math.floor(durationMs / 1_000);
   return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`;
 }
 
-function AudioStatusView({ durationMs, status }: { durationMs: number | null; status: AudioProcessingStatus }) {
+function AudioStatusView({
+  durationMs,
+  status,
+}: {
+  durationMs: number | null;
+  status: AudioProcessingStatus;
+}) {
   switch (status.kind) {
-    case "ready":
+    case 'ready':
       return <Text style={styles.statusText}>{formatDuration(durationMs)}</Text>;
-    case "waiting":
+    case 'waiting':
       return (
         <View style={styles.inlineStatus}>
           <Ionicons
@@ -40,22 +46,23 @@ function AudioStatusView({ durationMs, status }: { durationMs: number | null; st
           <Text style={styles.statusText}>待分析</Text>
         </View>
       );
-    case "uploading":
+    case 'uploading':
       return (
         <View style={styles.inlineStatus}>
-          <ActivityIndicator
-            color={colors.ink}
-            size={typography.label.lineHeight}
-          />
+          <ActivityIndicator color={colors.ink} size={typography.label.lineHeight} />
           <Text style={styles.statusText}>上传中</Text>
         </View>
       );
-    case "analyzing":
+    case 'analyzing':
       return <Text style={styles.statusText}>分析中 ({status.progress}%)</Text>;
-    case "transcribing":
+    case 'transcribing':
       return <Text style={styles.statusText}>转写中 ({status.progress}%)</Text>;
-    case "failed":
-      return <Text accessibilityRole="alert" style={styles.statusText}>{status.message}</Text>;
+    case 'failed':
+      return (
+        <Text accessibilityRole="alert" style={styles.statusText}>
+          {status.message}
+        </Text>
+      );
   }
 }
 
@@ -86,7 +93,7 @@ function AudioCard({
     </>
   );
 
-  if (item.status.kind !== "ready") {
+  if (item.status.kind !== 'ready') {
     return <View style={styles.card}>{content}</View>;
   }
 
@@ -126,7 +133,9 @@ export function AudioContent({
   if (error) {
     return (
       <View style={styles.card}>
-        <Text accessibilityRole="alert" style={styles.metaText}>{error}</Text>
+        <Text accessibilityRole="alert" style={styles.metaText}>
+          {error}
+        </Text>
         <Pressable accessibilityRole="button" onPress={onRetry}>
           <Text style={styles.filterText}>重新加载</Text>
         </Pressable>
@@ -141,10 +150,7 @@ export function AudioContent({
           accessibilityLabel="排序筛选"
           accessibilityRole="button"
           onPress={onOpenFilter}
-          style={({ pressed }) => [
-            styles.filterButton,
-            pressed && styles.pressed,
-          ]}
+          style={({ pressed }) => [styles.filterButton, pressed && styles.pressed]}
         >
           <Text style={styles.filterText}>排序筛选</Text>
           <Ionicons
@@ -154,9 +160,9 @@ export function AudioContent({
           />
         </Pressable>
       </View>
-      {items.length ? items.map((item) => (
-        <AudioCard key={item.id} item={item} onOpenAudio={onOpenAudio} />
-      )) : (
+      {items.length ? (
+        items.map((item) => <AudioCard key={item.id} item={item} onOpenAudio={onOpenAudio} />)
+      ) : (
         <View style={styles.emptyState}>
           <Text style={styles.emptyText}>{emptyMessage}</Text>
         </View>
@@ -171,20 +177,20 @@ const styles = StyleSheet.create({
     borderRadius: radii.default,
   },
   sectionHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     marginBottom: spacing.lg,
   },
   sectionTitle: {
     ...typography.heading2,
     color: textColors.primary,
     fontFamily: fontFamilies.sansBold,
-    fontWeight: "bold",
+    fontWeight: 'bold',
   },
   filterButton: {
-    alignItems: "center",
-    flexDirection: "row",
+    alignItems: 'center',
+    flexDirection: 'row',
     gap: spacing.xs,
     minHeight: 40,
   },
@@ -207,7 +213,7 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
   },
   emptyState: {
-    alignItems: "center",
+    alignItems: 'center',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xl,
   },
@@ -215,19 +221,19 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: textColors.secondary,
     fontFamily: fontFamilies.sans,
-    textAlign: "center",
+    textAlign: 'center',
   },
   cardTitle: {
     ...typography.heading2,
     color: textColors.primary,
     flexShrink: 1,
     fontFamily: fontFamilies.sansBold,
-    fontWeight: "bold",
+    fontWeight: 'bold',
   },
   audioMetaRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     marginTop: spacing.md,
   },
   metaText: {
@@ -241,13 +247,13 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sans,
   },
   inlineStatus: {
-    alignItems: "center",
-    flexDirection: "row",
+    alignItems: 'center',
+    flexDirection: 'row',
     gap: spacing.xs,
   },
   sharedRow: {
-    alignItems: "center",
-    flexDirection: "row",
+    alignItems: 'center',
+    flexDirection: 'row',
     gap: spacing.xs,
     marginTop: spacing.xs,
   },

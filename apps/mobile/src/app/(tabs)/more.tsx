@@ -28,9 +28,7 @@ export default function MoreScreen() {
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.title}>更多</Text>
-        <Text style={styles.subtitle}>
-          查看服务连接状态和即将开放的能力。
-        </Text>
+        <Text style={styles.subtitle}>查看服务连接状态和即将开放的能力。</Text>
         <ServiceStatusCard />
         <View style={styles.roadmapCard}>
           <Text style={styles.roadmapTitle}>后续接入</Text>

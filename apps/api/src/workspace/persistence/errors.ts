@@ -7,7 +7,10 @@
  * - 标识可安全映射的仓储错误。
  */
 export class WorkspaceRepositoryError extends Error {
-  constructor(public readonly code: 'NOT_FOUND', message: string) {
+  constructor(
+    public readonly code: 'NOT_FOUND',
+    message: string,
+  ) {
     super(message);
     this.name = 'WorkspaceRepositoryError';
   }

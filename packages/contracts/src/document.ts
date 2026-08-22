@@ -18,49 +18,80 @@ import { EntityIdSchema } from './common.ts';
 export const DocumentFormatSchema = z.enum(['markdown', 'word', 'spreadsheet']);
 /** 文档从排队到完成、失败或删除的可观察状态 schema。 */
 export const DocumentStatusSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('queued') }), z.object({ kind: z.literal('validating') }),
-  z.object({ kind: z.literal('parsing') }), z.object({ kind: z.literal('chunking') }),
+  z.object({ kind: z.literal('queued') }),
+  z.object({ kind: z.literal('validating') }),
+  z.object({ kind: z.literal('parsing') }),
+  z.object({ kind: z.literal('chunking') }),
   z.object({ kind: z.literal('embedding'), progress: z.number().min(0).max(100) }),
   z.object({ kind: z.literal('ready'), parsedAt: z.string().datetime() }),
-  z.object({ kind: z.literal('failed'), code: z.string(), message: z.string(), retryable: z.boolean() }),
+  z.object({
+    kind: z.literal('failed'),
+    code: z.string(),
+    message: z.string(),
+    retryable: z.boolean(),
+  }),
   z.object({ kind: z.literal('deleting') }),
 ]);
 
 export const MarkdownLocatorSchema = z.object({
-  kind: z.literal('markdown'), headingPath: z.array(z.string()),
-  lineStart: z.number().int().positive(), lineEnd: z.number().int().positive(),
+  kind: z.literal('markdown'),
+  headingPath: z.array(z.string()),
+  lineStart: z.number().int().positive(),
+  lineEnd: z.number().int().positive(),
 });
 export const WordLocatorSchema = z.object({
-  kind: z.literal('word'), headingPath: z.array(z.string()),
-  paragraphStart: z.number().int().positive(), paragraphEnd: z.number().int().positive(),
+  kind: z.literal('word'),
+  headingPath: z.array(z.string()),
+  paragraphStart: z.number().int().positive(),
+  paragraphEnd: z.number().int().positive(),
 });
 export const SpreadsheetLocatorSchema = z.object({
-  kind: z.literal('spreadsheet'), sheet: z.string(),
-  rowStart: z.number().int().positive(), rowEnd: z.number().int().positive(),
+  kind: z.literal('spreadsheet'),
+  sheet: z.string(),
+  rowStart: z.number().int().positive(),
+  rowEnd: z.number().int().positive(),
 });
 /** 三种文档格式可追溯原文位置的联合 schema。 */
 export const SourceLocatorSchema = z.discriminatedUnion('kind', [
-  MarkdownLocatorSchema, WordLocatorSchema, SpreadsheetLocatorSchema,
+  MarkdownLocatorSchema,
+  WordLocatorSchema,
+  SpreadsheetLocatorSchema,
 ]);
 
 /** 可独立检索和引用的文档块 schema。 */
 export const DocumentChunkSchema = z.object({
-  id: EntityIdSchema, index: z.number().int().positive(), title: z.string(), content: z.string(),
-  charCount: z.number().int().nonnegative(), vectorId: z.string(), locator: SourceLocatorSchema,
+  id: EntityIdSchema,
+  index: z.number().int().positive(),
+  title: z.string(),
+  content: z.string(),
+  charCount: z.number().int().nonnegative(),
+  vectorId: z.string(),
+  locator: SourceLocatorSchema,
   sourceExcerpt: z.string(),
 });
 /** 知识文档列表记录 schema。 */
 export const KnowledgeDocumentSchema = z.object({
-  id: EntityIdSchema, knowledgeBaseId: EntityIdSchema, title: z.string(), format: DocumentFormatSchema,
-  sizeBytes: z.number().int().nonnegative(), status: DocumentStatusSchema,
-  vectorCount: z.number().int().nonnegative(), updatedAt: z.string().datetime(),
+  id: EntityIdSchema,
+  knowledgeBaseId: EntityIdSchema,
+  title: z.string(),
+  format: DocumentFormatSchema,
+  sizeBytes: z.number().int().nonnegative(),
+  status: DocumentStatusSchema,
+  vectorCount: z.number().int().nonnegative(),
+  updatedAt: z.string().datetime(),
 });
 export const KnowledgeDocumentDetailSchema = KnowledgeDocumentSchema.extend({
-  chunks: z.array(DocumentChunkSchema), previewText: z.string(),
+  chunks: z.array(DocumentChunkSchema),
+  previewText: z.string(),
 });
-export const KnowledgeDocumentListResponseSchema = z.object({ items: z.array(KnowledgeDocumentSchema) });
+export const KnowledgeDocumentListResponseSchema = z.object({
+  items: z.array(KnowledgeDocumentSchema),
+});
 export const DocumentChunkListResponseSchema = z.object({ items: z.array(DocumentChunkSchema) });
-export const DocumentUploadResponseSchema = z.object({ document: KnowledgeDocumentSchema, jobId: EntityIdSchema });
+export const DocumentUploadResponseSchema = z.object({
+  document: KnowledgeDocumentSchema,
+  jobId: EntityIdSchema,
+});
 
 /** 可引用文档块类型。 */
 export type DocumentChunk = z.infer<typeof DocumentChunkSchema>;

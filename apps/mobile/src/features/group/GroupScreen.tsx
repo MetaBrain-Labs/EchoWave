@@ -97,7 +97,11 @@ function IconButton({
       disabled={disabled}
       hitSlop={10}
       onPress={onPress}
-      style={({ pressed }) => [styles.iconButton, disabled && styles.disabled, pressed && styles.pressed]}
+      style={({ pressed }) => [
+        styles.iconButton,
+        disabled && styles.disabled,
+        pressed && styles.pressed,
+      ]}
     >
       <Ionicons color={colors.ink} name={icon} size={29} />
     </Pressable>
@@ -216,25 +220,28 @@ export function GroupScreen({
     setCollapsedTabs({ audio: false, knowledge: false, sources: false });
   }, []);
 
-  const selectGroup = useCallback((nextGroup: GroupSummary) => {
-    if (selectedGroupId.current === nextGroup.id) {
-      return;
-    }
-    selectedGroupId.current = nextGroup.id;
-    setGroup(nextGroup);
-    setSearchQuery('');
-    setAudioSortOrder('newest');
-    setAudioStatuses(new Set());
-    setAudioItems([]);
-    setKnowledgeBases([]);
-    setDataSources([]);
-    setCollapsedTabs({ audio: false, knowledge: false, sources: false });
-    void Promise.all([
-      loadAudio(nextGroup.id),
-      loadKnowledgeBases(nextGroup.id),
-      loadSources(nextGroup.id),
-    ]);
-  }, [loadAudio, loadKnowledgeBases, loadSources]);
+  const selectGroup = useCallback(
+    (nextGroup: GroupSummary) => {
+      if (selectedGroupId.current === nextGroup.id) {
+        return;
+      }
+      selectedGroupId.current = nextGroup.id;
+      setGroup(nextGroup);
+      setSearchQuery('');
+      setAudioSortOrder('newest');
+      setAudioStatuses(new Set());
+      setAudioItems([]);
+      setKnowledgeBases([]);
+      setDataSources([]);
+      setCollapsedTabs({ audio: false, knowledge: false, sources: false });
+      void Promise.all([
+        loadAudio(nextGroup.id),
+        loadKnowledgeBases(nextGroup.id),
+        loadSources(nextGroup.id),
+      ]);
+    },
+    [loadAudio, loadKnowledgeBases, loadSources],
+  );
 
   const loadDirectory = useCallback(async () => {
     setDirectoryLoading(true);
@@ -242,7 +249,8 @@ export function GroupScreen({
     try {
       const response = await listGroups();
       setGroups(response.items);
-      const firstGroup = response.items.find((item) => item.id === initialGroupId) ?? response.items[0];
+      const firstGroup =
+        response.items.find((item) => item.id === initialGroupId) ?? response.items[0];
       if (firstGroup) selectGroup(firstGroup);
       else clearSelection();
     } catch (reason) {
@@ -254,7 +262,9 @@ export function GroupScreen({
   }, [clearSelection, initialGroupId, selectGroup]);
 
   useEffect(() => {
-    const task = setTimeout(() => { void loadDirectory(); }, 0);
+    const task = setTimeout(() => {
+      void loadDirectory();
+    }, 0);
     return () => clearTimeout(task);
   }, [loadDirectory]);
 
@@ -371,20 +381,29 @@ export function GroupScreen({
             setDrawerVisible(true);
           }
         }}
-        onConfirm={() => { void confirmArchive(); }}
+        onConfirm={() => {
+          void confirmArchive();
+        }}
         pending={archiving}
       />
       {searchVisible ? (
         <GroupSearchSheet
           appliedQuery={searchQuery}
-          onApply={(query) => { setSearchQuery(query); setSearchVisible(false); }}
+          onApply={(query) => {
+            setSearchQuery(query);
+            setSearchVisible(false);
+          }}
           onClose={() => setSearchVisible(false)}
           visible
         />
       ) : null}
       {filterVisible ? (
         <AudioFilterSheet
-          onApply={(sortOrder, statuses) => { setAudioSortOrder(sortOrder); setAudioStatuses(statuses); setFilterVisible(false); }}
+          onApply={(sortOrder, statuses) => {
+            setAudioSortOrder(sortOrder);
+            setAudioStatuses(statuses);
+            setFilterVisible(false);
+          }}
           onClose={() => setFilterVisible(false)}
           selectedStatuses={audioStatuses}
           sortOrder={audioSortOrder}
@@ -394,20 +413,40 @@ export function GroupScreen({
 
       <View style={styles.topBar}>
         <View style={styles.topLeft}>
-          <IconButton icon="menu" label="菜单" onPress={() => { setCreateError(''); setDrawerVisible(true); }} />
-          {headerCollapsed ? <Text testID="group-inline-title" style={styles.inlineTitle}>{group?.name}</Text> : null}
+          <IconButton
+            icon="menu"
+            label="菜单"
+            onPress={() => {
+              setCreateError('');
+              setDrawerVisible(true);
+            }}
+          />
+          {headerCollapsed ? (
+            <Text testID="group-inline-title" style={styles.inlineTitle}>
+              {group?.name}
+            </Text>
+          ) : null}
         </View>
         {!headerCollapsed ? (
           <View style={styles.topActions}>
-            <IconButton disabled={!group} icon="search" label="搜索" onPress={() => setSearchVisible(true)} />
-            <IconButton icon="options-outline" label="设置筛选" onPress={() => showComingSoon('设置筛选')} />
+            <IconButton
+              disabled={!group}
+              icon="search"
+              label="搜索"
+              onPress={() => setSearchVisible(true)}
+            />
+            <IconButton
+              icon="options-outline"
+              label="设置筛选"
+              onPress={() => showComingSoon('设置筛选')}
+            />
           </View>
         ) : null}
       </View>
 
       {!headerCollapsed ? (
         <Text testID="group-display-title" style={styles.displayTitle}>
-          {directoryLoading ? '正在加载分组' : group?.name ?? '暂无分组'}
+          {directoryLoading ? '正在加载分组' : (group?.name ?? '暂无分组')}
         </Text>
       ) : null}
 
@@ -419,9 +458,22 @@ export function GroupScreen({
         <View style={styles.pageState}>
           <Ionicons color={colors.muted} name="albums-outline" size={40} />
           <Text style={styles.emptyGroupTitle}>{directoryError || '还没有可用分组'}</Text>
-          <Text style={styles.emptyGroupDescription}>{directoryError ? '请检查网络连接后重试。' : '打开分组菜单，创建一个分组后即可管理音频、知识库和数据源。'}</Text>
-          <Pressable accessibilityRole="button" onPress={() => { if (directoryError) void loadDirectory(); else setDrawerVisible(true); }} style={({ pressed }) => [styles.emptyGroupButton, pressed && styles.primaryPressed]}>
-            <Text style={styles.emptyGroupButtonText}>{directoryError ? '重新加载分组' : '打开分组菜单'}</Text>
+          <Text style={styles.emptyGroupDescription}>
+            {directoryError
+              ? '请检查网络连接后重试。'
+              : '打开分组菜单，创建一个分组后即可管理音频、知识库和数据源。'}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              if (directoryError) void loadDirectory();
+              else setDrawerVisible(true);
+            }}
+            style={({ pressed }) => [styles.emptyGroupButton, pressed && styles.primaryPressed]}
+          >
+            <Text style={styles.emptyGroupButtonText}>
+              {directoryError ? '重新加载分组' : '打开分组菜单'}
+            </Text>
           </Pressable>
         </View>
       ) : (
@@ -440,26 +492,71 @@ export function GroupScreen({
             testID="group-tab-pager"
           >
             <View style={[styles.page, { width: pageWidth }]}>
-              <ScrollView contentContainerStyle={styles.scrollContent} onMomentumScrollEnd={handleScrollEnd('audio')} onScroll={handleContentScroll('audio')} onScrollEndDrag={handleScrollEnd('audio')} scrollEventThrottle={16} showsVerticalScrollIndicator={false} testID="group-audio-scroll">
+              <ScrollView
+                contentContainerStyle={styles.scrollContent}
+                onMomentumScrollEnd={handleScrollEnd('audio')}
+                onScroll={handleContentScroll('audio')}
+                onScrollEndDrag={handleScrollEnd('audio')}
+                scrollEventThrottle={16}
+                showsVerticalScrollIndicator={false}
+                testID="group-audio-scroll"
+              >
                 <AudioContent
-                  emptyMessage={searchEmpty || (audioStatuses.size ? '没有符合当前状态筛选的音频' : '当前分组还没有音频')}
+                  emptyMessage={
+                    searchEmpty ||
+                    (audioStatuses.size ? '没有符合当前状态筛选的音频' : '当前分组还没有音频')
+                  }
                   error={audioError}
                   items={visibleAudio}
                   loading={audioLoading}
                   onOpenAudio={onOpenAudio}
                   onOpenFilter={() => setFilterVisible(true)}
-                  onRetry={() => { void loadAudio(group.id); }}
+                  onRetry={() => {
+                    void loadAudio(group.id);
+                  }}
                 />
               </ScrollView>
             </View>
             <View style={[styles.page, { width: pageWidth }]}>
-              <ScrollView contentContainerStyle={styles.scrollContent} onMomentumScrollEnd={handleScrollEnd('knowledge')} onScroll={handleContentScroll('knowledge')} onScrollEndDrag={handleScrollEnd('knowledge')} scrollEventThrottle={16} showsVerticalScrollIndicator={false} testID="group-knowledge-scroll">
-                <KnowledgeContent emptyMessage={searchEmpty || '当前分组还没有关联知识库'} error={knowledgeError} knowledgeBases={visibleKnowledge} loading={knowledgeLoading} onRetry={() => { void loadKnowledgeBases(group.id); }} />
+              <ScrollView
+                contentContainerStyle={styles.scrollContent}
+                onMomentumScrollEnd={handleScrollEnd('knowledge')}
+                onScroll={handleContentScroll('knowledge')}
+                onScrollEndDrag={handleScrollEnd('knowledge')}
+                scrollEventThrottle={16}
+                showsVerticalScrollIndicator={false}
+                testID="group-knowledge-scroll"
+              >
+                <KnowledgeContent
+                  emptyMessage={searchEmpty || '当前分组还没有关联知识库'}
+                  error={knowledgeError}
+                  knowledgeBases={visibleKnowledge}
+                  loading={knowledgeLoading}
+                  onRetry={() => {
+                    void loadKnowledgeBases(group.id);
+                  }}
+                />
               </ScrollView>
             </View>
             <View style={[styles.page, { width: pageWidth }]}>
-              <ScrollView contentContainerStyle={styles.scrollContent} onMomentumScrollEnd={handleScrollEnd('sources')} onScroll={handleContentScroll('sources')} onScrollEndDrag={handleScrollEnd('sources')} scrollEventThrottle={16} showsVerticalScrollIndicator={false} testID="group-sources-scroll">
-                <DataSourcesContent emptyMessage={searchEmpty || '当前分组还没有连接数据源'} error={sourcesError} loading={sourcesLoading} onRetry={() => { void loadSources(group.id); }} sources={visibleSources} />
+              <ScrollView
+                contentContainerStyle={styles.scrollContent}
+                onMomentumScrollEnd={handleScrollEnd('sources')}
+                onScroll={handleContentScroll('sources')}
+                onScrollEndDrag={handleScrollEnd('sources')}
+                scrollEventThrottle={16}
+                showsVerticalScrollIndicator={false}
+                testID="group-sources-scroll"
+              >
+                <DataSourcesContent
+                  emptyMessage={searchEmpty || '当前分组还没有连接数据源'}
+                  error={sourcesError}
+                  loading={sourcesLoading}
+                  onRetry={() => {
+                    void loadSources(group.id);
+                  }}
+                  sources={visibleSources}
+                />
               </ScrollView>
             </View>
           </ScrollView>
@@ -471,21 +568,74 @@ export function GroupScreen({
 
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.canvas, flex: 1 },
-  topBar: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingTop: spacing.sm },
+  topBar: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+  },
   topActions: { flexDirection: 'row', gap: spacing.md },
   topLeft: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
-  inlineTitle: { ...typography.heading2, color: textColors.primary, fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
+  inlineTitle: {
+    ...typography.heading2,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
   iconButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
   disabled: { opacity: 0.35 },
   pressed: { backgroundColor: colors.background, borderRadius: radii.default },
   primaryPressed: { opacity: 0.78 },
-  displayTitle: { ...typography.groupName, color: textColors.primary, fontFamily: fontFamilies.sansBold, fontWeight: 'bold', marginBottom: spacing.xl, marginHorizontal: spacing.md, marginTop: spacing.xxl },
+  displayTitle: {
+    ...typography.groupName,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+    marginBottom: spacing.xl,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.xxl,
+  },
   pager: { flex: 1 },
   page: { height: '100%' },
-  scrollContent: { paddingBottom: spacing.xxl, paddingHorizontal: spacing.md, paddingTop: spacing.lg },
-  pageState: { alignItems: 'center', flex: 1, gap: spacing.md, justifyContent: 'center', padding: spacing.xl },
-  emptyGroupTitle: { ...typography.heading1, color: textColors.primary, fontFamily: fontFamilies.sansBold, fontWeight: 'bold', textAlign: 'center' },
-  emptyGroupDescription: { ...typography.body, color: textColors.secondary, fontFamily: fontFamilies.sans, maxWidth: 320, textAlign: 'center' },
-  emptyGroupButton: { backgroundColor: colors.ink, borderRadius: radii.default, marginTop: spacing.sm, minHeight: 44, paddingHorizontal: spacing.lg, paddingVertical: spacing.base },
-  emptyGroupButtonText: { ...typography.description, color: colors.white, fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
+  scrollContent: {
+    paddingBottom: spacing.xxl,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.lg,
+  },
+  pageState: {
+    alignItems: 'center',
+    flex: 1,
+    gap: spacing.md,
+    justifyContent: 'center',
+    padding: spacing.xl,
+  },
+  emptyGroupTitle: {
+    ...typography.heading1,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  emptyGroupDescription: {
+    ...typography.body,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    maxWidth: 320,
+    textAlign: 'center',
+  },
+  emptyGroupButton: {
+    backgroundColor: colors.ink,
+    borderRadius: radii.default,
+    marginTop: spacing.sm,
+    minHeight: 44,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.base,
+  },
+  emptyGroupButtonText: {
+    ...typography.description,
+    color: colors.white,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
 });

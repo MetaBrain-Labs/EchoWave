@@ -35,7 +35,9 @@ describe('OpenRouter embeddings adapter', () => {
   it('splits document requests into batches of at most 64', async () => {
     const batchSizes = [];
     const embeddings = new OpenRouterEmbeddings({
-      apiKey: 'secret', model: 'qwen/qwen3-embedding-8b', dimensions: 1024,
+      apiKey: 'secret',
+      model: 'qwen/qwen3-embedding-8b',
+      dimensions: 1024,
       fetchImplementation: async (_url, init) => {
         const body = JSON.parse(init.body);
         batchSizes.push(body.input.length);
@@ -45,7 +47,9 @@ describe('OpenRouter embeddings adapter', () => {
         });
       },
     });
-    const result = await embeddings.embedBatches(Array.from({ length: 65 }, (_, index) => `chunk-${index}`));
+    const result = await embeddings.embedBatches(
+      Array.from({ length: 65 }, (_, index) => `chunk-${index}`),
+    );
     assert.deepEqual(batchSizes, [64, 1]);
     assert.equal(result.vectors.length, 65);
   });
@@ -76,20 +80,33 @@ describe('OpenRouter embeddings adapter', () => {
 });
 
 describe('upload validation', () => {
-  const service = new DefaultKnowledgeService({}, {}, {}, {}, '.tmp/uploads-test', 'qwen/qwen3-embedding-8b');
+  const service = new DefaultKnowledgeService(
+    {},
+    {},
+    {},
+    {},
+    '.tmp/uploads-test',
+    'qwen/qwen3-embedding-8b',
+  );
 
   it('rejects legacy and macro-capable formats before persistence', async () => {
     await assert.rejects(
-      service.uploadDocument(kbId, new File(['legacy'], 'legacy.doc', { type: 'application/msword' })),
+      service.uploadDocument(
+        kbId,
+        new File(['legacy'], 'legacy.doc', { type: 'application/msword' }),
+      ),
       (error) => error.code === 'UNSUPPORTED_FORMAT',
     );
   });
 
   it('rejects an Office extension with a forged MIME/signature', async () => {
     await assert.rejects(
-      service.uploadDocument(kbId, new File(['not-a-zip'], 'fake.docx', {
-        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      })),
+      service.uploadDocument(
+        kbId,
+        new File(['not-a-zip'], 'fake.docx', {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        }),
+      ),
       (error) => error.code === 'INVALID_FILE',
     );
   });
@@ -102,23 +119,37 @@ describe('knowledge API contracts', () => {
         conversationId,
         answer: '依据显示答案为 A。[1]',
         grounded: true,
-        citations: [{
-          number: 1, documentId: conversationId, documentTitle: '研究.md', chunkId: kbId,
-          locator: { kind: 'markdown', headingPath: ['结论'], lineStart: 3, lineEnd: 4 }, excerpt: '答案为 A。',
-        }],
+        citations: [
+          {
+            number: 1,
+            documentId: conversationId,
+            documentTitle: '研究.md',
+            chunkId: kbId,
+            locator: { kind: 'markdown', headingPath: ['结论'], lineStart: 3, lineEnd: 4 },
+            excerpt: '答案为 A。',
+          },
+        ],
         usage: { embeddingTokens: 4, inputTokens: 12, outputTokens: 8 },
       }),
     };
-    const app = createApp({ corsOrigins: ['http://localhost:8081'] }, { knowledgeService: service });
+    const app = createApp(
+      { corsOrigins: ['http://localhost:8081'] },
+      { knowledgeService: service },
+    );
     const response = await app.request(`/api/knowledge-bases/${kbId}/query`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: '答案是什么？' }),
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: '答案是什么？' }),
     });
     assert.equal(response.status, 200);
     assert.equal((await response.json()).citations[0].chunkId, kbId);
   });
 
   it('rejects invalid IDs before calling persistence', async () => {
-    const app = createApp({ corsOrigins: [] }, { knowledgeService: { listDocuments: async () => ({ items: [] }) } });
+    const app = createApp(
+      { corsOrigins: [] },
+      { knowledgeService: { listDocuments: async () => ({ items: [] }) } },
+    );
     const response = await app.request('/api/knowledge-bases/not-a-uuid/documents');
     assert.equal(response.status, 400);
     assert.equal((await response.json()).error.code, 'BAD_REQUEST');
@@ -127,15 +158,17 @@ describe('knowledge API contracts', () => {
   it('returns recent completed query history through the injected service boundary', async () => {
     const service = {
       listQueryHistory: async () => ({
-        items: [{
-          id: kbId,
-          conversationId,
-          question: '最近的问题',
-          answer: '最近的回答',
-          grounded: true,
-          citationCount: 1,
-          createdAt: '2026-08-20T12:00:00.000Z',
-        }],
+        items: [
+          {
+            id: kbId,
+            conversationId,
+            question: '最近的问题',
+            answer: '最近的回答',
+            grounded: true,
+            citationCount: 1,
+            createdAt: '2026-08-20T12:00:00.000Z',
+          },
+        ],
       }),
     };
     const app = createApp({ corsOrigins: [] }, { knowledgeService: service });

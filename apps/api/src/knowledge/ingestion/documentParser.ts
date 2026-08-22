@@ -27,11 +27,12 @@ export async function parseKnowledgeDocument(
   format: DocumentFormat,
   documentTitle: string,
 ): Promise<ParsedDocument> {
-  const parsed = format === 'markdown'
-    ? parseMarkdown(buffer)
-    : format === 'word'
-      ? await parseWord(buffer)
-      : await parseSpreadsheet(buffer);
+  const parsed =
+    format === 'markdown'
+      ? parseMarkdown(buffer)
+      : format === 'word'
+        ? await parseWord(buffer)
+        : await parseSpreadsheet(buffer);
   const normalizedCharacters = parsed.sections.reduce(
     (total, section) => total + Array.from(section.content).length,
     0,
@@ -45,7 +46,10 @@ export async function parseKnowledgeDocument(
   }
   return {
     chunks,
-    previewText: chunks.map((item) => item.content).join('\n\n').slice(0, 100_000),
+    previewText: chunks
+      .map((item) => item.content)
+      .join('\n\n')
+      .slice(0, 100_000),
     warnings: [...new Set(parsed.warnings)].slice(0, 100),
   };
 }

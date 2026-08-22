@@ -63,35 +63,40 @@ describe('GroupScreen', () => {
     jest.mocked(workspaceApi.archiveGroup).mockResolvedValue(undefined);
     jest.mocked(workspaceApi.createGroup).mockResolvedValue(secondGroup);
     jest.mocked(workspaceApi.listGroups).mockResolvedValue({ items: [groupFixture] });
-    jest.mocked(workspaceApi.listGroupAudioFiles).mockResolvedValue({ items: audioFixtures.slice(0, 5) });
-    jest.mocked(workspaceApi.listGroupKnowledgeBases).mockResolvedValue({ items: knowledgeFixtures });
-    jest.mocked(workspaceApi.listGroupDataSources).mockResolvedValue({ items: sourceFixtures.slice(0, 3) });
+    jest
+      .mocked(workspaceApi.listGroupAudioFiles)
+      .mockResolvedValue({ items: audioFixtures.slice(0, 5) });
+    jest
+      .mocked(workspaceApi.listGroupKnowledgeBases)
+      .mockResolvedValue({ items: knowledgeFixtures });
+    jest
+      .mocked(workspaceApi.listGroupDataSources)
+      .mockResolvedValue({ items: sourceFixtures.slice(0, 3) });
   });
 
   it('uses the special group title and inline icon sizing rules', async () => {
     const screen = await renderGroup();
 
-    expect(
-      StyleSheet.flatten(screen.getByText('产品研究组').props.style),
-    ).toEqual(
+    expect(StyleSheet.flatten(screen.getByText('产品研究组').props.style)).toEqual(
       expect.objectContaining({
         fontSize: 40,
         fontWeight: 'bold',
         lineHeight: 60,
       }),
     );
-    expect(
-      StyleSheet.flatten(screen.getByTestId('icon-hourglass-outline').props.style),
-    ).toEqual({ height: 14, width: 14 });
+    expect(StyleSheet.flatten(screen.getByTestId('icon-hourglass-outline').props.style)).toEqual({
+      height: 14,
+      width: 14,
+    });
   });
 
   it('uses 16/24 typography for analysis, knowledge, and source names', async () => {
     const screen = await renderGroup();
 
     for (const title of ['产品访谈分析', '产品研究知识库', '团队文档空间']) {
-      const titleNode = screen.getAllByText(title).find((node) =>
-        StyleSheet.flatten(node.props.style)?.fontSize === 16,
-      );
+      const titleNode = screen
+        .getAllByText(title)
+        .find((node) => StyleSheet.flatten(node.props.style)?.fontSize === 16);
       expect(titleNode).toBeTruthy();
       expect(StyleSheet.flatten(titleNode?.props.style)).toEqual(
         expect.objectContaining({ fontSize: 16, lineHeight: 24 }),
@@ -156,9 +161,9 @@ describe('GroupScreen', () => {
       nativeEvent: { contentOffset: { x: 480, y: 0 } },
     });
 
-    expect(
-      screen.getByRole('tab', { name: '关联知识库' }).props.accessibilityState,
-    ).toEqual({ selected: true });
+    expect(screen.getByRole('tab', { name: '关联知识库' }).props.accessibilityState).toEqual({
+      selected: true,
+    });
   });
 
   it('keeps feedback for the remaining header filter placeholder', async () => {
@@ -167,15 +172,13 @@ describe('GroupScreen', () => {
 
     fireEvent.press(screen.getByLabelText('设置筛选'));
 
-    expect(alert).toHaveBeenCalledWith(
-      '功能建设中',
-      '设置筛选将在后续版本开放。',
-    );
+    expect(alert).toHaveBeenCalledWith('功能建设中', '设置筛选将在后续版本开放。');
     alert.mockRestore();
   });
 
   it('retries a failed group directory request', async () => {
-    jest.mocked(workspaceApi.listGroups)
+    jest
+      .mocked(workspaceApi.listGroups)
       .mockRejectedValueOnce(new Error('分组目录暂时不可用。'))
       .mockResolvedValueOnce({ items: [groupFixture] });
     const screen = render(<GroupScreen />);
@@ -183,7 +186,9 @@ describe('GroupScreen', () => {
     await waitFor(() => expect(screen.getByText('重新加载分组')).toBeTruthy());
     fireEvent.press(screen.getByText('重新加载分组'));
 
-    await waitFor(() => expect(screen.getByTestId('group-display-title').props.children).toBe(groupFixture.name));
+    await waitFor(() =>
+      expect(screen.getByTestId('group-display-title').props.children).toBe(groupFixture.name),
+    );
     expect(workspaceApi.listGroups).toHaveBeenCalledTimes(2);
   });
 
@@ -191,9 +196,7 @@ describe('GroupScreen', () => {
     const onOpenAudio = jest.fn();
     const screen = await renderGroup({ onOpenAudio });
 
-    fireEvent.press(
-      screen.getByLabelText('产品访谈分析，分析已完成'),
-    );
+    fireEvent.press(screen.getByLabelText('产品访谈分析，分析已完成'));
 
     expect(onOpenAudio).toHaveBeenCalledWith(audioFixtures[0].id);
     expect(screen.queryByLabelText('功能概念验证，分析已完成')).toBeNull();
@@ -207,8 +210,12 @@ describe('GroupScreen', () => {
     fireEvent.changeText(screen.getByLabelText('分组名称'), '  客户体验组  ');
     fireEvent(screen.getByLabelText('分组名称'), 'submitEditing');
 
-    await waitFor(() => expect(workspaceApi.createGroup).toHaveBeenCalledWith({ name: '客户体验组' }));
-    await waitFor(() => expect(screen.getByTestId('group-display-title').props.children).toBe('客户体验组'));
+    await waitFor(() =>
+      expect(workspaceApi.createGroup).toHaveBeenCalledWith({ name: '客户体验组' }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('group-display-title').props.children).toBe('客户体验组'),
+    );
     expect(workspaceApi.listGroupAudioFiles).toHaveBeenCalledWith(secondGroup.id);
     await finishDrawerClose();
     expect(screen.queryByLabelText('分组名称')).toBeNull();
@@ -261,7 +268,9 @@ describe('GroupScreen', () => {
 
     fireEvent.press(screen.getByLabelText('菜单'));
     fireEvent.press(screen.getByLabelText(`归档分组：${groupFixture.name}`));
-    await waitFor(() => expect(screen.getByText(/关联的知识库、数据源和音频不会被删除/)).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByText(/关联的知识库、数据源和音频不会被删除/)).toBeTruthy(),
+    );
     fireEvent.press(screen.getByLabelText('确认归档分组'));
 
     await waitFor(() => expect(workspaceApi.archiveGroup).toHaveBeenCalledWith(groupFixture.id));
@@ -328,16 +337,24 @@ describe('GroupScreen', () => {
     fireEvent.press(screen.getByLabelText(`切换到分组：${secondGroup.name}`));
 
     await waitFor(() => expect(screen.getByText('共 9 份音频')).toBeTruthy());
-    expect(screen.getByRole('tab', { name: '音频分析' }).props.accessibilityState).toEqual({ selected: true });
+    expect(screen.getByRole('tab', { name: '音频分析' }).props.accessibilityState).toEqual({
+      selected: true,
+    });
   });
 
   it('ignores a stale resource response after rapid group switching', async () => {
-    const staleAudio = { ...audioFixtures[0], id: '40000000-0000-4000-8000-999999999999', title: '过期分组响应' };
+    const staleAudio = {
+      ...audioFixtures[0],
+      id: '40000000-0000-4000-8000-999999999999',
+      title: '过期分组响应',
+    };
     let resolveSecond: ((value: { items: typeof audioFixtures }) => void) | undefined;
     jest.mocked(workspaceApi.listGroups).mockResolvedValue({ items: [groupFixture, secondGroup] });
     jest.mocked(workspaceApi.listGroupAudioFiles).mockImplementation((id) => {
       if (id === secondGroup.id) {
-        return new Promise((resolve) => { resolveSecond = resolve; });
+        return new Promise((resolve) => {
+          resolveSecond = resolve;
+        });
       }
       return Promise.resolve({ items: audioFixtures.slice(0, 5) });
     });
@@ -351,7 +368,9 @@ describe('GroupScreen', () => {
     fireEvent.press(screen.getByLabelText(`切换到分组：${groupFixture.name}`));
     await waitFor(() => expect(screen.getByText('共 5 份音频')).toBeTruthy());
 
-    await act(async () => { resolveSecond?.({ items: [staleAudio] }); });
+    await act(async () => {
+      resolveSecond?.({ items: [staleAudio] });
+    });
     expect(screen.queryByText('过期分组响应')).toBeNull();
     expect(screen.getByText('共 5 份音频')).toBeTruthy();
   });
@@ -360,8 +379,12 @@ describe('GroupScreen', () => {
     jest.mocked(workspaceApi.listGroups).mockResolvedValue({ items: [groupFixture, secondGroup] });
     const screen = render(<GroupScreen initialGroupId={secondGroup.id} initialTab="knowledge" />);
 
-    await waitFor(() => expect(screen.getByTestId('group-display-title').props.children).toBe(secondGroup.name));
-    expect(screen.getByRole('tab', { name: '关联知识库' }).props.accessibilityState).toEqual({ selected: true });
+    await waitFor(() =>
+      expect(screen.getByTestId('group-display-title').props.children).toBe(secondGroup.name),
+    );
+    expect(screen.getByRole('tab', { name: '关联知识库' }).props.accessibilityState).toEqual({
+      selected: true,
+    });
     expect(workspaceApi.listGroupKnowledgeBases).toHaveBeenCalledWith(secondGroup.id);
   });
 });

@@ -36,9 +36,7 @@ export function PageTabs<Tab extends string>({
             onPress={() => onChange(tab.key)}
             style={({ pressed }) => [styles.tab, pressed && styles.pressed]}
           >
-            <Text style={[styles.tabText, selected && styles.activeTabText]}>
-              {tab.label}
-            </Text>
+            <Text style={[styles.tabText, selected && styles.activeTabText]}>{tab.label}</Text>
             <View style={[styles.tabLine, selected && styles.activeTabLine]} />
           </Pressable>
         );

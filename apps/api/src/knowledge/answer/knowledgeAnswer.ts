@@ -19,28 +19,25 @@ import {
   RagQueryResponseSchema,
   type RagQueryRequest,
   type RagQueryResponse,
-} from "@echowave/contracts";
+} from '@echowave/contracts';
 
 import {
   noOpAiExecutionReporter,
   type AiExecutionReporter,
-} from "../../ai-observability/executionReporter.ts";
-import type { ApiConfig } from "../../config/env.ts";
+} from '../../ai-observability/executionReporter.ts';
+import type { ApiConfig } from '../../config/env.ts';
 import {
   EmbeddingProviderError,
   type OpenRouterEmbeddings,
-} from "../embeddings/openRouterEmbeddings.ts";
-import type { ConversationRepository } from "../persistence/conversationRepository.ts";
-import { RagRepositoryError } from "../persistence/errors.ts";
-import type {
-  KnowledgeRepository,
-  RetrievalChunk,
-} from "../persistence/knowledgeRepository.ts";
-import type { DeepSeekQueryAgent } from "./deepSeekQueryAgent.ts";
+} from '../embeddings/openRouterEmbeddings.ts';
+import type { ConversationRepository } from '../persistence/conversationRepository.ts';
+import { RagRepositoryError } from '../persistence/errors.ts';
+import type { KnowledgeRepository, RetrievalChunk } from '../persistence/knowledgeRepository.ts';
+import type { DeepSeekQueryAgent } from './deepSeekQueryAgent.ts';
 
-const INSUFFICIENT_EVIDENCE = "知识库中没有足够依据回答这个问题。";
+const INSUFFICIENT_EVIDENCE = '知识库中没有足够依据回答这个问题。';
 const RETRIEVAL_LIMIT_NOTICE =
-  "提示：本轮检索已达到上限，回答仅基于当前已检索到的内容，证据可能不完整。";
+  '提示：本轮检索已达到上限，回答仅基于当前已检索到的内容，证据可能不完整。';
 const MAX_SEARCH_CALLS = 4;
 const MAX_CITATIONS = 8;
 const KNOWLEDGE_ANSWER_TIMEOUT_MS = 45_000;
@@ -61,34 +58,28 @@ export type KnowledgeAnswerModule = {
 /** 可由 Hono 稳定映射的模型侧错误。 */
 export class KnowledgeAnswerError extends Error {
   constructor(
-    public readonly code: "MODEL_TIMEOUT" | "MODEL_UNAVAILABLE",
+    public readonly code: 'MODEL_TIMEOUT' | 'MODEL_UNAVAILABLE',
     message: string,
   ) {
     super(message);
-    this.name = "KnowledgeAnswerError";
+    this.name = 'KnowledgeAnswerError';
   }
 }
 
-type KnowledgeAnswerEmbeddings = Pick<
-  OpenRouterEmbeddings,
-  "embedQueryWithUsage"
->;
-type KnowledgeAnswerAgent = Pick<
-  DeepSeekQueryAgent,
-  "generate" | "correctCitations"
->;
+type KnowledgeAnswerEmbeddings = Pick<OpenRouterEmbeddings, 'embedQueryWithUsage'>;
+type KnowledgeAnswerAgent = Pick<DeepSeekQueryAgent, 'generate' | 'correctCitations'>;
 type KnowledgeAnswerCheckpointer = {
   deleteThread(threadId: string): Promise<void>;
 };
 type ScheduleCleanup = (task: () => void, intervalMs: number) => () => void;
 
 type KnowledgeAnswerOptions = {
-  knowledgeRepository: Pick<KnowledgeRepository, "search">;
+  knowledgeRepository: Pick<KnowledgeRepository, 'search'>;
   conversationRepository: ConversationRepository;
   embeddings: KnowledgeAnswerEmbeddings;
   agent: KnowledgeAnswerAgent;
   checkpointer: KnowledgeAnswerCheckpointer;
-  ragConfig: Pick<ApiConfig["rag"], "embeddingModel" | "deepSeekChatModel">;
+  ragConfig: Pick<ApiConfig['rag'], 'embeddingModel' | 'deepSeekChatModel'>;
   reporter?: AiExecutionReporter;
   scheduleCleanup?: ScheduleCleanup;
   now?: () => number;
@@ -103,9 +94,8 @@ const scheduleCleanup: ScheduleCleanup = (task, intervalMs) => {
 
 function isTimeout(error: unknown): boolean {
   return (
-    (error instanceof Error &&
-      (error.name === "TimeoutError" || error.name === "AbortError")) ||
-    (error instanceof EmbeddingProviderError && error.code === "MODEL_TIMEOUT")
+    (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) ||
+    (error instanceof EmbeddingProviderError && error.code === 'MODEL_TIMEOUT')
   );
 }
 
@@ -142,27 +132,27 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
    * 执行一次完整问答；只有最终响应已通过引用校验并完成审计后才向调用方返回。
    */
   async answer(command: KnowledgeAnswerCommand): Promise<RagQueryResponse> {
-    if (this.disposed) throw new Error("Knowledge answer module is disposed.");
+    if (this.disposed) throw new Error('Knowledge answer module is disposed.');
 
     const request = RagQueryRequestSchema.parse(command.request);
     const now = this.options.now ?? Date.now;
     const startedAt = now();
     const report = (this.options.reporter ?? noOpAiExecutionReporter).start({
-      kind: "rag-answer",
-      name: "EchoWave trusted knowledge answer",
+      kind: 'rag-answer',
+      name: 'EchoWave trusted knowledge answer',
       metadata: {
         knowledgeBaseId: command.knowledgeBaseId,
         requestedConversationId: request.conversationId,
         questionLength: request.question.length,
         embeddingModel: this.options.ragConfig.embeddingModel,
         chatModel: this.options.ragConfig.deepSeekChatModel,
-        chatProvider: "deepseek",
+        chatProvider: 'deepseek',
       },
     });
     report.recordContext({ question: request.question });
 
     const conversationStartedAt = now();
-    report.recordStep({ name: "conversation", status: "started" });
+    report.recordStep({ name: 'conversation', status: 'started' });
     let conversation;
     try {
       conversation = await this.options.conversationRepository.getOrCreateConversation(
@@ -174,22 +164,22 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         threadId: conversation.threadId,
       });
       report.recordStep({
-        name: "conversation",
-        status: "completed",
+        name: 'conversation',
+        status: 'completed',
         durationMs: now() - conversationStartedAt,
       });
     } catch (error) {
       report.recordStep({
-        name: "conversation",
-        status: "failed",
+        name: 'conversation',
+        status: 'failed',
         durationMs: now() - conversationStartedAt,
       });
-      await report.finish({ status: "failed", error });
+      await report.finish({ status: 'failed', error });
       throw error;
     }
 
     const auditStartedAt = now();
-    report.recordStep({ name: "audit-begin", status: "started" });
+    report.recordStep({ name: 'audit-begin', status: 'started' });
     let runId: string;
     try {
       runId = await this.options.conversationRepository.beginRun({
@@ -198,21 +188,21 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         question: request.question,
         embeddingModel: this.options.ragConfig.embeddingModel,
         chatModel: this.options.ragConfig.deepSeekChatModel,
-        chatProvider: "deepseek",
+        chatProvider: 'deepseek',
       });
       report.recordMetadata({ ragRunId: runId });
       report.recordStep({
-        name: "audit-begin",
-        status: "completed",
+        name: 'audit-begin',
+        status: 'completed',
         durationMs: now() - auditStartedAt,
       });
     } catch (error) {
       report.recordStep({
-        name: "audit-begin",
-        status: "failed",
+        name: 'audit-begin',
+        status: 'failed',
         durationMs: now() - auditStartedAt,
       });
-      await report.finish({ status: "failed", error });
+      await report.finish({ status: 'failed', error });
       throw error;
     }
     const retrieved = new Map<string, RetrievalChunk>();
@@ -226,7 +216,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
 
     try {
       const generationStartedAt = now();
-      report.recordStep({ name: "agent-generate", status: "started" });
+      report.recordStep({ name: 'agent-generate', status: 'started' });
       let generated;
       try {
         generated = await this.options.agent.generate({
@@ -243,15 +233,15 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
               blockedRetrievalCalls += 1;
               const limited = {
                 error:
-                  "The retrieval limit for this answer has been reached. Use already retrieved passages and return the final JSON without calling search again.",
+                  'The retrieval limit for this answer has been reached. Use already retrieved passages and return the final JSON without calling search again.',
                 chunks: [],
               };
               report.recordToolCall({
-                name: "search_knowledge",
-                status: "failed",
+                name: 'search_knowledge',
+                status: 'failed',
                 durationMs: now() - retrievalStartedAt,
                 summary: {
-                  reason: "run-limit",
+                  reason: 'run-limit',
                   limit: MAX_SEARCH_CALLS,
                   blockedCalls: 1,
                 },
@@ -263,8 +253,8 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
             const retrievalCall = retrievalCalls + 1;
             retrievalCalls = retrievalCall;
             report.recordStep({
-              name: "retrieve-knowledge",
-              status: "started",
+              name: 'retrieve-knowledge',
+              status: 'started',
               metadata: { call: retrievalCall },
             });
 
@@ -272,15 +262,12 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
               const embeddingStartedAt = now();
               let embedded;
               try {
-                embedded = await this.options.embeddings.embedQueryWithUsage(
-                  query,
-                  signal,
-                );
+                embedded = await this.options.embeddings.embedQueryWithUsage(query, signal);
                 report.recordModelCall({
-                  name: "query-embedding",
+                  name: 'query-embedding',
                   provider: embedded.provider,
                   model: embedded.model,
-                  status: "completed",
+                  status: 'completed',
                   durationMs: now() - embeddingStartedAt,
                   inputTokens: embedded.tokens,
                   estimatedCostUsd: embedded.estimatedCostUsd,
@@ -288,10 +275,10 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
                 });
               } catch (error) {
                 report.recordModelCall({
-                  name: "query-embedding",
-                  provider: "openrouter",
+                  name: 'query-embedding',
+                  provider: 'openrouter',
                   model: this.options.ragConfig.embeddingModel,
-                  status: "failed",
+                  status: 'failed',
                   durationMs: now() - embeddingStartedAt,
                 });
                 throw error;
@@ -317,31 +304,31 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
                 chunkIds: chunks.map((chunk) => chunk.id),
               };
               report.recordToolCall({
-                name: "search_knowledge",
-                status: "completed",
+                name: 'search_knowledge',
+                status: 'completed',
                 durationMs: now() - retrievalStartedAt,
                 summary,
                 input: { query },
                 output,
               });
               report.recordStep({
-                name: "retrieve-knowledge",
-                status: "completed",
+                name: 'retrieve-knowledge',
+                status: 'completed',
                 durationMs: now() - retrievalStartedAt,
                 metadata: summary,
               });
               return output;
             } catch (error) {
               report.recordToolCall({
-                name: "search_knowledge",
-                status: "failed",
+                name: 'search_knowledge',
+                status: 'failed',
                 durationMs: now() - retrievalStartedAt,
                 summary: { call: retrievalCall, queryLength: query.length },
                 input: { query },
               });
               report.recordStep({
-                name: "retrieve-knowledge",
-                status: "failed",
+                name: 'retrieve-knowledge',
+                status: 'failed',
                 durationMs: now() - retrievalStartedAt,
                 metadata: { call: retrievalCall },
               });
@@ -350,8 +337,8 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
           },
         });
         report.recordStep({
-          name: "agent-generate",
-          status: "completed",
+          name: 'agent-generate',
+          status: 'completed',
           durationMs: now() - generationStartedAt,
           metadata: {
             retrievalLimited: generated.retrievalLimited ?? false,
@@ -360,8 +347,8 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         });
       } catch (error) {
         report.recordStep({
-          name: "agent-generate",
-          status: "failed",
+          name: 'agent-generate',
+          status: 'failed',
           durationMs: now() - generationStartedAt,
         });
         throw error;
@@ -370,8 +357,8 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
       blockedRetrievalCalls += generated.blockedRetrievalCalls ?? 0;
       if (retrievalLimited) {
         report.recordStep({
-          name: "retrieval-limit",
-          status: "completed",
+          name: 'retrieval-limit',
+          status: 'completed',
           metadata: {
             maxSearchCalls: MAX_SEARCH_CALLS,
             retrievalCalls,
@@ -389,7 +376,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         candidate.citedChunkIds.length > MAX_CITATIONS;
       if (needsCitationCorrection) {
         const correctionStartedAt = now();
-        report.recordStep({ name: "citation-correction", status: "started" });
+        report.recordStep({ name: 'citation-correction', status: 'started' });
         let corrected;
         try {
           corrected = await this.options.agent.correctCitations(
@@ -401,8 +388,8 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
           );
         } catch (error) {
           report.recordStep({
-            name: "citation-correction",
-            status: "failed",
+            name: 'citation-correction',
+            status: 'failed',
             durationMs: now() - correctionStartedAt,
           });
           throw error;
@@ -411,8 +398,8 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         correctionUsage = corrected.usage;
         validIds = candidate.citedChunkIds.filter((id) => retrieved.has(id));
         report.recordStep({
-          name: "citation-correction",
-          status: "completed",
+          name: 'citation-correction',
+          status: 'completed',
           durationMs: now() - correctionStartedAt,
           metadata: {
             allowedCount: retrieved.size,
@@ -429,9 +416,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         !candidate.grounded ||
         validIds.length === 0 ||
         validIds.length !== candidate.citedChunkIds.length;
-      if (
-        fellBack
-      ) {
+      if (fellBack) {
         candidate = {
           answer: INSUFFICIENT_EVIDENCE,
           grounded: false,
@@ -446,8 +431,8 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         };
       }
       report.recordStep({
-        name: "citation-validation",
-        status: "completed",
+        name: 'citation-validation',
+        status: 'completed',
         metadata: {
           retrievedCount: retrieved.size,
           citedCount: validIds.length,
@@ -458,8 +443,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
 
       const usage = {
         inputTokens: generated.usage.inputTokens + correctionUsage.inputTokens,
-        outputTokens:
-          generated.usage.outputTokens + correctionUsage.outputTokens,
+        outputTokens: generated.usage.outputTokens + correctionUsage.outputTokens,
       };
       const response = RagQueryResponseSchema.parse({
         conversationId: conversation.id,
@@ -467,7 +451,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         grounded: candidate.grounded,
         citations: validIds.map((id, index) => {
           const chunk = retrieved.get(id);
-          if (!chunk) throw new Error("Validated citation disappeared.");
+          if (!chunk) throw new Error('Validated citation disappeared.');
           return {
             number: index + 1,
             documentId: chunk.documentId,
@@ -481,7 +465,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
       });
 
       const auditCompleteStartedAt = now();
-      report.recordStep({ name: "audit-complete", status: "started" });
+      report.recordStep({ name: 'audit-complete', status: 'started' });
       try {
         await this.options.conversationRepository.completeRun(runId, {
           answer: response.answer,
@@ -493,20 +477,20 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         });
       } catch (error) {
         report.recordStep({
-          name: "audit-complete",
-          status: "failed",
+          name: 'audit-complete',
+          status: 'failed',
           durationMs: now() - auditCompleteStartedAt,
         });
         throw error;
       }
       report.recordStep({
-        name: "audit-complete",
-        status: "completed",
+        name: 'audit-complete',
+        status: 'completed',
         durationMs: now() - auditCompleteStartedAt,
       });
       report.recordOutput(response);
       await report.finish({
-        status: "completed",
+        status: 'completed',
         metadata: {
           grounded: response.grounded,
           citationCount: response.citations.length,
@@ -522,25 +506,26 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
     } catch (error) {
       // 审计失败是次生故障，不能覆盖触发失败的原始异常。
       const auditFailureStartedAt = now();
-      report.recordStep({ name: "audit-fail", status: "started" });
+      report.recordStep({ name: 'audit-fail', status: 'started' });
       let failureAuditCompleted = true;
       await this.options.conversationRepository.failRun(runId, now() - startedAt).then(
-        () => report.recordStep({
-          name: "audit-fail",
-          status: "completed",
-          durationMs: now() - auditFailureStartedAt,
-        }),
+        () =>
+          report.recordStep({
+            name: 'audit-fail',
+            status: 'completed',
+            durationMs: now() - auditFailureStartedAt,
+          }),
         () => {
           failureAuditCompleted = false;
           report.recordStep({
-            name: "audit-fail",
-            status: "failed",
+            name: 'audit-fail',
+            status: 'failed',
             durationMs: now() - auditFailureStartedAt,
           });
         },
       );
       await report.finish({
-        status: "failed",
+        status: 'failed',
         error,
         metadata: {
           retrievalCalls,
@@ -552,24 +537,14 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         },
       });
       if (isTimeout(error)) {
-        throw new KnowledgeAnswerError(
-          "MODEL_TIMEOUT",
-          "问答模型响应超时，请稍后重试。",
-        );
+        throw new KnowledgeAnswerError('MODEL_TIMEOUT', '问答模型响应超时，请稍后重试。');
       }
-      if (
-        error instanceof KnowledgeAnswerError ||
-        error instanceof RagRepositoryError
-      )
-        throw error;
-      console.error("Knowledge answer failed", error, {
+      if (error instanceof KnowledgeAnswerError || error instanceof RagRepositoryError) throw error;
+      console.error('Knowledge answer failed', error, {
         conversationId: conversation.id,
         knowledgeBaseId: command.knowledgeBaseId,
       });
-      throw new KnowledgeAnswerError(
-        "MODEL_UNAVAILABLE",
-        "问答模型暂时不可用，请稍后重试。",
-      );
+      throw new KnowledgeAnswerError('MODEL_UNAVAILABLE', '问答模型暂时不可用，请稍后重试。');
     }
   }
 
@@ -586,11 +561,9 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
 
   private runCleanup(): Promise<void> {
     if (this.cleanupPromise) return this.cleanupPromise;
-    const running = this.cleanupExpiredConversations().catch(
-      (error: unknown) => {
-        console.error("Failed to clean expired RAG conversations", error);
-      },
-    );
+    const running = this.cleanupExpiredConversations().catch((error: unknown) => {
+      console.error('Failed to clean expired RAG conversations', error);
+    });
     this.cleanupPromise = running.finally(() => {
       this.cleanupPromise = undefined;
     });
@@ -602,11 +575,9 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
       try {
         // checkpoint 必须先删除；随后数据库外键才能安全清理 conversation 与关联 run。
         await this.options.checkpointer.deleteThread(conversation.threadId);
-        await this.options.conversationRepository.deleteExpiredConversation(
-          conversation.id,
-        );
+        await this.options.conversationRepository.deleteExpiredConversation(conversation.id);
       } catch (error) {
-        console.error("Failed to clean expired RAG conversation", error, {
+        console.error('Failed to clean expired RAG conversation', error, {
           conversationId: conversation.id,
         });
       }

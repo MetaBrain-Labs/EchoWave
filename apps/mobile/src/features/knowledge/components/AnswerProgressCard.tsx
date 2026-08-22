@@ -10,16 +10,16 @@
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useState } from 'react';
-import {
-  AccessibilityInfo,
-  Animated,
-  Easing,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { AccessibilityInfo, Animated, Easing, StyleSheet, Text, View } from 'react-native';
 
-import { colors, fontFamilies, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
+import {
+  colors,
+  fontFamilies,
+  radii,
+  spacing,
+  textColors,
+  typography,
+} from '@/shared/theme/tokens';
 
 const stages = ['唤醒 AI', '连接知识库', '检索知识库', '生成结果中'] as const;
 const stageDelays = [350, 900, 1_600] as const;
@@ -54,10 +54,12 @@ export function AnswerProgressCard({
       onProgressChange?.();
       return undefined;
     }
-    const timers = stageDelays.map((delay, index) => setTimeout(() => {
-      setActiveStage(index + 1);
-      onProgressChange?.();
-    }, delay));
+    const timers = stageDelays.map((delay, index) =>
+      setTimeout(() => {
+        setActiveStage(index + 1);
+        onProgressChange?.();
+      }, delay),
+    );
     return () => timers.forEach(clearTimeout);
   }, [onProgressChange, verified]);
 
@@ -86,9 +88,7 @@ export function AnswerProgressCard({
     return () => animation.stop();
   }, [pulse, reduceMotion]);
 
-  const finalLabel = sourceCount === 0
-    ? '未找到可引用依据'
-    : `已确认 ${sourceCount} 条引用来源`;
+  const finalLabel = sourceCount === 0 ? '未找到可引用依据' : `已确认 ${sourceCount} 条引用来源`;
   const displayedStage = verified ? stages.length : activeStage;
 
   return (
@@ -101,10 +101,16 @@ export function AnswerProgressCard({
     >
       <View style={styles.headingRow}>
         <Animated.View
-          style={reduceMotion ? undefined : {
-            opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] }),
-            transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.08] }) }],
-          }}
+          style={
+            reduceMotion
+              ? undefined
+              : {
+                  opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] }),
+                  transform: [
+                    { scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.08] }) },
+                  ],
+                }
+          }
         >
           <Ionicons color={colors.success} name="sparkles" size={22} />
         </Animated.View>
@@ -116,17 +122,29 @@ export function AnswerProgressCard({
           const current = !verified && index === displayedStage;
           return (
             <View key={stage} style={styles.stepRow}>
-              <View style={[styles.marker, complete && styles.completeMarker, current && styles.currentMarker]}>
+              <View
+                style={[
+                  styles.marker,
+                  complete && styles.completeMarker,
+                  current && styles.currentMarker,
+                ]}
+              >
                 {complete ? <Ionicons color={colors.card} name="checkmark" size={12} /> : null}
               </View>
-              <Text style={[styles.stepText, (complete || current) && styles.activeStepText]}>{stage}</Text>
+              <Text style={[styles.stepText, (complete || current) && styles.activeStepText]}>
+                {stage}
+              </Text>
               {current ? <Text style={styles.dots}>•••</Text> : null}
             </View>
           );
         })}
         {verified ? (
           <View style={styles.verifiedRow}>
-            <Ionicons color={sourceCount === 0 ? colors.muted : colors.success} name={sourceCount === 0 ? 'information-circle-outline' : 'checkmark-circle'} size={18} />
+            <Ionicons
+              color={sourceCount === 0 ? colors.muted : colors.success}
+              name={sourceCount === 0 ? 'information-circle-outline' : 'checkmark-circle'}
+              size={18}
+            />
             <Text style={styles.verifiedText}>{finalLabel}</Text>
           </View>
         ) : null}
@@ -147,15 +165,52 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   headingRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
-  heading: { ...typography.heading5, color: textColors.primary, fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
+  heading: {
+    ...typography.heading5,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
   steps: { gap: spacing.sm },
   stepRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm, minHeight: 22 },
-  marker: { borderColor: colors.divider, borderRadius: radii.round, borderWidth: 1, height: 18, width: 18 },
-  completeMarker: { alignItems: 'center', backgroundColor: colors.success, borderColor: colors.success, justifyContent: 'center' },
+  marker: {
+    borderColor: colors.divider,
+    borderRadius: radii.round,
+    borderWidth: 1,
+    height: 18,
+    width: 18,
+  },
+  completeMarker: {
+    alignItems: 'center',
+    backgroundColor: colors.success,
+    borderColor: colors.success,
+    justifyContent: 'center',
+  },
   currentMarker: { backgroundColor: colors.successSurface, borderColor: colors.success },
-  stepText: { ...typography.description, color: textColors.tertiary, fontFamily: fontFamilies.sans },
+  stepText: {
+    ...typography.description,
+    color: textColors.tertiary,
+    fontFamily: fontFamilies.sans,
+  },
   activeStepText: { color: textColors.primary },
-  dots: { ...typography.label, color: colors.success, fontFamily: fontFamilies.sansBold, letterSpacing: 2 },
-  verifiedRow: { alignItems: 'center', borderTopColor: colors.divider, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: spacing.sm, paddingTop: spacing.sm },
-  verifiedText: { ...typography.description, color: textColors.secondary, fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
+  dots: {
+    ...typography.label,
+    color: colors.success,
+    fontFamily: fontFamilies.sansBold,
+    letterSpacing: 2,
+  },
+  verifiedRow: {
+    alignItems: 'center',
+    borderTopColor: colors.divider,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingTop: spacing.sm,
+  },
+  verifiedText: {
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
 });

@@ -124,6 +124,7 @@ Use the repository's pinned toolchain and existing scripts. Do not change depend
    * - <边界说明>
    */
   ```
+
 - Do not commit generated build output, caches, runtime state, secrets, or local environment files.
 
 ## Verification

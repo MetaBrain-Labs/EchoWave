@@ -37,10 +37,11 @@ export const KnowledgeBaseSettingsSchema = z.object({
 
 /** 为知识库批量关联分组的请求，禁止同一分组在单次请求内重复出现。 */
 export const KnowledgeBaseGroupLinkRequestSchema = z.object({
-  groupIds: z.array(EntityIdSchema).min(1).max(100).refine(
-    (ids) => new Set(ids).size === ids.length,
-    { message: 'Group IDs must be unique.' },
-  ),
+  groupIds: z
+    .array(EntityIdSchema)
+    .min(1)
+    .max(100)
+    .refine((ids) => new Set(ids).size === ids.length, { message: 'Group IDs must be unique.' }),
 });
 
 /** 知识库列表和详情共用的摘要 schema。 */
@@ -53,7 +54,9 @@ export const KnowledgeBaseSummarySchema = z.object({
   updatedAt: z.string().datetime(),
 });
 
-export const KnowledgeBaseListResponseSchema = z.object({ items: z.array(KnowledgeBaseSummarySchema) });
+export const KnowledgeBaseListResponseSchema = z.object({
+  items: z.array(KnowledgeBaseSummarySchema),
+});
 export const KnowledgeBaseDetailSchema = KnowledgeBaseSummarySchema.extend({
   settings: KnowledgeBaseSettingsSchema,
   totalSizeBytes: z.number().int().nonnegative(),

@@ -21,10 +21,19 @@ const migration = await readFile(
 describe('audio workspace migration', () => {
   it('defines every workspace fact table without demo inserts', () => {
     for (const table of [
-      'groups', 'group_knowledge_bases', 'data_sources', 'group_data_sources',
-      'data_source_ingestion_runs', 'audio_files', 'group_audio_links',
-      'audio_analysis_revisions', 'analysis_scenes', 'transcript_segments',
-      'analysis_invalid_segments', 'analysis_summary_sections', 'segment_ai_tags',
+      'groups',
+      'group_knowledge_bases',
+      'data_sources',
+      'group_data_sources',
+      'data_source_ingestion_runs',
+      'audio_files',
+      'group_audio_links',
+      'audio_analysis_revisions',
+      'analysis_scenes',
+      'transcript_segments',
+      'analysis_invalid_segments',
+      'analysis_summary_sections',
+      'segment_ai_tags',
     ]) {
       assert.match(migration, new RegExp(`CREATE TABLE ${table} \\(`));
     }

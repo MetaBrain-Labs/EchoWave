@@ -33,9 +33,7 @@ export default function KnowledgeDetailRoute() {
       knowledgeId={id}
       onBack={goBack}
       onAsk={() => {
-        void runWithLoading(() =>
-          router.push(`/knowledge/${id}/ask` as Href),
-        );
+        void runWithLoading(() => router.push(`/knowledge/${id}/ask` as Href));
       }}
       onOpenDocument={(documentId) => {
         void runWithLoading(() =>

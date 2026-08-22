@@ -14,12 +14,15 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { colors, fontFamilies, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
 import {
-  audioStatusLabels,
-  type AudioSortOrder,
-  type AudioStatusKind,
-} from '../model';
+  colors,
+  fontFamilies,
+  radii,
+  spacing,
+  textColors,
+  typography,
+} from '@/shared/theme/tokens';
+import { audioStatusLabels, type AudioSortOrder, type AudioStatusKind } from '../model';
 
 const statusOptions = Object.entries(audioStatusLabels) as [AudioStatusKind, string][];
 
@@ -38,7 +41,9 @@ export function AudioFilterSheet({
   visible: boolean;
 }) {
   const [draftSort, setDraftSort] = useState<AudioSortOrder>(sortOrder);
-  const [draftStatuses, setDraftStatuses] = useState<Set<AudioStatusKind>>(() => new Set(selectedStatuses));
+  const [draftStatuses, setDraftStatuses] = useState<Set<AudioStatusKind>>(
+    () => new Set(selectedStatuses),
+  );
 
   const toggleStatus = (status: AudioStatusKind) => {
     setDraftStatuses((current) => {
@@ -52,27 +57,52 @@ export function AudioFilterSheet({
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
       <View style={styles.overlay}>
-        <Pressable accessibilityLabel="关闭排序筛选抽屉遮罩" accessibilityRole="button" onPress={onClose} style={StyleSheet.absoluteFill} />
+        <Pressable
+          accessibilityLabel="关闭排序筛选抽屉遮罩"
+          accessibilityRole="button"
+          onPress={onClose}
+          style={StyleSheet.absoluteFill}
+        />
         <View accessibilityViewIsModal style={styles.sheet}>
           <View style={styles.header}>
             <View>
-              <Text accessibilityRole="header" style={styles.title}>排序筛选</Text>
+              <Text accessibilityRole="header" style={styles.title}>
+                排序筛选
+              </Text>
               <Text style={styles.subtitle}>未选择状态时展示全部状态</Text>
             </View>
-            <Pressable accessibilityLabel="关闭排序筛选抽屉" accessibilityRole="button" hitSlop={8} onPress={onClose} style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
+            <Pressable
+              accessibilityLabel="关闭排序筛选抽屉"
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={onClose}
+              style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+            >
               <Ionicons color={colors.ink} name="close" size={26} />
             </Pressable>
           </View>
           <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
             <Text style={styles.sectionTitle}>创建时间</Text>
-            {([
-              ['newest', '最新优先'],
-              ['oldest', '最早优先'],
-            ] as const).map(([value, label]) => {
+            {(
+              [
+                ['newest', '最新优先'],
+                ['oldest', '最早优先'],
+              ] as const
+            ).map(([value, label]) => {
               const selected = draftSort === value;
               return (
-                <Pressable key={value} accessibilityRole="radio" accessibilityState={{ selected }} onPress={() => setDraftSort(value)} style={({ pressed }) => [styles.optionRow, pressed && styles.pressed]}>
-                  <Ionicons color={selected ? colors.ink : textColors.tertiary} name={selected ? 'radio-button-on' : 'radio-button-off'} size={22} />
+                <Pressable
+                  key={value}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  onPress={() => setDraftSort(value)}
+                  style={({ pressed }) => [styles.optionRow, pressed && styles.pressed]}
+                >
+                  <Ionicons
+                    color={selected ? colors.ink : textColors.tertiary}
+                    name={selected ? 'radio-button-on' : 'radio-button-off'}
+                    size={22}
+                  />
                   <Text style={styles.optionText}>{label}</Text>
                 </Pressable>
               );
@@ -80,23 +110,47 @@ export function AudioFilterSheet({
 
             <View style={styles.statusHeader}>
               <Text style={styles.sectionTitle}>处理状态（多选）</Text>
-              {draftStatuses.size ? <Text style={styles.selectionCount}>已选 {draftStatuses.size} 项</Text> : null}
+              {draftStatuses.size ? (
+                <Text style={styles.selectionCount}>已选 {draftStatuses.size} 项</Text>
+              ) : null}
             </View>
             {statusOptions.map(([value, label]) => {
               const checked = draftStatuses.has(value);
               return (
-                <Pressable key={value} accessibilityRole="checkbox" accessibilityState={{ checked }} onPress={() => toggleStatus(value)} style={({ pressed }) => [styles.optionRow, pressed && styles.pressed]}>
-                  <Ionicons color={checked ? colors.ink : textColors.tertiary} name={checked ? 'checkbox' : 'square-outline'} size={22} />
+                <Pressable
+                  key={value}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked }}
+                  onPress={() => toggleStatus(value)}
+                  style={({ pressed }) => [styles.optionRow, pressed && styles.pressed]}
+                >
+                  <Ionicons
+                    color={checked ? colors.ink : textColors.tertiary}
+                    name={checked ? 'checkbox' : 'square-outline'}
+                    size={22}
+                  />
                   <Text style={styles.optionText}>{label}</Text>
                 </Pressable>
               );
             })}
           </ScrollView>
           <View style={styles.footer}>
-            <Pressable accessibilityRole="button" onPress={() => { setDraftSort('newest'); setDraftStatuses(new Set()); }} style={({ pressed }) => [styles.resetButton, pressed && styles.pressed]}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                setDraftSort('newest');
+                setDraftStatuses(new Set());
+              }}
+              style={({ pressed }) => [styles.resetButton, pressed && styles.pressed]}
+            >
               <Text style={styles.resetText}>重置</Text>
             </Pressable>
-            <Pressable accessibilityLabel="确认排序筛选" accessibilityRole="button" onPress={() => onApply(draftSort, new Set(draftStatuses))} style={({ pressed }) => [styles.confirmButton, pressed && styles.primaryPressed]}>
+            <Pressable
+              accessibilityLabel="确认排序筛选"
+              accessibilityRole="button"
+              onPress={() => onApply(draftSort, new Set(draftStatuses))}
+              style={({ pressed }) => [styles.confirmButton, pressed && styles.primaryPressed]}
+            >
               <Text style={styles.confirmText}>确认</Text>
             </Pressable>
           </View>
@@ -108,22 +162,110 @@ export function AudioFilterSheet({
 
 const styles = StyleSheet.create({
   overlay: { backgroundColor: 'rgba(16, 24, 40, 0.28)', flex: 1, justifyContent: 'flex-end' },
-  sheet: { alignSelf: 'center', backgroundColor: colors.card, borderTopLeftRadius: spacing.lg, borderTopRightRadius: spacing.lg, maxHeight: '82%', maxWidth: 480, width: '100%' },
-  header: { alignItems: 'center', borderBottomColor: colors.divider, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', justifyContent: 'space-between', padding: spacing.md },
-  title: { ...typography.heading1, color: textColors.primary, fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
-  subtitle: { ...typography.label, color: textColors.tertiary, fontFamily: fontFamilies.sans, marginTop: spacing.xs },
-  iconButton: { alignItems: 'center', borderRadius: radii.round, height: 44, justifyContent: 'center', width: 44 },
+  sheet: {
+    alignSelf: 'center',
+    backgroundColor: colors.card,
+    borderTopLeftRadius: spacing.lg,
+    borderTopRightRadius: spacing.lg,
+    maxHeight: '82%',
+    maxWidth: 480,
+    width: '100%',
+  },
+  header: {
+    alignItems: 'center',
+    borderBottomColor: colors.divider,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: spacing.md,
+  },
+  title: {
+    ...typography.heading1,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  subtitle: {
+    ...typography.label,
+    color: textColors.tertiary,
+    fontFamily: fontFamilies.sans,
+    marginTop: spacing.xs,
+  },
+  iconButton: {
+    alignItems: 'center',
+    borderRadius: radii.round,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
   pressed: { backgroundColor: colors.background },
   content: { gap: spacing.xs, padding: spacing.md },
-  sectionTitle: { ...typography.heading3, color: textColors.primary, fontFamily: fontFamilies.sansBold, fontWeight: 'bold', marginBottom: spacing.xs, marginTop: spacing.sm },
-  optionRow: { alignItems: 'center', borderRadius: radii.default, flexDirection: 'row', gap: spacing.sm, minHeight: 44, paddingHorizontal: spacing.sm },
+  sectionTitle: {
+    ...typography.heading3,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+    marginBottom: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  optionRow: {
+    alignItems: 'center',
+    borderRadius: radii.default,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 44,
+    paddingHorizontal: spacing.sm,
+  },
   optionText: { ...typography.body, color: textColors.primary, fontFamily: fontFamilies.sans },
-  statusHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.sm },
-  selectionCount: { ...typography.label, color: textColors.secondary, fontFamily: fontFamilies.sans },
-  footer: { borderTopColor: colors.divider, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: spacing.sm, justifyContent: 'flex-end', padding: spacing.md, paddingBottom: spacing.xl },
-  resetButton: { alignItems: 'center', borderColor: colors.divider, borderRadius: radii.default, borderWidth: 1, justifyContent: 'center', minHeight: 44, paddingHorizontal: spacing.lg },
-  resetText: { ...typography.description, color: textColors.secondary, fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
-  confirmButton: { alignItems: 'center', backgroundColor: colors.ink, borderRadius: radii.default, justifyContent: 'center', minHeight: 44, minWidth: 96, paddingHorizontal: spacing.lg },
-  confirmText: { ...typography.description, color: colors.white, fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
+  statusHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
+  },
+  selectionCount: {
+    ...typography.label,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+  },
+  footer: {
+    borderTopColor: colors.divider,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'flex-end',
+    padding: spacing.md,
+    paddingBottom: spacing.xl,
+  },
+  resetButton: {
+    alignItems: 'center',
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 44,
+    paddingHorizontal: spacing.lg,
+  },
+  resetText: {
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  confirmButton: {
+    alignItems: 'center',
+    backgroundColor: colors.ink,
+    borderRadius: radii.default,
+    justifyContent: 'center',
+    minHeight: 44,
+    minWidth: 96,
+    paddingHorizontal: spacing.lg,
+  },
+  confirmText: {
+    ...typography.description,
+    color: colors.white,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
   primaryPressed: { opacity: 0.78 },
 });
