@@ -27,9 +27,7 @@ export function StatusBarBackdrop() {
     return null;
   }
 
-  return (
-    <View pointerEvents="none" style={[styles.backdrop, { height: insets.top }]} />
-  );
+  return <View pointerEvents="none" style={[styles.backdrop, { height: insets.top }]} />;
 }
 
 const styles = StyleSheet.create({
