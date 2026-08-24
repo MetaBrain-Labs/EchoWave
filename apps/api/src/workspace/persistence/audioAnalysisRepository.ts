@@ -18,6 +18,7 @@ import {
   AUDIO_TRANSCRIPTION_DIRECT_FORMATS,
   AUDIO_TRANSCRIPTION_DIRECT_MAX_BYTES,
   AudioTranscriptionStartResponseSchema,
+  type AudioFailureDetails,
   type AudioTranscriptionPreprocessing,
 } from '@echowave/contracts';
 
@@ -27,8 +28,18 @@ import { WorkspaceRepositoryError } from './errors.ts';
 /** worker 已领取的音频转写任务快照。 */
 export type ClaimedAudioTranscription = {
   audioFileId: string;
+  dataSource: {
+    id: string;
+    name: string;
+    sourceType: string;
+    location: string;
+    connectionStatus: string;
+  } | null;
   durationMs: number;
+  ingestionRunId: string | null;
   mimeType: string;
+  model: string;
+  originalFilename: string | null;
   preprocessingMode: AudioTranscriptionPreprocessing;
   revisionId: string;
   revisionNo: number;
@@ -133,7 +144,8 @@ export class AudioAnalysisRepository {
   async resetInterruptedTranscriptions(): Promise<void> {
     await this.pool.query(
       `UPDATE ${this.table('audio_analysis_revisions')}
-       SET status = 'queued', progress = 0
+       SET status = 'queued', progress = 0, error_stage = NULL, error_code = NULL,
+           error_message = NULL, error_retryable = NULL, error_details = NULL
        WHERE tenant_id = $1 AND status IN ('transcribing', 'analyzing')`,
       [this.tenantId],
     );
@@ -150,10 +162,16 @@ export class AudioAnalysisRepository {
        UPDATE ${this.table('audio_analysis_revisions')} ar
        SET status = 'transcribing', progress = 1
        FROM candidate, ${this.table('audio_files')} af
+       LEFT JOIN ${this.table('data_sources')} ds
+         ON ds.tenant_id = af.tenant_id AND ds.id = af.data_source_id
        WHERE ar.id = candidate.id AND af.tenant_id = ar.tenant_id
          AND af.id = ar.audio_file_id AND af.deleted_at IS NULL
        RETURNING ar.id AS revision_id, ar.revision_no, af.id AS audio_file_id,
-                 af.title, af.storage_key, af.mime_type, af.duration_ms, af.size_bytes,
+                 ar.transcription_model, af.title, af.original_filename, af.storage_key,
+                 af.mime_type, af.duration_ms, af.size_bytes, af.ingestion_run_id,
+                 ds.id AS data_source_id, ds.name AS data_source_name,
+                 ds.source_type, ds.location AS data_source_location,
+                 ds.connection_status AS data_source_connection_status,
                  ar.settings_snapshot->>'preprocessingMode' AS preprocessing_mode`,
       [this.tenantId],
     );
@@ -161,8 +179,20 @@ export class AudioAnalysisRepository {
     if (!row?.storage_key || row.duration_ms === null) return undefined;
     return {
       audioFileId: row.audio_file_id,
+      dataSource: row.data_source_id
+        ? {
+            id: row.data_source_id,
+            name: row.data_source_name,
+            sourceType: row.source_type,
+            location: row.data_source_location,
+            connectionStatus: row.data_source_connection_status,
+          }
+        : null,
       durationMs: Number(row.duration_ms),
+      ingestionRunId: row.ingestion_run_id ?? null,
       mimeType: row.mime_type ?? 'application/octet-stream',
+      model: row.transcription_model,
+      originalFilename: row.original_filename ?? null,
       preprocessingMode: row.preprocessing_mode === 'direct' ? 'direct' : 'ffmpeg',
       revisionId: row.revision_id,
       revisionNo: Number(row.revision_no),
@@ -217,7 +247,8 @@ export class AudioAnalysisRepository {
       await client.query(
         `UPDATE ${this.table('audio_analysis_revisions')}
          SET status = 'ready', progress = 100, completed_at = now(), published_at = now(),
-             error_stage = NULL, error_code = NULL, error_message = NULL, error_retryable = NULL
+             error_stage = NULL, error_code = NULL, error_message = NULL,
+             error_retryable = NULL, error_details = NULL
          WHERE tenant_id = $1 AND id = $2 AND status = 'transcribing'`,
         [this.tenantId, job.revisionId],
       );
@@ -245,13 +276,15 @@ export class AudioAnalysisRepository {
     code: string,
     message: string,
     retryable: boolean,
+    details: AudioFailureDetails | null = null,
   ): Promise<void> {
     await this.pool.query(
       `UPDATE ${this.table('audio_analysis_revisions')}
        SET status = 'failed', completed_at = now(), error_stage = 'transcription',
-           error_code = $3, error_message = $4, error_retryable = $5
+           error_code = $3, error_message = $4, error_retryable = $5,
+           error_details = $6::jsonb
        WHERE tenant_id = $1 AND id = $2`,
-      [this.tenantId, job.revisionId, code, message, retryable],
+      [this.tenantId, job.revisionId, code, message, retryable, JSON.stringify(details)],
     );
   }
 }

@@ -114,6 +114,7 @@ export function createRagRuntime(config: ApiConfig) {
       model: config.rag.audioTranscriptionModel,
     }),
     preprocessor: audioInputPreprocessor,
+    reporter: executionReporter,
   });
   return {
     service,

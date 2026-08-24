@@ -15,6 +15,7 @@
  */
 import {
   AudioAnalysisDetailSchema,
+  AudioFailureDetailsSchema,
   AudioFileListResponseSchema,
   DataSourceAudioUploadResponseSchema,
   DataSourceDetailSchema,
@@ -54,6 +55,7 @@ function audioStatus(row: Record<string, unknown>): AudioProcessingStatus {
       code: String(row.audio_error_code ?? 'UPLOAD_FAILED'),
       message: String(row.audio_error_message ?? '音频上传失败。'),
       retryable: Boolean(row.audio_error_retryable),
+      details: null,
     };
   }
   switch (row.analysis_status) {
@@ -67,12 +69,14 @@ function audioStatus(row: Record<string, unknown>): AudioProcessingStatus {
       return { kind: 'ready' };
     case 'failed': {
       const stage = row.analysis_error_stage === 'transcription' ? 'transcription' : 'analysis';
+      const details = AudioFailureDetailsSchema.safeParse(row.analysis_error_details);
       return {
         kind: 'failed',
         stage,
         code: String(row.analysis_error_code ?? 'ANALYSIS_FAILED'),
         message: String(row.analysis_error_message ?? '音频分析失败。'),
         retryable: Boolean(row.analysis_error_retryable),
+        details: details.success ? details.data : null,
       };
     }
     default:
@@ -241,6 +245,7 @@ export class WorkspaceRepository {
               latest.error_code AS analysis_error_code,
               latest.error_message AS analysis_error_message,
               latest.error_retryable AS analysis_error_retryable,
+              latest.error_details AS analysis_error_details,
               af.error_code AS audio_error_code,
               af.error_message AS audio_error_message,
               af.error_retryable AS audio_error_retryable
@@ -248,7 +253,8 @@ export class WorkspaceRepository {
        LEFT JOIN ${this.table('groups')} origin
          ON origin.tenant_id = af.tenant_id AND origin.id = af.origin_group_id
        LEFT JOIN LATERAL (
-         SELECT ar.status, ar.progress, ar.error_stage, ar.error_code, ar.error_message, ar.error_retryable
+         SELECT ar.status, ar.progress, ar.error_stage, ar.error_code, ar.error_message,
+                ar.error_retryable, ar.error_details
          FROM ${this.table('audio_analysis_revisions')} ar
          WHERE ar.tenant_id = af.tenant_id AND ar.audio_file_id = af.id
          ORDER BY ar.revision_no DESC LIMIT 1
@@ -684,12 +690,14 @@ export class WorkspaceRepository {
               latest.error_code AS analysis_error_code,
               latest.error_message AS analysis_error_message,
               latest.error_retryable AS analysis_error_retryable,
+              latest.error_details AS analysis_error_details,
               af.error_code AS audio_error_code,
               af.error_message AS audio_error_message,
               af.error_retryable AS audio_error_retryable
        FROM ${this.table('audio_files')} af
        LEFT JOIN LATERAL (
-         SELECT ar.status, ar.progress, ar.error_stage, ar.error_code, ar.error_message, ar.error_retryable
+         SELECT ar.status, ar.progress, ar.error_stage, ar.error_code, ar.error_message,
+                ar.error_retryable, ar.error_details
          FROM ${this.table('audio_analysis_revisions')} ar
          WHERE ar.tenant_id = af.tenant_id AND ar.audio_file_id = af.id
          ORDER BY ar.revision_no DESC LIMIT 1

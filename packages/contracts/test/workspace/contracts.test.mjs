@@ -51,10 +51,35 @@ describe('workspace contracts', () => {
         code: 'UNSUPPORTED_CODEC',
         message: '编码不支持。',
         retryable: false,
+        details: {
+          category: 'semantic_validation',
+          chunkIndex: 1,
+          chunkCount: 2,
+          structureAttempts: 2,
+          issues: [
+            {
+              path: 'segments.0.endMs',
+              code: 'timestamp_out_of_bounds',
+              message: '片段时间戳超出当前分块。',
+            },
+          ],
+          outputLength: 120,
+          outputSha256: 'a'.repeat(64),
+        },
       },
     });
 
     assert.equal(audio.status.kind, 'failed');
+    assert.equal(audio.status.details.issues[0].code, 'timestamp_out_of_bounds');
+    assert.throws(() =>
+      AudioFileSummarySchema.parse({
+        ...audio,
+        status: {
+          ...audio.status,
+          details: { ...audio.status.details, outputSha256: 'unsafe' },
+        },
+      }),
+    );
     assert.throws(() =>
       AudioFileSummarySchema.parse({
         ...audio,

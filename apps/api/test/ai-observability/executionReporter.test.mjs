@@ -98,7 +98,7 @@ describe('AI execution reporter', () => {
     const run = reporter.start({ kind: 'future-workflow', name: 'future' });
     run.recordContext({ left: shared, right: shared, circular });
     run.recordReasoning('contains ``` a nested fence');
-    run.recordOutput('x'.repeat(120_100));
+    run.recordOutput('x '.repeat(60_100));
     await run.finish({
       status: 'failed',
       error: Object.assign(new Error('failed'), { code: 'MODEL_ERROR' }),
@@ -112,6 +112,27 @@ describe('AI execution reporter', () => {
     assert.match(writes[0].content, /## Reasoning/);
     assert.match(writes[0].content, /\.\.\. \[truncated\]/);
     assert.match(writes[0].content, /"code": "MODEL_ERROR"/);
+  });
+
+  it('always redacts base64 audio and absolute local paths from opt-in output', async () => {
+    const writes = [];
+    const reporter = createAiExecutionReporter(
+      { ...safeConfig, includeOutput: true },
+      {
+        now: () => new Date('2026-08-20T01:02:03.000Z'),
+        createId: () => 'safe-output',
+        writeReport: async (filePath, content) => writes.push({ filePath, content }),
+      },
+    );
+    const base64 = 'A'.repeat(300);
+    const run = reporter.start({ kind: 'audio-transcription', name: 'safe audio report' });
+    run.recordOutput({ content: `failed ${base64} at E:\\private\\audio.mp3` });
+    await run.finish({ status: 'failed' });
+
+    assert.match(writes[0].content, /\[REDACTED_BASE64\]/);
+    assert.match(writes[0].content, /\[REDACTED_PATH\]/);
+    assert.doesNotMatch(writes[0].content, new RegExp(base64));
+    assert.doesNotMatch(writes[0].content, /private\\\\audio/);
   });
 
   it('uses unique names for concurrent reports and honors an absolute output directory', async () => {

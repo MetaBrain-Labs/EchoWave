@@ -55,6 +55,14 @@ describe('AudioAnalysisRepository', () => {
               duration_ms: 1_000,
               size_bytes: 1_000,
               preprocessing_mode: 'direct',
+              transcription_model: 'google/gemini-2.5-flash-lite',
+              original_filename: 'meeting.wav',
+              ingestion_run_id: '30000000-0000-4000-8000-000000000001',
+              data_source_id: '20000000-0000-4000-8000-000000000001',
+              data_source_name: '团队录音',
+              data_source_type: 'manual_upload',
+              data_source_location: 'local',
+              data_source_connection_status: 'connected',
             },
           ],
         };
@@ -69,6 +77,9 @@ describe('AudioAnalysisRepository', () => {
     const claimed = await repository.claimTranscription();
     assert.equal(claimed.revisionId, revisionId);
     assert.equal(claimed.preprocessingMode, 'direct');
+    assert.equal(claimed.originalFilename, 'meeting.wav');
+    assert.equal(claimed.dataSource.name, '团队录音');
+    assert.equal(claimed.dataSource.connectionStatus, 'connected');
     const insert = calls.find((call) => /INSERT INTO .*audio_analysis_revisions/.test(call.sql));
     assert.equal(insert.values[3], 'direct');
     assert.match(insert.sql, /'preprocessingMode', \$4::text/);
@@ -140,6 +151,10 @@ describe('AudioAnalysisRepository', () => {
       sizeBytes: 1_000,
       storageKey: 'stored.wav',
       title: '访谈',
+      originalFilename: 'meeting.wav',
+      ingestionRunId: null,
+      model: 'google/gemini-2.5-flash-lite',
+      dataSource: null,
     };
 
     await repository.publishTranscription(job, [
@@ -182,12 +197,27 @@ describe('AudioAnalysisRepository', () => {
         sizeBytes: 1_000,
         storageKey: 'stored.wav',
         title: '访谈',
+        originalFilename: 'meeting.wav',
+        ingestionRunId: null,
+        model: 'google/gemini-2.5-flash-lite',
+        dataSource: null,
       },
       'MODEL_TIMEOUT',
       '转写模型请求超时。',
       true,
+      {
+        category: 'timeout',
+        chunkIndex: 1,
+        chunkCount: 1,
+        structureAttempts: 1,
+        issues: [{ path: '$', code: 'timeout', message: '模型请求超时。' }],
+        outputLength: null,
+        outputSha256: null,
+      },
     );
     assert.match(calls[0].sql, /error_stage = 'transcription'/);
+    assert.match(calls[0].sql, /error_details = \$6::jsonb/);
+    assert.equal(JSON.parse(calls[0].values[5]).category, 'timeout');
     assert.doesNotMatch(calls[0].sql, /audio_files/);
   });
 });

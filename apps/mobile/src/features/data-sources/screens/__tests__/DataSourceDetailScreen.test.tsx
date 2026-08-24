@@ -150,6 +150,46 @@ describe('DataSourceDetailScreen', () => {
     }
   });
 
+  it('opens safe transcription diagnostics and retries through the ASR confirmation', async () => {
+    const failed = audioFixtures.find(
+      (item) => item.status.kind === 'failed' && item.status.stage === 'transcription',
+    )!;
+    const screen = await renderDetail();
+
+    fireEvent.press(screen.getAllByLabelText('查看转写失败详情')[0]!);
+    expect(screen.getByRole('header', { name: '音频转写失败' })).toBeTruthy();
+    expect(screen.getByText('UNSUPPORTED_CODEC')).toBeTruthy();
+    expect(screen.getByText('类型：模型输出内容未通过语义校验')).toBeTruthy();
+    expect(screen.getByText('分块：2 / 3')).toBeTruthy();
+    expect(screen.getByText(/timestamp_out_of_bounds/)).toBeTruthy();
+    expect(screen.queryByText(/模型正文|报告路径|storage_key/)).toBeNull();
+
+    fireEvent.press(screen.getByTestId('transcription-error-retry'));
+    expect(screen.queryByRole('header', { name: '音频转写失败' })).toBeNull();
+    expect(screen.getByText('开始 ASR 转写？')).toBeTruthy();
+    fireEvent.press(screen.getByText('确认转写'));
+    await waitFor(() =>
+      expect(workspaceApi.startAudioTranscription).toHaveBeenCalledWith(failed.id, {
+        preprocessing: 'ffmpeg',
+      }),
+    );
+  });
+
+  it('shows a compatible fallback when an old failure has no diagnostics', async () => {
+    const items = audioFixtures.map((item) =>
+      item.status.kind === 'failed' && item.status.stage === 'transcription'
+        ? { ...item, status: { ...item.status, details: null } }
+        : item,
+    );
+    jest.mocked(workspaceApi.listDataSourceAudioFiles).mockResolvedValueOnce({ items });
+    const screen = await renderDetail();
+
+    fireEvent.press(screen.getAllByLabelText('查看转写失败详情')[0]!);
+    expect(screen.getByText(/没有更详细的结构化诊断/)).toBeTruthy();
+    fireEvent.press(screen.getByText('关闭'));
+    expect(screen.queryByRole('header', { name: '音频转写失败' })).toBeNull();
+  });
+
   it('reopens the file picker for failed uploads while transcription retry stays deferred', async () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
     const screen = await renderDetail();

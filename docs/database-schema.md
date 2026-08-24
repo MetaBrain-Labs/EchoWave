@@ -1,6 +1,6 @@
 # EchoWave 数据库结构
 
-本文说明 EchoWave 应用全部 SQL migration 执行后的目标数据库结构。数据库结构的权威来源始终是 [`001_rag.sql`](../apps/api/migrations/001_rag.sql)、[`002_audio_workspace.sql`](../apps/api/migrations/002_audio_workspace.sql) 与 [`003_knowledge_base_overview.sql`](../apps/api/migrations/003_knowledge_base_overview.sql)；本文用于解释各表的业务职责、关系、约束和生命周期，不记录某一开发环境的临时迁移状态。
+本文说明 EchoWave 应用全部 SQL migration 执行后的目标数据库结构。数据库结构的权威来源始终是 [`apps/api/migrations`](../apps/api/migrations/) 中按文件名排序的 SQL；本文用于解释各表的业务职责、关系、约束和生命周期，不记录某一开发环境的临时迁移状态。
 
 ## 数据库边界
 
@@ -307,11 +307,12 @@ group_data_sources 所关联数据源下的音频
 - `status`：`queued`、`transcribing`、`analyzing`、`ready` 或 `failed`。
 - `progress`：0 到 100。
 - `error_stage`：失败发生在 `transcription`、`analysis` 或 `publish`。
-- 结构化错误、创建、完成和发布时间。
+- `error_details`：可空 JSON 对象，只保存安全失败分类、分块位置、结构纠正次数、最多 20 条稳定校验问题，以及模型输出长度和 SHA-256；不保存模型正文。
+- 结构化错误摘要、创建、完成和发布时间。
 
 同一音频的 `revision_no` 唯一，部分唯一索引同时只允许一个 `queued`、`transcribing` 或 `analyzing` 修订。新版本只有在本次结构化结果完整写入后，才在同一事务中替换 `audio_files.active_analysis_revision_id`；ASR-only 版本允许摘要与标签为空，失败版本不会覆盖旧的有效版本。
 
-音频转写 revision 的 `settings_snapshot.preprocessingMode` 固定记录创建任务时选择的 `ffmpeg` 或 `direct`，进程重启恢复任务时不会根据当前客户端状态重新选择。
+音频转写 revision 的 `settings_snapshot.preprocessingMode` 固定记录创建任务时选择的 `ffmpeg` 或 `direct`，进程重启恢复任务时不会根据当前客户端状态重新选择。创建新修订、恢复中断任务和成功发布都会清空当前修订的旧诊断；重转写失败仍保留 `audio_files.active_analysis_revision_id` 指向的旧发布结果。
 
 物理删除音频时，修订版及其结构化结果级联删除。
 

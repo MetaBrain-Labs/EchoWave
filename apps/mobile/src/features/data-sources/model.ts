@@ -11,6 +11,7 @@
  * - 本文件不包含演示数据或持久化行为。
  */
 import type {
+  AudioFailureDetails,
   AudioFileSummary,
   DataSourceDetail as DataSourceContract,
   DataSourceIngestionRecord,
@@ -22,8 +23,20 @@ export type SourceAudioStatus =
   | { kind: 'uploading' }
   | { kind: 'transcribing'; progress: number }
   | { kind: 'waiting' }
-  | { kind: 'upload-failed' }
-  | { kind: 'transcription-failed' };
+  | {
+      kind: 'upload-failed';
+      code: string;
+      message: string;
+      retryable: boolean;
+      details: AudioFailureDetails | null;
+    }
+  | {
+      kind: 'transcription-failed';
+      code: string;
+      message: string;
+      retryable: boolean;
+      details: AudioFailureDetails | null;
+    };
 
 export type SourceAudioItem = {
   id: string;
@@ -87,8 +100,20 @@ function sourceAudioStatus(audio: AudioFileSummary): SourceAudioStatus {
       return { kind: 'transcribing', progress: audio.status.progress };
     case 'failed':
       return audio.status.stage === 'upload'
-        ? { kind: 'upload-failed' }
-        : { kind: 'transcription-failed' };
+        ? {
+            kind: 'upload-failed',
+            code: audio.status.code,
+            message: audio.status.message,
+            retryable: audio.status.retryable,
+            details: audio.status.details,
+          }
+        : {
+            kind: 'transcription-failed',
+            code: audio.status.code,
+            message: audio.status.message,
+            retryable: audio.status.retryable,
+            details: audio.status.details,
+          };
   }
 }
 

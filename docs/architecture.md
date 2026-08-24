@@ -86,11 +86,13 @@ apps/api/src/http ───────> @echowave/contracts <──── apps/
 
 ## AI 执行诊断边界
 
-可选执行报告以一次 `rag-answer` 或 `knowledge-ingestion` 为边界，在运行结束后生成一份本地 Markdown。问答报告关联知识库、会话和 `rag_run`，记录 embedding、检索、模型生成、引用纠正/校验以及审计状态；入库报告关联 job、文档和 revision，记录 LangGraph 各节点、embedding 用量、发布与失败重试信息。后续工作流复用同一个 step/model/tool/finish 接口，无需依赖 LangChain、LangGraph 或 DeepAgents 的内部事件格式。
+可选执行报告以一次 `rag-answer`、`knowledge-ingestion` 或 `audio-transcription` 为边界，在运行结束后生成一份本地 Markdown。问答报告关联知识库、会话和 `rag_run`；入库报告关联 job、文档和 revision；ASR 报告一一对应被 worker 领取的音频修订，关联安全的数据源/导入批次/音频快照，并记录 `preprocess → transcribe → validate-merge → publish → cleanup` 时间线。失败时继续记录 `persist-failure` 和失败清理，报告关闭或落盘失败都不能改变转写结果。
 
 该报告不是 PostgreSQL 权威审计的替代品，也不参与客户端进度卡片、HTTP 响应或恢复机制。功能关闭时使用 no-op recorder，不创建目录或序列化上下文；写文件失败只产生脱敏 warning，不能改变原始业务结果。报告在执行结束时一次性写入，因此不提供实时遥测。
 
-默认报告只包含安全元数据。上下文、工具正文、最终输出和 reasoning 分别由显式 `.env` 开关保护；密钥、密码、认证头、Cookie、数据库连接信息和向量在任何模式下都不得写入。各可选章节限制为 120,000 字符，报告目录由 Git 忽略且不自动清理。
+ASR 的每次 OpenRouter HTTP 尝试都是独立 Model Call，包含分块序号、网络重试、结构纠正轮次、模型、Provider、耗时、HTTP 状态、安全失败分类和可用的 usage/费用。模型输出依次经过 JSON、Zod 与 Speaker/时间边界语义校验；安全诊断进入修订的 `error_details`，正文不进入数据库或客户端。
+
+默认报告只包含安全元数据。`AI_EXECUTION_REPORT_OUTPUT_ENABLED=true` 时仅把失败的 ASR 模型输出写入本地报告，单次最多 20,000 字符、单修订最多 40,000 字符；成功正文始终排除。音频、base64、提示词、密钥、密码、认证头、Cookie、连接地址、绝对/临时路径和 Provider 原始错误包在任何模式下都不得写入。报告目录由 Git 忽略且不自动清理。
 
 ## 配置与安全
 

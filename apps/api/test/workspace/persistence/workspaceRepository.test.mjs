@@ -55,6 +55,15 @@ describe('WorkspaceRepository group audio', () => {
               analysis_error_code: 'UNSUPPORTED_CODEC',
               analysis_error_message: '音频编码不支持。',
               analysis_error_retryable: false,
+              analysis_error_details: {
+                category: 'preprocessing',
+                chunkIndex: null,
+                chunkCount: null,
+                structureAttempts: 0,
+                issues: [{ path: '$', code: 'UNSUPPORTED_CODEC', message: '音频编码不支持。' }],
+                outputLength: null,
+                outputSha256: null,
+              },
             },
           ],
         };
@@ -66,6 +75,9 @@ describe('WorkspaceRepository group audio', () => {
 
     assert.equal(response.items[0].status.kind, 'failed');
     assert.equal(response.items[0].status.stage, 'transcription');
+    assert.equal(response.items[0].status.details.category, 'preprocessing');
+    assert.equal(response.items[0].status.details.issues[0].code, 'UNSUPPORTED_CODEC');
+    assert.match(calls[1].sql, /error_details/);
     assert.match(calls[0].sql, /UNION/);
     assert.match(calls[0].sql, /data_sources/);
     assert.match(calls[0].sql, /linked_source\.deleted_at IS NULL/);

@@ -15,6 +15,38 @@ import { EntityIdSchema } from './common.ts';
 
 export const AudioFailureStageSchema = z.enum(['upload', 'transcription', 'analysis']);
 
+/** 音频处理失败的稳定诊断分类，避免向客户端暴露 Provider 原始响应。 */
+export const AudioFailureDiagnosticCategorySchema = z.enum([
+  'invalid_json',
+  'schema_validation',
+  'semantic_validation',
+  'provider',
+  'timeout',
+  'preprocessing',
+  'internal',
+]);
+
+/** 单条可安全展示的音频失败校验问题。 */
+export const AudioFailureIssueSchema = z.object({
+  path: z.string().max(200),
+  code: z.string().min(1).max(80),
+  message: z.string().min(1).max(500),
+});
+
+/** 音频失败详情不包含音频、提示词或模型输出正文。 */
+export const AudioFailureDetailsSchema = z.object({
+  category: AudioFailureDiagnosticCategorySchema,
+  chunkIndex: z.number().int().positive().nullable(),
+  chunkCount: z.number().int().positive().nullable(),
+  structureAttempts: z.number().int().min(0).max(2),
+  issues: z.array(AudioFailureIssueSchema).max(20),
+  outputLength: z.number().int().nonnegative().nullable(),
+  outputSha256: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .nullable(),
+});
+
 /** 音频从上传到分析发布的统一可观察状态。 */
 export const AudioProcessingStatusSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('uploading'), progress: z.number().int().min(0).max(100) }),
@@ -28,6 +60,7 @@ export const AudioProcessingStatusSchema = z.discriminatedUnion('kind', [
     code: z.string(),
     message: z.string(),
     retryable: z.boolean(),
+    details: AudioFailureDetailsSchema.nullable(),
   }),
 ]);
 
@@ -81,6 +114,9 @@ export const AudioTranscriptionStartResponseSchema = z.object({
 });
 
 export type AudioFailureStage = z.infer<typeof AudioFailureStageSchema>;
+export type AudioFailureDiagnosticCategory = z.infer<typeof AudioFailureDiagnosticCategorySchema>;
+export type AudioFailureIssue = z.infer<typeof AudioFailureIssueSchema>;
+export type AudioFailureDetails = z.infer<typeof AudioFailureDetailsSchema>;
 export type AudioProcessingStatus = z.infer<typeof AudioProcessingStatusSchema>;
 export type AudioFileSummary = z.infer<typeof AudioFileSummarySchema>;
 export type AudioTranscriptionPreprocessing = z.infer<typeof AudioTranscriptionPreprocessingSchema>;

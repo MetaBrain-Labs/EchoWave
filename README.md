@@ -89,7 +89,7 @@ API 的 PostgreSQL 配置使用 `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_US
 
 ### 可选 AI 执行报告
 
-知识问答和文档入库支持类似 `meta-pm-agent` 的本地 Markdown 执行摘要。它用于开发与测试诊断，不是单元测试覆盖率或 CI 测试结果。报告默认关闭；需要时在 `apps/api/.env` 设置：
+知识问答、文档入库和音频 ASR 支持本地 Markdown 执行摘要。它用于开发与测试诊断，不是单元测试覆盖率或 CI 测试结果。报告默认关闭；需要时在 `apps/api/.env` 设置：
 
 ```dotenv
 AI_EXECUTION_REPORT_ENABLED="true"
@@ -100,7 +100,9 @@ AI_EXECUTION_REPORT_OUTPUT_ENABLED="false"
 AI_EXECUTION_REPORT_REASONING_ENABLED="false"
 ```
 
-每次执行结束后会写入 `.ai-execution-reports/YYYY-MM-DD/`。安全默认模式只记录步骤、耗时、模型/provider、Token、费用、引用/分块统计和业务关联 ID；问题、提示词、知识正文、模型输出与 reasoning 必须分别显式开启。即使开启全部章节，也不会记录 API Key、密码、Authorization、Cookie、数据库连接字符串或向量。报告目录已被 Git 忽略且不会自动清理，避免后台任务误删诊断证据。
+每个被 worker 领取的转写修订生成一份 `audio-transcription` 报告，记录安全的数据源/音频快照、direct 或 FFmpeg 预处理、分块时间边界、每次 OpenRouter 网络与结构纠正尝试、Token/音频 Token/费用、校验合并、发布、清理和失败持久化。报告不会记录连接地址、`connection_label`、`storage_key`、外部来源 ID、文件路径、音频、base64、提示词、密钥或 Provider 原始错误包。
+
+`AI_EXECUTION_REPORT_OUTPUT_ENABLED="false"` 是安全默认值：关闭时失败输出只记录长度、SHA-256 和结构化问题；开启时仅允许 ASR 的失败模型输出进入本地报告，每次最多 20,000 字符、单修订最多 40,000 字符并标记截断。成功转写正文始终不写入报告，失败正文也不会进入 PostgreSQL、HTTP API 或移动端。报告目录已被 Git 忽略且不会自动清理，避免后台任务误删诊断证据。
 
 首次启动前显式执行迁移；普通 API 启动不会修改数据库 schema：
 

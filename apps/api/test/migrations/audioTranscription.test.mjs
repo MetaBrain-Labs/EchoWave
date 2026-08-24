@@ -11,6 +11,10 @@ const migration = await readFile(
   new URL('../../migrations/004_audio_transcription.sql', import.meta.url),
   'utf8',
 );
+const diagnosticsMigration = await readFile(
+  new URL('../../migrations/005_audio_transcription_diagnostics.sql', import.meta.url),
+  'utf8',
+);
 
 describe('audio transcription migration', () => {
   it('adds business roles and prevents concurrent active revisions', () => {
@@ -18,5 +22,10 @@ describe('audio transcription migration', () => {
     assert.match(migration, /CREATE UNIQUE INDEX audio_analysis_revisions_single_active_job_idx/);
     assert.match(migration, /status IN \('queued', 'transcribing', 'analyzing'\)/);
     assert.match(migration, /transcription_model = 'google\/gemini-2\.5-flash-lite'/);
+  });
+
+  it('adds nullable structured failure diagnostics', () => {
+    assert.match(diagnosticsMigration, /ADD COLUMN error_details jsonb/);
+    assert.match(diagnosticsMigration, /jsonb_typeof\(error_details\) = 'object'/);
   });
 });

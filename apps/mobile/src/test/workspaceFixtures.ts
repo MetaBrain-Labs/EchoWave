@@ -117,6 +117,21 @@ export const audioFixtures: AudioFileSummary[] = [
       code: 'UNSUPPORTED_CODEC',
       message: '音频编码暂不支持',
       retryable: false,
+      details: {
+        category: 'semantic_validation',
+        chunkIndex: 2,
+        chunkCount: 3,
+        structureAttempts: 2,
+        issues: [
+          {
+            path: 'segments.0.endMs',
+            code: 'timestamp_out_of_bounds',
+            message: '片段结束时间超出当前分块时长。',
+          },
+        ],
+        outputLength: 128,
+        outputSha256: 'a'.repeat(64),
+      },
     },
   },
   { ...baseAudio(7, '竞品体验讨论'), status: { kind: 'uploading', progress: 25 } },
@@ -129,6 +144,7 @@ export const audioFixtures: AudioFileSummary[] = [
       code: 'UPLOAD_FAILED',
       message: '音频上传失败',
       retryable: true,
+      details: null,
     },
   },
 ];

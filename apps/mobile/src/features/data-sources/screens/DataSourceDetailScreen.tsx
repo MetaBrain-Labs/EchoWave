@@ -65,6 +65,7 @@ import {
   type DataSourceFormValue,
 } from '../components/DataSourceDialogs';
 import { DataSourceAudioActions } from '../components/DataSourceAudioActions';
+import { AudioTranscriptionErrorDialog } from '../components/AudioTranscriptionErrorDialog';
 
 import {
   toDataSourceDetailView,
@@ -104,7 +105,13 @@ function Metric({
   );
 }
 
-function AudioStatusView({ status }: { status: SourceAudioStatus }) {
+function AudioStatusView({
+  onShowError,
+  status,
+}: {
+  onShowError: () => void;
+  status: SourceAudioStatus;
+}) {
   switch (status.kind) {
     case 'complete':
       return null;
@@ -137,19 +144,32 @@ function AudioStatusView({ status }: { status: SourceAudioStatus }) {
       );
     case 'transcription-failed':
       return (
-        <View accessibilityRole="alert" style={styles.inlineStatus}>
+        <Pressable
+          accessibilityLabel="查看转写失败详情"
+          accessibilityRole="button"
+          onPress={onShowError}
+          style={({ pressed }) => [styles.inlineStatus, pressed && styles.pressed]}
+        >
           <Ionicons
             color={colors.ink}
             name="alert-circle-outline"
             size={typography.body.lineHeight}
           />
           <Text style={styles.failureStatusText}>转写失败</Text>
-        </View>
+        </Pressable>
       );
   }
 }
 
-function AudioRow({ item, onMore }: { item: SourceAudioItem; onMore: () => void }) {
+function AudioRow({
+  item,
+  onMore,
+  onShowError,
+}: {
+  item: SourceAudioItem;
+  onMore: () => void;
+  onShowError: () => void;
+}) {
   return (
     <View style={styles.audioRow}>
       <Pressable
@@ -168,7 +188,7 @@ function AudioRow({ item, onMore }: { item: SourceAudioItem; onMore: () => void 
           {item.duration} · {item.createdAt}
         </Text>
       </View>
-      <AudioStatusView status={item.status} />
+      <AudioStatusView onShowError={onShowError} status={item.status} />
       <Pressable
         accessibilityLabel={`${item.title}更多操作`}
         accessibilityRole="button"
@@ -206,9 +226,11 @@ function InfoRow({
 
 function OverviewContent({
   onOpenAudioActions,
+  onShowAudioError,
   source,
 }: {
   onOpenAudioActions: (audio: SourceAudioItem) => void;
+  onShowAudioError: (audio: SourceAudioItem) => void;
   source: DataSourceDetailView;
 }) {
   const completedCount = source.audioItems.filter((item) => item.status.kind === 'complete').length;
@@ -276,7 +298,12 @@ function OverviewContent({
           source.audioItems
             .slice(0, 3)
             .map((item) => (
-              <AudioRow item={item} key={item.id} onMore={() => onOpenAudioActions(item)} />
+              <AudioRow
+                item={item}
+                key={item.id}
+                onMore={() => onOpenAudioActions(item)}
+                onShowError={() => onShowAudioError(item)}
+              />
             ))
         )}
       </View>
@@ -491,6 +518,7 @@ export function DataSourceDetailScreen({
   const [archiveSourceVisible, setArchiveSourceVisible] = useState(false);
   const [audioArchiveTarget, setAudioArchiveTarget] = useState<SourceAudioItem>();
   const [audioActionTarget, setAudioActionTarget] = useState<SourceAudioItem>();
+  const [transcriptionErrorTarget, setTranscriptionErrorTarget] = useState<SourceAudioItem>();
   const [transcriptionTarget, setTranscriptionTarget] = useState<SourceAudioItem>();
   const [transcriptionCapabilities, setTranscriptionCapabilities] =
     useState<AudioTranscriptionCapabilitiesResponse>();
@@ -780,6 +808,18 @@ export function DataSourceDetailScreen({
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
+      <AudioTranscriptionErrorDialog
+        audio={transcriptionErrorTarget}
+        onClose={() => setTranscriptionErrorTarget(undefined)}
+        onRetry={() => {
+          const target = transcriptionErrorTarget;
+          setTranscriptionErrorTarget(undefined);
+          if (target) {
+            setUseFfmpeg(Boolean(transcriptionCapabilities?.ffmpeg.available));
+            setTranscriptionTarget(target);
+          }
+        }}
+      />
       <DataSourceAudioActions
         audio={audioActionTarget}
         onAnalysis={() => {
@@ -935,7 +975,11 @@ export function DataSourceDetailScreen({
             </Text>
           </View>
           {renderTabs()}
-          <OverviewContent onOpenAudioActions={setAudioActionTarget} source={source} />
+          <OverviewContent
+            onOpenAudioActions={setAudioActionTarget}
+            onShowAudioError={setTranscriptionErrorTarget}
+            source={source}
+          />
         </ScrollView>
 
         <ScrollView
@@ -951,7 +995,12 @@ export function DataSourceDetailScreen({
               <Text style={styles.listEmptyText}>暂无音频，点击下方“上传音频”开始添加。</Text>
             ) : (
               source.audioItems.map((item) => (
-                <AudioRow item={item} key={item.id} onMore={() => setAudioActionTarget(item)} />
+                <AudioRow
+                  item={item}
+                  key={item.id}
+                  onMore={() => setAudioActionTarget(item)}
+                  onShowError={() => setTranscriptionErrorTarget(item)}
+                />
               ))
             )}
           </View>

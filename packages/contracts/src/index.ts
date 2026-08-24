@@ -76,6 +76,9 @@ export {
 } from './group.ts';
 export {
   AudioFailureStageSchema,
+  AudioFailureDiagnosticCategorySchema,
+  AudioFailureDetailsSchema,
+  AudioFailureIssueSchema,
   AudioFileListResponseSchema,
   AudioFileSummarySchema,
   AudioProcessingStatusSchema,
@@ -87,6 +90,9 @@ export {
   AudioTranscriptionStartRequestSchema,
   AudioTranscriptionStartResponseSchema,
   type AudioFailureStage,
+  type AudioFailureDiagnosticCategory,
+  type AudioFailureDetails,
+  type AudioFailureIssue,
   type AudioFileSummary,
   type AudioProcessingStatus,
   type AudioTranscriptionCapabilitiesResponse,
