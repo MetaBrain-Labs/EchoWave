@@ -46,6 +46,33 @@ describe('AnalysisDetailScreen', () => {
     expect(screen.queryByText('已跳过 12 秒无效片段')).toBeNull();
   });
 
+  it('shows ASR roles and hides the empty summary page', async () => {
+    jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValueOnce({
+      ...analysisFixture,
+      summarySections: [],
+      scenes: [
+        {
+          ...analysisFixture.scenes[0],
+          segments: [
+            {
+              ...analysisFixture.scenes[0].segments[0],
+              speakerKey: 'Speaker 0',
+              speakerLabel: '销售',
+              businessRole: '销售',
+              emotion: 'neutral',
+            },
+          ],
+        },
+      ],
+    });
+    const screen = await renderAnalysis();
+
+    expect(screen.getByText('Speaker 0')).toBeTruthy();
+    expect(screen.getByText('销售')).toBeTruthy();
+    expect(screen.getByText('平静')).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: '分析总结' })).toBeNull();
+  });
+
   it('uses the approved display title and Kai transcript semantics', async () => {
     const screen = await renderAnalysis();
     const transcript = screen.getByText(

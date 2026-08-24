@@ -16,10 +16,12 @@ import {
   archiveGroup,
   createDataSource,
   createGroup,
+  getAudioTranscriptionCapabilities,
   linkDataSourceGroups,
   linkKnowledgeBaseGroups,
   listGroups,
   listKnowledgeBaseGroups,
+  startAudioTranscription,
   unlinkDataSourceGroup,
   updateDataSource,
   uploadDataSourceAudioFiles,
@@ -223,5 +225,50 @@ describe('workspace API client', () => {
     expect(uploadInit.method).toBe('POST');
     expect(uploadInit.body).toBeInstanceOf(FormData);
     expect((uploadInit.headers as Record<string, string>)['Content-Type']).toBeUndefined();
+  });
+
+  it('starts one validated audio transcription revision', async () => {
+    const response = {
+      audioFileId: audioFixtures[0].id,
+      revisionId: dataSourceDetailFixture.id,
+      status: 'queued' as const,
+    };
+    const fetch = jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify(response), {
+        status: 202,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    await expect(
+      startAudioTranscription(audioFixtures[0].id, { preprocessing: 'direct' }),
+    ).resolves.toEqual(response);
+    expect(fetch.mock.calls[0][0]).toContain(
+      `/api/audio-files/${audioFixtures[0].id}/transcriptions`,
+    );
+    expect(fetch.mock.calls[0][1]).toEqual(
+      expect.objectContaining({
+        body: JSON.stringify({ preprocessing: 'direct' }),
+        method: 'POST',
+      }),
+    );
+  });
+
+  it('parses audio transcription capabilities', async () => {
+    const capabilities = {
+      ffmpeg: { configured: false, available: false },
+      direct: {
+        maxBytes: 209_715_200 as const,
+        formats: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'webm'] as const,
+      },
+    };
+    jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify(capabilities), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    await expect(getAudioTranscriptionCapabilities()).resolves.toEqual(capabilities);
   });
 });

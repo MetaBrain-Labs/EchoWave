@@ -21,29 +21,33 @@ export const analysisTabKeys = analysisTabs.map((tab) => tab.key);
 export function DetailTabs({
   activeTab,
   onChange,
+  showSummary = true,
 }: {
   activeTab: AnalysisTab;
   onChange: (tab: AnalysisTab) => void;
+  showSummary?: boolean;
 }) {
   return (
     <View accessibilityRole="tablist" style={styles.detailTabs}>
-      {analysisTabs.map((tab) => {
-        const selected = tab.key === activeTab;
-        return (
-          <Pressable
-            key={tab.key}
-            accessibilityRole="tab"
-            accessibilityState={{ selected }}
-            onPress={() => onChange(tab.key)}
-            style={({ pressed }) => [styles.detailTab, pressed && styles.pressed]}
-          >
-            <Text style={[styles.detailTabText, selected && styles.activeDetailTabText]}>
-              {tab.label}
-            </Text>
-            <View style={[styles.tabUnderline, selected && styles.activeTabUnderline]} />
-          </Pressable>
-        );
-      })}
+      {analysisTabs
+        .filter((tab) => showSummary || tab.key === 'transcript')
+        .map((tab) => {
+          const selected = tab.key === activeTab;
+          return (
+            <Pressable
+              key={tab.key}
+              accessibilityRole="tab"
+              accessibilityState={{ selected }}
+              onPress={() => onChange(tab.key)}
+              style={({ pressed }) => [styles.detailTab, pressed && styles.pressed]}
+            >
+              <Text style={[styles.detailTabText, selected && styles.activeDetailTabText]}>
+                {tab.label}
+              </Text>
+              <View style={[styles.tabUnderline, selected && styles.activeTabUnderline]} />
+            </Pressable>
+          );
+        })}
     </View>
   );
 }

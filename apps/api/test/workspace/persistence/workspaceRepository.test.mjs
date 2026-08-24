@@ -264,7 +264,12 @@ describe('WorkspaceRepository data-source lifecycle', () => {
     const pool = {
       query: async (sql, values) => {
         calls.push({ sql, values });
-        return { rowCount: calls.length <= 2 ? 1 : 0, rows: [{ id: audioId }] };
+        if (/audio_analysis_revisions/.test(sql)) return { rowCount: 0, rows: [] };
+        return {
+          rowCount:
+            calls.filter((call) => !/audio_analysis_revisions/.test(call.sql)).length <= 2 ? 1 : 0,
+          rows: [{ id: audioId }],
+        };
       },
     };
     const repository = new WorkspaceRepository(pool, 'echowave', tenantId);
@@ -274,8 +279,8 @@ describe('WorkspaceRepository data-source lifecycle', () => {
     await assert.rejects(() => repository.archiveDataSource(audioId), /不存在或已归档/);
 
     assert.match(calls[0].sql, /SET deleted_at = now\(\), updated_at = now\(\)/);
-    assert.match(calls[1].sql, /af\.data_source_id = \$2 AND af\.id = \$3/);
-    assert.deepEqual(calls[1].values, [tenantId, audioId, groupId]);
+    assert.match(calls[2].sql, /af\.data_source_id = \$2 AND af\.id = \$3/);
+    assert.deepEqual(calls[2].values, [tenantId, audioId, groupId]);
   });
 
   it('publishes one successful ingestion run and ordered waiting audio in one transaction', async () => {

@@ -30,6 +30,7 @@ export type SourceAudioItem = {
   title: string;
   duration: string;
   createdAt: string;
+  hasTranscript: boolean;
   status: SourceAudioStatus;
 };
 
@@ -118,6 +119,7 @@ export function toDataSourceDetailView(
       title: audio.title,
       duration: audio.durationMs === null ? '--:--' : formatDuration(audio.durationMs),
       createdAt: new Date(audio.createdAt).toLocaleDateString(),
+      hasTranscript: audio.hasTranscript,
       status: sourceAudioStatus(audio),
     })),
     uploadRecords: records.map((record) => {

@@ -23,6 +23,16 @@ import type { AnalysisDetailView, TranscriptSegment } from '../model';
 import { Checkbox } from './AnalysisControls';
 import { formatTime, showComingSoon } from './utils';
 
+const emotionLabels: Record<string, string> = {
+  neutral: '平静',
+  happy: '愉快',
+  angry: '生气',
+  sad: '悲伤',
+  anxious: '焦虑',
+  excited: '兴奋',
+  unknown: '未知',
+};
+
 function FilterButton({ label }: { label: string }) {
   return (
     <Pressable
@@ -50,19 +60,12 @@ function SegmentView({
     <View style={styles.segment}>
       <View style={styles.segmentMain}>
         <View style={styles.speakerRow}>
-          {segment.speaker === 'self' ? (
-            <View style={[styles.selfMarker, dimmed && styles.dimmedMarker]} />
-          ) : null}
           <Text style={[styles.speakerName, dimmed && styles.dimmedText]}>
-            {segment.speakerLabel}
+            {segment.speakerKey.startsWith('Speaker ') ? segment.speakerKey : segment.speakerLabel}
           </Text>
-          {segment.speaker === 'host' ? (
-            <Ionicons
-              color={dimmed ? colors.muted : '#ff5964'}
-              name="pulse"
-              size={typography.heading3.lineHeight}
-            />
-          ) : null}
+          <Text style={[styles.businessRole, dimmed && styles.dimmedText]}>
+            {segment.businessRole === 'unknown' ? '角色未知' : segment.businessRole}
+          </Text>
         </View>
         <View style={styles.emotionRow}>
           <Ionicons
@@ -70,7 +73,9 @@ function SegmentView({
             name="happy-outline"
             size={typography.body.lineHeight}
           />
-          <Text style={[styles.emotionText, dimmed && styles.dimmedText]}>{segment.emotion}</Text>
+          <Text style={[styles.emotionText, dimmed && styles.dimmedText]}>
+            {emotionLabels[segment.emotion] ?? segment.emotion}
+          </Text>
         </View>
         <Text style={[styles.transcriptText, dimmed && styles.dimmedText]}>{segment.text}</Text>
         <Text style={styles.segmentTime}>
@@ -138,6 +143,11 @@ export function TranscriptContent({
           onPress={() => setSkipInvalid((value) => !value)}
         />
       </View>
+      {visibleScenes.every((scene) => scene.segments.length === 0) ? (
+        <View style={styles.emptyTranscript}>
+          <Text style={styles.emptyTranscriptText}>未识别到可转写的语音内容。</Text>
+        </View>
+      ) : null}
       {visibleScenes.map((scene) => {
         const sceneIndex = detail.scenes.indexOf(scene);
         const visibleSegments =
@@ -292,15 +302,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
   },
-  selfMarker: {
-    backgroundColor: colors.success,
-    borderRadius: radii.round,
-    height: 12,
-    width: 12,
-  },
-  dimmedMarker: {
-    backgroundColor: colors.divider,
-  },
   dimmedText: {
     color: textColors.tertiary,
   },
@@ -309,6 +310,11 @@ const styles = StyleSheet.create({
     color: textColors.primary,
     fontFamily: fontFamilies.sansBold,
     fontWeight: 'bold',
+  },
+  businessRole: {
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
   },
   emotionRow: {
     alignItems: 'center',
@@ -367,6 +373,12 @@ const styles = StyleSheet.create({
   invalidSegmentText: {
     ...typography.description,
     color: textColors.tertiary,
+    fontFamily: fontFamilies.sans,
+  },
+  emptyTranscript: { alignItems: 'center', paddingVertical: spacing.xxl },
+  emptyTranscriptText: {
+    ...typography.body,
+    color: textColors.secondary,
     fontFamily: fontFamilies.sans,
   },
 });

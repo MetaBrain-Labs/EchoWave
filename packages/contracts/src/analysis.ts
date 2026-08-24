@@ -26,6 +26,7 @@ export const TranscriptSegmentSchema = z
     index: z.number().int().positive(),
     speakerKey: z.string(),
     speakerLabel: z.string(),
+    businessRole: z.string(),
     emotion: z.string(),
     startMs: z.number().int().nonnegative(),
     endMs: z.number().int().positive(),

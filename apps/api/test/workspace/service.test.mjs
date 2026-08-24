@@ -17,6 +17,7 @@ import {
   AudioUploadValidationError,
   DefaultWorkspaceService,
 } from '../../dist/workspace/service.js';
+import { WorkspaceRepositoryError } from '../../dist/workspace/persistence/errors.js';
 
 const sourceId = '11111111-1111-4111-8111-111111111111';
 
@@ -138,5 +139,45 @@ describe('DefaultWorkspaceService audio uploads', () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe('DefaultWorkspaceService audio transcription', () => {
+  it('rechecks FFmpeg before queueing while direct mode remains independent', async () => {
+    const queued = [];
+    const audioRepository = {
+      queueTranscription: async (id, model, preprocessing) => {
+        queued.push({ id, model, preprocessing });
+        return { audioFileId: id, revisionId: sourceId, status: 'queued' };
+      },
+    };
+    const preprocessor = {
+      capabilities: () => ({
+        ffmpeg: { configured: true, available: false },
+        direct: { maxBytes: 209_715_200, formats: ['mp3'] },
+      }),
+      refreshFfmpegAvailability: async () => false,
+    };
+    const service = new DefaultWorkspaceService(
+      repository(),
+      '.data/audio',
+      audioRepository,
+      'google/gemini-2.5-flash-lite',
+      preprocessor,
+    );
+
+    await assert.rejects(
+      () => service.startAudioTranscription(sourceId, { preprocessing: 'ffmpeg' }),
+      (error) =>
+        error instanceof WorkspaceRepositoryError && error.code === 'TRANSCODER_UNAVAILABLE',
+    );
+    await service.startAudioTranscription(sourceId, { preprocessing: 'direct' });
+    assert.deepEqual(queued, [
+      {
+        id: sourceId,
+        model: 'google/gemini-2.5-flash-lite',
+        preprocessing: 'direct',
+      },
+    ]);
   });
 });

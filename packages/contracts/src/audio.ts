@@ -39,11 +39,54 @@ export const AudioFileSummarySchema = z.object({
   durationMs: z.number().int().nonnegative().nullable(),
   createdAt: z.string().datetime(),
   sharedFrom: z.string().nullable(),
+  hasTranscript: z.boolean(),
   status: AudioProcessingStatusSchema,
 });
 
 export const AudioFileListResponseSchema = z.object({ items: z.array(AudioFileSummarySchema) });
 
+export const AUDIO_TRANSCRIPTION_DIRECT_FORMATS = [
+  'mp3',
+  'wav',
+  'm4a',
+  'aac',
+  'flac',
+  'ogg',
+  'webm',
+] as const;
+export const AUDIO_TRANSCRIPTION_DIRECT_MAX_BYTES = 200 * 1024 * 1024;
+
+export const AudioTranscriptionPreprocessingSchema = z.enum(['ffmpeg', 'direct']);
+export const AudioTranscriptionDirectFormatSchema = z.enum(AUDIO_TRANSCRIPTION_DIRECT_FORMATS);
+
+/** 创建音频转写修订时选择的预处理方式。 */
+export const AudioTranscriptionStartRequestSchema = z.object({
+  preprocessing: AudioTranscriptionPreprocessingSchema,
+});
+
+/** 客户端渲染转写确认框所需的服务端能力快照。 */
+export const AudioTranscriptionCapabilitiesResponseSchema = z.object({
+  ffmpeg: z.object({ configured: z.boolean(), available: z.boolean() }),
+  direct: z.object({
+    maxBytes: z.literal(AUDIO_TRANSCRIPTION_DIRECT_MAX_BYTES),
+    formats: z.array(AudioTranscriptionDirectFormatSchema).min(1),
+  }),
+});
+
+/** 音频转写任务进入 PostgreSQL 队列后的稳定响应。 */
+export const AudioTranscriptionStartResponseSchema = z.object({
+  audioFileId: EntityIdSchema,
+  revisionId: EntityIdSchema,
+  status: z.literal('queued'),
+});
+
 export type AudioFailureStage = z.infer<typeof AudioFailureStageSchema>;
 export type AudioProcessingStatus = z.infer<typeof AudioProcessingStatusSchema>;
 export type AudioFileSummary = z.infer<typeof AudioFileSummarySchema>;
+export type AudioTranscriptionPreprocessing = z.infer<typeof AudioTranscriptionPreprocessingSchema>;
+export type AudioTranscriptionDirectFormat = z.infer<typeof AudioTranscriptionDirectFormatSchema>;
+export type AudioTranscriptionStartRequest = z.infer<typeof AudioTranscriptionStartRequestSchema>;
+export type AudioTranscriptionCapabilitiesResponse = z.infer<
+  typeof AudioTranscriptionCapabilitiesResponseSchema
+>;
+export type AudioTranscriptionStartResponse = z.infer<typeof AudioTranscriptionStartResponseSchema>;

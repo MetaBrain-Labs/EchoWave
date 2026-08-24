@@ -7,7 +7,7 @@
  * - 保持传输层与 PostgreSQL 查询实现解耦。
  *
  * Notes:
- * - 本地上传文件由本服务可靠保存；同步、ASR 和分析处理仍不属于当前边界。
+ * - 本地上传文件由本服务可靠保存；ASR 只在此协调能力检查和任务创建。
  */
 import { randomUUID } from 'node:crypto';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
@@ -22,9 +22,13 @@ import type {
   DataSourceUpdateRequest,
   GroupCreateRequest,
   KnowledgeBaseGroupLinkRequest,
+  AudioTranscriptionStartRequest,
 } from '@echowave/contracts';
 
 import type { StoredAudioUpload, WorkspaceRepository } from './persistence/workspaceRepository.ts';
+import type { AudioAnalysisRepository } from './persistence/audioAnalysisRepository.ts';
+import { WorkspaceRepositoryError } from './persistence/errors.ts';
+import type { AudioInputPreprocessor } from './transcription/audioPreprocessor.ts';
 
 const MAX_AUDIO_FILES = 20;
 const MAX_AUDIO_BYTES = 200 * 1024 * 1024;
@@ -171,6 +175,11 @@ export interface WorkspaceService {
     id: string,
     audioFileId: string,
   ): ReturnType<WorkspaceRepository['archiveDataSourceAudioFile']>;
+  getAudioTranscriptionCapabilities(): ReturnType<AudioInputPreprocessor['capabilities']>;
+  startAudioTranscription(
+    id: string,
+    input: AudioTranscriptionStartRequest,
+  ): Promise<Awaited<ReturnType<AudioAnalysisRepository['queueTranscription']>>>;
   getAudioAnalysis(id: string): ReturnType<WorkspaceRepository['getAudioAnalysis']>;
 }
 
@@ -179,6 +188,9 @@ export class DefaultWorkspaceService implements WorkspaceService {
   constructor(
     private readonly repository: WorkspaceRepository,
     private readonly audioStorageDirectory: string,
+    private readonly audioAnalysisRepository: AudioAnalysisRepository,
+    private readonly audioTranscriptionModel: string,
+    private readonly audioInputPreprocessor: AudioInputPreprocessor,
   ) {}
 
   listGroups() {
@@ -268,6 +280,25 @@ export class DefaultWorkspaceService implements WorkspaceService {
 
   archiveDataSourceAudioFile(id: string, audioFileId: string) {
     return this.repository.archiveDataSourceAudioFile(id, audioFileId);
+  }
+  getAudioTranscriptionCapabilities() {
+    return this.audioInputPreprocessor.capabilities();
+  }
+  async startAudioTranscription(id: string, input: AudioTranscriptionStartRequest) {
+    if (
+      input.preprocessing === 'ffmpeg' &&
+      !(await this.audioInputPreprocessor.refreshFfmpegAvailability())
+    ) {
+      throw new WorkspaceRepositoryError(
+        'TRANSCODER_UNAVAILABLE',
+        'FFmpeg 当前不可用，请取消预处理后直接转写。',
+      );
+    }
+    return await this.audioAnalysisRepository.queueTranscription(
+      id,
+      this.audioTranscriptionModel,
+      input.preprocessing,
+    );
   }
   getAudioAnalysis(id: string) {
     return this.repository.getAudioAnalysis(id);

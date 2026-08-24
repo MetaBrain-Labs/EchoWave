@@ -20,10 +20,11 @@ export type AiTagAnalysis = {
 
 export type TranscriptSegment = {
   aiTag?: AiTagAnalysis;
+  businessRole: string;
   emotion: string;
   endSeconds: number;
   id: string;
-  speaker: 'host' | 'self';
+  speakerKey: string;
   speakerLabel: string;
   startSeconds: number;
   text: string;
@@ -72,8 +73,9 @@ export function toAnalysisDetailView(detail: AudioAnalysisDetail): AnalysisDetai
       startSeconds: scene.startMs / 1_000,
       segments: scene.segments.map((segment) => ({
         id: segment.id,
-        speaker: segment.speakerKey === 'self' ? 'self' : 'host',
+        speakerKey: segment.speakerKey,
         speakerLabel: segment.speakerLabel,
+        businessRole: segment.businessRole,
         emotion: segment.emotion,
         startSeconds: segment.startMs / 1_000,
         endSeconds: segment.endMs / 1_000,

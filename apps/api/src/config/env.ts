@@ -18,6 +18,10 @@ import { parse } from 'dotenv';
 import { z } from 'zod';
 
 const BooleanStringSchema = z.enum(['true', 'false']).transform((value) => value === 'true');
+const OptionalPathSchema = z
+  .string()
+  .optional()
+  .transform((value) => value?.trim() || undefined);
 
 const EnvironmentSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65_535),
@@ -49,6 +53,9 @@ const EnvironmentSchema = z.object({
   LANGGRAPH_SCHEMA: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
   UPLOAD_TEMP_DIR: z.string().min(1),
   AUDIO_STORAGE_DIR: z.string().min(1),
+  AUDIO_TRANSCRIPTION_MODEL: z.literal('google/gemini-2.5-flash-lite'),
+  AUDIO_TRANSCRIPTION_TEMP_DIR: z.string().min(1),
+  FFMPEG_PATH: OptionalPathSchema,
   AI_EXECUTION_REPORT_ENABLED: BooleanStringSchema,
   AI_EXECUTION_REPORT_OUTPUT_DIR: z.string().min(1),
   AI_EXECUTION_REPORT_CONTEXT_ENABLED: BooleanStringSchema,
@@ -90,6 +97,9 @@ export type ApiConfig = {
     langGraphSchema: string;
     uploadTempDir: string;
     audioStorageDir: string;
+    audioTranscriptionModel: 'google/gemini-2.5-flash-lite';
+    audioTranscriptionTempDir: string;
+    ffmpegPath?: string;
   };
   aiExecutionReports: {
     enabled: boolean;
@@ -144,6 +154,9 @@ export function readApiConfig(values: Record<string, string | undefined>): ApiCo
       langGraphSchema: parsed.LANGGRAPH_SCHEMA,
       uploadTempDir: parsed.UPLOAD_TEMP_DIR,
       audioStorageDir: parsed.AUDIO_STORAGE_DIR,
+      audioTranscriptionModel: parsed.AUDIO_TRANSCRIPTION_MODEL,
+      audioTranscriptionTempDir: parsed.AUDIO_TRANSCRIPTION_TEMP_DIR,
+      ffmpegPath: parsed.FFMPEG_PATH,
     },
     aiExecutionReports: {
       enabled: parsed.AI_EXECUTION_REPORT_ENABLED,

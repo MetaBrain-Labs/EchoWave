@@ -68,6 +68,7 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
     setHideIrrelevantSegmentsPreference(value);
     setHideIrrelevant(value);
   };
+  const hasSummary = Boolean(detail?.summarySections.length);
   const applyTabChange = (tab: AnalysisTab) => {
     setActiveTab(tab);
     if (tab === 'summary') {
@@ -78,7 +79,7 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
   const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } = useSwipePager({
     activeTab,
     onTabChange: applyTabChange,
-    tabs: analysisTabKeys,
+    tabs: hasSummary ? analysisTabKeys : (['transcript'] as AnalysisTab[]),
   });
 
   const load = useCallback(async () => {
@@ -188,7 +189,7 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
           positionSeconds={positionSeconds}
         />
       )}
-      <DetailTabs activeTab={activeTab} onChange={selectTab} />
+      <DetailTabs activeTab={activeTab} onChange={selectTab} showSummary={hasSummary} />
       <ScrollView
         accessibilityLabel="分析详情分页"
         directionalLockEnabled
@@ -209,9 +210,11 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
             selectedSegmentId={selectedSegment?.id}
           />
         </View>
-        <View style={[styles.page, { width: pageWidth }]}>
-          <SummaryContent detail={detail} />
-        </View>
+        {hasSummary ? (
+          <View style={[styles.page, { width: pageWidth }]}>
+            <SummaryContent detail={detail} />
+          </View>
+        ) : null}
       </ScrollView>
       <AiTagPanel
         analysis={selectedSegment?.aiTag}

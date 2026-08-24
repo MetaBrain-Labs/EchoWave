@@ -57,6 +57,8 @@ function audioStatus(row: Record<string, unknown>): AudioProcessingStatus {
     };
   }
   switch (row.analysis_status) {
+    case 'queued':
+      return { kind: 'transcribing', progress: 0 };
     case 'transcribing':
       return { kind: 'transcribing', progress: integer(row.analysis_progress) };
     case 'analyzing':
@@ -86,6 +88,7 @@ function audioItem(row: Record<string, any>) {
     durationMs: row.duration_ms === null ? null : integer(row.duration_ms),
     createdAt: iso(row.created_at),
     sharedFrom: row.shared_from ?? null,
+    hasTranscript: Boolean(row.active_analysis_revision_id),
     status: audioStatus(row),
   };
 }
@@ -429,7 +432,7 @@ export class WorkspaceRepository {
          (tenant_id, name, description, source_type, location, connection_label,
           connection_status, transcription_model)
        VALUES ($1, $2, $3, 'manual_upload', 'local', '本地手动上传',
-               'connected', 'Echo ASR Standard')
+                'connected', 'google/gemini-2.5-flash-lite')
        RETURNING id`,
       [this.tenantId, input.name, input.description],
     );
@@ -574,6 +577,7 @@ export class WorkspaceRepository {
           createdAt: iso(audio.rows[0].created_at),
           sharedFrom: null,
           status: { kind: 'waiting' as const },
+          hasTranscript: false,
         });
       }
       await client.query(
@@ -597,6 +601,15 @@ export class WorkspaceRepository {
 
   /** 软归档指定数据源中的活动音频，不物理删除本地文件。 */
   async archiveDataSourceAudioFile(dataSourceId: string, audioFileId: string) {
+    const processing = await this.pool.query(
+      `SELECT 1 FROM ${this.table('audio_analysis_revisions')}
+       WHERE tenant_id = $1 AND audio_file_id = $2
+         AND status IN ('queued', 'transcribing', 'analyzing') LIMIT 1`,
+      [this.tenantId, audioFileId],
+    );
+    if (processing.rowCount) {
+      throw new WorkspaceRepositoryError('CONFLICT', '音频正在转写，完成或失败后才能归档。');
+    }
     const result = await this.pool.query(
       `UPDATE ${this.table('audio_files')} af
        SET deleted_at = now(), updated_at = now()
@@ -766,7 +779,7 @@ export class WorkspaceRepository {
       this.pool.query(
         `SELECT s.id AS scene_id, s.scene_index, s.title AS scene_title, s.start_ms AS scene_start_ms,
                 ts.id AS segment_id, ts.segment_index, ts.speaker_key, ts.speaker_label,
-                ts.emotion, ts.start_ms, ts.end_ms, ts.text,
+                ts.business_role, ts.emotion, ts.start_ms, ts.end_ms, ts.text,
                 tag.id AS tag_id, tag.title AS tag_title, tag.summary AS tag_summary, tag.details
          FROM ${this.table('analysis_scenes')} s
          LEFT JOIN ${this.table('transcript_segments')} ts
@@ -810,6 +823,7 @@ export class WorkspaceRepository {
           index: item.segment_index,
           speakerKey: item.speaker_key,
           speakerLabel: item.speaker_label,
+          businessRole: item.business_role,
           emotion: item.emotion,
           startMs: integer(item.start_ms),
           endMs: integer(item.end_ms),

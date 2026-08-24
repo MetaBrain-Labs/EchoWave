@@ -309,7 +309,9 @@ group_data_sources 所关联数据源下的音频
 - `error_stage`：失败发生在 `transcription`、`analysis` 或 `publish`。
 - 结构化错误、创建、完成和发布时间。
 
-同一音频的 `revision_no` 唯一。新版本只有在场景、转写、摘要和标签完整写入后，才在同一事务中替换 `audio_files.active_analysis_revision_id`；失败版本不会覆盖旧的有效版本。
+同一音频的 `revision_no` 唯一，部分唯一索引同时只允许一个 `queued`、`transcribing` 或 `analyzing` 修订。新版本只有在本次结构化结果完整写入后，才在同一事务中替换 `audio_files.active_analysis_revision_id`；ASR-only 版本允许摘要与标签为空，失败版本不会覆盖旧的有效版本。
+
+音频转写 revision 的 `settings_snapshot.preprocessingMode` 固定记录创建任务时选择的 `ffmpeg` 或 `direct`，进程重启恢复任务时不会根据当前客户端状态重新选择。
 
 物理删除音频时，修订版及其结构化结果级联删除。
 
@@ -327,6 +329,7 @@ group_data_sources 所关联数据源下的音频
 
 - `segment_index`：场景内顺序。
 - `speaker_key`、`speaker_label`：说话人内部标识和展示名称。
+- `business_role`：模型识别的简短中文业务角色，无法判断时为 `unknown`。
 - `emotion`：情绪描述。
 - `start_ms`、`end_ms`：音频时间区间。
 - `text`：转写文本。

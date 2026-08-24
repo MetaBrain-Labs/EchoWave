@@ -32,6 +32,9 @@ describe('API environment', () => {
       LANGGRAPH_SCHEMA: 'echowave_graph',
       UPLOAD_TEMP_DIR: '.tmp/uploads',
       AUDIO_STORAGE_DIR: '.data/audio',
+      AUDIO_TRANSCRIPTION_MODEL: 'google/gemini-2.5-flash-lite',
+      AUDIO_TRANSCRIPTION_TEMP_DIR: '.tmp/audio-transcription',
+      FFMPEG_PATH: 'C:\\ffmpeg\\ffmpeg.exe',
       AI_EXECUTION_REPORT_ENABLED: 'false',
       AI_EXECUTION_REPORT_OUTPUT_DIR: '.ai-execution-reports',
       AI_EXECUTION_REPORT_CONTEXT_ENABLED: 'false',
@@ -72,6 +75,9 @@ describe('API environment', () => {
         langGraphSchema: 'echowave_graph',
         uploadTempDir: '.tmp/uploads',
         audioStorageDir: '.data/audio',
+        audioTranscriptionModel: 'google/gemini-2.5-flash-lite',
+        audioTranscriptionTempDir: '.tmp/audio-transcription',
+        ffmpegPath: 'C:\\ffmpeg\\ffmpeg.exe',
       },
       aiExecutionReports: {
         enabled: false,
@@ -92,5 +98,47 @@ describe('API environment', () => {
 
   it('requires all configuration to be present in the .env input', () => {
     assert.throws(() => readApiConfig({}));
+  });
+
+  it('allows FFmpeg to be omitted without weakening other required configuration', () => {
+    const values = {
+      PORT: '3101',
+      CORS_ORIGINS: 'http://localhost:8081',
+      POSTGRES_HOST: 'localhost',
+      POSTGRES_PORT: '5432',
+      POSTGRES_USER: 'echowave',
+      POSTGRES_PASSWORD: '',
+      POSTGRES_DB: 'echowave',
+      POSTGRES_SCHEMA: 'echowave',
+      POSTGRES_SSL: 'false',
+      REDIS_HOST: 'localhost',
+      REDIS_PORT: '6379',
+      REDIS_PASSWORD: '',
+      REDIS_USERNAME: '',
+      REDIS_DB: '0',
+      REDIS_TLS: 'false',
+      DEV_TENANT_ID: '00000000-0000-4000-8000-000000000001',
+      OPENROUTER_API_KEY: 'test',
+      RAG_EMBEDDING_MODEL: 'qwen/qwen3-embedding-8b',
+      RAG_EMBEDDING_DIMENSIONS: '1024',
+      DEEPSEEK_API_KEY: 'test',
+      DEEPSEEK_BASE_URL: 'https://api.deepseek.com',
+      DEEPSEEK_CHAT_MODEL: 'deepseek-v4-flash',
+      DEEPSEEK_ENABLE_THINKING: 'false',
+      LANGGRAPH_SCHEMA: 'echowave_graph',
+      UPLOAD_TEMP_DIR: '.tmp/uploads',
+      AUDIO_STORAGE_DIR: '.data/audio',
+      AUDIO_TRANSCRIPTION_MODEL: 'google/gemini-2.5-flash-lite',
+      AUDIO_TRANSCRIPTION_TEMP_DIR: '.tmp/audio-transcription',
+      AI_EXECUTION_REPORT_ENABLED: 'false',
+      AI_EXECUTION_REPORT_OUTPUT_DIR: '.ai-execution-reports',
+      AI_EXECUTION_REPORT_CONTEXT_ENABLED: 'false',
+      AI_EXECUTION_REPORT_TOOL_CONTENT_ENABLED: 'false',
+      AI_EXECUTION_REPORT_OUTPUT_ENABLED: 'false',
+      AI_EXECUTION_REPORT_REASONING_ENABLED: 'false',
+    };
+
+    assert.equal(readApiConfig(values).rag.ffmpegPath, undefined);
+    assert.equal(readApiConfig({ ...values, FFMPEG_PATH: '' }).rag.ffmpegPath, undefined);
   });
 });

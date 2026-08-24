@@ -20,11 +20,16 @@ import { firstRouteParam } from '@/shared/navigation/routeParams';
 export default function AnalysisDetailRoute() {
   const router = useRouter();
   const { runWithLoading } = useNavigationLoading();
-  const { id } = useLocalSearchParams<{ id?: string | string[] }>();
+  const { id, returnSourceId } = useLocalSearchParams<{
+    id?: string | string[];
+    returnSourceId?: string | string[];
+  }>();
   const detailId = firstRouteParam(id);
+  const sourceId = firstRouteParam(returnSourceId);
   const goBack = () => {
     void runWithLoading(() => {
-      router.replace('/');
+      if (sourceId) router.replace({ pathname: '/sources/[sourceId]', params: { sourceId } });
+      else router.replace('/');
     });
   };
 

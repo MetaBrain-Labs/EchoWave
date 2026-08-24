@@ -1,6 +1,6 @@
 # EchoWave
 
-EchoWave 是一个面向音频分析、知识库关联和数据源连接场景的跨平台应用。当前里程碑提供 Expo 三端界面、Node.js API，以及基于 PostgreSQL/pgvector 的首期 RAG 知识库；仍不包含真实鉴权和音频处理。
+EchoWave 是一个面向音频分析、知识库关联和数据源连接场景的跨平台应用。当前里程碑提供 Expo 三端界面、Node.js API、基于 PostgreSQL/pgvector 的首期 RAG 知识库，以及通过 OpenRouter Gemini 完成的版本化音频 ASR；仍不包含真实鉴权。
 
 ## 技术基线
 
@@ -72,6 +72,10 @@ Copy-Item apps/mobile/.env.example apps/mobile/.env
 ```
 
 `apps/api/.env` 中的 `AUDIO_STORAGE_DIR` 是手动上传音频的持久化目录。该目录应位于具备持久化磁盘的服务端路径，API 只把随机生成的相对 `storage_key` 写入数据库。生产或容器环境必须显式挂载并备份该目录；不要把它指向临时目录或纳入 Git。
+
+FFmpeg 是可选的音频转写预处理能力。配置 `FFMPEG_PATH` 后，API 启动时会非致命探测可执行文件；缺失或检查失败不会阻止 API 启动，短期开发可在转写确认框取消 FFmpeg 并将原音频直接发送给 OpenRouter。启用时，临时 MP3 分块写入 `AUDIO_TRANSCRIPTION_TEMP_DIR`。模型固定为 `google/gemini-2.5-flash-lite`，密钥复用 `OPENROUTER_API_KEY`。
+
+原音频直传支持 MP3、WAV、M4A、AAC、FLAC、OGG 和 WebM，并沿用 200 MB 上传上限；base64 会使请求体增大约三分之一，提供商可能拒绝大文件。此时应重新转写并勾选 FFmpeg，不会自动回退或覆盖旧结果。
 
 `apps/api/.env` 是 API 的唯一配置来源：启动时会直接读取并校验该文件，不合并系统环境变量，也不使用隐式默认值。移动端由 Expo CLI 自动加载 `apps/mobile/.env`，其中客户端可用变量必须以 `EXPO_PUBLIC_` 开头：
 
@@ -209,6 +213,7 @@ pnpm check
 - PostgreSQL 租户隔离、revision 原子发布、HNSW 检索和引用回溯
 - PostgreSQL 数据源创建、编辑、软归档、分组关联/解除，以及本地批量音频上传与软归档
 - PostgreSQL 音频上传时间线和版本化分析结果查询纵切片
+- 数据源音频的后台 ASR、Speaker 分离、业务角色、情绪与毫秒时间戳结构化结果
 - DeepSeek + DeepAgents 知识问答、无证据拒答与短会话 checkpoint
 - 可选的知识问答与入库 Markdown 执行诊断报告
 - 移动端知识库列表、文档/块详情、上传、动态问答反馈、最近六轮只读历史和可返回聊天的引用跳转
@@ -217,6 +222,6 @@ pnpm check
 
 ## 当前边界
 
-本里程碑不包含真实鉴权、音频 ASR/分析 worker、数据源同步、Redis、对象存储、OCR、PDF、旧版 Office、多 API 实例部署或 EAS Build。手动上传音频保存在 `AUDIO_STORAGE_DIR` 指定的单机持久化目录并保持“待分析”；入库 worker 与本地文件仅支持单 API 实例，横向扩容前必须迁移到对象存储和独立 worker。详见 [文档索引](./docs/README.md) 与 [架构说明](./docs/architecture.md)。
+本里程碑不包含真实鉴权、转写后的二阶段摘要/标签分析、数据源同步、Redis、对象存储、OCR、PDF、旧版 Office、多 API 实例部署或 EAS Build。手动上传音频保存在 `AUDIO_STORAGE_DIR` 指定的单机持久化目录；知识入库与音频转写 worker 均与 API 同进程，本地文件模式仅支持单 API 实例，横向扩容前必须迁移到对象存储和独立 worker。详见 [文档索引](./docs/README.md) 与 [架构说明](./docs/architecture.md)。
 
 在 Windows 上无法运行 iOS Simulator；iOS 本轮通过 Expo bundle 导出、TypeScript 检查和应用配置校验，最终原生运行验收需在 macOS/Xcode 环境完成。

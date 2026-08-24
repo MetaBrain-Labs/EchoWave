@@ -12,7 +12,11 @@
  * - 页面不持久化筛选、分页或操作栏交互状态。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { GroupSummary, LinkedDataSourceGroup } from '@echowave/contracts';
+import type {
+  AudioTranscriptionCapabilitiesResponse,
+  GroupSummary,
+  LinkedDataSourceGroup,
+} from '@echowave/contracts';
 import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -39,6 +43,7 @@ import { PageHeader } from '@/shared/ui/PageHeader';
 import { PageTabs } from '@/shared/ui/PageTabs';
 import {
   getDataSource,
+  getAudioTranscriptionCapabilities,
   archiveDataSource,
   archiveDataSourceAudioFile,
   linkDataSourceGroups,
@@ -46,17 +51,20 @@ import {
   listDataSourceAudioFiles,
   listDataSourceGroups,
   listDataSourceIngestionRecords,
+  startAudioTranscription,
   unlinkDataSourceGroup,
   updateDataSource,
   uploadDataSourceAudioFiles,
 } from '@/shared/api/workspaceApi';
 
 import {
+  AudioTranscriptionConfirmDialog,
   DataSourceConfirmDialog,
   DataSourceFormSheet,
   DataSourceGroupPicker,
   type DataSourceFormValue,
 } from '../components/DataSourceDialogs';
+import { DataSourceAudioActions } from '../components/DataSourceAudioActions';
 
 import {
   toDataSourceDetailView,
@@ -141,7 +149,7 @@ function AudioStatusView({ status }: { status: SourceAudioStatus }) {
   }
 }
 
-function AudioRow({ item, onArchive }: { item: SourceAudioItem; onArchive: () => void }) {
+function AudioRow({ item, onMore }: { item: SourceAudioItem; onMore: () => void }) {
   return (
     <View style={styles.audioRow}>
       <Pressable
@@ -165,7 +173,7 @@ function AudioRow({ item, onArchive }: { item: SourceAudioItem; onArchive: () =>
         accessibilityLabel={`${item.title}更多操作`}
         accessibilityRole="button"
         hitSlop={8}
-        onPress={onArchive}
+        onPress={onMore}
         style={({ pressed }) => [styles.moreButton, pressed && styles.pressed]}
       >
         <Ionicons color={colors.ink} name="ellipsis-vertical" size={24} />
@@ -197,10 +205,10 @@ function InfoRow({
 }
 
 function OverviewContent({
-  onArchiveAudio,
+  onOpenAudioActions,
   source,
 }: {
-  onArchiveAudio: (audio: SourceAudioItem) => void;
+  onOpenAudioActions: (audio: SourceAudioItem) => void;
   source: DataSourceDetailView;
 }) {
   const completedCount = source.audioItems.filter((item) => item.status.kind === 'complete').length;
@@ -268,7 +276,7 @@ function OverviewContent({
           source.audioItems
             .slice(0, 3)
             .map((item) => (
-              <AudioRow item={item} key={item.id} onArchive={() => onArchiveAudio(item)} />
+              <AudioRow item={item} key={item.id} onMore={() => onOpenAudioActions(item)} />
             ))
         )}
       </View>
@@ -463,11 +471,13 @@ export function DataSourceDetailScreen({
   onBack,
   onArchived,
   onSwitchGroup,
+  onOpenAudio,
   sourceId,
 }: {
   onBack: () => void;
   onArchived?: () => void;
   onSwitchGroup?: (groupId: string) => void;
+  onOpenAudio?: (audioFileId: string) => void;
   sourceId: string;
 }) {
   const [source, setSource] = useState<DataSourceDetailView>();
@@ -480,6 +490,12 @@ export function DataSourceDetailScreen({
   const [saving, setSaving] = useState(false);
   const [archiveSourceVisible, setArchiveSourceVisible] = useState(false);
   const [audioArchiveTarget, setAudioArchiveTarget] = useState<SourceAudioItem>();
+  const [audioActionTarget, setAudioActionTarget] = useState<SourceAudioItem>();
+  const [transcriptionTarget, setTranscriptionTarget] = useState<SourceAudioItem>();
+  const [transcriptionCapabilities, setTranscriptionCapabilities] =
+    useState<AudioTranscriptionCapabilitiesResponse>();
+  const [useFfmpeg, setUseFfmpeg] = useState(false);
+  const [startingTranscription, setStartingTranscription] = useState(false);
   const [unlinkTarget, setUnlinkTarget] = useState<LinkedDataSourceGroup>();
   const [switchTarget, setSwitchTarget] = useState<LinkedDataSourceGroup>();
   const [confirming, setConfirming] = useState(false);
@@ -501,12 +517,16 @@ export function DataSourceDetailScreen({
       if (showLoading) setLoading(true);
       setError('');
       try {
-        const [detail, audio, records, groups] = await Promise.all([
+        const [detail, audio, records, groups, capabilities] = await Promise.all([
           getDataSource(sourceId),
           listDataSourceAudioFiles(sourceId),
           listDataSourceIngestionRecords(sourceId),
           listDataSourceGroups(sourceId),
+          showLoading
+            ? getAudioTranscriptionCapabilities().catch(() => undefined)
+            : Promise.resolve(undefined),
         ]);
+        if (showLoading) setTranscriptionCapabilities(capabilities);
         setSource(toDataSourceDetailView(detail, audio.items, records.items, groups.items));
       } catch (reason) {
         if (showLoading) setSource(undefined);
@@ -521,6 +541,17 @@ export function DataSourceDetailScreen({
     const task = setTimeout(() => void load(), 0);
     return () => clearTimeout(task);
   }, [load]);
+
+  const pollingTranscription = source?.audioItems.some(
+    (item) => item.status.kind === 'transcribing',
+  );
+  useEffect(() => {
+    if (!pollingTranscription) return undefined;
+    const timer = setInterval(() => {
+      void load(false);
+    }, 2_000);
+    return () => clearInterval(timer);
+  }, [load, pollingTranscription]);
 
   const linkedGroupIds = useMemo(
     () => new Set(source?.linkedGroups.map((group) => group.id) ?? []),
@@ -657,6 +688,24 @@ export function DataSourceDetailScreen({
     }
   };
 
+  const confirmTranscription = async () => {
+    const target = transcriptionTarget;
+    if (!target || startingTranscription) return;
+    setStartingTranscription(true);
+    setOperationError('');
+    try {
+      await startAudioTranscription(target.id, {
+        preprocessing: useFfmpeg ? 'ffmpeg' : 'direct',
+      });
+      setTranscriptionTarget(undefined);
+      await load(false);
+    } catch (reason) {
+      setOperationError(reason instanceof Error ? reason.message : 'ASR 转写启动失败。');
+    } finally {
+      setStartingTranscription(false);
+    }
+  };
+
   const confirmUnlink = async () => {
     const target = unlinkTarget;
     if (!target) return;
@@ -731,6 +780,28 @@ export function DataSourceDetailScreen({
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
+      <DataSourceAudioActions
+        audio={audioActionTarget}
+        onAnalysis={() => {
+          const target = audioActionTarget;
+          setAudioActionTarget(undefined);
+          if (target?.hasTranscript) onOpenAudio?.(target.id);
+        }}
+        onArchive={() => {
+          const target = audioActionTarget;
+          setAudioActionTarget(undefined);
+          if (target) setAudioArchiveTarget(target);
+        }}
+        onClose={() => setAudioActionTarget(undefined)}
+        onTranscribe={() => {
+          const target = audioActionTarget;
+          setAudioActionTarget(undefined);
+          if (target) {
+            setUseFfmpeg(Boolean(transcriptionCapabilities?.ffmpeg.available));
+            setTranscriptionTarget(target);
+          }
+        }}
+      />
       <DataSourceFormSheet
         error={formError}
         initialValue={{ name: source.name, description: source.description }}
@@ -784,6 +855,20 @@ export function DataSourceDetailScreen({
         pending={confirming}
         title="归档音频？"
         visible={Boolean(audioArchiveTarget)}
+      />
+      <AudioTranscriptionConfirmDialog
+        audioTitle={transcriptionTarget?.title ?? ''}
+        ffmpegAvailable={Boolean(transcriptionCapabilities?.ffmpeg.available)}
+        ffmpegChecked={useFfmpeg}
+        onCancel={() => {
+          if (!startingTranscription) setTranscriptionTarget(undefined);
+        }}
+        onConfirm={() => {
+          void confirmTranscription();
+        }}
+        onToggleFfmpeg={() => setUseFfmpeg((current) => !current)}
+        pending={startingTranscription}
+        visible={Boolean(transcriptionTarget)}
       />
       <DataSourceConfirmDialog
         body={`解除后，“${unlinkTarget?.name ?? ''}”将不再通过此数据源看到相关音频；显式分享不受影响。`}
@@ -850,7 +935,7 @@ export function DataSourceDetailScreen({
             </Text>
           </View>
           {renderTabs()}
-          <OverviewContent onArchiveAudio={setAudioArchiveTarget} source={source} />
+          <OverviewContent onOpenAudioActions={setAudioActionTarget} source={source} />
         </ScrollView>
 
         <ScrollView
@@ -866,7 +951,7 @@ export function DataSourceDetailScreen({
               <Text style={styles.listEmptyText}>暂无音频，点击下方“上传音频”开始添加。</Text>
             ) : (
               source.audioItems.map((item) => (
-                <AudioRow item={item} key={item.id} onArchive={() => setAudioArchiveTarget(item)} />
+                <AudioRow item={item} key={item.id} onMore={() => setAudioActionTarget(item)} />
               ))
             )}
           </View>

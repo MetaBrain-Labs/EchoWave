@@ -23,7 +23,11 @@ import { IngestionRepository } from '../knowledge/persistence/ingestionRepositor
 import { KnowledgeRepository } from '../knowledge/persistence/knowledgeRepository.ts';
 import { DefaultKnowledgeService } from '../knowledge/service.ts';
 import { WorkspaceRepository } from '../workspace/persistence/workspaceRepository.ts';
+import { AudioAnalysisRepository } from '../workspace/persistence/audioAnalysisRepository.ts';
 import { DefaultWorkspaceService } from '../workspace/service.ts';
+import { AudioInputPreprocessor } from '../workspace/transcription/audioPreprocessor.ts';
+import { OpenRouterAsr } from '../workspace/transcription/openRouterAsr.ts';
+import { AudioTranscriptionWorker } from '../workspace/transcription/worker.ts';
 
 /** 装配完整 RAG 运行时，并返回服务器所需的应用接口、worker 与关闭函数。 */
 export function createRagRuntime(config: ApiConfig) {
@@ -49,6 +53,16 @@ export function createRagRuntime(config: ApiConfig) {
     config.database.schema,
     config.rag.tenantId,
   );
+  const audioAnalysisRepository = new AudioAnalysisRepository(
+    pool,
+    config.database.schema,
+    config.rag.tenantId,
+  );
+  const audioInputPreprocessor = new AudioInputPreprocessor({
+    audioStorageDirectory: config.rag.audioStorageDir,
+    tempDirectory: config.rag.audioTranscriptionTempDir,
+    ...(config.rag.ffmpegPath ? { ffmpegPath: config.rag.ffmpegPath } : {}),
+  });
   const embeddings = new OpenRouterEmbeddings({
     apiKey: config.rag.openRouterApiKey,
     model: config.rag.embeddingModel,
@@ -89,13 +103,27 @@ export function createRagRuntime(config: ApiConfig) {
   const workspaceService = new DefaultWorkspaceService(
     workspaceRepository,
     config.rag.audioStorageDir,
+    audioAnalysisRepository,
+    config.rag.audioTranscriptionModel,
+    audioInputPreprocessor,
   );
+  const transcriptionWorker = new AudioTranscriptionWorker({
+    repository: audioAnalysisRepository,
+    asr: new OpenRouterAsr({
+      apiKey: config.rag.openRouterApiKey,
+      model: config.rag.audioTranscriptionModel,
+    }),
+    preprocessor: audioInputPreprocessor,
+  });
   return {
     service,
     workspaceService,
     worker,
+    transcriptionWorker,
+    audioInputPreprocessor,
     async close() {
       await answers.dispose();
+      await transcriptionWorker.stop();
       await worker.stop();
       await checkpointer.end();
       await pool.end();

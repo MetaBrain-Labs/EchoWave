@@ -12,6 +12,8 @@ import { describe, it } from 'node:test';
 import {
   AudioAnalysisDetailSchema,
   AudioFileSummarySchema,
+  AudioTranscriptionCapabilitiesResponseSchema,
+  AudioTranscriptionStartRequestSchema,
   DataSourceAudioUploadResponseSchema,
   DataSourceCreateRequestSchema,
   DataSourceDetailSchema,
@@ -42,6 +44,7 @@ describe('workspace contracts', () => {
       durationMs: 1_000,
       createdAt: '2026-08-21T10:00:00.000Z',
       sharedFrom: null,
+      hasTranscript: false,
       status: {
         kind: 'failed',
         stage: 'transcription',
@@ -60,6 +63,26 @@ describe('workspace contracts', () => {
     );
   });
 
+  it('validates transcription preprocessing requests and capability responses', () => {
+    assert.deepEqual(AudioTranscriptionStartRequestSchema.parse({ preprocessing: 'direct' }), {
+      preprocessing: 'direct',
+    });
+    assert.deepEqual(AudioTranscriptionStartRequestSchema.parse({ preprocessing: 'ffmpeg' }), {
+      preprocessing: 'ffmpeg',
+    });
+    assert.throws(() => AudioTranscriptionStartRequestSchema.parse({ preprocessing: 'automatic' }));
+    assert.deepEqual(
+      AudioTranscriptionCapabilitiesResponseSchema.parse({
+        ffmpeg: { configured: false, available: false },
+        direct: {
+          maxBytes: 209_715_200,
+          formats: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'webm'],
+        },
+      }).direct.formats,
+      ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'webm'],
+    );
+  });
+
   it('validates data-source settings without accepting credentials', () => {
     const source = DataSourceDetailSchema.parse({
       id: firstId,
@@ -73,7 +96,7 @@ describe('workspace contracts', () => {
       lastUploadedAt: null,
       metrics: { audioCount: 0, totalDurationMs: 0, transcribedCount: 0, pendingCount: 0 },
       settings: {
-        transcriptionModel: 'Echo ASR Standard',
+        transcriptionModel: 'google/gemini-2.5-flash-lite',
         autoTranscribe: true,
         emotionAnalysis: true,
         speakerDiarization: true,
@@ -120,6 +143,7 @@ describe('workspace contracts', () => {
           durationMs: 1_000,
           createdAt: '2026-08-21T10:00:00.000Z',
           sharedFrom: null,
+          hasTranscript: true,
           status: { kind: 'waiting' },
         },
       ],
@@ -147,6 +171,7 @@ describe('workspace contracts', () => {
               index: 1,
               speakerKey: 'host',
               speakerLabel: '主持人',
+              businessRole: '主持人',
               emotion: '专注',
               startMs: 0,
               endMs: 1_000,

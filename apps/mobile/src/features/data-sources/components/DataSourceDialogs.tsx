@@ -129,7 +129,7 @@ function DataSourceFormSheetContent({
             <ReadonlyItem label="接入方式" value="手动上传" />
             <ReadonlyItem label="存储位置" value="本地" />
             <Text style={styles.sectionTitle}>音频分析</Text>
-            <ReadonlyItem label="转写模型" value="Echo ASR Standard" />
+            <ReadonlyItem label="转写模型" value="google/gemini-2.5-flash-lite" />
             <ReadonlyItem label="分析设置" value="默认开启" />
             {error ? (
               <Text accessibilityRole="alert" style={styles.errorText}>
@@ -320,6 +320,82 @@ export function DataSourceConfirmDialog({
   );
 }
 
+/** 确认单次 ASR，并在服务端能力范围内选择 FFmpeg 或原文件直传。 */
+export function AudioTranscriptionConfirmDialog({
+  audioTitle,
+  ffmpegAvailable,
+  ffmpegChecked,
+  onCancel,
+  onConfirm,
+  onToggleFfmpeg,
+  pending,
+  visible,
+}: {
+  audioTitle: string;
+  ffmpegAvailable: boolean;
+  ffmpegChecked: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+  onToggleFfmpeg: () => void;
+  pending: boolean;
+  visible: boolean;
+}) {
+  return (
+    <Modal animationType="fade" onRequestClose={onCancel} transparent visible={visible}>
+      <View style={styles.dialogRoot}>
+        <View accessibilityViewIsModal style={styles.dialogCard}>
+          <Text accessibilityRole="header" style={styles.sheetTitle}>
+            开始 ASR 转写？
+          </Text>
+          <Text style={styles.dialogBody}>
+            将使用 AI 对“{audioTitle}”进行 ASR 转写，并识别说话人、业务角色、情绪和时间戳。
+          </Text>
+          <Pressable
+            accessibilityLabel="使用 FFmpeg 预处理"
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: ffmpegChecked, disabled: !ffmpegAvailable || pending }}
+            disabled={!ffmpegAvailable || pending}
+            onPress={onToggleFfmpeg}
+            style={[styles.transcriptionOption, !ffmpegAvailable && styles.disabledButton]}
+          >
+            <Ionicons
+              color={ffmpegAvailable ? textColors.primary : textColors.tertiary}
+              name={ffmpegChecked ? 'checkbox' : 'square-outline'}
+              size={24}
+            />
+            <View style={styles.transcriptionOptionCopy}>
+              <Text style={styles.transcriptionOptionTitle}>使用 FFmpeg 预处理</Text>
+              <Text style={styles.secondaryText}>
+                {ffmpegAvailable
+                  ? '转为统一 MP3 并对长音频分块，提高兼容性。'
+                  : 'FFmpeg 未配置或不可用，将直接发送原音频。'}
+              </Text>
+            </View>
+          </Pressable>
+          {!ffmpegChecked ? (
+            <Text accessibilityRole="alert" style={styles.directWarning}>
+              原音频将以 base64 直接发送；大文件可能被转写服务拒绝，失败后可勾选 FFmpeg 重新转写。
+            </Text>
+          ) : null}
+          <View style={styles.dialogActions}>
+            <Pressable disabled={pending} onPress={onCancel} style={styles.dialogButton}>
+              <Text style={styles.dialogButtonText}>取消</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              disabled={pending}
+              onPress={onConfirm}
+              style={[styles.dialogButton, styles.dialogConfirmButton]}
+            >
+              <Text style={styles.dialogConfirmText}>{pending ? '处理中…' : '确认转写'}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 const styles = StyleSheet.create({
   modalRoot: { flex: 1, justifyContent: 'flex-end' },
   backdrop: { backgroundColor: 'rgba(16, 24, 40, 0.28)' },
@@ -481,6 +557,29 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontFamily: fontFamilies.sansBold,
     textAlign: 'center',
+  },
+  transcriptionOption: {
+    alignItems: 'center',
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    padding: spacing.base,
+  },
+  transcriptionOptionCopy: { flex: 1, gap: spacing.xs },
+  transcriptionOptionTitle: {
+    ...typography.body,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+  },
+  directWarning: {
+    ...typography.description,
+    backgroundColor: colors.background,
+    borderRadius: radii.default,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    padding: spacing.base,
   },
   pressed: { opacity: 0.72 },
 });

@@ -17,6 +17,9 @@ import {
   ApiErrorResponseSchema,
   AudioAnalysisDetailSchema,
   AudioFileListResponseSchema,
+  AudioTranscriptionCapabilitiesResponseSchema,
+  AudioTranscriptionStartRequestSchema,
+  AudioTranscriptionStartResponseSchema,
   DataSourceAudioUploadResponseSchema,
   DataSourceCreateRequestSchema,
   DataSourceDetailSchema,
@@ -35,6 +38,7 @@ import {
   type DataSourceUpdateRequest,
   type GroupCreateRequest,
   type KnowledgeBaseGroupLinkRequest,
+  type AudioTranscriptionStartRequest,
 } from '@echowave/contracts';
 
 import { apiUrl } from './apiUrl';
@@ -203,5 +207,12 @@ export async function uploadDataSourceAudioFiles(id: string, assets: DocumentPic
 
 export const archiveDataSourceAudioFile = (id: string, audioFileId: string) =>
   request(`/api/data-sources/${id}/audio-files/${audioFileId}`, null, { method: 'DELETE' });
+export const getAudioTranscriptionCapabilities = () =>
+  request('/api/audio-transcription/capabilities', AudioTranscriptionCapabilitiesResponseSchema);
+export const startAudioTranscription = (id: string, input: AudioTranscriptionStartRequest) =>
+  request(`/api/audio-files/${id}/transcriptions`, AudioTranscriptionStartResponseSchema, {
+    body: AudioTranscriptionStartRequestSchema.parse(input),
+    method: 'POST',
+  });
 export const getAudioAnalysis = (id: string) =>
   request(`/api/audio-files/${id}/analysis`, AudioAnalysisDetailSchema);

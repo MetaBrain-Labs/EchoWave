@@ -26,20 +26,28 @@ import {
 jest.mock('@/shared/api/workspaceApi', () => ({
   archiveDataSource: jest.fn(),
   archiveDataSourceAudioFile: jest.fn(),
+  getAudioTranscriptionCapabilities: jest.fn(),
   getDataSource: jest.fn(),
   linkDataSourceGroups: jest.fn(),
   listDataSourceAudioFiles: jest.fn(),
   listDataSourceIngestionRecords: jest.fn(),
   listDataSourceGroups: jest.fn(),
   listGroups: jest.fn(),
+  startAudioTranscription: jest.fn(),
   unlinkDataSourceGroup: jest.fn(),
   updateDataSource: jest.fn(),
   uploadDataSourceAudioFiles: jest.fn(),
 }));
 jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
 
-async function renderDetail(sourceId = dataSourceDetailFixture.id, onBack = jest.fn()) {
-  const screen = render(<DataSourceDetailScreen onBack={onBack} sourceId={sourceId} />);
+async function renderDetail(
+  sourceId = dataSourceDetailFixture.id,
+  onBack = jest.fn(),
+  onOpenAudio = jest.fn(),
+) {
+  const screen = render(
+    <DataSourceDetailScreen onBack={onBack} onOpenAudio={onOpenAudio} sourceId={sourceId} />,
+  );
   await waitFor(() => expect(screen.queryByLabelText('正在加载数据源详情')).toBeNull());
   return screen;
 }
@@ -48,6 +56,13 @@ describe('DataSourceDetailScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.mocked(workspaceApi.getDataSource).mockResolvedValue(dataSourceDetailFixture);
+    jest.mocked(workspaceApi.getAudioTranscriptionCapabilities).mockResolvedValue({
+      ffmpeg: { configured: true, available: true },
+      direct: {
+        maxBytes: 209_715_200,
+        formats: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'webm'],
+      },
+    });
     jest.mocked(workspaceApi.listDataSourceAudioFiles).mockResolvedValue({ items: audioFixtures });
     jest
       .mocked(workspaceApi.listDataSourceIngestionRecords)
@@ -64,6 +79,11 @@ describe('DataSourceDetailScreen', () => {
     });
     jest.mocked(workspaceApi.unlinkDataSourceGroup).mockResolvedValue(undefined);
     jest.mocked(workspaceApi.archiveDataSourceAudioFile).mockResolvedValue(undefined);
+    jest.mocked(workspaceApi.startAudioTranscription).mockResolvedValue({
+      audioFileId: audioFixtures[0].id,
+      revisionId: dataSourceDetailFixture.id,
+      status: 'queued',
+    });
     jest.mocked(workspaceApi.listGroups).mockResolvedValue({
       items: [
         groupFixture,
@@ -166,6 +186,7 @@ describe('DataSourceDetailScreen', () => {
     );
 
     fireEvent.press(screen.getAllByLabelText(`${audioFixtures[0].title}更多操作`)[0]!);
+    fireEvent.press(screen.getByText('归档'));
     fireEvent.press(screen.getByText('归档音频'));
     await waitFor(() =>
       expect(workspaceApi.archiveDataSourceAudioFile).toHaveBeenCalledWith(
@@ -183,6 +204,79 @@ describe('DataSourceDetailScreen', () => {
         linkedGroupFixtures[0].id,
       ),
     );
+  });
+
+  it('confirms ASR transcription and only opens an available published result', async () => {
+    const onOpenAudio = jest.fn();
+    const screen = await renderDetail(dataSourceDetailFixture.id, jest.fn(), onOpenAudio);
+
+    fireEvent.press(screen.getAllByLabelText(`${audioFixtures[0].title}更多操作`)[0]!);
+    expect(screen.getByText('归档')).toBeTruthy();
+    expect(screen.getByText('ASR转写')).toBeTruthy();
+    expect(screen.getByText('ASR结果分析')).toBeTruthy();
+    fireEvent.press(screen.getByText('ASR转写'));
+    expect(screen.getByLabelText('使用 FFmpeg 预处理').props.accessibilityState).toEqual({
+      checked: true,
+      disabled: false,
+    });
+    fireEvent.press(screen.getByText('确认转写'));
+    await waitFor(() =>
+      expect(workspaceApi.startAudioTranscription).toHaveBeenCalledWith(audioFixtures[0].id, {
+        preprocessing: 'ffmpeg',
+      }),
+    );
+
+    fireEvent.press(screen.getAllByLabelText(`${audioFixtures[0].title}更多操作`)[0]!);
+    fireEvent.press(screen.getByText('ASR结果分析'));
+    expect(onOpenAudio).toHaveBeenCalledWith(audioFixtures[0].id);
+  });
+
+  it('allows direct transcription when the user clears the FFmpeg option', async () => {
+    const screen = await renderDetail();
+
+    fireEvent.press(screen.getAllByLabelText(`${audioFixtures[0].title}更多操作`)[0]!);
+    fireEvent.press(screen.getByText('ASR转写'));
+    fireEvent.press(screen.getByLabelText('使用 FFmpeg 预处理'));
+    expect(screen.getByText(/原音频将以 base64 直接发送/)).toBeTruthy();
+    fireEvent.press(screen.getByText('确认转写'));
+
+    await waitFor(() =>
+      expect(workspaceApi.startAudioTranscription).toHaveBeenCalledWith(audioFixtures[0].id, {
+        preprocessing: 'direct',
+      }),
+    );
+  });
+
+  it('forces direct mode when FFmpeg capability loading fails', async () => {
+    jest
+      .mocked(workspaceApi.getAudioTranscriptionCapabilities)
+      .mockRejectedValueOnce(new Error('offline'));
+    const screen = await renderDetail();
+
+    fireEvent.press(screen.getAllByLabelText(`${audioFixtures[0].title}更多操作`)[0]!);
+    fireEvent.press(screen.getByText('ASR转写'));
+    expect(screen.getByLabelText('使用 FFmpeg 预处理').props.accessibilityState).toEqual({
+      checked: false,
+      disabled: true,
+    });
+    expect(screen.getByText('FFmpeg 未配置或不可用，将直接发送原音频。')).toBeTruthy();
+    fireEvent.press(screen.getByText('确认转写'));
+
+    await waitFor(() =>
+      expect(workspaceApi.startAudioTranscription).toHaveBeenCalledWith(audioFixtures[0].id, {
+        preprocessing: 'direct',
+      }),
+    );
+  });
+
+  it('disables result analysis before a transcript exists', async () => {
+    const waiting = audioFixtures.find((item) => item.status.kind === 'waiting')!;
+    const screen = await renderDetail();
+
+    fireEvent.press(screen.getAllByLabelText(`${waiting.title}更多操作`)[0]!);
+    expect(screen.getByRole('button', { name: 'ASR结果分析' }).props.accessibilityState).toEqual({
+      disabled: true,
+    });
   });
 
   it('disables linked groups and batch-links a newly selected group', async () => {

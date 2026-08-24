@@ -42,13 +42,15 @@ apps/api/src/http ───────> @echowave/contracts <──── apps/
 - PostgreSQL 是知识库、文档、revision、chunk、任务、会话和运行记录的权威来源。
 - PostgreSQL 同时保存租户级分组、数据源、音频元数据和已发布音频分析修订版；音频二进制与第三方凭据不进入业务表。
 - 手动上传音频先经扩展名、MIME 和媒体结构校验，再以随机文件名写入 `AUDIO_STORAGE_DIR`；数据库只保存相对 `storage_key`。文件写入或数据库事务失败时会补偿清理本批新文件。
+- 音频转写使用 `audio_analysis_revisions` 作为 PostgreSQL 队列，并把每次选择的 `ffmpeg/direct` 模式写入 revision 设置快照。可选的外部 FFmpeg 把源文件转为 16kHz 单声道 MP3 重叠分块；direct 模式不生成临时文件，直接提交一个覆盖完整录音的原格式逻辑分块。同进程单并发 worker 再通过 OpenRouter Gemini 生成原文、Speaker、业务角色、情绪与毫秒时间戳。
 - 分组通过关联表连接知识库和数据源；分组可见音频由显式分享与关联数据源两条关系合并去重，页面计数不作为可写字段保存。
 - 分组和数据源允许在当前固定租户内创建和软归档；归档数据源会从活动列表、分组统计和数据源继承的音频可见关系中排除它，但不会删除关联、音频事实或本地文件。
 - 知识库保存当前只读的存储、索引、模型和解析模式；概览统计继续由活动文档事实动态聚合。
 - 知识库可通过租户隔离的批量接口关联多个活动分组；批量校验和插入在同一事务内完成，重复关联保持幂等。
-- 新音频分析修订版只有完整写入场景、转写、摘要与标签后才替换音频的当前版本指针，失败重跑不会覆盖旧结果。
+- 新音频修订版只有完整写入本次产生的场景、转写及可选分析内容后才替换当前版本指针；ASR-only 修订允许摘要与标签为空，失败重跑不会覆盖旧结果。
 - 所有仓储 SQL 都包含 `tenant_id`，检索还同时约束知识库和文档当前生效 revision。
 - `ingestion_jobs` 通过 `FOR UPDATE SKIP LOCKED`、租约和幂等 chunk 唯一键恢复执行。
+- 音频转写通过部分唯一索引阻止同一音频并发任务，并用 `FOR UPDATE SKIP LOCKED` 领取；单实例重启时会重新排队中断修订。
 - 新 revision 仅在全部向量写入成功后才在单事务中成为 active revision；失败不会使旧内容离线。
 - 原文件使用随机临时路径，发布成功或不可重试失败后删除；超过 24 小时的孤立文件由 worker 清理。
 - 首期只允许单 API 实例。对象存储和独立 worker 是多实例部署的前置条件。
@@ -62,6 +64,8 @@ apps/api/src/http ───────> @echowave/contracts <──── apps/
 ## 模型与 Agent 边界
 
 - OpenRouter `qwen/qwen3-embedding-8b` 固定输出 1024 维，文档批次最多 64；只有查询添加英文检索指令。
+- OpenRouter `google/gemini-2.5-flash-lite` 接收 base64 音频分块，并以严格 JSON Schema 输出 Speaker、开放中文业务角色、固定情绪枚举、原文和相对毫秒时间戳；服务端仍使用 Zod 和音频边界再次校验。
+- OpenRouter 音频格式由分块携带：FFmpeg 模式恒为 MP3，direct 模式保留 MP3、WAV、M4A、AAC、FLAC、OGG 或 WebM。direct 的明确格式/大小拒绝不会自动回退，失败信息提示用户启用 FFmpeg 重跑。
 - 检索使用 cosine HNSW、`ef_search=100` 和 pgvector iterative scan，初召回 30，去重和文档配额后最多向 Agent 提供 8 块/12000 字符。
 - DeepAgent 使用 DeepSeek `deepseek-v4-flash`、结构化 `{ answer, grounded, citedChunkIds }` 输出和 PostgreSQL checkpointer。
 - 文件系统权限全部拒绝，不配置 skills、长期记忆或子代理；业务工具只有租户范围内的 `search_knowledge`，单轮最多实际执行四次。

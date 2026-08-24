@@ -21,11 +21,16 @@ import { createRagRuntime } from './runtime.ts';
 
 const config = readApiConfigFile(new URL('../../.env', import.meta.url));
 const ragRuntime = createRagRuntime(config);
+const transcriptionCapabilities = await ragRuntime.audioInputPreprocessor.probeFfmpeg();
+if (transcriptionCapabilities.ffmpeg.configured && !transcriptionCapabilities.ffmpeg.available) {
+  console.warn('FFmpeg preprocessing is unavailable; direct audio transcription remains enabled.');
+}
 const app = createApp(config, {
   knowledgeService: ragRuntime.service,
   workspaceService: ragRuntime.workspaceService,
 });
 ragRuntime.worker.start();
+await ragRuntime.transcriptionWorker.start();
 
 const server = serve(
   {
