@@ -55,7 +55,7 @@ describe('AudioAnalysisRepository', () => {
               duration_ms: 1_000,
               size_bytes: 1_000,
               preprocessing_mode: 'direct',
-              transcription_model: 'google/gemini-2.5-flash-lite',
+              transcription_model: 'x-ai/grok-stt-1.0',
               original_filename: 'meeting.wav',
               ingestion_run_id: '30000000-0000-4000-8000-000000000001',
               data_source_id: '20000000-0000-4000-8000-000000000001',
@@ -71,7 +71,7 @@ describe('AudioAnalysisRepository', () => {
     const repository = new AudioAnalysisRepository(pool, 'echowave', tenantId);
 
     assert.deepEqual(
-      await repository.queueTranscription(audioFileId, 'google/gemini-2.5-flash-lite', 'direct'),
+      await repository.queueTranscription(audioFileId, 'x-ai/grok-stt-1.0', 'direct'),
       { audioFileId, revisionId, status: 'queued' },
     );
     const claimed = await repository.claimTranscription();
@@ -82,8 +82,57 @@ describe('AudioAnalysisRepository', () => {
     assert.equal(claimed.dataSource.connectionStatus, 'connected');
     const insert = calls.find((call) => /INSERT INTO .*audio_analysis_revisions/.test(call.sql));
     assert.equal(insert.values[3], 'direct');
+    assert.equal(insert.values[4], true);
+    assert.equal(insert.values[5], 'word');
     assert.match(insert.sql, /'preprocessingMode', \$4::text/);
+    assert.match(insert.sql, /'businessRole', false/);
+    assert.match(insert.sql, /'emotionAnalysis', false/);
+    assert.match(insert.sql, /processing_stage, processing_updated_at/);
+    assert.match(insert.sql, /'queued', 0, 'queued', now\(\)/);
     assert.ok(calls.some((call) => /FOR UPDATE SKIP LOCKED/.test(call.sql)));
+    assert.ok(calls.some((call) => /processing_stage = 'preprocessing'/.test(call.sql)));
+  });
+
+  it('updates monotonic chunk activity and clears it when interrupted work is requeued', async () => {
+    const calls = [];
+    const repository = new AudioAnalysisRepository(
+      { query: async (sql, values) => (calls.push({ sql, values }), { rows: [] }) },
+      'echowave',
+      tenantId,
+    );
+    const progressJob = {
+      audioFileId,
+      durationMs: 870_000,
+      mimeType: 'audio/wav',
+      preprocessingMode: 'ffmpeg',
+      revisionId,
+      revisionNo: 1,
+      sizeBytes: 1_000,
+      storageKey: 'stored.wav',
+      title: '访谈',
+      originalFilename: 'meeting.wav',
+      ingestionRunId: null,
+      model: 'x-ai/grok-stt-1.0',
+      dataSource: null,
+    };
+
+    await repository.updateActivity(progressJob, {
+      stage: 'correcting',
+      progress: 43,
+      chunkIndex: 2,
+      chunkCount: 4,
+      chunkStartMs: 238_000,
+      chunkEndMs: 482_000,
+      networkAttempt: 1,
+      structureAttempt: 3,
+    });
+    await repository.resetInterruptedTranscriptions();
+
+    assert.match(calls[0].sql, /progress = greatest\(progress, \$3\)/);
+    assert.deepEqual(calls[0].values.slice(2), [43, 'correcting', 2, 4, 238_000, 482_000, 1, 3]);
+    assert.match(calls[1].sql, /processing_stage = 'queued'/);
+    assert.match(calls[1].sql, /current_chunk = NULL/);
+    assert.match(calls[1].sql, /network_attempt = NULL/);
   });
 
   it('rejects an unsupported direct source before creating a revision', async () => {
@@ -115,7 +164,7 @@ describe('AudioAnalysisRepository', () => {
     );
 
     await assert.rejects(
-      () => repository.queueTranscription(audioFileId, 'google/gemini-2.5-flash-lite', 'direct'),
+      () => repository.queueTranscription(audioFileId, 'x-ai/grok-stt-1.0', 'direct'),
       (error) => error.code === 'DIRECT_AUDIO_REJECTED',
     );
     assert.equal(
@@ -153,7 +202,7 @@ describe('AudioAnalysisRepository', () => {
       title: '访谈',
       originalFilename: 'meeting.wav',
       ingestionRunId: null,
-      model: 'google/gemini-2.5-flash-lite',
+      model: 'x-ai/grok-stt-1.0',
       dataSource: null,
     };
 
@@ -199,7 +248,7 @@ describe('AudioAnalysisRepository', () => {
         title: '访谈',
         originalFilename: 'meeting.wav',
         ingestionRunId: null,
-        model: 'google/gemini-2.5-flash-lite',
+        model: 'x-ai/grok-stt-1.0',
         dataSource: null,
       },
       'MODEL_TIMEOUT',

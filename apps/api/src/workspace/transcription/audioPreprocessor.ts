@@ -6,7 +6,8 @@
  *
  * Responsibilities:
  * - 校验所有源文件和临时文件均位于配置目录内。
- * - 生成完整原音频逻辑分块或带两秒重叠的十分钟单声道转写分块。
+ * - 生成短原音频逻辑分块或无重叠的 45 秒单声道转写分块。
+ * - 在模型输出异常时从原音频重新编码两个不短于十秒的子分块。
  * - 清理任务临时目录并非致命探测 FFmpeg 可用性。
  *
  * Notes:
@@ -19,15 +20,19 @@ import path from 'node:path';
 import {
   AUDIO_TRANSCRIPTION_DIRECT_FORMATS,
   AUDIO_TRANSCRIPTION_DIRECT_MAX_BYTES,
+  AUDIO_TRANSCRIPTION_DIRECT_MAX_DURATION_MS,
+  AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
   AudioTranscriptionCapabilitiesResponseSchema,
   type AudioTranscriptionCapabilitiesResponse,
   type AudioTranscriptionDirectFormat,
+  type AudioTranscriptionModel,
 } from '@echowave/contracts';
 
 import type { ClaimedAudioTranscription } from '../persistence/audioAnalysisRepository.ts';
 
-const CHUNK_DURATION_MS = 10 * 60 * 1_000;
-const CHUNK_OVERLAP_MS = 2_000;
+const CHUNK_DURATION_MS = 45_000;
+/** 自适应细分允许的最小子分块主区间。 */
+export const MINIMUM_CHUNK_DURATION_MS = 10_000;
 
 /** 一段经过转码、带全局时间定位的模型输入。 */
 export type AudioChunk = {
@@ -101,56 +106,83 @@ export class FfmpegAudioPreprocessor {
     await this.runner(this.options.ffmpegPath, ['-version']);
   }
 
-  /** 将完整录音转成固定码率、带重叠区间的顺序 MP3 分块。 */
+  private async encodeRange(
+    job: ClaimedAudioTranscription,
+    primaryStartMs: number,
+    primaryEndMs: number,
+  ): Promise<AudioChunk> {
+    const sourcePath = resolveWithin(this.options.audioStorageDirectory, job.storageKey);
+    const jobDirectory = resolveWithin(this.options.tempDirectory, job.revisionId);
+    await mkdir(jobDirectory, { recursive: true });
+    const offsetMs = primaryStartMs;
+    const encodedEndMs = primaryEndMs;
+    const outputPath = resolveWithin(jobDirectory, `chunk-${primaryStartMs}-${primaryEndMs}.mp3`);
+    await this.runner(this.options.ffmpegPath, [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-ss',
+      String(offsetMs / 1_000),
+      '-i',
+      sourcePath,
+      '-t',
+      String((encodedEndMs - offsetMs) / 1_000),
+      '-vn',
+      '-ac',
+      '1',
+      '-ar',
+      '16000',
+      '-b:a',
+      '64k',
+      '-y',
+      outputPath,
+    ]);
+    return {
+      durationMs: encodedEndMs - offsetMs,
+      format: 'mp3',
+      offsetMs,
+      path: outputPath,
+      primaryEndMs,
+      primaryStartMs,
+    };
+  }
+
+  /** 将完整录音转成固定码率、无重叠的顺序 MP3 分块。 */
   async createChunks(job: ClaimedAudioTranscription): Promise<AudioChunk[]> {
     if (job.durationMs <= 0) {
       throw new AudioPreprocessingError('TRANSCRIPTION_FAILED', '音频时长无效，无法转写。');
     }
-    const sourcePath = resolveWithin(this.options.audioStorageDirectory, job.storageKey);
     const jobDirectory = resolveWithin(this.options.tempDirectory, job.revisionId);
     await rm(jobDirectory, { force: true, recursive: true });
-    await mkdir(jobDirectory, { recursive: true });
     const chunks: AudioChunk[] = [];
     const count = Math.ceil(job.durationMs / CHUNK_DURATION_MS);
     for (let index = 0; index < count; index += 1) {
       const primaryStartMs = index * CHUNK_DURATION_MS;
       const primaryEndMs = Math.min(job.durationMs, (index + 1) * CHUNK_DURATION_MS);
-      const offsetMs = Math.max(0, primaryStartMs - (index === 0 ? 0 : CHUNK_OVERLAP_MS));
-      const encodedEndMs = Math.min(
-        job.durationMs,
-        primaryEndMs + (index === count - 1 ? 0 : CHUNK_OVERLAP_MS),
-      );
-      const outputPath = resolveWithin(jobDirectory, `chunk-${String(index).padStart(4, '0')}.mp3`);
-      await this.runner(this.options.ffmpegPath, [
-        '-hide_banner',
-        '-loglevel',
-        'error',
-        '-ss',
-        String(offsetMs / 1_000),
-        '-i',
-        sourcePath,
-        '-t',
-        String((encodedEndMs - offsetMs) / 1_000),
-        '-vn',
-        '-ac',
-        '1',
-        '-ar',
-        '16000',
-        '-b:a',
-        '64k',
-        '-y',
-        outputPath,
-      ]);
-      chunks.push({
-        durationMs: encodedEndMs - offsetMs,
-        format: 'mp3',
-        offsetMs,
-        path: outputPath,
-        primaryEndMs,
-        primaryStartMs,
-      });
+      chunks.push(await this.encodeRange(job, primaryStartMs, primaryEndMs));
     }
     return chunks;
+  }
+
+  /** 将输出异常的主区间从原音频重新编码为两个不短于十秒的子分块。 */
+  async splitChunk(job: ClaimedAudioTranscription, chunk: AudioChunk): Promise<AudioChunk[]> {
+    const primaryDurationMs = chunk.primaryEndMs - chunk.primaryStartMs;
+    const firstDurationMs = Math.floor(primaryDurationMs / 2);
+    const secondDurationMs = primaryDurationMs - firstDurationMs;
+    if (
+      firstDurationMs < MINIMUM_CHUNK_DURATION_MS ||
+      secondDurationMs < MINIMUM_CHUNK_DURATION_MS
+    ) {
+      throw new AudioPreprocessingError(
+        'TRANSCRIPTION_FAILED',
+        '当前音频分块无法在保持十秒下限的情况下继续细分。',
+        true,
+      );
+    }
+    const midpointMs = chunk.primaryStartMs + Math.floor(primaryDurationMs / 2);
+    const first = await this.encodeRange(job, chunk.primaryStartMs, midpointMs);
+    const second = await this.encodeRange(job, midpointMs, chunk.primaryEndMs);
+    return [first, second];
   }
 
   /** 删除当前修订的全部临时转码产物。 */
@@ -175,7 +207,8 @@ export class DirectAudioPreprocessor {
     if (
       !format ||
       !Number.isFinite(job.sizeBytes) ||
-      job.sizeBytes > AUDIO_TRANSCRIPTION_DIRECT_MAX_BYTES
+      job.sizeBytes > AUDIO_TRANSCRIPTION_DIRECT_MAX_BYTES ||
+      job.durationMs > AUDIO_TRANSCRIPTION_DIRECT_MAX_DURATION_MS
     ) {
       throw new AudioPreprocessingError(
         'DIRECT_AUDIO_REJECTED',
@@ -207,6 +240,7 @@ export class AudioInputPreprocessor {
       ffmpegPath?: string;
       tempDirectory: string;
       processRunner?: ProcessRunner;
+      defaultModel: AudioTranscriptionModel;
     },
   ) {
     this.direct = new DirectAudioPreprocessor(options.audioStorageDirectory);
@@ -244,9 +278,12 @@ export class AudioInputPreprocessor {
   /** 返回当前进程缓存的转写预处理能力。 */
   capabilities(): AudioTranscriptionCapabilitiesResponse {
     return AudioTranscriptionCapabilitiesResponseSchema.parse({
+      defaultModel: this.options.defaultModel,
+      models: AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
       ffmpeg: { configured: Boolean(this.options.ffmpegPath), available: this.ffmpegAvailable },
       direct: {
         maxBytes: AUDIO_TRANSCRIPTION_DIRECT_MAX_BYTES,
+        maxDurationMs: AUDIO_TRANSCRIPTION_DIRECT_MAX_DURATION_MS,
         formats: [...AUDIO_TRANSCRIPTION_DIRECT_FORMATS],
       },
     });
@@ -262,6 +299,18 @@ export class AudioInputPreprocessor {
       );
     }
     return this.ffmpeg.createChunks(job);
+  }
+
+  /** 仅在 FFmpeg 修订中将输出超限 Chunk 原位拆成两个子分块。 */
+  splitChunk(job: ClaimedAudioTranscription, chunk: AudioChunk): Promise<AudioChunk[]> {
+    if (job.preprocessingMode === 'direct' || !this.ffmpeg) {
+      throw new AudioPreprocessingError(
+        'DIRECT_AUDIO_REJECTED',
+        '原音频输出超出模型限制，请启用 FFmpeg 预处理后重试。',
+        true,
+      );
+    }
+    return this.ffmpeg.splitChunk(job, chunk);
   }
 
   /** direct 模式无临时文件，FFmpeg 模式清理当前修订目录。 */

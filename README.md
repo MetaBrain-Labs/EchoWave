@@ -1,6 +1,6 @@
 # EchoWave
 
-EchoWave 是一个面向音频分析、知识库关联和数据源连接场景的跨平台应用。当前里程碑提供 Expo 三端界面、Node.js API、基于 PostgreSQL/pgvector 的首期 RAG 知识库，以及通过 OpenRouter Gemini 完成的版本化音频 ASR；仍不包含真实鉴权。
+EchoWave 是一个面向音频分析、知识库关联和数据源连接场景的跨平台应用。当前里程碑提供 Expo 三端界面、Node.js API、基于 PostgreSQL/pgvector 的首期 RAG 知识库，以及通过 OpenRouter STT 完成的版本化音频转写；仍不包含真实鉴权。
 
 ## 技术基线
 
@@ -73,9 +73,9 @@ Copy-Item apps/mobile/.env.example apps/mobile/.env
 
 `apps/api/.env` 中的 `AUDIO_STORAGE_DIR` 是手动上传音频的持久化目录。该目录应位于具备持久化磁盘的服务端路径，API 只把随机生成的相对 `storage_key` 写入数据库。生产或容器环境必须显式挂载并备份该目录；不要把它指向临时目录或纳入 Git。
 
-FFmpeg 是可选的音频转写预处理能力。配置 `FFMPEG_PATH` 后，API 启动时会非致命探测可执行文件；缺失或检查失败不会阻止 API 启动，短期开发可在转写确认框取消 FFmpeg 并将原音频直接发送给 OpenRouter。启用时，临时 MP3 分块写入 `AUDIO_TRANSCRIPTION_TEMP_DIR`。模型固定为 `google/gemini-2.5-flash-lite`，密钥复用 `OPENROUTER_API_KEY`。
+FFmpeg 是可选的音频转写预处理能力。配置 `FFMPEG_PATH` 后，API 启动时会非致命探测可执行文件；缺失或检查失败不会阻止 API 启动。启用时，临时 MP3 分块写入 `AUDIO_TRANSCRIPTION_TEMP_DIR`。默认模型由 `AUDIO_TRANSCRIPTION_MODEL` 指定，示例使用 `x-ai/grok-stt-1.0`；客户端也可为单次修订选择 Qwen3 ASR、Whisper Large V3、GPT Transcribe 或 Voxtral Mini Transcribe，密钥统一复用 `OPENROUTER_API_KEY`，失败时不会自动切换模型。
 
-原音频直传支持 MP3、WAV、M4A、AAC、FLAC、OGG 和 WebM，并沿用 200 MB 上传上限；base64 会使请求体增大约三分之一，提供商可能拒绝大文件。此时应重新转写并勾选 FFmpeg，不会自动回退或覆盖旧结果。
+原音频直传支持 MP3、WAV、M4A、AAC、FLAC、OGG 和 WebM，但仅允许不超过 45 秒且不超过 200 MB 的音频；长音频必须启用 FFmpeg。base64 会使请求体增大约三分之一，供应商拒绝时应重新转写并勾选 FFmpeg，不会自动回退或覆盖旧结果。
 
 `apps/api/.env` 是 API 的唯一配置来源：启动时会直接读取并校验该文件，不合并系统环境变量，也不使用隐式默认值。移动端由 Expo CLI 自动加载 `apps/mobile/.env`，其中客户端可用变量必须以 `EXPO_PUBLIC_` 开头：
 
@@ -100,9 +100,15 @@ AI_EXECUTION_REPORT_OUTPUT_ENABLED="false"
 AI_EXECUTION_REPORT_REASONING_ENABLED="false"
 ```
 
-每个被 worker 领取的转写修订生成一份 `audio-transcription` 报告，记录安全的数据源/音频快照、direct 或 FFmpeg 预处理、分块时间边界、每次 OpenRouter 网络与结构纠正尝试、Token/音频 Token/费用、校验合并、发布、清理和失败持久化。报告不会记录连接地址、`connection_label`、`storage_key`、外部来源 ID、文件路径、音频、base64、提示词、密钥或 Provider 原始错误包。
+每个被 worker 领取的转写修订生成一份 `audio-transcription` 报告，记录所选模型、Generation ID、direct 或 FFmpeg 预处理、分块时间边界、网络尝试、耗时、usage、费用、质量指标、发布和失败持久化。报告不会记录连接地址、`storage_key`、文件路径、音频、base64、完整正文、密钥或 Provider 原始错误包。
 
-`AI_EXECUTION_REPORT_OUTPUT_ENABLED="false"` 是安全默认值：关闭时失败输出只记录长度、SHA-256 和结构化问题；开启时仅允许 ASR 的失败模型输出进入本地报告，每次最多 20,000 字符、单修订最多 40,000 字符并标记截断。成功转写正文始终不写入报告，失败正文也不会进入 PostgreSQL、HTTP API 或移动端。报告目录已被 Git 忽略且不会自动清理，避免后台任务误删诊断证据。
+FFmpeg 模式将录音转为 16kHz 单声道 64kbps MP3，并按固定 45 秒无重叠区间生成 Chunk；约 14.5 分钟录音初始形成 20 个 Chunk。明显文本退化或连续超时会把当前 Chunk 依次细分为约 22 秒和 11 秒，十秒为硬下限。direct 模式只允许不超过 45 秒的完整原音频，长音频必须使用 FFmpeg。
+
+适配器调用 OpenRouter `/api/v1/audio/transcriptions`，只发送 base64 音频、格式、模型和必要的 Provider/STT 参数，不使用 Chat messages、提示词、JSON Schema、输出 Token 预算或结构纠正。超时、网络、429 和 5xx 最多尝试三次；鉴权、额度、权限和无效参数错误立即失败。服务端兼容 words、segments 和纯 text，按 Speaker 变化、750ms 以上停顿或终止标点合并词级结果，并校验越界、顺序、密度和重复循环。没有 Speaker 或细时间戳时保守使用 `Speaker 0` 与块级范围；业务角色和情绪始终为 `unknown`。
+
+数据源详情页沿用 2 秒列表轮询显示 `排队 → 预处理 → Chunk 转写/校验/细分 → 合并 → 发布`。音频卡片展示当前 Chunk、动态总数、网络尝试和按已完成音频区间计算的单调百分比；点击进行中状态可查看 Chunk 列表、音频时间范围和阶段时间线。模型正文始终不会进入进度接口或弹窗。
+
+`AI_EXECUTION_REPORT_OUTPUT_ENABLED="false"` 是安全默认值。STT 转写无论该开关如何都不把音频或完整正文写入执行报告，只记录模型、Generation ID、耗时、usage、费用和安全质量指标。报告目录已被 Git 忽略且不会自动清理，避免后台任务误删诊断证据。
 
 首次启动前显式执行迁移；普通 API 启动不会修改数据库 schema：
 
@@ -215,9 +221,9 @@ pnpm check
 - PostgreSQL 租户隔离、revision 原子发布、HNSW 检索和引用回溯
 - PostgreSQL 数据源创建、编辑、软归档、分组关联/解除，以及本地批量音频上传与软归档
 - PostgreSQL 音频上传时间线和版本化分析结果查询纵切片
-- 数据源音频的后台 ASR、Speaker 分离、业务角色、情绪与毫秒时间戳结构化结果
+- 数据源音频的后台 ASR、Speaker 分离、业务角色、情绪、毫秒时间戳及分块级实时进度
 - DeepSeek + DeepAgents 知识问答、无证据拒答与短会话 checkpoint
-- 可选的知识问答与入库 Markdown 执行诊断报告
+- 可选的知识问答、入库与音频转写 Markdown 执行诊断报告
 - 移动端知识库列表、文档/块详情、上传、动态问答反馈、最近六轮只读历史和可返回聊天的引用跳转
 - 更多页中的 API 加载、在线、离线、超时和重试状态
 - `GET /api/hello` HelloWorld 接口及共享 Zod 契约

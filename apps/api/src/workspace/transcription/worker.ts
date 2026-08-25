@@ -1,12 +1,12 @@
 /**
  * 音频 ASR 后台 worker。
  *
- * 通过显式 LangGraph 流程顺序完成转码分块、Gemini 转写、结果合并、原子发布和
+ * 通过显式 LangGraph 流程顺序完成转码分块、OpenRouter STT 转写、结果合并、原子发布和
  * 临时文件清理；当前与 API 同进程并保持单并发。
  *
  * Responsibilities:
  * - 周期领取 PostgreSQL 中排队的音频修订。
- * - 规范化跨分块 Speaker、角色、时间戳和重叠文本。
+ * - 规范化跨分块 Speaker 与时间戳，不推断角色或情绪。
  * - 将失败安全收敛到当前修订并保留旧结果。
  *
  * Notes:
@@ -29,13 +29,14 @@ import { AudioAnalysisRepository } from '../persistence/audioAnalysisRepository.
 import {
   AudioPreprocessingError,
   AudioInputPreprocessor,
+  MINIMUM_CHUNK_DURATION_MS,
   type AudioChunk,
 } from './audioPreprocessor.ts';
 import {
   AudioTranscriptionProviderError,
-  OpenRouterAsr,
-  type AsrSpeaker,
-} from './openRouterAsr.ts';
+  AudioTranscriptionSplitRequiredError,
+  OpenRouterStt,
+} from './openRouterStt.ts';
 
 const TranscriptionState = Annotation.Root({
   job: Annotation<ClaimedAudioTranscription>(),
@@ -47,11 +48,11 @@ const TranscriptionState = Annotation.Root({
 
 type ChunkResult = {
   chunk: AudioChunk;
-  result: Awaited<ReturnType<OpenRouterAsr['transcribeChunk']>>;
+  result: Awaited<ReturnType<OpenRouterStt['transcribeChunk']>>;
 };
 
 type WorkerOptions = {
-  asr: OpenRouterAsr;
+  stt: OpenRouterStt;
   preprocessor: AudioInputPreprocessor;
   repository: AudioAnalysisRepository;
   reporter?: AiExecutionReporter;
@@ -104,65 +105,11 @@ function failureDetails(error: unknown): AudioFailureDetails {
   };
 }
 
-function textSimilarity(left: string, right: string): number {
-  const normalize = (value: string) => value.toLocaleLowerCase().replace(/[\p{P}\p{S}\s]+/gu, '');
-  const normalizedLeft = normalize(left);
-  const normalizedRight = normalize(right);
-  if (!normalizedLeft || !normalizedRight) return 0;
-  if (normalizedLeft === normalizedRight) return 1;
-  if (normalizedLeft.length === 1 || normalizedRight.length === 1) return 0;
-  const bigrams = (value: string) => {
-    const result = new Map<string, number>();
-    for (let index = 0; index < value.length - 1; index += 1) {
-      const bigram = value.slice(index, index + 2);
-      result.set(bigram, (result.get(bigram) ?? 0) + 1);
-    }
-    return result;
-  };
-  const leftBigrams = bigrams(normalizedLeft);
-  const rightBigrams = bigrams(normalizedRight);
-  let intersection = 0;
-  for (const [bigram, count] of leftBigrams) {
-    intersection += Math.min(count, rightBigrams.get(bigram) ?? 0);
-  }
-  return (2 * intersection) / (normalizedLeft.length + normalizedRight.length - 2);
-}
-
-function deduplicateOverlaps(segments: TranscriptDraft[]): TranscriptDraft[] {
-  const deduplicated: TranscriptDraft[] = [];
-  for (const segment of segments) {
-    let duplicateIndex = -1;
-    for (let index = deduplicated.length - 1; index >= 0; index -= 1) {
-      const candidate = deduplicated[index]!;
-      if (candidate.endMs <= segment.startMs) continue;
-      const overlap = Math.min(candidate.endMs, segment.endMs) - segment.startMs;
-      const shorterDuration = Math.min(
-        candidate.endMs - candidate.startMs,
-        segment.endMs - segment.startMs,
-      );
-      if (
-        candidate.speakerKey === segment.speakerKey &&
-        overlap / shorterDuration >= 0.35 &&
-        textSimilarity(candidate.text, segment.text) >= 0.8
-      ) {
-        duplicateIndex = index;
-        break;
-      }
-    }
-    if (duplicateIndex < 0) {
-      deduplicated.push(segment);
-    } else if (segment.text.length > deduplicated[duplicateIndex]!.text.length) {
-      deduplicated[duplicateIndex] = segment;
-    }
-  }
-  return deduplicated;
-}
-
-/** 合并顺序分块并用主区间中点规则去除两秒重叠产生的重复内容。 */
+/** 合并无重叠的顺序分块并把局部时间转换为全局毫秒。 */
 export function mergeChunkSegments(
   chunks: {
     chunk: AudioChunk;
-    result: Awaited<ReturnType<OpenRouterAsr['transcribeChunk']>>;
+    result: Awaited<ReturnType<OpenRouterStt['transcribeChunk']>>;
   }[],
   durationMs: number,
 ): TranscriptDraft[] {
@@ -196,7 +143,7 @@ export function mergeChunkSegments(
     }),
   );
   selected.sort((left, right) => left.startMs - right.startMs || left.endMs - right.endMs);
-  const deduplicated = deduplicateOverlaps(selected);
+  const deduplicated = selected;
   const canonical = new Map<string, string>();
   for (const segment of deduplicated) {
     if (!canonical.has(segment.speakerKey)) {
@@ -224,7 +171,10 @@ export class AudioTranscriptionWorker {
             report,
             'preprocess',
             async () => {
-              await options.repository.setProgress(job, 5);
+              await options.repository.updateActivity(job, {
+                stage: 'preprocessing',
+                progress: 5,
+              });
               return options.preprocessor.createChunks(job);
             },
             (value) => ({
@@ -233,7 +183,7 @@ export class AudioTranscriptionWorker {
               inputMimeType: job.mimeType,
               chunkCount: value.length,
               outputFormat: value[0]?.format ?? null,
-              overlapMs: job.preprocessingMode === 'ffmpeg' ? 2_000 : 0,
+              overlapMs: 0,
               chunks: value.map((chunk, index) => ({
                 index: index + 1,
                 durationMs: chunk.durationMs,
@@ -270,30 +220,149 @@ export class AudioTranscriptionWorker {
           'transcribe',
           async () => {
             const results: ChunkResult[] = [];
-            const knownSpeakers = new Map<string, AsrSpeaker>();
-            for (let index = 0; index < chunks.length; index += 1) {
+            for (let index = 0; index < chunks.length;) {
               const chunk = chunks[index]!;
-              const result = await options.asr.transcribeChunk({
-                audioPath: chunk.path,
-                chunkCount: chunks.length,
-                chunkIndex: index + 1,
-                durationMs: chunk.durationMs,
-                format: chunk.format,
-                knownSpeakers: [...knownSpeakers.values()],
-                preprocessingMode: job.preprocessingMode,
-                report,
-              });
-              for (const speaker of result.speakers) {
-                const current = knownSpeakers.get(speaker.speakerKey);
-                if (
-                  !current ||
-                  (current.businessRole === 'unknown' && speaker.businessRole !== 'unknown')
-                ) {
-                  knownSpeakers.set(speaker.speakerKey, speaker);
+              const primaryDurationMs = chunk.primaryEndMs - chunk.primaryStartMs;
+              const canSplit =
+                job.preprocessingMode === 'ffmpeg' &&
+                primaryDurationMs >= MINIMUM_CHUNK_DURATION_MS * 2;
+              const chunkProgressStart = 10 + (chunk.primaryStartMs / job.durationMs) * 75;
+              const chunkProgressEnd = 10 + (chunk.primaryEndMs / job.durationMs) * 75;
+              let result: Awaited<ReturnType<OpenRouterStt['transcribeChunk']>>;
+              try {
+                result = await options.stt.transcribeChunk({
+                  audioPath: chunk.path,
+                  chunkCount: chunks.length,
+                  chunkIndex: index + 1,
+                  durationMs: chunk.durationMs,
+                  format: chunk.format,
+                  model: job.model,
+                  preprocessingMode: job.preprocessingMode,
+                  report,
+                  onActivity: async (activity) => {
+                    const progress =
+                      activity.stage === 'validating'
+                        ? chunkProgressStart + (chunkProgressEnd - chunkProgressStart) * 0.8
+                        : chunkProgressStart;
+                    await options.repository.updateActivity(job, {
+                      stage: activity.stage,
+                      progress,
+                      chunkIndex: index + 1,
+                      chunkCount: chunks.length,
+                      chunkStartMs: chunk.offsetMs,
+                      chunkEndMs: chunk.offsetMs + chunk.durationMs,
+                      ...(activity.networkAttempt === null
+                        ? {}
+                        : { networkAttempt: activity.networkAttempt }),
+                    });
+                    report.recordStep({
+                      name: `activity:${activity.stage}`,
+                      status: 'completed',
+                      metadata: {
+                        chunkIndex: index + 1,
+                        chunkCount: chunks.length,
+                        networkAttempt: activity.networkAttempt,
+                        progress: Math.round(progress),
+                      },
+                    });
+                  },
+                });
+              } catch (error) {
+                if (!(error instanceof AudioTranscriptionSplitRequiredError)) {
+                  throw error;
                 }
+                const qualityDegradation = error.reason === 'quality_degradation';
+                const splitReason = error.reason;
+                report.recordStep({
+                  name: qualityDegradation
+                    ? 'quality-degradation-detected'
+                    : 'consecutive-timeout-detected',
+                  status: 'completed',
+                  metadata: {
+                    chunkIndex: index + 1,
+                    chunkCount: chunks.length,
+                    primaryStartMs: chunk.primaryStartMs,
+                    primaryEndMs: chunk.primaryEndMs,
+                    reason: error.details?.issues[0]?.code ?? splitReason,
+                    ...(error.qualityMetrics ? { quality: error.qualityMetrics } : {}),
+                  },
+                });
+                if (job.preprocessingMode === 'direct') {
+                  throw new AudioTranscriptionProviderError(
+                    'DIRECT_AUDIO_REJECTED',
+                    '原音频连续超时或质量校验失败，请重新转写并启用 FFmpeg 预处理。',
+                    true,
+                    undefined,
+                    error.details,
+                  );
+                }
+                if (!canSplit) {
+                  throw new AudioTranscriptionProviderError(
+                    'INVALID_MODEL_OUTPUT',
+                    `第 ${index + 1}/${chunks.length} 个最小音频分块${qualityDegradation ? '仍出现明显文本退化' : '仍连续超时'}，请重新转写。`,
+                    true,
+                    undefined,
+                    error.details,
+                  );
+                }
+                await options.repository.updateActivity(job, {
+                  stage: 'splitting',
+                  progress: chunkProgressStart,
+                  chunkIndex: index + 1,
+                  chunkCount: chunks.length,
+                  chunkStartMs: chunk.offsetMs,
+                  chunkEndMs: chunk.offsetMs + chunk.durationMs,
+                });
+                const splitStartedAt = Date.now();
+                report.recordStep({
+                  name: 'split-chunk',
+                  status: 'started',
+                  metadata: {
+                    chunkIndex: index + 1,
+                    chunkCount: chunks.length,
+                    reason: splitReason,
+                  },
+                });
+                const children = await options.preprocessor.splitChunk(job, chunk);
+                chunks.splice(index, 1, ...children);
+                report.recordStep({
+                  name: 'split-chunk',
+                  status: 'completed',
+                  durationMs: Date.now() - splitStartedAt,
+                  metadata: {
+                    chunkIndex: index + 1,
+                    chunkCount: chunks.length,
+                    reason: splitReason,
+                    children: children.map((child, childIndex) => ({
+                      index: index + childIndex + 1,
+                      durationMs: child.durationMs,
+                      offsetMs: child.offsetMs,
+                      primaryStartMs: child.primaryStartMs,
+                      primaryEndMs: child.primaryEndMs,
+                    })),
+                  },
+                });
+                report.recordStep({
+                  name: 'retry-child-chunks',
+                  status: 'completed',
+                  metadata: {
+                    firstChildIndex: index + 1,
+                    chunkCount: chunks.length,
+                    reason: splitReason,
+                  },
+                });
+                continue;
               }
               results.push({ chunk, result });
-              await options.repository.setProgress(job, 10 + ((index + 1) / chunks.length) * 80);
+              await options.repository.updateActivity(job, {
+                stage: 'validating',
+                progress: chunkProgressEnd,
+                chunkIndex: index + 1,
+                chunkCount: chunks.length,
+                chunkStartMs: chunk.offsetMs,
+                chunkEndMs: chunk.offsetMs + chunk.durationMs,
+              });
+              index += 1;
             }
             return results;
           },
@@ -316,7 +385,22 @@ export class AudioTranscriptionWorker {
         const segments = await reportedStep(
           report,
           'validate-merge',
-          async () => mergeChunkSegments(chunkResults, job.durationMs),
+          async () => {
+            const lastChunk = chunkResults.at(-1)?.chunk;
+            await options.repository.updateActivity(job, {
+              stage: 'merging',
+              progress: 90,
+              ...(lastChunk
+                ? {
+                    chunkIndex: chunkResults.length,
+                    chunkCount: chunkResults.length,
+                    chunkStartMs: lastChunk.offsetMs,
+                    chunkEndMs: lastChunk.offsetMs + lastChunk.durationMs,
+                  }
+                : {}),
+            });
+            return mergeChunkSegments(chunkResults, job.durationMs);
+          },
           (value) => ({
             progress: 90,
             modelSegmentCount,
@@ -339,12 +423,24 @@ export class AudioTranscriptionWorker {
         );
         return { segments };
       })
-      .addNode('publish', async ({ job, segments, report }) => {
+      .addNode('publish', async ({ chunks, job, segments, report }) => {
         await reportedStep(
           report,
           'publish',
           async () => {
-            await options.repository.setProgress(job, 95);
+            const lastChunk = chunks.at(-1);
+            await options.repository.updateActivity(job, {
+              stage: 'publishing',
+              progress: 95,
+              ...(lastChunk
+                ? {
+                    chunkIndex: chunks.length,
+                    chunkCount: chunks.length,
+                    chunkStartMs: lastChunk.offsetMs,
+                    chunkEndMs: lastChunk.offsetMs + lastChunk.durationMs,
+                  }
+                : {}),
+            });
             await options.repository.publishTranscription(job, segments);
           },
           () => ({ progress: 100, segmentCount: segments.length }),

@@ -42,7 +42,7 @@ apps/api/src/http ───────> @echowave/contracts <──── apps/
 - PostgreSQL 是知识库、文档、revision、chunk、任务、会话和运行记录的权威来源。
 - PostgreSQL 同时保存租户级分组、数据源、音频元数据和已发布音频分析修订版；音频二进制与第三方凭据不进入业务表。
 - 手动上传音频先经扩展名、MIME 和媒体结构校验，再以随机文件名写入 `AUDIO_STORAGE_DIR`；数据库只保存相对 `storage_key`。文件写入或数据库事务失败时会补偿清理本批新文件。
-- 音频转写使用 `audio_analysis_revisions` 作为 PostgreSQL 队列，并把每次选择的 `ffmpeg/direct` 模式写入 revision 设置快照。可选的外部 FFmpeg 把源文件转为 16kHz 单声道 MP3 重叠分块；direct 模式不生成临时文件，直接提交一个覆盖完整录音的原格式逻辑分块。同进程单并发 worker 再通过 OpenRouter Gemini 生成原文、Speaker、业务角色、情绪与毫秒时间戳。
+- 音频转写使用 `audio_analysis_revisions` 作为 PostgreSQL 队列，并把实际模型、声明能力与 `ffmpeg/direct` 模式写入 revision 设置快照。FFmpeg 把源文件转为 16kHz 单声道 MP3，以 45 秒无重叠分块；文本退化或连续超时会原位细分到约 22 秒、11 秒，十秒为下限。direct 仅允许不超过 45 秒的受支持音频。单并发 worker 通过 OpenRouter STT 端点接收 words、segments 或 text，不使用 Gemini Chat 或结构生成，也不在修订内自动切换模型。
 - 分组通过关联表连接知识库和数据源；分组可见音频由显式分享与关联数据源两条关系合并去重，页面计数不作为可写字段保存。
 - 分组和数据源允许在当前固定租户内创建和软归档；归档数据源会从活动列表、分组统计和数据源继承的音频可见关系中排除它，但不会删除关联、音频事实或本地文件。
 - 知识库保存当前只读的存储、索引、模型和解析模式；概览统计继续由活动文档事实动态聚合。
@@ -51,6 +51,8 @@ apps/api/src/http ───────> @echowave/contracts <──── apps/
 - 所有仓储 SQL 都包含 `tenant_id`，检索还同时约束知识库和文档当前生效 revision。
 - `ingestion_jobs` 通过 `FOR UPDATE SKIP LOCKED`、租约和幂等 chunk 唯一键恢复执行。
 - 音频转写通过部分唯一索引阻止同一音频并发任务，并用 `FOR UPDATE SKIP LOCKED` 领取；单实例重启时会重新排队中断修订。
+- 转写适配器校验时间戳边界和顺序，并用重复覆盖率、文本/时间密度、Markdown 和短句碎片拒绝明显退化结果。words 按 Speaker 变化、750ms 停顿或终止标点成段；无 Speaker 时使用 `Speaker 0`，纯 text 仅获得块级时间范围。业务角色与情绪固定为 `unknown`，不会从正文猜测。失败详情与执行报告只记录安全问题码和统计。
+- 转写 worker 将阶段、当前 Chunk/动态总数、音频时间范围、网络尝试和更新时间持久化到当前修订。移动端按 2 秒轮询展示，进度按已完成音频区间保持单调；旧修订的结构尝试字段仅作兼容读取。
 - 新 revision 仅在全部向量写入成功后才在单事务中成为 active revision；失败不会使旧内容离线。
 - 原文件使用随机临时路径，发布成功或不可重试失败后删除；超过 24 小时的孤立文件由 worker 清理。
 - 首期只允许单 API 实例。对象存储和独立 worker 是多实例部署的前置条件。
@@ -64,7 +66,7 @@ apps/api/src/http ───────> @echowave/contracts <──── apps/
 ## 模型与 Agent 边界
 
 - OpenRouter `qwen/qwen3-embedding-8b` 固定输出 1024 维，文档批次最多 64；只有查询添加英文检索指令。
-- OpenRouter `google/gemini-2.5-flash-lite` 接收 base64 音频分块，并以严格 JSON Schema 输出 Speaker、开放中文业务角色、固定情绪枚举、原文和相对毫秒时间戳；服务端仍使用 Zod 和音频边界再次校验。
+- OpenRouter `/api/v1/audio/transcriptions` 接收 base64 音频分块。默认模型是 `x-ai/grok-stt-1.0`，允许单次选择 `qwen/qwen3-asr-1.7b`、`openai/whisper-large-v3`、`openai/gpt-transcribe` 或 `mistralai/voxtral-mini-transcribe`。模型目录来自共享静态白名单；超时、网络、429 与 5xx 最多尝试三次，安全错误立即失败且不跨模型故障转移。
 - OpenRouter 音频格式由分块携带：FFmpeg 模式恒为 MP3，direct 模式保留 MP3、WAV、M4A、AAC、FLAC、OGG 或 WebM。direct 的明确格式/大小拒绝不会自动回退，失败信息提示用户启用 FFmpeg 重跑。
 - 检索使用 cosine HNSW、`ef_search=100` 和 pgvector iterative scan，初召回 30，去重和文档配额后最多向 Agent 提供 8 块/12000 字符。
 - DeepAgent 使用 DeepSeek `deepseek-v4-flash`、结构化 `{ answer, grounded, citedChunkIds }` 输出和 PostgreSQL checkpointer。
@@ -88,9 +90,9 @@ apps/api/src/http ───────> @echowave/contracts <──── apps/
 
 可选执行报告以一次 `rag-answer`、`knowledge-ingestion` 或 `audio-transcription` 为边界，在运行结束后生成一份本地 Markdown。问答报告关联知识库、会话和 `rag_run`；入库报告关联 job、文档和 revision；ASR 报告一一对应被 worker 领取的音频修订，关联安全的数据源/导入批次/音频快照，并记录 `preprocess → transcribe → validate-merge → publish → cleanup` 时间线。失败时继续记录 `persist-failure` 和失败清理，报告关闭或落盘失败都不能改变转写结果。
 
-该报告不是 PostgreSQL 权威审计的替代品，也不参与客户端进度卡片、HTTP 响应或恢复机制。功能关闭时使用 no-op recorder，不创建目录或序列化上下文；写文件失败只产生脱敏 warning，不能改变原始业务结果。报告在执行结束时一次性写入，因此不提供实时遥测。
+该报告不是 PostgreSQL 权威审计的替代品，也不作为客户端进度、HTTP 响应或恢复机制的数据源。客户端实时状态来自修订上的结构化活动字段；报告在执行结束时一次性写入，用于事后诊断。功能关闭时使用 no-op recorder，不创建目录或序列化上下文；写文件失败只产生脱敏 warning，不能改变原始业务结果。
 
-ASR 的每次 OpenRouter HTTP 尝试都是独立 Model Call，包含分块序号、网络重试、结构纠正轮次、模型、Provider、耗时、HTTP 状态、安全失败分类和可用的 usage/费用。模型输出依次经过 JSON、Zod 与 Speaker/时间边界语义校验；安全诊断进入修订的 `error_details`，正文不进入数据库或客户端。
+STT 的每次 OpenRouter HTTP 尝试都是独立 Model Call，包含分块序号、网络重试、所选模型、Provider、Generation ID、耗时、HTTP 状态、安全失败分类和可用的 usage/费用。输出经过响应结构、时间边界与文本质量校验；重复覆盖率、密度等安全统计可进入报告和修订 `error_details`，音频与完整正文不进入报告、错误详情或客户端进度接口。
 
 默认报告只包含安全元数据。`AI_EXECUTION_REPORT_OUTPUT_ENABLED=true` 时仅把失败的 ASR 模型输出写入本地报告，单次最多 20,000 字符、单修订最多 40,000 字符；成功正文始终排除。音频、base64、提示词、密钥、密码、认证头、Cookie、连接地址、绝对/临时路径和 Provider 原始错误包在任何模式下都不得写入。报告目录由 Git 忽略且不自动清理。
 

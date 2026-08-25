@@ -32,7 +32,7 @@ describe('API environment', () => {
       LANGGRAPH_SCHEMA: 'echowave_graph',
       UPLOAD_TEMP_DIR: '.tmp/uploads',
       AUDIO_STORAGE_DIR: '.data/audio',
-      AUDIO_TRANSCRIPTION_MODEL: 'google/gemini-2.5-flash-lite',
+      AUDIO_TRANSCRIPTION_MODEL: 'x-ai/grok-stt-1.0',
       AUDIO_TRANSCRIPTION_TEMP_DIR: '.tmp/audio-transcription',
       FFMPEG_PATH: 'C:\\ffmpeg\\ffmpeg.exe',
       AI_EXECUTION_REPORT_ENABLED: 'false',
@@ -75,7 +75,7 @@ describe('API environment', () => {
         langGraphSchema: 'echowave_graph',
         uploadTempDir: '.tmp/uploads',
         audioStorageDir: '.data/audio',
-        audioTranscriptionModel: 'google/gemini-2.5-flash-lite',
+        audioTranscriptionModel: 'x-ai/grok-stt-1.0',
         audioTranscriptionTempDir: '.tmp/audio-transcription',
         ffmpegPath: 'C:\\ffmpeg\\ffmpeg.exe',
       },
@@ -128,7 +128,7 @@ describe('API environment', () => {
       LANGGRAPH_SCHEMA: 'echowave_graph',
       UPLOAD_TEMP_DIR: '.tmp/uploads',
       AUDIO_STORAGE_DIR: '.data/audio',
-      AUDIO_TRANSCRIPTION_MODEL: 'google/gemini-2.5-flash-lite',
+      AUDIO_TRANSCRIPTION_MODEL: 'x-ai/grok-stt-1.0',
       AUDIO_TRANSCRIPTION_TEMP_DIR: '.tmp/audio-transcription',
       AI_EXECUTION_REPORT_ENABLED: 'false',
       AI_EXECUTION_REPORT_OUTPUT_DIR: '.ai-execution-reports',
@@ -140,5 +140,20 @@ describe('API environment', () => {
 
     assert.equal(readApiConfig(values).rag.ffmpegPath, undefined);
     assert.equal(readApiConfig({ ...values, FFMPEG_PATH: '' }).rag.ffmpegPath, undefined);
+    for (const model of [
+      'x-ai/grok-stt-1.0',
+      'qwen/qwen3-asr-1.7b',
+      'openai/whisper-large-v3',
+      'openai/gpt-transcribe',
+      'mistralai/voxtral-mini-transcribe',
+    ]) {
+      assert.equal(
+        readApiConfig({ ...values, AUDIO_TRANSCRIPTION_MODEL: model }).rag.audioTranscriptionModel,
+        model,
+      );
+    }
+    assert.throws(() =>
+      readApiConfig({ ...values, AUDIO_TRANSCRIPTION_MODEL: 'google/gemini-2.5-flash-lite' }),
+    );
   });
 });

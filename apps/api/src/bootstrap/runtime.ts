@@ -26,7 +26,7 @@ import { WorkspaceRepository } from '../workspace/persistence/workspaceRepositor
 import { AudioAnalysisRepository } from '../workspace/persistence/audioAnalysisRepository.ts';
 import { DefaultWorkspaceService } from '../workspace/service.ts';
 import { AudioInputPreprocessor } from '../workspace/transcription/audioPreprocessor.ts';
-import { OpenRouterAsr } from '../workspace/transcription/openRouterAsr.ts';
+import { OpenRouterStt } from '../workspace/transcription/openRouterStt.ts';
 import { AudioTranscriptionWorker } from '../workspace/transcription/worker.ts';
 
 /** 装配完整 RAG 运行时，并返回服务器所需的应用接口、worker 与关闭函数。 */
@@ -62,6 +62,7 @@ export function createRagRuntime(config: ApiConfig) {
     audioStorageDirectory: config.rag.audioStorageDir,
     tempDirectory: config.rag.audioTranscriptionTempDir,
     ...(config.rag.ffmpegPath ? { ffmpegPath: config.rag.ffmpegPath } : {}),
+    defaultModel: config.rag.audioTranscriptionModel,
   });
   const embeddings = new OpenRouterEmbeddings({
     apiKey: config.rag.openRouterApiKey,
@@ -109,9 +110,8 @@ export function createRagRuntime(config: ApiConfig) {
   );
   const transcriptionWorker = new AudioTranscriptionWorker({
     repository: audioAnalysisRepository,
-    asr: new OpenRouterAsr({
+    stt: new OpenRouterStt({
       apiKey: config.rag.openRouterApiKey,
-      model: config.rag.audioTranscriptionModel,
     }),
     preprocessor: audioInputPreprocessor,
     reporter: executionReporter,

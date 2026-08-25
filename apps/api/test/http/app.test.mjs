@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { HelloResponseSchema } from '@echowave/contracts';
+import {
+  AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
+  DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+  HelloResponseSchema,
+} from '@echowave/contracts';
 
 import { createApp } from '../../dist/http/app.js';
 import { WorkspaceRepositoryError } from '../../dist/workspace/persistence/errors.js';
@@ -109,9 +113,12 @@ describe('workspace routes', () => {
       archivedAudioInput = { id, audioFileId };
     },
     getAudioTranscriptionCapabilities: () => ({
+      defaultModel: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+      models: AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
       ffmpeg: { configured: true, available: true },
       direct: {
         maxBytes: 209_715_200,
+        maxDurationMs: 45_000,
         formats: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'webm'],
       },
     }),
@@ -263,12 +270,12 @@ describe('workspace routes', () => {
     const response = await workspaceApp.request(`/api/audio-files/${groupId}/transcriptions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ preprocessing: 'direct' }),
+      body: JSON.stringify({ model: 'openai/gpt-transcribe', preprocessing: 'direct' }),
     });
     assert.equal(response.status, 202);
     assert.deepEqual(startedTranscriptionInput, {
       id: groupId,
-      input: { preprocessing: 'direct' },
+      input: { model: 'openai/gpt-transcribe', preprocessing: 'direct' },
     });
     assert.deepEqual(await response.json(), {
       audioFileId: groupId,
@@ -278,7 +285,10 @@ describe('workspace routes', () => {
 
     const capabilities = await workspaceApp.request('/api/audio-transcription/capabilities');
     assert.equal(capabilities.status, 200);
-    assert.equal((await capabilities.json()).ffmpeg.available, true);
+    const capabilityBody = await capabilities.json();
+    assert.equal(capabilityBody.ffmpeg.available, true);
+    assert.equal(capabilityBody.defaultModel, 'x-ai/grok-stt-1.0');
+    assert.equal(capabilityBody.models.length, 5);
 
     const invalid = await workspaceApp.request(`/api/audio-files/${groupId}/transcriptions`, {
       method: 'POST',
@@ -286,6 +296,13 @@ describe('workspace routes', () => {
       body: JSON.stringify({ preprocessing: 'automatic' }),
     });
     assert.equal(invalid.status, 400);
+
+    const invalidModel = await workspaceApp.request(`/api/audio-files/${groupId}/transcriptions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'unknown/model', preprocessing: 'direct' }),
+    });
+    assert.equal(invalidModel.status, 400);
   });
 
   it('returns 503 before queuing when selected FFmpeg is unavailable', async () => {

@@ -107,7 +107,23 @@ export const audioFixtures: AudioFileSummary[] = [
   { ...baseAudio(1, '产品访谈分析'), hasTranscript: true, status: { kind: 'ready' } },
   { ...baseAudio(2, '用户研究周会'), hasTranscript: true, status: { kind: 'ready' } },
   { ...baseAudio(3, '研究方案复盘'), status: { kind: 'uploading', progress: 40 } },
-  { ...baseAudio(4, '新用户首次使用访谈'), status: { kind: 'transcribing', progress: 62 } },
+  {
+    ...baseAudio(4, '新用户首次使用访谈'),
+    status: {
+      kind: 'transcribing',
+      progress: 62,
+      activity: {
+        stage: 'transcribing',
+        chunkIndex: 2,
+        chunkCount: 4,
+        chunkStartMs: 238_000,
+        chunkEndMs: 480_000,
+        networkAttempt: 1,
+        structureAttempt: 2,
+        updatedAt: '2026-08-24T15:00:00.000Z',
+      },
+    },
+  },
   { ...baseAudio(5, '功能概念验证'), status: { kind: 'waiting' } },
   {
     ...baseAudio(6, '重点客户沟通'),
@@ -135,7 +151,10 @@ export const audioFixtures: AudioFileSummary[] = [
     },
   },
   { ...baseAudio(7, '竞品体验讨论'), status: { kind: 'uploading', progress: 25 } },
-  { ...baseAudio(8, '市场活动复盘'), status: { kind: 'transcribing', progress: 34 } },
+  {
+    ...baseAudio(8, '市场活动复盘'),
+    status: { kind: 'transcribing', progress: 34, activity: null },
+  },
   {
     ...baseAudio(9, '渠道访谈录音'),
     status: {
@@ -153,7 +172,7 @@ export const dataSourceDetailFixture: DataSourceDetail = {
   ...sourceFixtures[0],
   metrics: { audioCount: 9, totalDurationMs: 22_680_000, transcribedCount: 2, pendingCount: 7 },
   settings: {
-    transcriptionModel: 'google/gemini-2.5-flash-lite',
+    transcriptionModel: 'x-ai/grok-stt-1.0',
     autoTranscribe: true,
     emotionAnalysis: true,
     speakerDiarization: true,

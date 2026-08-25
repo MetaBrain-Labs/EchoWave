@@ -17,9 +17,14 @@ import path from 'node:path';
 import {
   AUDIO_TRANSCRIPTION_DIRECT_FORMATS,
   AUDIO_TRANSCRIPTION_DIRECT_MAX_BYTES,
+  AUDIO_TRANSCRIPTION_DIRECT_MAX_DURATION_MS,
+  AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
+  AudioTranscriptionModelSchema,
   AudioTranscriptionStartResponseSchema,
   type AudioFailureDetails,
   type AudioTranscriptionPreprocessing,
+  type AudioTranscriptionModel,
+  type AudioTranscriptionStage,
 } from '@echowave/contracts';
 
 import { quoteIdentifier, type DatabasePool } from '../../infrastructure/postgres.ts';
@@ -38,7 +43,7 @@ export type ClaimedAudioTranscription = {
   durationMs: number;
   ingestionRunId: string | null;
   mimeType: string;
-  model: string;
+  model: AudioTranscriptionModel;
   originalFilename: string | null;
   preprocessingMode: AudioTranscriptionPreprocessing;
   revisionId: string;
@@ -56,6 +61,18 @@ export type TranscriptDraft = {
   speakerKey: string;
   startMs: number;
   text: string;
+};
+
+/** worker 写入列表投影的安全细粒度执行活动。 */
+export type AudioTranscriptionActivityUpdate = {
+  stage: AudioTranscriptionStage;
+  progress: number;
+  chunkIndex?: number;
+  chunkCount?: number;
+  chunkStartMs?: number;
+  chunkEndMs?: number;
+  networkAttempt?: number;
+  structureAttempt?: number;
 };
 
 /** 管理音频转写队列与发布事务的 PostgreSQL 仓储。 */
@@ -77,7 +94,7 @@ export class AudioAnalysisRepository {
   /** 为活动音频创建递增修订；部分唯一索引负责最终阻止并发重复任务。 */
   async queueTranscription(
     audioFileId: string,
-    model: string,
+    model: AudioTranscriptionModel,
     preprocessing: AudioTranscriptionPreprocessing,
   ) {
     const client = await this.pool.connect();
@@ -100,7 +117,8 @@ export class AudioAnalysisRepository {
         if (
           !AUDIO_TRANSCRIPTION_DIRECT_FORMATS.some((candidate) => candidate === format) ||
           !Number.isFinite(sizeBytes) ||
-          sizeBytes > AUDIO_TRANSCRIPTION_DIRECT_MAX_BYTES
+          sizeBytes > AUDIO_TRANSCRIPTION_DIRECT_MAX_BYTES ||
+          Number(row.duration_ms) > AUDIO_TRANSCRIPTION_DIRECT_MAX_DURATION_MS
         ) {
           throw new WorkspaceRepositoryError(
             'DIRECT_AUDIO_REJECTED',
@@ -108,19 +126,27 @@ export class AudioAnalysisRepository {
           );
         }
       }
+      const capability = AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES.find(({ id }) => id === model)!;
       const revision = await client.query(
         `INSERT INTO ${this.table('audio_analysis_revisions')}
            (tenant_id, audio_file_id, revision_no, transcription_model, analysis_model,
-            settings_snapshot, status, progress)
+            settings_snapshot, status, progress, processing_stage, processing_updated_at)
          SELECT $1, $2, coalesce(max(revision_no), 0) + 1, $3, $3,
-                jsonb_build_object('speakerDiarization', true, 'businessRole', true,
-                                   'emotionAnalysis', true, 'timestamps', 'milliseconds',
+                jsonb_build_object('speakerDiarization', $5::boolean, 'businessRole', false,
+                                   'emotionAnalysis', false, 'timestamps', $6::text,
                                    'preprocessingMode', $4::text),
-                'queued', 0
+                'queued', 0, 'queued', now()
          FROM ${this.table('audio_analysis_revisions')}
          WHERE tenant_id = $1 AND audio_file_id = $2
          RETURNING id`,
-        [this.tenantId, audioFileId, model, preprocessing],
+        [
+          this.tenantId,
+          audioFileId,
+          model,
+          preprocessing,
+          capability.diarization,
+          capability.timestampGranularity,
+        ],
       );
       const response = AudioTranscriptionStartResponseSchema.parse({
         audioFileId,
@@ -144,7 +170,10 @@ export class AudioAnalysisRepository {
   async resetInterruptedTranscriptions(): Promise<void> {
     await this.pool.query(
       `UPDATE ${this.table('audio_analysis_revisions')}
-       SET status = 'queued', progress = 0, error_stage = NULL, error_code = NULL,
+       SET status = 'queued', progress = 0, processing_stage = 'queued',
+           current_chunk = NULL, chunk_count = NULL, current_chunk_start_ms = NULL,
+           current_chunk_end_ms = NULL, network_attempt = NULL, structure_attempt = NULL,
+           processing_updated_at = now(), error_stage = NULL, error_code = NULL,
            error_message = NULL, error_retryable = NULL, error_details = NULL
        WHERE tenant_id = $1 AND status IN ('transcribing', 'analyzing')`,
       [this.tenantId],
@@ -160,7 +189,10 @@ export class AudioAnalysisRepository {
          ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1
        )
        UPDATE ${this.table('audio_analysis_revisions')} ar
-       SET status = 'transcribing', progress = 1
+       SET status = 'transcribing', progress = 1, processing_stage = 'preprocessing',
+           current_chunk = NULL, chunk_count = NULL, current_chunk_start_ms = NULL,
+           current_chunk_end_ms = NULL, network_attempt = NULL, structure_attempt = NULL,
+           processing_updated_at = now()
        FROM candidate, ${this.table('audio_files')} af
        LEFT JOIN ${this.table('data_sources')} ds
          ON ds.tenant_id = af.tenant_id AND ds.id = af.data_source_id
@@ -191,7 +223,7 @@ export class AudioAnalysisRepository {
       durationMs: Number(row.duration_ms),
       ingestionRunId: row.ingestion_run_id ?? null,
       mimeType: row.mime_type ?? 'application/octet-stream',
-      model: row.transcription_model,
+      model: AudioTranscriptionModelSchema.parse(row.transcription_model),
       originalFilename: row.original_filename ?? null,
       preprocessingMode: row.preprocessing_mode === 'direct' ? 'direct' : 'ffmpeg',
       revisionId: row.revision_id,
@@ -202,12 +234,30 @@ export class AudioAnalysisRepository {
     };
   }
 
-  /** 更新当前修订对列表可见的粗粒度进度。 */
-  async setProgress(job: ClaimedAudioTranscription, progress: number): Promise<void> {
+  /** 原子更新当前修订对列表可见的阶段、Chunk 和单调进度。 */
+  async updateActivity(
+    job: ClaimedAudioTranscription,
+    activity: AudioTranscriptionActivityUpdate,
+  ): Promise<void> {
     await this.pool.query(
-      `UPDATE ${this.table('audio_analysis_revisions')} SET progress = $3
+      `UPDATE ${this.table('audio_analysis_revisions')}
+       SET progress = greatest(progress, $3), processing_stage = $4,
+           current_chunk = $5, chunk_count = $6, current_chunk_start_ms = $7,
+           current_chunk_end_ms = $8, network_attempt = $9, structure_attempt = $10,
+           processing_updated_at = now()
        WHERE tenant_id = $1 AND id = $2 AND status = 'transcribing'`,
-      [this.tenantId, job.revisionId, Math.max(1, Math.min(99, Math.round(progress)))],
+      [
+        this.tenantId,
+        job.revisionId,
+        Math.max(1, Math.min(99, Math.round(activity.progress))),
+        activity.stage,
+        activity.chunkIndex ?? null,
+        activity.chunkCount ?? null,
+        activity.chunkStartMs ?? null,
+        activity.chunkEndMs ?? null,
+        activity.networkAttempt ?? null,
+        activity.structureAttempt ?? null,
+      ],
     );
   }
 
@@ -248,7 +298,10 @@ export class AudioAnalysisRepository {
         `UPDATE ${this.table('audio_analysis_revisions')}
          SET status = 'ready', progress = 100, completed_at = now(), published_at = now(),
              error_stage = NULL, error_code = NULL, error_message = NULL,
-             error_retryable = NULL, error_details = NULL
+             error_retryable = NULL, error_details = NULL, processing_stage = NULL,
+             current_chunk = NULL, chunk_count = NULL, current_chunk_start_ms = NULL,
+             current_chunk_end_ms = NULL, network_attempt = NULL, structure_attempt = NULL,
+             processing_updated_at = NULL
          WHERE tenant_id = $1 AND id = $2 AND status = 'transcribing'`,
         [this.tenantId, job.revisionId],
       );
@@ -282,7 +335,9 @@ export class AudioAnalysisRepository {
       `UPDATE ${this.table('audio_analysis_revisions')}
        SET status = 'failed', completed_at = now(), error_stage = 'transcription',
            error_code = $3, error_message = $4, error_retryable = $5,
-           error_details = $6::jsonb
+           error_details = $6::jsonb, processing_stage = NULL, current_chunk = NULL,
+           chunk_count = NULL, current_chunk_start_ms = NULL, current_chunk_end_ms = NULL,
+           network_attempt = NULL, structure_attempt = NULL, processing_updated_at = NULL
        WHERE tenant_id = $1 AND id = $2`,
       [this.tenantId, job.revisionId, code, message, retryable, JSON.stringify(details)],
     );

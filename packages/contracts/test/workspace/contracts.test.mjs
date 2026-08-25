@@ -14,6 +14,9 @@ import {
   AudioFileSummarySchema,
   AudioTranscriptionCapabilitiesResponseSchema,
   AudioTranscriptionStartRequestSchema,
+  AUDIO_TRANSCRIPTION_MODELS,
+  AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
+  DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
   DataSourceAudioUploadResponseSchema,
   DataSourceCreateRequestSchema,
   DataSourceDetailSchema,
@@ -86,6 +89,58 @@ describe('workspace contracts', () => {
         status: { kind: 'analyzing', progress: 101 },
       }),
     );
+
+    const processing = AudioFileSummarySchema.parse({
+      ...audio,
+      status: {
+        kind: 'transcribing',
+        progress: 43,
+        activity: {
+          stage: 'correcting',
+          chunkIndex: 2,
+          chunkCount: 4,
+          chunkStartMs: 238_000,
+          chunkEndMs: 482_000,
+          networkAttempt: 1,
+          structureAttempt: 3,
+          updatedAt: '2026-08-24T15:00:00.000Z',
+        },
+      },
+    });
+    assert.equal(processing.status.activity.stage, 'correcting');
+    const splitting = AudioFileSummarySchema.parse({
+      ...processing,
+      status: {
+        ...processing.status,
+        activity: {
+          ...processing.status.activity,
+          stage: 'splitting',
+          chunkCount: 8,
+          chunkIndex: 3,
+          networkAttempt: null,
+          structureAttempt: null,
+        },
+      },
+    });
+    assert.equal(splitting.status.activity.stage, 'splitting');
+    assert.throws(() =>
+      AudioFileSummarySchema.parse({
+        ...processing,
+        status: {
+          ...processing.status,
+          activity: { ...processing.status.activity, networkAttempt: 4 },
+        },
+      }),
+    );
+    assert.throws(() =>
+      AudioFileSummarySchema.parse({
+        ...processing,
+        status: {
+          ...processing.status,
+          activity: { ...processing.status.activity, chunkIndex: 5 },
+        },
+      }),
+    );
   });
 
   it('validates transcription preprocessing requests and capability responses', () => {
@@ -95,12 +150,27 @@ describe('workspace contracts', () => {
     assert.deepEqual(AudioTranscriptionStartRequestSchema.parse({ preprocessing: 'ffmpeg' }), {
       preprocessing: 'ffmpeg',
     });
+    for (const model of AUDIO_TRANSCRIPTION_MODELS) {
+      assert.equal(
+        AudioTranscriptionStartRequestSchema.parse({ model, preprocessing: 'ffmpeg' }).model,
+        model,
+      );
+    }
+    assert.throws(() =>
+      AudioTranscriptionStartRequestSchema.parse({
+        model: 'google/gemini-2.5-flash-lite',
+        preprocessing: 'ffmpeg',
+      }),
+    );
     assert.throws(() => AudioTranscriptionStartRequestSchema.parse({ preprocessing: 'automatic' }));
     assert.deepEqual(
       AudioTranscriptionCapabilitiesResponseSchema.parse({
+        defaultModel: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+        models: AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
         ffmpeg: { configured: false, available: false },
         direct: {
           maxBytes: 209_715_200,
+          maxDurationMs: 45_000,
           formats: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'webm'],
         },
       }).direct.formats,

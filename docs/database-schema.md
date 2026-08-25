@@ -234,7 +234,7 @@ group_data_sources 所关联数据源下的音频
 
 分析设置：
 
-- `transcription_model`：转写模型。
+- `transcription_model`：数据源后续转写的默认模型；迁移后为 `x-ai/grok-stt-1.0`。
 - `auto_transcribe`：是否自动转写。
 - `emotion_analysis_enabled`：是否启用情绪分析。
 - `speaker_diarization_enabled`：是否启用说话人分离。
@@ -302,17 +302,24 @@ group_data_sources 所关联数据源下的音频
 主要内容：
 
 - `revision_no`：音频内递增版本号。
-- `transcription_model`、`analysis_model`：本次使用的模型。
-- `settings_snapshot`：对象类型的分析设置快照。
+- `transcription_model`、`analysis_model`：本次请求实际选择并在任务开始时固化的模型，不受后续默认配置变化影响。
+- `settings_snapshot`：对象类型的设置快照，记录预处理方式以及该模型声明的 diarization 和时间戳粒度；角色与情绪能力为 false。
 - `status`：`queued`、`transcribing`、`analyzing`、`ready` 或 `failed`。
 - `progress`：0 到 100。
+- `processing_stage`：进行中修订的 `queued`、`preprocessing`、`transcribing`、`validating`、`correcting`、`splitting`、`merging` 或 `publishing` 阶段；新 STT 任务不再产生 `correcting`，该值仅兼容历史修订。`splitting` 表示文本退化或连续超时后正在细分当前 FFmpeg Chunk。
+- `current_chunk`、`chunk_count`：当前 Chunk 和总数，必须成对满足 `1 <= current_chunk <= chunk_count`。
+- `current_chunk_start_ms`、`current_chunk_end_ms`：当前逻辑分块在完整录音中的毫秒范围。
+- `network_attempt`：当前网络尝试，范围为 1 到 3；`structure_attempt` 仅兼容旧修订，新 STT 任务保持空值。
+- `processing_updated_at`：最近一次可观察活动更新时间。
 - `error_stage`：失败发生在 `transcription`、`analysis` 或 `publish`。
-- `error_details`：可空 JSON 对象，只保存安全失败分类、分块位置、结构纠正次数、最多 20 条稳定校验问题，以及模型输出长度和 SHA-256；不保存模型正文。
+- `error_details`：可空 JSON 对象，只保存安全失败分类、分块位置、最多 20 条稳定校验问题，以及兼容旧修订的结构尝试/输出指纹字段；新 STT 任务不保存模型正文或输出指纹。
 - 结构化错误摘要、创建、完成和发布时间。
 
 同一音频的 `revision_no` 唯一，部分唯一索引同时只允许一个 `queued`、`transcribing` 或 `analyzing` 修订。新版本只有在本次结构化结果完整写入后，才在同一事务中替换 `audio_files.active_analysis_revision_id`；ASR-only 版本允许摘要与标签为空，失败版本不会覆盖旧的有效版本。
 
 音频转写 revision 的 `settings_snapshot.preprocessingMode` 固定记录创建任务时选择的 `ffmpeg` 或 `direct`，进程重启恢复任务时不会根据当前客户端状态重新选择。创建新修订、恢复中断任务和成功发布都会清空当前修订的旧诊断；重转写失败仍保留 `audio_files.active_analysis_revision_id` 指向的旧发布结果。
+
+活动字段只在进行中修订上作为轮询状态存在：queued 初始化阶段但没有 Chunk，worker 领取后进入预处理；Chunk 字段必须全部为空或全部存在，时间范围必须递增，尝试次数必须关联当前 Chunk。中断恢复会清空 Chunk/尝试并重新排队，成功或失败会清空活动字段；失败 Chunk 与最终尝试次数另由安全的 `error_details` 保留。
 
 物理删除音频时，修订版及其结构化结果级联删除。
 
@@ -330,8 +337,8 @@ group_data_sources 所关联数据源下的音频
 
 - `segment_index`：场景内顺序。
 - `speaker_key`、`speaker_label`：说话人内部标识和展示名称。
-- `business_role`：模型识别的简短中文业务角色，无法判断时为 `unknown`。
-- `emotion`：情绪描述。
+- `business_role`：STT 修订固定为 `unknown`，后续文本分析可在独立流程中补充。
+- `emotion`：STT 修订固定为 `unknown`，不根据转写正文猜测。
 - `start_ms`、`end_ms`：音频时间区间。
 - `text`：转写文本。
 

@@ -13,6 +13,7 @@
 import type {
   AudioFailureDetails,
   AudioFileSummary,
+  AudioTranscriptionActivity,
   DataSourceDetail as DataSourceContract,
   DataSourceIngestionRecord,
   LinkedDataSourceGroup,
@@ -21,7 +22,7 @@ import type {
 export type SourceAudioStatus =
   | { kind: 'complete' }
   | { kind: 'uploading' }
-  | { kind: 'transcribing'; progress: number }
+  | { kind: 'transcribing'; progress: number; activity: AudioTranscriptionActivity | null }
   | { kind: 'waiting' }
   | {
       kind: 'upload-failed';
@@ -95,9 +96,13 @@ function sourceAudioStatus(audio: AudioFileSummary): SourceAudioStatus {
     case 'waiting':
       return { kind: 'waiting' };
     case 'transcribing':
-      return { kind: 'transcribing', progress: audio.status.progress };
+      return {
+        kind: 'transcribing',
+        progress: audio.status.progress,
+        activity: audio.status.activity,
+      };
     case 'analyzing':
-      return { kind: 'transcribing', progress: audio.status.progress };
+      return { kind: 'transcribing', progress: audio.status.progress, activity: null };
     case 'failed':
       return audio.status.stage === 'upload'
         ? {

@@ -11,6 +11,10 @@
  */
 import { audioFixtures, dataSourceDetailFixture, groupFixture } from '@/test/workspaceFixtures';
 import {
+  AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
+  DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+} from '@echowave/contracts';
+import {
   archiveDataSource,
   archiveDataSourceAudioFile,
   archiveGroup,
@@ -241,14 +245,17 @@ describe('workspace API client', () => {
     );
 
     await expect(
-      startAudioTranscription(audioFixtures[0].id, { preprocessing: 'direct' }),
+      startAudioTranscription(audioFixtures[0].id, {
+        model: 'x-ai/grok-stt-1.0',
+        preprocessing: 'direct',
+      }),
     ).resolves.toEqual(response);
     expect(fetch.mock.calls[0][0]).toContain(
       `/api/audio-files/${audioFixtures[0].id}/transcriptions`,
     );
     expect(fetch.mock.calls[0][1]).toEqual(
       expect.objectContaining({
-        body: JSON.stringify({ preprocessing: 'direct' }),
+        body: JSON.stringify({ model: 'x-ai/grok-stt-1.0', preprocessing: 'direct' }),
         method: 'POST',
       }),
     );
@@ -256,9 +263,12 @@ describe('workspace API client', () => {
 
   it('parses audio transcription capabilities', async () => {
     const capabilities = {
+      defaultModel: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+      models: AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
       ffmpeg: { configured: false, available: false },
       direct: {
         maxBytes: 209_715_200 as const,
+        maxDurationMs: 45_000 as const,
         formats: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'webm'] as const,
       },
     };

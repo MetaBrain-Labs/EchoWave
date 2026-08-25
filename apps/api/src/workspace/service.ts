@@ -23,6 +23,7 @@ import type {
   GroupCreateRequest,
   KnowledgeBaseGroupLinkRequest,
   AudioTranscriptionStartRequest,
+  AudioTranscriptionModel,
 } from '@echowave/contracts';
 
 import type { StoredAudioUpload, WorkspaceRepository } from './persistence/workspaceRepository.ts';
@@ -189,7 +190,7 @@ export class DefaultWorkspaceService implements WorkspaceService {
     private readonly repository: WorkspaceRepository,
     private readonly audioStorageDirectory: string,
     private readonly audioAnalysisRepository: AudioAnalysisRepository,
-    private readonly audioTranscriptionModel: string,
+    private readonly audioTranscriptionModel: AudioTranscriptionModel,
     private readonly audioInputPreprocessor: AudioInputPreprocessor,
   ) {}
 
@@ -296,7 +297,7 @@ export class DefaultWorkspaceService implements WorkspaceService {
     }
     return await this.audioAnalysisRepository.queueTranscription(
       id,
-      this.audioTranscriptionModel,
+      input.model ?? this.audioTranscriptionModel,
       input.preprocessing,
     );
   }

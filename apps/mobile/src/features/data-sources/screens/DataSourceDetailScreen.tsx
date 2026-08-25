@@ -13,10 +13,12 @@
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type {
+  AudioTranscriptionModel,
   AudioTranscriptionCapabilitiesResponse,
   GroupSummary,
   LinkedDataSourceGroup,
 } from '@echowave/contracts';
+import { DEFAULT_AUDIO_TRANSCRIPTION_MODEL } from '@echowave/contracts';
 import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -66,6 +68,10 @@ import {
 } from '../components/DataSourceDialogs';
 import { DataSourceAudioActions } from '../components/DataSourceAudioActions';
 import { AudioTranscriptionErrorDialog } from '../components/AudioTranscriptionErrorDialog';
+import {
+  AudioTranscriptionProgressDialog,
+  audioTranscriptionStageLabel,
+} from '../components/AudioTranscriptionProgressDialog';
 
 import {
   toDataSourceDetailView,
@@ -107,9 +113,11 @@ function Metric({
 
 function AudioStatusView({
   onShowError,
+  onShowProgress,
   status,
 }: {
   onShowError: () => void;
+  onShowProgress: () => void;
   status: SourceAudioStatus;
 }) {
   switch (status.kind) {
@@ -123,7 +131,37 @@ function AudioStatusView({
         </View>
       );
     case 'transcribing':
-      return <Text style={styles.statusText}>转写中 ({status.progress}%)</Text>;
+      return (
+        <Pressable
+          accessibilityLabel="查看转写进度"
+          accessibilityRole="button"
+          onPress={onShowProgress}
+          style={({ pressed }) => [styles.processingStatus, pressed && styles.pressed]}
+        >
+          <View style={styles.processingTitleRow}>
+            <Text numberOfLines={1} style={styles.processingTitle}>
+              {status.activity
+                ? `${audioTranscriptionStageLabel(status.activity.stage)}${['transcribing', 'validating', 'splitting'].includes(status.activity.stage) && status.activity.chunkIndex !== null ? ` · Chunk ${status.activity.chunkIndex}/${status.activity.chunkCount}` : ''}`
+                : '正在转写'}
+            </Text>
+            <Text style={styles.processingPercent}>{status.progress}%</Text>
+          </View>
+          <View style={styles.processingProgressTrack}>
+            <View
+              style={[
+                styles.processingProgressFill,
+                { width: `${Math.min(100, status.progress)}%` },
+              ]}
+            />
+          </View>
+          <Text numberOfLines={1} style={styles.processingAttempts}>
+            {status.activity?.networkAttempt !== null &&
+            status.activity?.networkAttempt !== undefined
+              ? `网络尝试 ${status.activity.networkAttempt}/3`
+              : '点击查看详细执行阶段'}
+          </Text>
+        </Pressable>
+      );
     case 'waiting':
       return (
         <View style={styles.inlineStatus}>
@@ -165,10 +203,12 @@ function AudioRow({
   item,
   onMore,
   onShowError,
+  onShowProgress,
 }: {
   item: SourceAudioItem;
   onMore: () => void;
   onShowError: () => void;
+  onShowProgress: () => void;
 }) {
   return (
     <View style={styles.audioRow}>
@@ -187,8 +227,12 @@ function AudioRow({
         <Text style={styles.audioMeta}>
           {item.duration} · {item.createdAt}
         </Text>
+        <AudioStatusView
+          onShowError={onShowError}
+          onShowProgress={onShowProgress}
+          status={item.status}
+        />
       </View>
-      <AudioStatusView onShowError={onShowError} status={item.status} />
       <Pressable
         accessibilityLabel={`${item.title}更多操作`}
         accessibilityRole="button"
@@ -227,10 +271,12 @@ function InfoRow({
 function OverviewContent({
   onOpenAudioActions,
   onShowAudioError,
+  onShowAudioProgress,
   source,
 }: {
   onOpenAudioActions: (audio: SourceAudioItem) => void;
   onShowAudioError: (audio: SourceAudioItem) => void;
+  onShowAudioProgress: (audio: SourceAudioItem) => void;
   source: DataSourceDetailView;
 }) {
   const completedCount = source.audioItems.filter((item) => item.status.kind === 'complete').length;
@@ -303,6 +349,7 @@ function OverviewContent({
                 key={item.id}
                 onMore={() => onOpenAudioActions(item)}
                 onShowError={() => onShowAudioError(item)}
+                onShowProgress={() => onShowAudioProgress(item)}
               />
             ))
         )}
@@ -511,6 +558,7 @@ export function DataSourceDetailScreen({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [operationError, setOperationError] = useState('');
+  const [progressRefreshError, setProgressRefreshError] = useState('');
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
   const [editVisible, setEditVisible] = useState(false);
   const [formError, setFormError] = useState('');
@@ -519,10 +567,13 @@ export function DataSourceDetailScreen({
   const [audioArchiveTarget, setAudioArchiveTarget] = useState<SourceAudioItem>();
   const [audioActionTarget, setAudioActionTarget] = useState<SourceAudioItem>();
   const [transcriptionErrorTarget, setTranscriptionErrorTarget] = useState<SourceAudioItem>();
+  const [transcriptionProgressAudioId, setTranscriptionProgressAudioId] = useState<string>();
   const [transcriptionTarget, setTranscriptionTarget] = useState<SourceAudioItem>();
   const [transcriptionCapabilities, setTranscriptionCapabilities] =
     useState<AudioTranscriptionCapabilitiesResponse>();
   const [useFfmpeg, setUseFfmpeg] = useState(false);
+  const [selectedTranscriptionModel, setSelectedTranscriptionModel] =
+    useState<AudioTranscriptionModel>(DEFAULT_AUDIO_TRANSCRIPTION_MODEL);
   const [startingTranscription, setStartingTranscription] = useState(false);
   const [unlinkTarget, setUnlinkTarget] = useState<LinkedDataSourceGroup>();
   const [switchTarget, setSwitchTarget] = useState<LinkedDataSourceGroup>();
@@ -556,9 +607,15 @@ export function DataSourceDetailScreen({
         ]);
         if (showLoading) setTranscriptionCapabilities(capabilities);
         setSource(toDataSourceDetailView(detail, audio.items, records.items, groups.items));
+        if (!showLoading) setProgressRefreshError('');
       } catch (reason) {
-        if (showLoading) setSource(undefined);
-        setError(reason instanceof Error ? reason.message : '数据源加载失败。');
+        const message = reason instanceof Error ? reason.message : '数据源加载失败。';
+        if (showLoading) {
+          setSource(undefined);
+          setError(message);
+        } else {
+          setProgressRefreshError(`进度刷新失败：${message}`);
+        }
       } finally {
         if (showLoading) setLoading(false);
       }
@@ -580,6 +637,10 @@ export function DataSourceDetailScreen({
     }, 2_000);
     return () => clearInterval(timer);
   }, [load, pollingTranscription]);
+
+  const transcriptionProgressTarget = source?.audioItems.find(
+    (item) => item.id === transcriptionProgressAudioId && item.status.kind === 'transcribing',
+  );
 
   const linkedGroupIds = useMemo(
     () => new Set(source?.linkedGroups.map((group) => group.id) ?? []),
@@ -723,6 +784,7 @@ export function DataSourceDetailScreen({
     setOperationError('');
     try {
       await startAudioTranscription(target.id, {
+        model: selectedTranscriptionModel,
         preprocessing: useFfmpeg ? 'ffmpeg' : 'direct',
       });
       setTranscriptionTarget(undefined);
@@ -816,9 +878,16 @@ export function DataSourceDetailScreen({
           setTranscriptionErrorTarget(undefined);
           if (target) {
             setUseFfmpeg(Boolean(transcriptionCapabilities?.ffmpeg.available));
+            setSelectedTranscriptionModel(
+              transcriptionCapabilities?.defaultModel ?? DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+            );
             setTranscriptionTarget(target);
           }
         }}
+      />
+      <AudioTranscriptionProgressDialog
+        audio={transcriptionProgressTarget}
+        onClose={() => setTranscriptionProgressAudioId(undefined)}
       />
       <DataSourceAudioActions
         audio={audioActionTarget}
@@ -838,6 +907,9 @@ export function DataSourceDetailScreen({
           setAudioActionTarget(undefined);
           if (target) {
             setUseFfmpeg(Boolean(transcriptionCapabilities?.ffmpeg.available));
+            setSelectedTranscriptionModel(
+              transcriptionCapabilities?.defaultModel ?? DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+            );
             setTranscriptionTarget(target);
           }
         }}
@@ -853,6 +925,7 @@ export function DataSourceDetailScreen({
           void saveDataSource(value);
         }}
         pending={saving}
+        transcriptionModel={source.analysisModel}
         visible={editVisible}
       />
       <DataSourceGroupPicker
@@ -900,6 +973,7 @@ export function DataSourceDetailScreen({
         audioTitle={transcriptionTarget?.title ?? ''}
         ffmpegAvailable={Boolean(transcriptionCapabilities?.ffmpeg.available)}
         ffmpegChecked={useFfmpeg}
+        models={[...(transcriptionCapabilities?.models ?? [])]}
         onCancel={() => {
           if (!startingTranscription) setTranscriptionTarget(undefined);
         }}
@@ -907,8 +981,10 @@ export function DataSourceDetailScreen({
           void confirmTranscription();
         }}
         onToggleFfmpeg={() => setUseFfmpeg((current) => !current)}
+        onSelectModel={setSelectedTranscriptionModel}
         pending={startingTranscription}
         visible={Boolean(transcriptionTarget)}
+        selectedModel={selectedTranscriptionModel}
       />
       <DataSourceConfirmDialog
         body={`解除后，“${unlinkTarget?.name ?? ''}”将不再通过此数据源看到相关音频；显式分享不受影响。`}
@@ -947,6 +1023,20 @@ export function DataSourceDetailScreen({
           </Text>
         </View>
       ) : null}
+      {progressRefreshError ? (
+        <View style={styles.refreshError}>
+          <Text accessibilityRole="alert" style={styles.operationErrorText}>
+            {progressRefreshError}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => void load(false)}
+            style={styles.refreshRetryButton}
+          >
+            <Text style={styles.refreshRetryText}>立即重试</Text>
+          </Pressable>
+        </View>
+      ) : null}
       <ScrollView
         directionalLockEnabled
         horizontal
@@ -978,6 +1068,7 @@ export function DataSourceDetailScreen({
           <OverviewContent
             onOpenAudioActions={setAudioActionTarget}
             onShowAudioError={setTranscriptionErrorTarget}
+            onShowAudioProgress={(item) => setTranscriptionProgressAudioId(item.id)}
             source={source}
           />
         </ScrollView>
@@ -1000,6 +1091,7 @@ export function DataSourceDetailScreen({
                   key={item.id}
                   onMore={() => setAudioActionTarget(item)}
                   onShowError={() => setTranscriptionErrorTarget(item)}
+                  onShowProgress={() => setTranscriptionProgressAudioId(item.id)}
                 />
               ))
             )}
@@ -1192,6 +1284,44 @@ const styles = StyleSheet.create({
     color: textColors.secondary,
     fontFamily: fontFamilies.sans,
   },
+  processingStatus: {
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+    paddingVertical: spacing.xs,
+  },
+  processingTitleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'space-between',
+  },
+  processingTitle: {
+    ...typography.description,
+    color: textColors.primary,
+    flex: 1,
+    fontFamily: fontFamilies.sansBold,
+  },
+  processingPercent: {
+    ...typography.label,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+  },
+  processingProgressTrack: {
+    backgroundColor: colors.divider,
+    borderRadius: radii.round,
+    height: 4,
+    overflow: 'hidden',
+  },
+  processingProgressFill: {
+    backgroundColor: colors.ink,
+    borderRadius: radii.round,
+    height: '100%',
+  },
+  processingAttempts: {
+    ...typography.label,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+  },
   inlineStatus: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -1368,5 +1498,28 @@ const styles = StyleSheet.create({
     ...typography.description,
     color: textColors.primary,
     fontFamily: fontFamilies.sans,
+  },
+  refreshError: {
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderBottomColor: colors.divider,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  refreshRetryButton: {
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.xs,
+  },
+  refreshRetryText: {
+    ...typography.description,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
   },
 });

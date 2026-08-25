@@ -46,6 +46,29 @@ function retrySuggestion(audio: SourceAudioItem): string {
   if (audio.status.code === 'DIRECT_AUDIO_REJECTED') {
     return '请重新转写并勾选“使用 FFmpeg 预处理”。';
   }
+  if (audio.status.details?.issues.some((issue) => issue.code === 'repeated_text_loop')) {
+    return '模型输出发生重复循环。FFmpeg 会自动细分；若已到最小约 11 秒 Chunk，请重新转写。';
+  }
+  if (
+    audio.status.details?.issues.some((issue) =>
+      [
+        'repeated_text_loop',
+        'implausible_text_density',
+        'markdown_artifact',
+        'fragmented_text',
+        'too_many_segments',
+      ].includes(issue.code),
+    )
+  ) {
+    return '模型输出出现明显重复、异常密度或格式碎片。可以重新转写；FFmpeg 模式会自动细分到约 11 秒。';
+  }
+  if (
+    audio.status.details?.issues.some((issue) =>
+      ['finish_length', 'native_max_tokens'].includes(issue.code),
+    )
+  ) {
+    return '模型在最小音频分块仍未返回可用结果，可以重新转写并选择其他模型。';
+  }
   return '可以重新发起转写；若仍失败，请根据下方问题检查音频或模型输出。';
 }
 
@@ -102,7 +125,9 @@ export function AudioTranscriptionErrorDialog({
                     {details.chunkCount !== null ? ` / ${details.chunkCount}` : ''}
                   </Text>
                 ) : null}
-                <Text style={styles.detailText}>结构纠正次数：{details.structureAttempts}</Text>
+                {details.structureAttempts > 0 ? (
+                  <Text style={styles.detailText}>结构纠正次数：{details.structureAttempts}</Text>
+                ) : null}
               </View>
             ) : (
               <Text style={styles.fallback}>

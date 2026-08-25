@@ -65,6 +65,27 @@ describe('WorkspaceRepository group audio', () => {
                 outputSha256: null,
               },
             },
+            {
+              id: '55555555-5555-4555-8555-555555555555',
+              data_source_id: null,
+              title: '处理中访谈',
+              duration_ms: 870_000,
+              created_at: new Date('2026-08-24T15:00:00.000Z'),
+              origin_group_id: null,
+              shared_from: null,
+              upload_status: 'ready',
+              upload_progress: 100,
+              analysis_status: 'transcribing',
+              analysis_progress: 43,
+              analysis_processing_stage: 'correcting',
+              analysis_current_chunk: 2,
+              analysis_chunk_count: 4,
+              analysis_current_chunk_start_ms: 238_000,
+              analysis_current_chunk_end_ms: 482_000,
+              analysis_network_attempt: 1,
+              analysis_structure_attempt: 3,
+              analysis_processing_updated_at: new Date('2026-08-24T15:00:00.000Z'),
+            },
           ],
         };
       },
@@ -77,6 +98,10 @@ describe('WorkspaceRepository group audio', () => {
     assert.equal(response.items[0].status.stage, 'transcription');
     assert.equal(response.items[0].status.details.category, 'preprocessing');
     assert.equal(response.items[0].status.details.issues[0].code, 'UNSUPPORTED_CODEC');
+    assert.equal(response.items[1].status.kind, 'transcribing');
+    assert.equal(response.items[1].status.activity.stage, 'correcting');
+    assert.equal(response.items[1].status.activity.chunkIndex, 2);
+    assert.equal(response.items[1].status.activity.structureAttempt, 3);
     assert.match(calls[1].sql, /error_details/);
     assert.match(calls[0].sql, /UNION/);
     assert.match(calls[0].sql, /data_sources/);

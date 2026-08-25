@@ -162,7 +162,7 @@ describe('DefaultWorkspaceService audio transcription', () => {
       repository(),
       '.data/audio',
       audioRepository,
-      'google/gemini-2.5-flash-lite',
+      'x-ai/grok-stt-1.0',
       preprocessor,
     );
 
@@ -172,10 +172,19 @@ describe('DefaultWorkspaceService audio transcription', () => {
         error instanceof WorkspaceRepositoryError && error.code === 'TRANSCODER_UNAVAILABLE',
     );
     await service.startAudioTranscription(sourceId, { preprocessing: 'direct' });
+    await service.startAudioTranscription(sourceId, {
+      model: 'qwen/qwen3-asr-1.7b',
+      preprocessing: 'direct',
+    });
     assert.deepEqual(queued, [
       {
         id: sourceId,
-        model: 'google/gemini-2.5-flash-lite',
+        model: 'x-ai/grok-stt-1.0',
+        preprocessing: 'direct',
+      },
+      {
+        id: sourceId,
+        model: 'qwen/qwen3-asr-1.7b',
         preprocessing: 'direct',
       },
     ]);

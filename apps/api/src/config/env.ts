@@ -16,6 +16,7 @@ import { readFileSync } from 'node:fs';
 
 import { parse } from 'dotenv';
 import { z } from 'zod';
+import { AudioTranscriptionModelSchema, type AudioTranscriptionModel } from '@echowave/contracts';
 
 const BooleanStringSchema = z.enum(['true', 'false']).transform((value) => value === 'true');
 const OptionalPathSchema = z
@@ -53,7 +54,7 @@ const EnvironmentSchema = z.object({
   LANGGRAPH_SCHEMA: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
   UPLOAD_TEMP_DIR: z.string().min(1),
   AUDIO_STORAGE_DIR: z.string().min(1),
-  AUDIO_TRANSCRIPTION_MODEL: z.literal('google/gemini-2.5-flash-lite'),
+  AUDIO_TRANSCRIPTION_MODEL: AudioTranscriptionModelSchema,
   AUDIO_TRANSCRIPTION_TEMP_DIR: z.string().min(1),
   FFMPEG_PATH: OptionalPathSchema,
   AI_EXECUTION_REPORT_ENABLED: BooleanStringSchema,
@@ -97,7 +98,7 @@ export type ApiConfig = {
     langGraphSchema: string;
     uploadTempDir: string;
     audioStorageDir: string;
-    audioTranscriptionModel: 'google/gemini-2.5-flash-lite';
+    audioTranscriptionModel: AudioTranscriptionModel;
     audioTranscriptionTempDir: string;
     ffmpegPath?: string;
   };

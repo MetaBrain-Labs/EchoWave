@@ -11,7 +11,11 @@
  * - 分析与接入配置只读，不进入创建或更新请求。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { GroupSummary } from '@echowave/contracts';
+import type {
+  AudioTranscriptionModel,
+  AudioTranscriptionModelCapability,
+  GroupSummary,
+} from '@echowave/contracts';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -42,6 +46,7 @@ type DataSourceFormSheetProps = {
   onClose: () => void;
   onSubmit: (value: DataSourceFormValue) => void;
   pending: boolean;
+  transcriptionModel?: string;
   visible: boolean;
 };
 
@@ -61,6 +66,7 @@ function DataSourceFormSheetContent({
   onClose,
   onSubmit,
   pending,
+  transcriptionModel,
   visible,
 }: DataSourceFormSheetProps) {
   const [name, setName] = useState(initialValue.name);
@@ -129,7 +135,7 @@ function DataSourceFormSheetContent({
             <ReadonlyItem label="接入方式" value="手动上传" />
             <ReadonlyItem label="存储位置" value="本地" />
             <Text style={styles.sectionTitle}>音频分析</Text>
-            <ReadonlyItem label="转写模型" value="google/gemini-2.5-flash-lite" />
+            <ReadonlyItem label="转写模型" value={transcriptionModel ?? '由服务端配置'} />
             <ReadonlyItem label="分析设置" value="默认开启" />
             {error ? (
               <Text accessibilityRole="alert" style={styles.errorText}>
@@ -325,20 +331,26 @@ export function AudioTranscriptionConfirmDialog({
   audioTitle,
   ffmpegAvailable,
   ffmpegChecked,
+  models,
   onCancel,
   onConfirm,
   onToggleFfmpeg,
+  onSelectModel,
   pending,
   visible,
+  selectedModel,
 }: {
   audioTitle: string;
   ffmpegAvailable: boolean;
   ffmpegChecked: boolean;
+  models: AudioTranscriptionModelCapability[];
   onCancel: () => void;
   onConfirm: () => void;
   onToggleFfmpeg: () => void;
+  onSelectModel: (model: AudioTranscriptionModel) => void;
   pending: boolean;
   visible: boolean;
+  selectedModel: AudioTranscriptionModel;
 }) {
   return (
     <Modal animationType="fade" onRequestClose={onCancel} transparent visible={visible}>
@@ -348,8 +360,41 @@ export function AudioTranscriptionConfirmDialog({
             开始 ASR 转写？
           </Text>
           <Text style={styles.dialogBody}>
-            将使用 AI 对“{audioTitle}”进行 ASR 转写，并识别说话人、业务角色、情绪和时间戳。
+            将使用所选 STT 模型转写“{audioTitle}”。Speaker
+            与时间戳精度取决于模型实际返回；业务角色和情绪将标记为未知。
           </Text>
+          <Text style={styles.transcriptionSectionTitle}>转写模型</Text>
+          {models.length === 0 ? (
+            <Text accessibilityRole="alert" style={styles.directWarning}>
+              转写模型目录加载失败，请关闭后重试。
+            </Text>
+          ) : null}
+          <ScrollView style={styles.transcriptionModelList}>
+            {models.map((model) => {
+              const selected = model.id === selectedModel;
+              return (
+                <Pressable
+                  accessibilityLabel={`${model.displayName}，${model.description}`}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: selected, disabled: pending }}
+                  disabled={pending}
+                  key={model.id}
+                  onPress={() => onSelectModel(model.id)}
+                  style={[styles.transcriptionModelOption, selected && styles.selectedModelOption]}
+                >
+                  <Ionicons
+                    color={selected ? colors.ink : textColors.tertiary}
+                    name={selected ? 'radio-button-on' : 'radio-button-off'}
+                    size={22}
+                  />
+                  <View style={styles.transcriptionOptionCopy}>
+                    <Text style={styles.transcriptionOptionTitle}>{model.displayName}</Text>
+                    <Text style={styles.secondaryText}>{model.description}</Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
           <Pressable
             accessibilityLabel="使用 FFmpeg 预处理"
             accessibilityRole="checkbox"
@@ -383,7 +428,8 @@ export function AudioTranscriptionConfirmDialog({
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              disabled={pending}
+              accessibilityState={{ disabled: pending || models.length === 0 }}
+              disabled={pending || models.length === 0}
               onPress={onConfirm}
               style={[styles.dialogButton, styles.dialogConfirmButton]}
             >
@@ -536,6 +582,23 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   dialogBody: { ...typography.body, color: textColors.secondary, fontFamily: fontFamilies.sans },
+  transcriptionSectionTitle: {
+    ...typography.label,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+  },
+  transcriptionModelList: { maxHeight: 260 },
+  transcriptionModelOption: {
+    alignItems: 'center',
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+    padding: spacing.sm,
+  },
+  selectedModelOption: { borderColor: colors.ink, backgroundColor: colors.background },
   dialogActions: { flexDirection: 'row', gap: spacing.sm, justifyContent: 'flex-end' },
   dialogButton: {
     borderColor: colors.divider,

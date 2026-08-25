@@ -16,6 +16,7 @@
 import {
   AudioAnalysisDetailSchema,
   AudioFailureDetailsSchema,
+  AudioTranscriptionActivitySchema,
   AudioFileListResponseSchema,
   DataSourceAudioUploadResponseSchema,
   DataSourceDetailSchema,
@@ -60,9 +61,45 @@ function audioStatus(row: Record<string, unknown>): AudioProcessingStatus {
   }
   switch (row.analysis_status) {
     case 'queued':
-      return { kind: 'transcribing', progress: 0 };
-    case 'transcribing':
-      return { kind: 'transcribing', progress: integer(row.analysis_progress) };
+    case 'transcribing': {
+      const activity = AudioTranscriptionActivitySchema.safeParse({
+        stage: row.analysis_processing_stage,
+        chunkIndex:
+          row.analysis_current_chunk === null || row.analysis_current_chunk === undefined
+            ? null
+            : integer(row.analysis_current_chunk),
+        chunkCount:
+          row.analysis_chunk_count === null || row.analysis_chunk_count === undefined
+            ? null
+            : integer(row.analysis_chunk_count),
+        chunkStartMs:
+          row.analysis_current_chunk_start_ms === null ||
+          row.analysis_current_chunk_start_ms === undefined
+            ? null
+            : integer(row.analysis_current_chunk_start_ms),
+        chunkEndMs:
+          row.analysis_current_chunk_end_ms === null ||
+          row.analysis_current_chunk_end_ms === undefined
+            ? null
+            : integer(row.analysis_current_chunk_end_ms),
+        networkAttempt:
+          row.analysis_network_attempt === null || row.analysis_network_attempt === undefined
+            ? null
+            : integer(row.analysis_network_attempt),
+        structureAttempt:
+          row.analysis_structure_attempt === null || row.analysis_structure_attempt === undefined
+            ? null
+            : integer(row.analysis_structure_attempt),
+        updatedAt: row.analysis_processing_updated_at
+          ? iso(row.analysis_processing_updated_at as Date | string)
+          : undefined,
+      });
+      return {
+        kind: 'transcribing',
+        progress: row.analysis_status === 'queued' ? 0 : integer(row.analysis_progress),
+        activity: activity.success ? activity.data : null,
+      };
+    }
     case 'analyzing':
       return { kind: 'analyzing', progress: integer(row.analysis_progress) };
     case 'ready':
@@ -246,6 +283,14 @@ export class WorkspaceRepository {
               latest.error_message AS analysis_error_message,
               latest.error_retryable AS analysis_error_retryable,
               latest.error_details AS analysis_error_details,
+              latest.processing_stage AS analysis_processing_stage,
+              latest.current_chunk AS analysis_current_chunk,
+              latest.chunk_count AS analysis_chunk_count,
+              latest.current_chunk_start_ms AS analysis_current_chunk_start_ms,
+              latest.current_chunk_end_ms AS analysis_current_chunk_end_ms,
+              latest.network_attempt AS analysis_network_attempt,
+              latest.structure_attempt AS analysis_structure_attempt,
+              latest.processing_updated_at AS analysis_processing_updated_at,
               af.error_code AS audio_error_code,
               af.error_message AS audio_error_message,
               af.error_retryable AS audio_error_retryable
@@ -254,7 +299,9 @@ export class WorkspaceRepository {
          ON origin.tenant_id = af.tenant_id AND origin.id = af.origin_group_id
        LEFT JOIN LATERAL (
          SELECT ar.status, ar.progress, ar.error_stage, ar.error_code, ar.error_message,
-                ar.error_retryable, ar.error_details
+                ar.error_retryable, ar.error_details, ar.processing_stage, ar.current_chunk,
+                ar.chunk_count, ar.current_chunk_start_ms, ar.current_chunk_end_ms,
+                ar.network_attempt, ar.structure_attempt, ar.processing_updated_at
          FROM ${this.table('audio_analysis_revisions')} ar
          WHERE ar.tenant_id = af.tenant_id AND ar.audio_file_id = af.id
          ORDER BY ar.revision_no DESC LIMIT 1
@@ -438,7 +485,7 @@ export class WorkspaceRepository {
          (tenant_id, name, description, source_type, location, connection_label,
           connection_status, transcription_model)
        VALUES ($1, $2, $3, 'manual_upload', 'local', '本地手动上传',
-                'connected', 'google/gemini-2.5-flash-lite')
+                'connected', 'x-ai/grok-stt-1.0')
        RETURNING id`,
       [this.tenantId, input.name, input.description],
     );
@@ -691,13 +738,23 @@ export class WorkspaceRepository {
               latest.error_message AS analysis_error_message,
               latest.error_retryable AS analysis_error_retryable,
               latest.error_details AS analysis_error_details,
+              latest.processing_stage AS analysis_processing_stage,
+              latest.current_chunk AS analysis_current_chunk,
+              latest.chunk_count AS analysis_chunk_count,
+              latest.current_chunk_start_ms AS analysis_current_chunk_start_ms,
+              latest.current_chunk_end_ms AS analysis_current_chunk_end_ms,
+              latest.network_attempt AS analysis_network_attempt,
+              latest.structure_attempt AS analysis_structure_attempt,
+              latest.processing_updated_at AS analysis_processing_updated_at,
               af.error_code AS audio_error_code,
               af.error_message AS audio_error_message,
               af.error_retryable AS audio_error_retryable
        FROM ${this.table('audio_files')} af
        LEFT JOIN LATERAL (
          SELECT ar.status, ar.progress, ar.error_stage, ar.error_code, ar.error_message,
-                ar.error_retryable, ar.error_details
+                ar.error_retryable, ar.error_details, ar.processing_stage, ar.current_chunk,
+                ar.chunk_count, ar.current_chunk_start_ms, ar.current_chunk_end_ms,
+                ar.network_attempt, ar.structure_attempt, ar.processing_updated_at
          FROM ${this.table('audio_analysis_revisions')} ar
          WHERE ar.tenant_id = af.tenant_id AND ar.audio_file_id = af.id
          ORDER BY ar.revision_no DESC LIMIT 1
