@@ -315,7 +315,11 @@ export class KnowledgeRepository {
    * 仅检索当前租户、指定知识库和 active revision 的向量块。
    * HNSW 参数只在当前事务生效，随后按内容去重并限制单文档、总块数与上下文字符数。
    */
-  async search(knowledgeBaseId: string, embedding: number[]): Promise<RetrievalChunk[]> {
+  async search(
+    knowledgeBaseId: string,
+    embedding: number[],
+    embeddingModel: string,
+  ): Promise<RetrievalChunk[]> {
     const startedAt = Date.now();
     const client = await this.pool.connect();
     try {
@@ -329,8 +333,9 @@ export class KnowledgeRepository {
          JOIN ${this.table('documents')} d
            ON d.tenant_id = c.tenant_id AND d.id = c.document_id AND d.active_revision_id = c.revision_id
          WHERE c.tenant_id = $1 AND c.knowledge_base_id = $2 AND d.deleted_at IS NULL
+           AND c.embedding_model = $4
          ORDER BY c.embedding <=> $3::vector LIMIT 30`,
-        [this.tenantId, knowledgeBaseId, toSql(embedding)],
+        [this.tenantId, knowledgeBaseId, toSql(embedding), embeddingModel],
       );
       await client.query('COMMIT');
       const hashes = new Set<string>();

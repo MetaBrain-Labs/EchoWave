@@ -1,130 +1,37 @@
 /**
- * 音频 STT Worker 测试。
+ * DashScope 整文件转写 Worker 测试。
  *
- * 验证无重叠分块的全局时间换算，以及质量退化后的原位自适应拆分。
+ * 验证任务恢复、发布和 OSS 清理边界。
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { AudioTranscriptionSplitRequiredError } from '../../../dist/workspace/transcription/openRouterStt.js';
-import {
-  AudioTranscriptionWorker,
-  mergeChunkSegments,
-} from '../../../dist/workspace/transcription/worker.js';
-
-const job = {
-  audioFileId: '40000000-0000-4000-8000-000000000001',
-  dataSource: null,
-  durationMs: 45_000,
-  ingestionRunId: null,
-  mimeType: 'audio/mpeg',
-  model: 'x-ai/grok-stt-1.0',
-  originalFilename: 'meeting.mp3',
-  preprocessingMode: 'ffmpeg',
-  revisionId: '50000000-0000-4000-8000-000000000001',
-  revisionNo: 2,
-  sizeBytes: 1_024,
-  storageKey: 'meeting.mp3',
-  title: '客户访谈',
-};
-
-function result(text, startMs, endMs, speakerKey = 'Speaker 0') {
-  return {
-    speakers: [{ speakerKey, businessRole: 'unknown' }],
-    segments: [
-      {
-        speakerKey,
-        businessRole: 'unknown',
-        emotion: 'unknown',
-        startMs,
-        endMs,
-        text,
-      },
-    ],
-  };
-}
-
-describe('audio transcription merge', () => {
-  it('converts chunk-local timestamps and canonicalizes speakers', () => {
-    const merged = mergeChunkSegments(
-      [
-        {
-          chunk: {
-            path: 'one.mp3',
-            durationMs: 22_500,
-            format: 'mp3',
-            offsetMs: 0,
-            primaryStartMs: 0,
-            primaryEndMs: 22_500,
-          },
-          result: result('第一段', 1_000, 2_000, 'speaker:a'),
-        },
-        {
-          chunk: {
-            path: 'two.mp3',
-            durationMs: 22_500,
-            format: 'mp3',
-            offsetMs: 22_500,
-            primaryStartMs: 22_500,
-            primaryEndMs: 45_000,
-          },
-          result: result('第二段', 500, 1_500, 'speaker:b'),
-        },
-      ],
-      45_000,
-    );
-    assert.deepEqual(
-      merged.map(({ startMs, endMs, speakerKey, businessRole, emotion }) => ({
-        startMs,
-        endMs,
-        speakerKey,
-        businessRole,
-        emotion,
-      })),
-      [
-        {
-          startMs: 1_000,
-          endMs: 2_000,
-          speakerKey: 'Speaker 0',
-          businessRole: 'unknown',
-          emotion: 'unknown',
-        },
-        {
-          startMs: 23_000,
-          endMs: 24_000,
-          speakerKey: 'Speaker 1',
-          businessRole: 'unknown',
-          emotion: 'unknown',
-        },
-      ],
-    );
-  });
-});
+import { AudioTranscriptionWorker } from '../../../dist/workspace/transcription/worker.js';
 
 describe('AudioTranscriptionWorker', () => {
-  it('splits a degraded 45-second chunk and keeps the selected model', async () => {
-    const rootChunk = {
-      path: 'root.mp3',
+  it('resumes an existing DashScope task without preprocessing, uploading, or submitting again', async () => {
+    const job = {
+      audioFileId: '40000000-0000-4000-8000-000000000001',
+      dataSource: null,
       durationMs: 45_000,
-      format: 'mp3',
-      offsetMs: 0,
-      primaryStartMs: 0,
-      primaryEndMs: 45_000,
+      ingestionRunId: null,
+      mimeType: 'audio/mpeg',
+      model: 'qwen-audio-3.0-asr-flash-filetrans',
+      originalFilename: 'meeting.mp3',
+      preprocessingMode: 'whole_file',
+      revisionId: '50000000-0000-4000-8000-000000000001',
+      revisionNo: 2,
+      sizeBytes: 1_024,
+      provider: 'dashscope',
+      providerArtifactKey: 'echowave/asr-staging/tenant/revision/audio.mp3',
+      providerSubmittedAt: new Date('2026-08-26T00:00:00.000Z'),
+      providerTaskId: 'task-existing',
+      segmentationMode: 'speaker_turn',
+      storageKey: 'meeting.mp3',
+      title: '客户访谈',
     };
-    const children = [
-      { ...rootChunk, path: 'left.mp3', durationMs: 22_500, primaryEndMs: 22_500 },
-      {
-        ...rootChunk,
-        path: 'right.mp3',
-        durationMs: 22_500,
-        offsetMs: 22_500,
-        primaryStartMs: 22_500,
-      },
-    ];
     let claimed = false;
-    const published = [];
-    const failed = [];
-    const models = [];
+    const calls = [];
     const repository = {
       resetInterruptedTranscriptions: async () => undefined,
       claimTranscription: async () => {
@@ -132,51 +39,71 @@ describe('AudioTranscriptionWorker', () => {
         claimed = true;
         return job;
       },
-      updateActivity: async () => undefined,
-      publishTranscription: async (_job, segments) => published.push(segments),
-      failTranscription: async (...args) => failed.push(args),
+      updateActivity: async (_job, activity) => calls.push(['activity', activity.stage]),
+      publishTranscription: async (_job, segments, metadata) =>
+        calls.push(['publish', segments, metadata]),
+      failTranscription: async (...args) => calls.push(['fail', ...args]),
+      clearProviderArtifact: async () => calls.push(['clear-artifact']),
+      recordProviderArtifact: async () => calls.push(['record-artifact']),
+      recordProviderTask: async () => calls.push(['record-task']),
     };
     const worker = new AudioTranscriptionWorker({
       repository,
       preprocessor: {
-        createChunks: async () => [rootChunk],
-        splitChunk: async () => children,
-        cleanup: async () => undefined,
+        createWholeFile: async () => {
+          throw new Error('must not preprocess a resumed task');
+        },
+        cleanup: async () => calls.push(['cleanup-local']),
       },
-      stt: {
-        transcribeChunk: async (input) => {
-          models.push(input.model);
-          if (input.audioPath === 'root.mp3') {
-            throw new AudioTranscriptionSplitRequiredError(
-              'INVALID_MODEL_OUTPUT',
-              '退化',
+      dashScope: {
+        submit: async () => {
+          throw new Error('must not submit a resumed task');
+        },
+        waitForResult: async (taskId) => {
+          calls.push(['poll', taskId]);
+          return {
+            taskId,
+            segments: [
               {
-                category: 'semantic_validation',
-                chunkIndex: 1,
-                chunkCount: 1,
-                structureAttempts: 0,
-                issues: [{ path: 'segments', code: 'repeated_text_loop', message: '重复' }],
-                outputLength: null,
-                outputSha256: null,
+                speakerKey: 'Speaker 0',
+                businessRole: 'unknown',
+                emotion: 'unknown',
+                startMs: 0,
+                endMs: 1_000,
+                text: '恢复成功',
               },
-              'quality_degradation',
-            );
-          }
-          return result(input.audioPath, 0, input.durationMs);
+            ],
+          };
         },
       },
+      ossStaging: {
+        upload: async () => {
+          throw new Error('must not upload a resumed task');
+        },
+        signedGetUrl: () => {
+          throw new Error('must not sign a resumed task');
+        },
+        delete: async (key) => calls.push(['delete', key]),
+      },
     });
+
     await worker.start();
     await worker.stop();
-    assert.equal(failed.length, 0);
-    assert.equal(published.length, 1);
-    assert.deepEqual(models, [job.model, job.model, job.model]);
-    assert.deepEqual(
-      published[0].map(({ startMs, endMs }) => ({ startMs, endMs })),
-      [
-        { startMs: 0, endMs: 22_500 },
-        { startMs: 22_500, endMs: 45_000 },
-      ],
+
+    assert.ok(calls.some((call) => call[0] === 'poll' && call[1] === 'task-existing'));
+    assert.ok(calls.some((call) => call[0] === 'publish'));
+    assert.ok(calls.some((call) => call[0] === 'delete'));
+    assert.ok(calls.some((call) => call[0] === 'clear-artifact'));
+    assert.equal(
+      calls.some((call) => call[0] === 'record-task'),
+      false,
     );
+    assert.equal(
+      calls.some((call) => call[0] === 'fail'),
+      false,
+    );
+    const publication = calls.find((call) => call[0] === 'publish')[2];
+    assert.equal(publication.segmentationMode, 'speaker_turn');
+    assert.equal(publication.speakerIdentityScope, 'recording');
   });
 });

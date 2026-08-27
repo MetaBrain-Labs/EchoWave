@@ -13,7 +13,6 @@
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type {
-  AudioTranscriptionModel,
   AudioTranscriptionCapabilitiesResponse,
   GroupSummary,
   LinkedDataSourceGroup,
@@ -571,9 +570,6 @@ export function DataSourceDetailScreen({
   const [transcriptionTarget, setTranscriptionTarget] = useState<SourceAudioItem>();
   const [transcriptionCapabilities, setTranscriptionCapabilities] =
     useState<AudioTranscriptionCapabilitiesResponse>();
-  const [useFfmpeg, setUseFfmpeg] = useState(false);
-  const [selectedTranscriptionModel, setSelectedTranscriptionModel] =
-    useState<AudioTranscriptionModel>(DEFAULT_AUDIO_TRANSCRIPTION_MODEL);
   const [startingTranscription, setStartingTranscription] = useState(false);
   const [unlinkTarget, setUnlinkTarget] = useState<LinkedDataSourceGroup>();
   const [switchTarget, setSwitchTarget] = useState<LinkedDataSourceGroup>();
@@ -784,8 +780,9 @@ export function DataSourceDetailScreen({
     setOperationError('');
     try {
       await startAudioTranscription(target.id, {
-        model: selectedTranscriptionModel,
-        preprocessing: useFfmpeg ? 'ffmpeg' : 'direct',
+        model: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+        preprocessing: 'whole_file',
+        segmentationMode: 'speaker_turn',
       });
       setTranscriptionTarget(undefined);
       await load(false);
@@ -855,6 +852,9 @@ export function DataSourceDetailScreen({
     </View>
   );
   const uploadDates = [...new Set(source.uploadRecords.map((record) => record.date))];
+  const prepareTranscription = (target: SourceAudioItem) => {
+    setTranscriptionTarget(target);
+  };
   const openMoreActions = () =>
     Alert.alert('数据源操作', source.name, [
       {
@@ -876,13 +876,7 @@ export function DataSourceDetailScreen({
         onRetry={() => {
           const target = transcriptionErrorTarget;
           setTranscriptionErrorTarget(undefined);
-          if (target) {
-            setUseFfmpeg(Boolean(transcriptionCapabilities?.ffmpeg.available));
-            setSelectedTranscriptionModel(
-              transcriptionCapabilities?.defaultModel ?? DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
-            );
-            setTranscriptionTarget(target);
-          }
+          if (target) prepareTranscription(target);
         }}
       />
       <AudioTranscriptionProgressDialog
@@ -905,13 +899,7 @@ export function DataSourceDetailScreen({
         onTranscribe={() => {
           const target = audioActionTarget;
           setAudioActionTarget(undefined);
-          if (target) {
-            setUseFfmpeg(Boolean(transcriptionCapabilities?.ffmpeg.available));
-            setSelectedTranscriptionModel(
-              transcriptionCapabilities?.defaultModel ?? DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
-            );
-            setTranscriptionTarget(target);
-          }
+          if (target) prepareTranscription(target);
         }}
       />
       <DataSourceFormSheet
@@ -971,8 +959,6 @@ export function DataSourceDetailScreen({
       />
       <AudioTranscriptionConfirmDialog
         audioTitle={transcriptionTarget?.title ?? ''}
-        ffmpegAvailable={Boolean(transcriptionCapabilities?.ffmpeg.available)}
-        ffmpegChecked={useFfmpeg}
         models={[...(transcriptionCapabilities?.models ?? [])]}
         onCancel={() => {
           if (!startingTranscription) setTranscriptionTarget(undefined);
@@ -980,11 +966,8 @@ export function DataSourceDetailScreen({
         onConfirm={() => {
           void confirmTranscription();
         }}
-        onToggleFfmpeg={() => setUseFfmpeg((current) => !current)}
-        onSelectModel={setSelectedTranscriptionModel}
         pending={startingTranscription}
         visible={Boolean(transcriptionTarget)}
-        selectedModel={selectedTranscriptionModel}
       />
       <DataSourceConfirmDialog
         body={`解除后，“${unlinkTarget?.name ?? ''}”将不再通过此数据源看到相关音频；显式分享不受影响。`}

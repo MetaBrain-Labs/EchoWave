@@ -26,7 +26,7 @@ describe('KnowledgeRepository overview', () => {
               updated_at: new Date('2026-08-21T10:00:00.000Z'),
               storage_location: 'local',
               indexing_mode: 'rag',
-              embedding_model: 'qwen/qwen3-embedding-8b',
+              embedding_model: 'qwen3.7-text-embedding',
               reranker_model: null,
               parsing_mode: 'automatic',
               document_count: 4,
@@ -52,5 +52,25 @@ describe('KnowledgeRepository overview', () => {
     assert.match(calls[0].sql, /d\.status NOT IN \('ready', 'deleting'\)/);
     assert.match(calls[0].sql, /g\.deleted_at IS NULL/);
     assert.deepEqual(calls[0].values, [tenantId, knowledgeId]);
+  });
+
+  it('filters retrieval by the current embedding model', async () => {
+    const calls = [];
+    const client = {
+      query: async (sql, values) => {
+        calls.push({ sql, values });
+        return { rows: [] };
+      },
+      release: () => undefined,
+    };
+    const repository = new KnowledgeRepository(
+      { connect: async () => client },
+      'echowave',
+      tenantId,
+    );
+    await repository.search(knowledgeId, Array(1024).fill(0), 'qwen3.7-text-embedding');
+    const retrieval = calls.find(({ sql }) => /document_chunks/.test(sql));
+    assert.match(retrieval.sql, /c\.embedding_model = \$4/);
+    assert.equal(retrieval.values[3], 'qwen3.7-text-embedding');
   });
 });

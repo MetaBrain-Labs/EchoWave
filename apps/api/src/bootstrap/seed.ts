@@ -269,7 +269,7 @@ async function seed() {
         `INSERT INTO ${table('data_sources')}
            (id, tenant_id, name, description, source_type, location, connection_label,
             connection_status, transcription_model)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'connected', 'x-ai/grok-stt-1.0')
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'connected', 'qwen-audio-3.0-asr-flash-filetrans')
          ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description,
            source_type = EXCLUDED.source_type, location = EXCLUDED.location,
            connection_label = EXCLUDED.connection_label, updated_at = now(), deleted_at = NULL`,

@@ -10,7 +10,7 @@
  * Notes:
  * - 不包含任何演示记录或设备持久化状态。
  */
-import type { AudioAnalysisDetail } from '@echowave/contracts';
+import type { AudioAnalysisDetail, AudioTranscriptionMetadata } from '@echowave/contracts';
 
 export type AiTagAnalysis = {
   title: string;
@@ -51,6 +51,7 @@ export type AnalysisDetailView = {
   scenes: readonly TranscriptScene[];
   summarySections: readonly SummarySection[];
   title: string;
+  transcription: AudioTranscriptionMetadata;
 };
 
 /** 将服务端当前分析修订版转换为页面展示模型。 */
@@ -61,6 +62,7 @@ export function toAnalysisDetailView(detail: AudioAnalysisDetail): AnalysisDetai
     title: detail.title,
     durationSeconds: detail.durationMs / 1_000,
     generatedAt: new Date(detail.generatedAt).toLocaleString(),
+    transcription: detail.transcription,
     invalidSegment: invalid
       ? {
           startSeconds: invalid.startMs / 1_000,

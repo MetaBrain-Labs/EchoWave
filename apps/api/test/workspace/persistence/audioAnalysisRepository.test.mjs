@@ -54,8 +54,10 @@ describe('AudioAnalysisRepository', () => {
               mime_type: 'audio/wav',
               duration_ms: 1_000,
               size_bytes: 1_000,
-              preprocessing_mode: 'direct',
-              transcription_model: 'x-ai/grok-stt-1.0',
+              preprocessing_mode: 'whole_file',
+              transcription_model: 'qwen-audio-3.0-asr-flash-filetrans',
+              transcription_provider: 'dashscope',
+              segmentation_mode: 'speaker_turn',
               original_filename: 'meeting.wav',
               ingestion_run_id: '30000000-0000-4000-8000-000000000001',
               data_source_id: '20000000-0000-4000-8000-000000000001',
@@ -71,20 +73,28 @@ describe('AudioAnalysisRepository', () => {
     const repository = new AudioAnalysisRepository(pool, 'echowave', tenantId);
 
     assert.deepEqual(
-      await repository.queueTranscription(audioFileId, 'x-ai/grok-stt-1.0', 'direct'),
+      await repository.queueTranscription(
+        audioFileId,
+        'qwen-audio-3.0-asr-flash-filetrans',
+        'whole_file',
+        'speaker_turn',
+      ),
       { audioFileId, revisionId, status: 'queued' },
     );
     const claimed = await repository.claimTranscription();
     assert.equal(claimed.revisionId, revisionId);
-    assert.equal(claimed.preprocessingMode, 'direct');
+    assert.equal(claimed.preprocessingMode, 'whole_file');
     assert.equal(claimed.originalFilename, 'meeting.wav');
     assert.equal(claimed.dataSource.name, '团队录音');
     assert.equal(claimed.dataSource.connectionStatus, 'connected');
     const insert = calls.find((call) => /INSERT INTO .*audio_analysis_revisions/.test(call.sql));
-    assert.equal(insert.values[3], 'direct');
+    assert.equal(insert.values[3], 'whole_file');
     assert.equal(insert.values[4], true);
-    assert.equal(insert.values[5], 'word');
+    assert.equal(insert.values[5], 'segment');
+    assert.equal(insert.values[6], 'best_effort');
     assert.match(insert.sql, /'preprocessingMode', \$4::text/);
+    assert.match(insert.sql, /'language', 'zh'/);
+    assert.match(insert.sql, /'diarizationRequested', \$5::boolean/);
     assert.match(insert.sql, /'businessRole', false/);
     assert.match(insert.sql, /'emotionAnalysis', false/);
     assert.match(insert.sql, /processing_stage, processing_updated_at/);
@@ -104,7 +114,7 @@ describe('AudioAnalysisRepository', () => {
       audioFileId,
       durationMs: 870_000,
       mimeType: 'audio/wav',
-      preprocessingMode: 'ffmpeg',
+      preprocessingMode: 'whole_file',
       revisionId,
       revisionNo: 1,
       sizeBytes: 1_000,
@@ -112,7 +122,9 @@ describe('AudioAnalysisRepository', () => {
       title: '访谈',
       originalFilename: 'meeting.wav',
       ingestionRunId: null,
-      model: 'x-ai/grok-stt-1.0',
+      model: 'qwen-audio-3.0-asr-flash-filetrans',
+      provider: 'dashscope',
+      segmentationMode: 'speaker_turn',
       dataSource: null,
     };
 
@@ -135,7 +147,7 @@ describe('AudioAnalysisRepository', () => {
     assert.match(calls[1].sql, /network_attempt = NULL/);
   });
 
-  it('rejects an unsupported direct source before creating a revision', async () => {
+  it('rejects a removed model before creating a revision', async () => {
     const calls = [];
     const client = {
       query: async (sql) => {
@@ -164,8 +176,8 @@ describe('AudioAnalysisRepository', () => {
     );
 
     await assert.rejects(
-      () => repository.queueTranscription(audioFileId, 'x-ai/grok-stt-1.0', 'direct'),
-      (error) => error.code === 'DIRECT_AUDIO_REJECTED',
+      () => repository.queueTranscription(audioFileId, 'unknown/model', 'whole_file'),
+      (error) => error.code === 'CONFLICT',
     );
     assert.equal(
       calls.some((sql) => /INSERT INTO .*audio_analysis_revisions/.test(sql)),
@@ -194,7 +206,7 @@ describe('AudioAnalysisRepository', () => {
       audioFileId,
       durationMs: 1_000,
       mimeType: 'audio/wav',
-      preprocessingMode: 'ffmpeg',
+      preprocessingMode: 'whole_file',
       revisionId,
       revisionNo: 1,
       sizeBytes: 1_000,
@@ -202,20 +214,33 @@ describe('AudioAnalysisRepository', () => {
       title: '访谈',
       originalFilename: 'meeting.wav',
       ingestionRunId: null,
-      model: 'x-ai/grok-stt-1.0',
+      model: 'qwen-audio-3.0-asr-flash-filetrans',
+      provider: 'dashscope',
+      segmentationMode: 'speaker_turn',
       dataSource: null,
     };
 
-    await repository.publishTranscription(job, [
+    await repository.publishTranscription(
+      job,
+      [
+        {
+          businessRole: '销售',
+          emotion: 'neutral',
+          endMs: 900,
+          speakerKey: 'Speaker 0',
+          startMs: 0,
+          text: '您好',
+        },
+      ],
       {
-        businessRole: '销售',
-        emotion: 'neutral',
-        endMs: 900,
-        speakerKey: 'Speaker 0',
-        startMs: 0,
-        text: '您好',
+        language: 'zh',
+        diarizationRequested: true,
+        diarizationObserved: false,
+        responseGranularity: 'chunk',
+        segmentationMode: 'speaker_turn',
+        speakerIdentityScope: 'none',
       },
-    ]);
+    );
 
     const segmentInsert = calls.find((call) => /INSERT INTO .*transcript_segments/.test(call.sql));
     assert.match(segmentInsert.sql, /business_role/);
@@ -223,6 +248,15 @@ describe('AudioAnalysisRepository', () => {
     const revisionUpdate = calls.findIndex((call) =>
       /UPDATE .*audio_analysis_revisions/.test(call.sql),
     );
+    assert.match(calls[revisionUpdate].sql, /'diarizationObserved', \$5::boolean/);
+    assert.deepEqual(calls[revisionUpdate].values.slice(2), [
+      'zh',
+      true,
+      false,
+      'chunk',
+      'speaker_turn',
+      'none',
+    ]);
     const audioUpdate = calls.findIndex((call) => /UPDATE .*audio_files/.test(call.sql));
     assert.ok(audioUpdate > revisionUpdate);
     assert.equal(calls.at(-1).sql, 'COMMIT');
@@ -240,7 +274,7 @@ describe('AudioAnalysisRepository', () => {
         audioFileId,
         durationMs: 1_000,
         mimeType: 'audio/wav',
-        preprocessingMode: 'direct',
+        preprocessingMode: 'whole_file',
         revisionId,
         revisionNo: 2,
         sizeBytes: 1_000,
@@ -248,7 +282,9 @@ describe('AudioAnalysisRepository', () => {
         title: '访谈',
         originalFilename: 'meeting.wav',
         ingestionRunId: null,
-        model: 'x-ai/grok-stt-1.0',
+        model: 'qwen-audio-3.0-asr-flash-filetrans',
+        provider: 'dashscope',
+        segmentationMode: 'speaker_turn',
         dataSource: null,
       },
       'MODEL_TIMEOUT',
@@ -268,5 +304,30 @@ describe('AudioAnalysisRepository', () => {
     assert.match(calls[0].sql, /error_details = \$6::jsonb/);
     assert.equal(JSON.parse(calls[0].values[5]).category, 'timeout');
     assert.doesNotMatch(calls[0].sql, /audio_files/);
+  });
+
+  it('persists resumable provider task state and clears only the temporary object key', async () => {
+    const calls = [];
+    const repository = new AudioAnalysisRepository(
+      { query: async (sql, values) => (calls.push({ sql, values }), { rows: [] }) },
+      'echowave',
+      tenantId,
+    );
+    const providerJob = {
+      audioFileId,
+      revisionId,
+    };
+    const submittedAt = new Date('2026-08-26T00:00:00.000Z');
+
+    await repository.recordProviderArtifact(providerJob, 'temporary/object.mp3');
+    await repository.recordProviderTask(providerJob, 'task-1', submittedAt);
+    await repository.clearProviderArtifact(providerJob);
+
+    assert.match(calls[0].sql, /SET provider_artifact_key = \$3/);
+    assert.deepEqual(calls[0].values, [tenantId, revisionId, 'temporary/object.mp3']);
+    assert.match(calls[1].sql, /provider_task_id = \$3, provider_submitted_at = \$4/);
+    assert.deepEqual(calls[1].values, [tenantId, revisionId, 'task-1', submittedAt]);
+    assert.match(calls[2].sql, /SET provider_artifact_key = NULL/);
+    assert.doesNotMatch(calls[2].sql, /provider_task_id = NULL/);
   });
 });

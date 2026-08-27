@@ -144,38 +144,63 @@ describe('workspace contracts', () => {
   });
 
   it('validates transcription preprocessing requests and capability responses', () => {
-    assert.deepEqual(AudioTranscriptionStartRequestSchema.parse({ preprocessing: 'direct' }), {
-      preprocessing: 'direct',
+    assert.deepEqual(AudioTranscriptionStartRequestSchema.parse({}), {
+      preprocessing: 'whole_file',
+      segmentationMode: 'speaker_turn',
     });
-    assert.deepEqual(AudioTranscriptionStartRequestSchema.parse({ preprocessing: 'ffmpeg' }), {
-      preprocessing: 'ffmpeg',
-    });
-    for (const model of AUDIO_TRANSCRIPTION_MODELS) {
-      assert.equal(
-        AudioTranscriptionStartRequestSchema.parse({ model, preprocessing: 'ffmpeg' }).model,
-        model,
-      );
-    }
     assert.throws(() =>
       AudioTranscriptionStartRequestSchema.parse({
-        model: 'google/gemini-2.5-flash-lite',
-        preprocessing: 'ffmpeg',
+        model: 'unknown/model',
+        preprocessing: 'whole_file',
       }),
     );
-    assert.throws(() => AudioTranscriptionStartRequestSchema.parse({ preprocessing: 'automatic' }));
+    assert.throws(() => AudioTranscriptionStartRequestSchema.parse({ preprocessing: 'direct' }));
     assert.deepEqual(
-      AudioTranscriptionCapabilitiesResponseSchema.parse({
-        defaultModel: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
-        models: AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
-        ffmpeg: { configured: false, available: false },
-        direct: {
-          maxBytes: 209_715_200,
-          maxDurationMs: 45_000,
-          formats: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'webm'],
-        },
-      }).direct.formats,
-      ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'webm'],
+      AudioTranscriptionStartRequestSchema.parse({
+        model: 'qwen-audio-3.0-asr-flash-filetrans',
+        preprocessing: 'whole_file',
+        segmentationMode: 'speaker_turn',
+      }),
+      {
+        model: 'qwen-audio-3.0-asr-flash-filetrans',
+        preprocessing: 'whole_file',
+        segmentationMode: 'speaker_turn',
+      },
     );
+    assert.throws(() =>
+      AudioTranscriptionStartRequestSchema.parse({
+        model: 'unknown/model',
+        preprocessing: 'whole_file',
+        segmentationMode: 'speaker_turn',
+      }),
+    );
+    assert.throws(() =>
+      AudioTranscriptionStartRequestSchema.parse({
+        model: 'qwen-audio-3.0-asr-flash-filetrans',
+        preprocessing: 'whole_file',
+        segmentationMode: 'readable',
+      }),
+    );
+    const capabilities = AudioTranscriptionCapabilitiesResponseSchema.parse({
+      defaultModel: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+      models: AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
+      ffmpeg: { configured: false, available: false },
+      transcriptionConfigured: false,
+    });
+    assert.equal(capabilities.transcriptionConfigured, false);
+    assert.equal(AUDIO_TRANSCRIPTION_MODELS.length, 1);
+    assert.equal(DEFAULT_AUDIO_TRANSCRIPTION_MODEL, 'qwen-audio-3.0-asr-flash-filetrans');
+    const qwenFileTrans = AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES[0];
+    assert.equal(qwenFileTrans.provider, 'dashscope');
+    assert.deepEqual(qwenFileTrans.supportedSegmentationModes, ['speaker_turn']);
+    assert.deepEqual(qwenFileTrans.pricing, {
+      asOf: '2026-08-26',
+      input: { amount: 0.00022, currency: 'CNY', unit: 'second' },
+      output: { amount: 0, currency: 'CNY', unit: 'included' },
+    });
+    assert.equal(qwenFileTrans.timestampGranularity, 'segment');
+    const gptTranscribe = { description: 'Chunk 范围回退' };
+    assert.match(gptTranscribe.description, /Chunk 范围回退/);
   });
 
   it('validates data-source settings without accepting credentials', () => {
@@ -191,7 +216,7 @@ describe('workspace contracts', () => {
       lastUploadedAt: null,
       metrics: { audioCount: 0, totalDurationMs: 0, transcribedCount: 0, pendingCount: 0 },
       settings: {
-        transcriptionModel: 'google/gemini-2.5-flash-lite',
+        transcriptionModel: 'qwen-audio-3.0-asr-flash-filetrans',
         autoTranscribe: true,
         emotionAnalysis: true,
         speakerDiarization: true,
@@ -254,6 +279,12 @@ describe('workspace contracts', () => {
       title: '产品访谈分析',
       durationMs: 10_000,
       generatedAt: '2026-08-21T10:00:00.000Z',
+      transcription: {
+        model: 'qwen-audio-3.0-asr-flash-filetrans',
+        language: 'zh',
+        diarizationStatus: 'not_returned',
+        responseGranularity: 'chunk',
+      },
       scenes: [
         {
           id: thirdId,
@@ -281,6 +312,11 @@ describe('workspace contracts', () => {
     };
 
     assert.equal(AudioAnalysisDetailSchema.parse(detail).scenes.length, 1);
+    assert.deepEqual(AudioAnalysisDetailSchema.parse(detail).transcription, {
+      ...detail.transcription,
+      segmentationMode: 'readable',
+      speakerIdentityScope: 'none',
+    });
     assert.throws(() =>
       AudioAnalysisDetailSchema.parse({
         ...detail,

@@ -133,86 +133,109 @@ export const AudioFileSummarySchema = z.object({
 
 export const AudioFileListResponseSchema = z.object({ items: z.array(AudioFileSummarySchema) });
 
-export const AUDIO_TRANSCRIPTION_DIRECT_FORMATS = [
-  'mp3',
-  'wav',
-  'm4a',
-  'aac',
-  'flac',
-  'ogg',
-  'webm',
-] as const;
-export const AUDIO_TRANSCRIPTION_DIRECT_MAX_BYTES = 200 * 1024 * 1024;
-export const AUDIO_TRANSCRIPTION_DIRECT_MAX_DURATION_MS = 45_000;
-
-/** 服务端和客户端共同接受的 OpenRouter STT 模型白名单。 */
-export const AUDIO_TRANSCRIPTION_MODELS = [
-  'x-ai/grok-stt-1.0',
-  'qwen/qwen3-asr-1.7b',
-  'openai/whisper-large-v3',
-  'openai/gpt-transcribe',
-  'mistralai/voxtral-mini-transcribe',
-] as const;
-export const DEFAULT_AUDIO_TRANSCRIPTION_MODEL = 'x-ai/grok-stt-1.0' as const;
+/** 服务端和客户端共同接受的 DashScope 官方整文件转写模型。 */
+export const AUDIO_TRANSCRIPTION_MODELS = ['qwen-audio-3.0-asr-flash-filetrans'] as const;
+export const QWEN_AUDIO_FILETRANS_MODEL = 'qwen-audio-3.0-asr-flash-filetrans' as const;
+export const DEFAULT_AUDIO_TRANSCRIPTION_MODEL = QWEN_AUDIO_FILETRANS_MODEL;
 export const AudioTranscriptionModelSchema = z.enum(AUDIO_TRANSCRIPTION_MODELS);
+export const AudioTranscriptionProviderSchema = z.literal('dashscope');
+export const AudioTranscriptionSegmentationModeSchema = z.enum(['readable', 'speaker_turn']);
+export const AudioTranscriptionSpeakerIdentityScopeSchema = z.enum(['recording', 'chunk', 'none']);
 export const AudioTranscriptionTimestampGranularitySchema = z.enum(['word', 'segment', 'chunk']);
+/** 模型目录声明的 Speaker 可用性，不代表单次响应一定返回 Speaker。 */
+export const AudioTranscriptionDiarizationAvailabilitySchema = z.enum(['none', 'best_effort']);
+/** 目录中的时间戳说明用于测试预期；实际粒度仍以单次响应为准。 */
+export const AudioTranscriptionTimestampAvailabilitySchema = z.enum([
+  'best_effort',
+  'fallback_only',
+]);
+/** 静态价格快照支持 Token、音频时长和已包含的输出计费单位。 */
+export const AudioTranscriptionPriceUnitSchema = z.enum([
+  'million_tokens',
+  'minute',
+  'second',
+  'included',
+]);
+export const AudioTranscriptionPriceSchema = z.object({
+  amount: z.number().nonnegative(),
+  currency: z.enum(['USD', 'CNY']),
+  unit: AudioTranscriptionPriceUnitSchema,
+});
+export const AudioTranscriptionPricingSchema = z.object({
+  asOf: z.string().date(),
+  input: AudioTranscriptionPriceSchema,
+  output: AudioTranscriptionPriceSchema,
+});
+/** 单次修订实际观察到的响应时间粒度；混合表示不同请求块返回不同粒度。 */
+export const AudioTranscriptionResponseGranularitySchema = z.enum([
+  'word',
+  'segment',
+  'chunk',
+  'mixed',
+]);
 
 /** 单个 STT 模型供确认框展示的稳定能力声明。 */
 export const AudioTranscriptionModelCapabilitySchema = z.object({
   id: AudioTranscriptionModelSchema,
+  provider: AudioTranscriptionProviderSchema,
   displayName: z.string().min(1),
   description: z.string().min(1),
   diarization: z.boolean(),
+  diarizationAvailability: AudioTranscriptionDiarizationAvailabilitySchema,
+  emotionRecognition: z.boolean(),
+  businessRoleRecognition: z.boolean(),
+  notableCapabilities: z.array(z.string().min(1)).min(1),
+  pricing: AudioTranscriptionPricingSchema,
+  timestampAvailability: AudioTranscriptionTimestampAvailabilitySchema,
   timestampGranularity: AudioTranscriptionTimestampGranularitySchema,
+  supportedSegmentationModes: z.array(AudioTranscriptionSegmentationModeSchema).min(1),
+  available: z.boolean(),
+  unavailableReason: z.string().min(1).nullable(),
 });
 
 /** 静态模型目录避免运行时模型发现变化影响产品行为。 */
 export const AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES = [
   {
-    id: 'x-ai/grok-stt-1.0',
-    displayName: 'SpaceXAI: Grok STT 1.0',
-    description: '词级时间戳，可选 Speaker 分离',
+    id: 'qwen-audio-3.0-asr-flash-filetrans',
+    provider: 'dashscope',
+    displayName: 'Qwen Audio 3.0 ASR Flash Filetrans',
+    description: '阿里云北京地域整文件转写，支持中文说话人分离与句级时间戳',
     diarization: true,
-    timestampGranularity: 'word',
-  },
-  {
-    id: 'qwen/qwen3-asr-1.7b',
-    displayName: 'Qwen: Qwen3 ASR 1.7B',
-    description: '中文及方言，词级或分段时间戳',
-    diarization: false,
-    timestampGranularity: 'word',
-  },
-  {
-    id: 'openai/whisper-large-v3',
-    displayName: 'OpenAI: Whisper Large V3',
-    description: '多语言，词级或分段时间戳',
-    diarization: false,
-    timestampGranularity: 'word',
-  },
-  {
-    id: 'openai/gpt-transcribe',
-    displayName: 'OpenAI: GPT Transcribe',
-    description: '高准确率、多语言提示支持',
-    diarization: false,
+    diarizationAvailability: 'best_effort',
+    emotionRecognition: false,
+    businessRoleRecognition: false,
+    notableCapabilities: ['中文及方言', '录音级说话人分离', '句级时间戳'],
+    pricing: {
+      asOf: '2026-08-26',
+      input: { amount: 0.00022, currency: 'CNY', unit: 'second' },
+      output: { amount: 0, currency: 'CNY', unit: 'included' },
+    },
+    timestampAvailability: 'best_effort',
     timestampGranularity: 'segment',
-  },
-  {
-    id: 'mistralai/voxtral-mini-transcribe',
-    displayName: 'Mistral: Voxtral Mini Transcribe',
-    description: '标准文本转写',
-    diarization: false,
-    timestampGranularity: 'chunk',
+    supportedSegmentationModes: ['speaker_turn'],
+    available: false,
+    unavailableReason: '需要完整配置 DashScope、北京地域 OSS 和 FFmpeg。',
   },
 ] as const satisfies readonly z.infer<typeof AudioTranscriptionModelCapabilitySchema>[];
 
-export const AudioTranscriptionPreprocessingSchema = z.enum(['ffmpeg', 'direct']);
-export const AudioTranscriptionDirectFormatSchema = z.enum(AUDIO_TRANSCRIPTION_DIRECT_FORMATS);
+export const AudioTranscriptionPreprocessingSchema = z.literal('whole_file');
 
 /** 创建音频转写修订时选择的预处理方式。 */
-export const AudioTranscriptionStartRequestSchema = z.object({
-  model: AudioTranscriptionModelSchema.optional(),
-  preprocessing: AudioTranscriptionPreprocessingSchema,
-});
+export const AudioTranscriptionStartRequestSchema = z
+  .object({
+    model: AudioTranscriptionModelSchema.optional(),
+    preprocessing: AudioTranscriptionPreprocessingSchema.default('whole_file'),
+    segmentationMode: z.literal('speaker_turn').default('speaker_turn'),
+  })
+  .superRefine((request, context) => {
+    if (request.model !== undefined && request.model !== QWEN_AUDIO_FILETRANS_MODEL) {
+      context.addIssue({
+        code: 'custom',
+        path: ['model'],
+        message: 'Only the DashScope Qwen Audio filetrans model is supported.',
+      });
+    }
+  });
 
 /** 客户端渲染转写确认框所需的服务端能力快照。 */
 export const AudioTranscriptionCapabilitiesResponseSchema = z.object({
@@ -221,11 +244,7 @@ export const AudioTranscriptionCapabilitiesResponseSchema = z.object({
     .array(AudioTranscriptionModelCapabilitySchema)
     .length(AUDIO_TRANSCRIPTION_MODELS.length),
   ffmpeg: z.object({ configured: z.boolean(), available: z.boolean() }),
-  direct: z.object({
-    maxBytes: z.literal(AUDIO_TRANSCRIPTION_DIRECT_MAX_BYTES),
-    maxDurationMs: z.literal(AUDIO_TRANSCRIPTION_DIRECT_MAX_DURATION_MS),
-    formats: z.array(AudioTranscriptionDirectFormatSchema).min(1),
-  }),
+  transcriptionConfigured: z.boolean(),
 });
 
 /** 音频转写任务进入 PostgreSQL 队列后的稳定响应。 */
@@ -245,14 +264,32 @@ export type AudioProcessingStatus = z.infer<typeof AudioProcessingStatusSchema>;
 export type AudioFileSummary = z.infer<typeof AudioFileSummarySchema>;
 export type AudioTranscriptionPreprocessing = z.infer<typeof AudioTranscriptionPreprocessingSchema>;
 export type AudioTranscriptionModel = z.infer<typeof AudioTranscriptionModelSchema>;
+export type AudioTranscriptionProvider = z.infer<typeof AudioTranscriptionProviderSchema>;
+export type AudioTranscriptionSegmentationMode = z.infer<
+  typeof AudioTranscriptionSegmentationModeSchema
+>;
+export type AudioTranscriptionSpeakerIdentityScope = z.infer<
+  typeof AudioTranscriptionSpeakerIdentityScopeSchema
+>;
 export type AudioTranscriptionModelCapability = z.infer<
   typeof AudioTranscriptionModelCapabilitySchema
 >;
 export type AudioTranscriptionTimestampGranularity = z.infer<
   typeof AudioTranscriptionTimestampGranularitySchema
 >;
-export type AudioTranscriptionDirectFormat = z.infer<typeof AudioTranscriptionDirectFormatSchema>;
-export type AudioTranscriptionStartRequest = z.infer<typeof AudioTranscriptionStartRequestSchema>;
+export type AudioTranscriptionDiarizationAvailability = z.infer<
+  typeof AudioTranscriptionDiarizationAvailabilitySchema
+>;
+export type AudioTranscriptionTimestampAvailability = z.infer<
+  typeof AudioTranscriptionTimestampAvailabilitySchema
+>;
+export type AudioTranscriptionPriceUnit = z.infer<typeof AudioTranscriptionPriceUnitSchema>;
+export type AudioTranscriptionPrice = z.infer<typeof AudioTranscriptionPriceSchema>;
+export type AudioTranscriptionPricing = z.infer<typeof AudioTranscriptionPricingSchema>;
+export type AudioTranscriptionResponseGranularity = z.infer<
+  typeof AudioTranscriptionResponseGranularitySchema
+>;
+export type AudioTranscriptionStartRequest = z.input<typeof AudioTranscriptionStartRequestSchema>;
 export type AudioTranscriptionCapabilitiesResponse = z.infer<
   typeof AudioTranscriptionCapabilitiesResponseSchema
 >;

@@ -29,9 +29,9 @@ import {
 } from './documentParser.ts';
 import {
   EmbeddingProviderError,
-  OpenRouterEmbeddings,
+  DashScopeEmbeddings,
   type EmbeddingBatchResult,
-} from '../embeddings/openRouterEmbeddings.ts';
+} from '../embeddings/dashScopeEmbeddings.ts';
 import {
   IngestionRepository,
   type ClaimedIngestionJob,
@@ -49,7 +49,7 @@ const IngestionState = Annotation.Root({
 
 type WorkerOptions = {
   repository: IngestionRepository;
-  embeddings: OpenRouterEmbeddings;
+  embeddings: DashScopeEmbeddings;
   embeddingModel: string;
   uploadTempDirectory: string;
   concurrency?: number;
@@ -170,7 +170,7 @@ export class IngestionWorker {
                 status: 'completed',
                 durationMs: Date.now() - modelStartedAt,
                 inputTokens: result.tokens,
-                estimatedCostUsd: result.estimatedCostUsd,
+                estimatedCost: result.estimatedCost,
                 metadata: {
                   inputCount: parsed.chunks.length,
                   vectorCount: result.vectors.length,
@@ -180,7 +180,7 @@ export class IngestionWorker {
             } catch (error) {
               report.recordModelCall({
                 name: 'document-embedding',
-                provider: 'openrouter',
+                provider: 'dashscope',
                 model: options.embeddingModel,
                 status: 'failed',
                 durationMs: Date.now() - modelStartedAt,
@@ -195,7 +195,7 @@ export class IngestionWorker {
             provider: value.provider,
             model: value.model,
             tokens: value.tokens,
-            estimatedCostUsd: value.estimatedCostUsd,
+            estimatedCost: value.estimatedCost,
             vectorCount: value.vectors.length,
           }),
         );
@@ -214,7 +214,7 @@ export class IngestionWorker {
               warnings: parsed.warnings,
               provider: embedding.provider,
               embeddingTokens: embedding.tokens,
-              estimatedCostUsd: embedding.estimatedCostUsd,
+              estimatedCost: embedding.estimatedCost,
               embeddingModel: options.embeddingModel,
             }),
           () => ({

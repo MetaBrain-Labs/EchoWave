@@ -14,6 +14,7 @@
  * - 本仓储不创建连接、不保存凭据，也不执行音频处理任务。
  */
 import {
+  AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
   AudioAnalysisDetailSchema,
   AudioFailureDetailsSchema,
   AudioTranscriptionActivitySchema,
@@ -485,7 +486,7 @@ export class WorkspaceRepository {
          (tenant_id, name, description, source_type, location, connection_label,
           connection_status, transcription_model)
        VALUES ($1, $2, $3, 'manual_upload', 'local', '本地手动上传',
-                'connected', 'x-ai/grok-stt-1.0')
+                'connected', 'qwen-audio-3.0-asr-flash-filetrans')
        RETURNING id`,
       [this.tenantId, input.name, input.description],
     );
@@ -830,6 +831,7 @@ export class WorkspaceRepository {
   async getAudioAnalysis(audioFileId: string) {
     const head = await this.pool.query(
       `SELECT ar.id, ar.audio_file_id, ar.revision_no, ar.published_at,
+              ar.transcription_model, ar.settings_snapshot,
               af.title, coalesce(af.duration_ms, 0)::bigint AS duration_ms
        FROM ${this.table('audio_files')} af
        JOIN ${this.table('audio_analysis_revisions')} ar
@@ -905,6 +907,38 @@ export class WorkspaceRepository {
       }
     }
 
+    const settings: Record<string, unknown> =
+      row.settings_snapshot && typeof row.settings_snapshot === 'object'
+        ? (row.settings_snapshot as Record<string, unknown>)
+        : {};
+    const capability = AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES.find(
+      ({ id }) => id === row.transcription_model,
+    );
+    const speakerKeys = new Set(
+      segments.rows.filter((item) => item.segment_id).map((item) => String(item.speaker_key)),
+    );
+    const observedSetting = settings.diarizationObserved;
+    const diarizationRequested =
+      settings.diarizationRequested === true || settings.speakerDiarization === true;
+    const diarizationSupported = capability?.diarization ?? diarizationRequested;
+    const diarizationStatus =
+      !diarizationSupported || !diarizationRequested
+        ? 'not_supported'
+        : observedSetting === true || (observedSetting === undefined && speakerKeys.size > 1)
+          ? 'observed'
+          : 'not_returned';
+    const responseGranularity =
+      typeof settings.responseGranularity === 'string' &&
+      ['word', 'segment', 'chunk', 'mixed'].includes(settings.responseGranularity)
+        ? settings.responseGranularity
+        : null;
+    const segmentationMode =
+      settings.segmentationMode === 'speaker_turn' ? 'speaker_turn' : 'readable';
+    const speakerIdentityScope =
+      settings.speakerIdentityScope === 'recording' || settings.speakerIdentityScope === 'chunk'
+        ? settings.speakerIdentityScope
+        : 'none';
+
     return AudioAnalysisDetailSchema.parse({
       id: row.id,
       audioFileId: row.audio_file_id,
@@ -912,6 +946,14 @@ export class WorkspaceRepository {
       title: row.title,
       durationMs: integer(row.duration_ms),
       generatedAt: iso(row.published_at),
+      transcription: {
+        model: row.transcription_model,
+        language: typeof settings.language === 'string' ? settings.language : 'undetermined',
+        diarizationStatus,
+        responseGranularity,
+        segmentationMode,
+        speakerIdentityScope,
+      },
       scenes: [...scenes.values()],
       invalidSegments: invalidSegments.rows.map((item) => ({
         id: item.id,

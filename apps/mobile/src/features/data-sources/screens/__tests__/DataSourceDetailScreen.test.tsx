@@ -62,13 +62,13 @@ describe('DataSourceDetailScreen', () => {
     jest.mocked(workspaceApi.getDataSource).mockResolvedValue(dataSourceDetailFixture);
     jest.mocked(workspaceApi.getAudioTranscriptionCapabilities).mockResolvedValue({
       defaultModel: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
-      models: [...AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES],
+      models: AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES.map((model) =>
+        model.id === 'qwen-audio-3.0-asr-flash-filetrans'
+          ? { ...model, available: true, unavailableReason: null }
+          : model,
+      ),
       ffmpeg: { configured: true, available: true },
-      direct: {
-        maxBytes: 209_715_200,
-        maxDurationMs: 45_000,
-        formats: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'webm'],
-      },
+      transcriptionConfigured: true,
     });
     jest.mocked(workspaceApi.listDataSourceAudioFiles).mockResolvedValue({ items: audioFixtures });
     jest
@@ -270,20 +270,21 @@ describe('DataSourceDetailScreen', () => {
     fireEvent.press(screen.getByText('确认转写'));
     await waitFor(() =>
       expect(workspaceApi.startAudioTranscription).toHaveBeenCalledWith(failed.id, {
-        model: 'x-ai/grok-stt-1.0',
-        preprocessing: 'ffmpeg',
+        model: 'qwen-audio-3.0-asr-flash-filetrans',
+        preprocessing: 'whole_file',
+        segmentationMode: 'speaker_turn',
       }),
     );
   });
 
-  it('suggests FFmpeg after direct audio reaches the model output limit', async () => {
+  it('uses the official whole-file retry guidance for a historical provider failure', async () => {
     const items = audioFixtures.map((item) =>
       item.status.kind === 'failed' && item.status.stage === 'transcription'
         ? {
             ...item,
             status: {
               ...item.status,
-              code: 'DIRECT_AUDIO_REJECTED',
+              code: 'MODEL_UNAVAILABLE',
               message: '原音频的结构化结果超出模型输出限制。',
               retryable: true,
               details: {
@@ -309,11 +310,11 @@ describe('DataSourceDetailScreen', () => {
     const screen = await renderDetail();
 
     fireEvent.press(screen.getAllByLabelText('查看转写失败详情')[0]!);
-    expect(screen.getByText('请重新转写并勾选“使用 FFmpeg 预处理”。')).toBeTruthy();
+    expect(screen.getByText(/可以重新发起 DashScope 整文件转写/)).toBeTruthy();
     expect(screen.getByText(/native_max_tokens/)).toBeTruthy();
   });
 
-  it('explains a rejected degenerate transcript without exposing its text', async () => {
+  it('shows historical validation details without restoring Chunk guidance', async () => {
     const items = audioFixtures.map((item) =>
       item.status.kind === 'failed' && item.status.stage === 'transcription'
         ? {
@@ -351,7 +352,7 @@ describe('DataSourceDetailScreen', () => {
     const screen = await renderDetail();
 
     fireEvent.press(screen.getAllByLabelText('查看转写失败详情')[0]!);
-    expect(screen.getByText(/若已到最小约 11 秒 Chunk，请重新转写/)).toBeTruthy();
+    expect(screen.getByText(/可以重新发起 DashScope 整文件转写/)).toBeTruthy();
     expect(screen.getByText(/repeated_text_loop/)).toBeTruthy();
     expect(screen.getByText(/markdown_artifact/)).toBeTruthy();
     expect(screen.queryByText(/\*一万\*|模型正文|storage_key/)).toBeNull();
@@ -437,18 +438,16 @@ describe('DataSourceDetailScreen', () => {
     expect(screen.getByText('ASR转写')).toBeTruthy();
     expect(screen.getByText('ASR结果分析')).toBeTruthy();
     fireEvent.press(screen.getByText('ASR转写'));
-    expect(screen.getByLabelText(/SpaceXAI: Grok STT 1.0/).props.accessibilityState.checked).toBe(
-      true,
-    );
-    expect(screen.getByLabelText('使用 FFmpeg 预处理').props.accessibilityState).toEqual({
-      checked: true,
-      disabled: false,
-    });
+    expect(screen.getByLabelText(/Qwen Audio 3.0 ASR Flash Filetrans/)).toBeTruthy();
+    expect(screen.queryByText(/普通分段|直接发送/)).toBeNull();
+    expect(screen.getByText(/¥0.00022\/秒/)).toBeTruthy();
+    expect(screen.getByText(/Speaker：尽力分离/)).toBeTruthy();
     fireEvent.press(screen.getByText('确认转写'));
     await waitFor(() =>
       expect(workspaceApi.startAudioTranscription).toHaveBeenCalledWith(audioFixtures[0].id, {
-        model: 'x-ai/grok-stt-1.0',
-        preprocessing: 'ffmpeg',
+        model: 'qwen-audio-3.0-asr-flash-filetrans',
+        preprocessing: 'whole_file',
+        segmentationMode: 'speaker_turn',
       }),
     );
 
@@ -457,61 +456,25 @@ describe('DataSourceDetailScreen', () => {
     expect(onOpenAudio).toHaveBeenCalledWith(audioFixtures[0].id);
   });
 
-  it('allows direct transcription when the user clears the FFmpeg option', async () => {
+  it('blocks speaker-turn confirmation when DashScope or OSS is unavailable', async () => {
+    jest.mocked(workspaceApi.getAudioTranscriptionCapabilities).mockResolvedValueOnce({
+      defaultModel: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+      models: [...AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES],
+      ffmpeg: { configured: true, available: true },
+      transcriptionConfigured: false,
+    });
     const screen = await renderDetail();
-
     fireEvent.press(screen.getAllByLabelText(`${audioFixtures[0].title}更多操作`)[0]!);
     fireEvent.press(screen.getByText('ASR转写'));
-    fireEvent.press(screen.getByLabelText('使用 FFmpeg 预处理'));
-    expect(screen.getByText(/原音频将以 base64 直接发送/)).toBeTruthy();
+
+    expect(
+      screen.getAllByText(/需要完整配置 DashScope、北京地域 OSS 和 FFmpeg/).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: '确认转写' }).props.accessibilityState).toEqual({
+      disabled: true,
+    });
     fireEvent.press(screen.getByText('确认转写'));
-
-    await waitFor(() =>
-      expect(workspaceApi.startAudioTranscription).toHaveBeenCalledWith(audioFixtures[0].id, {
-        model: 'x-ai/grok-stt-1.0',
-        preprocessing: 'direct',
-      }),
-    );
-  });
-
-  it('allows selecting an alternative STT model for one revision', async () => {
-    const screen = await renderDetail();
-
-    fireEvent.press(screen.getAllByLabelText(`${audioFixtures[0].title}更多操作`)[0]!);
-    fireEvent.press(screen.getByText('ASR转写'));
-    const qwen = screen.getByLabelText(/Qwen: Qwen3 ASR 1.7B/);
-    fireEvent.press(qwen);
-    expect(qwen.props.accessibilityState).toEqual({ checked: true, disabled: false });
-    fireEvent.press(screen.getByText('确认转写'));
-
-    await waitFor(() =>
-      expect(workspaceApi.startAudioTranscription).toHaveBeenCalledWith(audioFixtures[0].id, {
-        model: 'qwen/qwen3-asr-1.7b',
-        preprocessing: 'ffmpeg',
-      }),
-    );
-  });
-
-  it('exposes all four alternative models as accessible radio options', async () => {
-    const screen = await renderDetail();
-    fireEvent.press(screen.getAllByLabelText(`${audioFixtures[0].title}更多操作`)[0]!);
-    fireEvent.press(screen.getByText('ASR转写'));
-
-    for (const label of [
-      'Qwen: Qwen3 ASR 1.7B',
-      'OpenAI: Whisper Large V3',
-      'OpenAI: GPT Transcribe',
-      'Mistral: Voxtral Mini Transcribe',
-    ]) {
-      fireEvent.press(screen.getByLabelText(new RegExp(label)));
-      expect(screen.getByLabelText(new RegExp(label)).props.accessibilityState.checked).toBe(true);
-    }
-    fireEvent.press(screen.getByText('取消'));
-    fireEvent.press(screen.getAllByLabelText(`${audioFixtures[0].title}更多操作`)[0]!);
-    fireEvent.press(screen.getByText('ASR转写'));
-    expect(screen.getByLabelText(/SpaceXAI: Grok STT 1.0/).props.accessibilityState.checked).toBe(
-      true,
-    );
+    expect(workspaceApi.startAudioTranscription).not.toHaveBeenCalled();
   });
 
   it('blocks transcription when the capability and model catalog fails to load', async () => {
@@ -522,11 +485,6 @@ describe('DataSourceDetailScreen', () => {
 
     fireEvent.press(screen.getAllByLabelText(`${audioFixtures[0].title}更多操作`)[0]!);
     fireEvent.press(screen.getByText('ASR转写'));
-    expect(screen.getByLabelText('使用 FFmpeg 预处理').props.accessibilityState).toEqual({
-      checked: false,
-      disabled: true,
-    });
-    expect(screen.getByText('FFmpeg 未配置或不可用，将直接发送原音频。')).toBeTruthy();
     expect(screen.getByText('转写模型目录加载失败，请关闭后重试。')).toBeTruthy();
     fireEvent.press(screen.getByText('确认转写'));
     expect(workspaceApi.startAudioTranscription).not.toHaveBeenCalled();

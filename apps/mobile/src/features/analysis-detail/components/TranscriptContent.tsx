@@ -51,17 +51,19 @@ function SegmentView({
   dimmed,
   onOpenAiTag,
   segment,
+  speakerDisplayName,
 }: {
   dimmed: boolean;
   onOpenAiTag: (segment: TranscriptSegment) => void;
   segment: TranscriptSegment;
+  speakerDisplayName: string;
 }) {
   return (
     <View style={styles.segment}>
       <View style={styles.segmentMain}>
         <View style={styles.speakerRow}>
           <Text style={[styles.speakerName, dimmed && styles.dimmedText]}>
-            {segment.speakerKey.startsWith('Speaker ') ? segment.speakerKey : segment.speakerLabel}
+            {speakerDisplayName}
           </Text>
           <Text style={[styles.businessRole, dimmed && styles.dimmedText]}>
             {segment.businessRole === 'unknown' ? '角色未知' : segment.businessRole}
@@ -125,6 +127,19 @@ export function TranscriptContent({
           scene.segments.some((segment) => segment.id === selectedSegmentId),
         )
       : detail.scenes;
+  const speakerDisplayNames = new Map<string, string>();
+  for (const scene of detail.scenes) {
+    for (const segment of scene.segments) {
+      if (!speakerDisplayNames.has(segment.speakerKey)) {
+        speakerDisplayNames.set(
+          segment.speakerKey,
+          detail.transcription.speakerIdentityScope === 'recording'
+            ? segment.speakerKey
+            : `发言 ${speakerDisplayNames.size + 1}`,
+        );
+      }
+    }
+  }
 
   return (
     <ScrollView
@@ -133,6 +148,27 @@ export function TranscriptContent({
       showsVerticalScrollIndicator={false}
       style={styles.pageScroll}
     >
+      {detail.transcription.diarizationStatus === 'not_returned' ? (
+        <View
+          accessibilityLabel="本次模型未返回说话人信息，以下使用匿名发言编号。"
+          accessibilityRole="alert"
+          accessible
+          style={styles.diarizationNotice}
+        >
+          <Ionicons color={colors.secondary} name="people-outline" size={20} />
+          <Text style={styles.diarizationNoticeText}>
+            本次模型未返回说话人信息，以下使用匿名发言编号。
+          </Text>
+        </View>
+      ) : null}
+      {detail.transcription.speakerIdentityScope === 'chunk' ? (
+        <View accessibilityRole="alert" style={styles.diarizationNotice}>
+          <Ionicons color={colors.secondary} name="people-outline" size={20} />
+          <Text style={styles.diarizationNoticeText}>
+            本次结果只保证分块内的说话人身份，以下使用匿名发言编号，不代表跨块同一人。
+          </Text>
+        </View>
+      ) : null}
       <View style={styles.filters}>
         <FilterButton label="全部场景" />
         <FilterButton label="全部文本" />
@@ -180,6 +216,7 @@ export function TranscriptContent({
                   dimmed={hasSelectedSegment && segment.id !== selectedSegmentId}
                   onOpenAiTag={onOpenAiTag}
                   segment={segment}
+                  speakerDisplayName={speakerDisplayNames.get(segment.speakerKey) ?? '发言'}
                 />
               ))}
             </View>
@@ -212,6 +249,21 @@ const styles = StyleSheet.create({
   transcriptContent: {
     paddingBottom: spacing.xxl,
     paddingHorizontal: spacing.md,
+  },
+  diarizationNotice: {
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderRadius: radii.default,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    padding: spacing.md,
+  },
+  diarizationNoticeText: {
+    ...typography.description,
+    color: textColors.secondary,
+    flex: 1,
+    fontFamily: fontFamilies.sans,
   },
   filters: {
     alignItems: 'center',

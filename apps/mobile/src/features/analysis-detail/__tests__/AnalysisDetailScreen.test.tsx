@@ -73,6 +73,44 @@ describe('AnalysisDetailScreen', () => {
     expect(screen.queryByRole('tab', { name: '分析总结' })).toBeNull();
   });
 
+  it('explains when the selected model did not return speaker information', async () => {
+    jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValueOnce({
+      ...analysisFixture,
+      transcription: {
+        ...analysisFixture.transcription,
+        diarizationStatus: 'not_returned',
+        responseGranularity: 'chunk',
+        speakerIdentityScope: 'none',
+      },
+    });
+
+    const screen = await renderAnalysis();
+
+    expect(screen.getByText('本次模型未返回说话人信息，以下使用匿名发言编号。')).toBeTruthy();
+    expect(screen.getByRole('alert')).toBeTruthy();
+  });
+
+  it('uses anonymous utterance labels for chunk-scoped speaker identities', async () => {
+    jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValueOnce({
+      ...analysisFixture,
+      transcription: {
+        ...analysisFixture.transcription,
+        speakerIdentityScope: 'chunk',
+      },
+    });
+
+    const screen = await renderAnalysis();
+
+    expect(screen.getByText('发言 1')).toBeTruthy();
+    expect(screen.getByText(/只保证分块内的说话人身份/)).toBeTruthy();
+  });
+
+  it('does not show a speaker warning when diarization was observed', async () => {
+    const screen = await renderAnalysis();
+
+    expect(screen.queryByText(/本次模型未返回说话人信息/)).toBeNull();
+  });
+
   it('uses the approved display title and Kai transcript semantics', async () => {
     const screen = await renderAnalysis();
     const transcript = screen.getByText(

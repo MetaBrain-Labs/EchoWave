@@ -12,18 +12,18 @@
  * Notes:
  * - 音频二进制仍由文件系统保存，本仓储只处理定位键和结构化结果。
  */
-import path from 'node:path';
-
 import {
-  AUDIO_TRANSCRIPTION_DIRECT_FORMATS,
-  AUDIO_TRANSCRIPTION_DIRECT_MAX_BYTES,
-  AUDIO_TRANSCRIPTION_DIRECT_MAX_DURATION_MS,
   AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
   AudioTranscriptionModelSchema,
+  AudioTranscriptionSegmentationModeSchema,
   AudioTranscriptionStartResponseSchema,
   type AudioFailureDetails,
   type AudioTranscriptionPreprocessing,
   type AudioTranscriptionModel,
+  type AudioTranscriptionProvider,
+  type AudioTranscriptionResponseGranularity,
+  type AudioTranscriptionSegmentationMode,
+  type AudioTranscriptionSpeakerIdentityScope,
   type AudioTranscriptionStage,
 } from '@echowave/contracts';
 
@@ -46,9 +46,14 @@ export type ClaimedAudioTranscription = {
   model: AudioTranscriptionModel;
   originalFilename: string | null;
   preprocessingMode: AudioTranscriptionPreprocessing;
+  provider: AudioTranscriptionProvider;
+  providerArtifactKey: string | null;
+  providerSubmittedAt: Date | null;
+  providerTaskId: string | null;
   revisionId: string;
   revisionNo: number;
   sizeBytes: number;
+  segmentationMode: AudioTranscriptionSegmentationMode;
   storageKey: string;
   title: string;
 };
@@ -61,6 +66,16 @@ export type TranscriptDraft = {
   speakerKey: string;
   startMs: number;
   text: string;
+};
+
+/** 原子发布时写回修订快照的实际 STT 能力。 */
+export type TranscriptionPublicationMetadata = {
+  diarizationObserved: boolean;
+  diarizationRequested: boolean;
+  language: 'zh';
+  responseGranularity: AudioTranscriptionResponseGranularity;
+  segmentationMode: AudioTranscriptionSegmentationMode;
+  speakerIdentityScope: AudioTranscriptionSpeakerIdentityScope;
 };
 
 /** worker 写入列表投影的安全细粒度执行活动。 */
@@ -96,6 +111,7 @@ export class AudioAnalysisRepository {
     audioFileId: string,
     model: AudioTranscriptionModel,
     preprocessing: AudioTranscriptionPreprocessing,
+    segmentationMode: AudioTranscriptionSegmentationMode = 'speaker_turn',
   ) {
     const client = await this.pool.connect();
     try {
@@ -111,31 +127,23 @@ export class AudioAnalysisRepository {
       if (row.upload_status !== 'ready' || !row.storage_key || row.duration_ms === null) {
         throw new WorkspaceRepositoryError('CONFLICT', '音频尚未可靠保存，暂时不能转写。');
       }
-      if (preprocessing === 'direct') {
-        const format = path.extname(row.storage_key).slice(1).toLowerCase();
-        const sizeBytes = Number(row.size_bytes);
-        if (
-          !AUDIO_TRANSCRIPTION_DIRECT_FORMATS.some((candidate) => candidate === format) ||
-          !Number.isFinite(sizeBytes) ||
-          sizeBytes > AUDIO_TRANSCRIPTION_DIRECT_MAX_BYTES ||
-          Number(row.duration_ms) > AUDIO_TRANSCRIPTION_DIRECT_MAX_DURATION_MS
-        ) {
-          throw new WorkspaceRepositoryError(
-            'DIRECT_AUDIO_REJECTED',
-            '该音频无法直接发送，请启用 FFmpeg 预处理后重试。',
-          );
-        }
+      const capability = AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES.find(({ id }) => id === model);
+      if (!capability) {
+        throw new WorkspaceRepositoryError('CONFLICT', '所选转写模型已不再受支持。');
       }
-      const capability = AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES.find(({ id }) => id === model)!;
       const revision = await client.query(
         `INSERT INTO ${this.table('audio_analysis_revisions')}
            (tenant_id, audio_file_id, revision_no, transcription_model, analysis_model,
-            settings_snapshot, status, progress, processing_stage, processing_updated_at)
+            settings_snapshot, status, progress, processing_stage, processing_updated_at,
+            transcription_provider)
          SELECT $1, $2, coalesce(max(revision_no), 0) + 1, $3, $3,
                 jsonb_build_object('speakerDiarization', $5::boolean, 'businessRole', false,
                                    'emotionAnalysis', false, 'timestamps', $6::text,
-                                   'preprocessingMode', $4::text),
-                'queued', 0, 'queued', now()
+                                   'preprocessingMode', $4::text, 'language', 'zh',
+                                   'diarizationRequested', $5::boolean,
+                                   'diarizationAvailability', $7::text,
+                                   'segmentationMode', $8::text),
+                'queued', 0, 'queued', now(), $9
          FROM ${this.table('audio_analysis_revisions')}
          WHERE tenant_id = $1 AND audio_file_id = $2
          RETURNING id`,
@@ -146,6 +154,9 @@ export class AudioAnalysisRepository {
           preprocessing,
           capability.diarization,
           capability.timestampGranularity,
+          capability.diarizationAvailability,
+          segmentationMode,
+          capability.provider,
         ],
       );
       const response = AudioTranscriptionStartResponseSchema.parse({
@@ -175,7 +186,8 @@ export class AudioAnalysisRepository {
            current_chunk_end_ms = NULL, network_attempt = NULL, structure_attempt = NULL,
            processing_updated_at = now(), error_stage = NULL, error_code = NULL,
            error_message = NULL, error_retryable = NULL, error_details = NULL
-       WHERE tenant_id = $1 AND status IN ('transcribing', 'analyzing')`,
+       WHERE tenant_id = $1 AND transcription_provider = 'dashscope'
+         AND status IN ('transcribing', 'analyzing')`,
       [this.tenantId],
     );
   }
@@ -185,7 +197,7 @@ export class AudioAnalysisRepository {
     const result = await this.pool.query(
       `WITH candidate AS (
          SELECT id FROM ${this.table('audio_analysis_revisions')}
-         WHERE tenant_id = $1 AND status = 'queued'
+         WHERE tenant_id = $1 AND transcription_provider = 'dashscope' AND status = 'queued'
          ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1
        )
        UPDATE ${this.table('audio_analysis_revisions')} ar
@@ -204,7 +216,10 @@ export class AudioAnalysisRepository {
                  ds.id AS data_source_id, ds.name AS data_source_name,
                  ds.source_type, ds.location AS data_source_location,
                  ds.connection_status AS data_source_connection_status,
-                 ar.settings_snapshot->>'preprocessingMode' AS preprocessing_mode`,
+                 ar.settings_snapshot->>'preprocessingMode' AS preprocessing_mode,
+                 ar.settings_snapshot->>'segmentationMode' AS segmentation_mode,
+                 ar.transcription_provider, ar.provider_task_id, ar.provider_artifact_key,
+                 ar.provider_submitted_at`,
       [this.tenantId],
     );
     const row = result.rows[0];
@@ -225,13 +240,56 @@ export class AudioAnalysisRepository {
       mimeType: row.mime_type ?? 'application/octet-stream',
       model: AudioTranscriptionModelSchema.parse(row.transcription_model),
       originalFilename: row.original_filename ?? null,
-      preprocessingMode: row.preprocessing_mode === 'direct' ? 'direct' : 'ffmpeg',
+      preprocessingMode: 'whole_file',
+      provider: 'dashscope',
+      providerArtifactKey: row.provider_artifact_key ?? null,
+      providerSubmittedAt: row.provider_submitted_at
+        ? new Date(row.provider_submitted_at as string | Date)
+        : null,
+      providerTaskId: row.provider_task_id ?? null,
       revisionId: row.revision_id,
       revisionNo: Number(row.revision_no),
       sizeBytes: Number(row.size_bytes),
+      segmentationMode: AudioTranscriptionSegmentationModeSchema.parse(
+        row.segmentation_mode ?? 'speaker_turn',
+      ),
       storageKey: row.storage_key,
       title: row.title,
     };
+  }
+
+  /** 保存临时 OSS 对象键，使重启后的 worker 能继续提交而不重复上传。 */
+  async recordProviderArtifact(job: ClaimedAudioTranscription, objectKey: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE ${this.table('audio_analysis_revisions')}
+       SET provider_artifact_key = $3
+       WHERE tenant_id = $1 AND id = $2 AND status = 'transcribing'`,
+      [this.tenantId, job.revisionId, objectKey],
+    );
+  }
+
+  /** 原子保存供应商任务 ID 与提交时间，后续重启只恢复轮询。 */
+  async recordProviderTask(
+    job: ClaimedAudioTranscription,
+    taskId: string,
+    submittedAt: Date,
+  ): Promise<void> {
+    await this.pool.query(
+      `UPDATE ${this.table('audio_analysis_revisions')}
+       SET provider_task_id = $3, provider_submitted_at = $4
+       WHERE tenant_id = $1 AND id = $2 AND status = 'transcribing'`,
+      [this.tenantId, job.revisionId, taskId, submittedAt],
+    );
+  }
+
+  /** 临时对象删除成功后清除对象定位信息，供应商任务 ID 保留用于审计。 */
+  async clearProviderArtifact(job: ClaimedAudioTranscription): Promise<void> {
+    await this.pool.query(
+      `UPDATE ${this.table('audio_analysis_revisions')}
+       SET provider_artifact_key = NULL
+       WHERE tenant_id = $1 AND id = $2`,
+      [this.tenantId, job.revisionId],
+    );
   }
 
   /** 原子更新当前修订对列表可见的阶段、Chunk 和单调进度。 */
@@ -262,7 +320,11 @@ export class AudioAnalysisRepository {
   }
 
   /** 原子发布完整转写；音频若已归档则整个事务失败且不切换 active 指针。 */
-  async publishTranscription(job: ClaimedAudioTranscription, segments: TranscriptDraft[]) {
+  async publishTranscription(
+    job: ClaimedAudioTranscription,
+    segments: TranscriptDraft[],
+    metadata: TranscriptionPublicationMetadata,
+  ) {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -297,13 +359,29 @@ export class AudioAnalysisRepository {
       await client.query(
         `UPDATE ${this.table('audio_analysis_revisions')}
          SET status = 'ready', progress = 100, completed_at = now(), published_at = now(),
+             settings_snapshot = settings_snapshot ||
+               jsonb_build_object('language', $3::text,
+                                  'diarizationRequested', $4::boolean,
+                                  'diarizationObserved', $5::boolean,
+                                  'responseGranularity', $6::text,
+                                  'segmentationMode', $7::text,
+                                  'speakerIdentityScope', $8::text),
              error_stage = NULL, error_code = NULL, error_message = NULL,
              error_retryable = NULL, error_details = NULL, processing_stage = NULL,
              current_chunk = NULL, chunk_count = NULL, current_chunk_start_ms = NULL,
              current_chunk_end_ms = NULL, network_attempt = NULL, structure_attempt = NULL,
              processing_updated_at = NULL
          WHERE tenant_id = $1 AND id = $2 AND status = 'transcribing'`,
-        [this.tenantId, job.revisionId],
+        [
+          this.tenantId,
+          job.revisionId,
+          metadata.language,
+          metadata.diarizationRequested,
+          metadata.diarizationObserved,
+          metadata.responseGranularity,
+          metadata.segmentationMode,
+          metadata.speakerIdentityScope,
+        ],
       );
       const published = await client.query(
         `UPDATE ${this.table('audio_files')}

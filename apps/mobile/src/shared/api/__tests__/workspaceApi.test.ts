@@ -246,8 +246,8 @@ describe('workspace API client', () => {
 
     await expect(
       startAudioTranscription(audioFixtures[0].id, {
-        model: 'x-ai/grok-stt-1.0',
-        preprocessing: 'direct',
+        model: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+        preprocessing: 'whole_file',
       }),
     ).resolves.toEqual(response);
     expect(fetch.mock.calls[0][0]).toContain(
@@ -255,7 +255,11 @@ describe('workspace API client', () => {
     );
     expect(fetch.mock.calls[0][1]).toEqual(
       expect.objectContaining({
-        body: JSON.stringify({ model: 'x-ai/grok-stt-1.0', preprocessing: 'direct' }),
+        body: JSON.stringify({
+          model: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+          preprocessing: 'whole_file',
+          segmentationMode: 'speaker_turn',
+        }),
         method: 'POST',
       }),
     );
@@ -266,11 +270,7 @@ describe('workspace API client', () => {
       defaultModel: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
       models: AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
       ffmpeg: { configured: false, available: false },
-      direct: {
-        maxBytes: 209_715_200 as const,
-        maxDurationMs: 45_000 as const,
-        formats: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'webm'] as const,
-      },
+      transcriptionConfigured: false,
     };
     jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response(JSON.stringify(capabilities), {

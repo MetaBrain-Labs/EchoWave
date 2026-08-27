@@ -12,11 +12,12 @@
 import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
 
 import { createAiExecutionReporter } from '../ai-observability/executionReporter.ts';
+import { createSttRawResponseReporter } from '../ai-observability/sttRawResponseReporter.ts';
 import type { ApiConfig } from '../config/env.ts';
 import { createDatabasePool, createPostgresConnectionString } from '../infrastructure/postgres.ts';
 import { createKnowledgeAnswerModule } from '../knowledge/answer/knowledgeAnswer.ts';
 import { DeepSeekQueryAgent } from '../knowledge/answer/deepSeekQueryAgent.ts';
-import { OpenRouterEmbeddings } from '../knowledge/embeddings/openRouterEmbeddings.ts';
+import { DashScopeEmbeddings } from '../knowledge/embeddings/dashScopeEmbeddings.ts';
 import { IngestionWorker } from '../knowledge/ingestion/worker.ts';
 import { ConversationRepository } from '../knowledge/persistence/conversationRepository.ts';
 import { IngestionRepository } from '../knowledge/persistence/ingestionRepository.ts';
@@ -26,12 +27,17 @@ import { WorkspaceRepository } from '../workspace/persistence/workspaceRepositor
 import { AudioAnalysisRepository } from '../workspace/persistence/audioAnalysisRepository.ts';
 import { DefaultWorkspaceService } from '../workspace/service.ts';
 import { AudioInputPreprocessor } from '../workspace/transcription/audioPreprocessor.ts';
-import { OpenRouterStt } from '../workspace/transcription/openRouterStt.ts';
+import { DashScopeFileTranscription } from '../workspace/transcription/dashScopeFileTranscription.ts';
+import { OssStagingStore } from '../workspace/transcription/ossStagingStore.ts';
 import { AudioTranscriptionWorker } from '../workspace/transcription/worker.ts';
 
 /** 装配完整 RAG 运行时，并返回服务器所需的应用接口、worker 与关闭函数。 */
 export function createRagRuntime(config: ApiConfig) {
   const executionReporter = createAiExecutionReporter(config.aiExecutionReports);
+  const sttRawResponseReporter = createSttRawResponseReporter({
+    enabled: config.aiExecutionReports.includeSttRawResponses,
+    outputDirectory: config.aiExecutionReports.outputDirectory,
+  });
   const pool = createDatabasePool(config.database);
   const knowledgeRepository = new KnowledgeRepository(
     pool,
@@ -63,9 +69,11 @@ export function createRagRuntime(config: ApiConfig) {
     tempDirectory: config.rag.audioTranscriptionTempDir,
     ...(config.rag.ffmpegPath ? { ffmpegPath: config.rag.ffmpegPath } : {}),
     defaultModel: config.rag.audioTranscriptionModel,
+    transcriptionConfigured: Boolean(config.rag.dashScope.oss),
   });
-  const embeddings = new OpenRouterEmbeddings({
-    apiKey: config.rag.openRouterApiKey,
+  const embeddings = new DashScopeEmbeddings({
+    apiKey: config.rag.dashScope.apiKey,
+    baseUrl: config.rag.dashScope.baseUrl,
     model: config.rag.embeddingModel,
     dimensions: config.rag.embeddingDimensions,
   });
@@ -108,13 +116,29 @@ export function createRagRuntime(config: ApiConfig) {
     config.rag.audioTranscriptionModel,
     audioInputPreprocessor,
   );
+  const dashScope = new DashScopeFileTranscription(
+    config.rag.dashScope.apiKey,
+    config.rag.dashScope.baseUrl,
+    fetch,
+    (durationMs) => new Promise((resolve) => setTimeout(resolve, durationMs)),
+    Date.now,
+    sttRawResponseReporter,
+  );
+  const ossStaging = config.rag.dashScope.oss
+    ? new OssStagingStore({
+        region: config.rag.dashScope.oss.region,
+        bucket: config.rag.dashScope.oss.bucket,
+        accessKeyId: config.rag.dashScope.oss.accessKeyId,
+        accessKeySecret: config.rag.dashScope.oss.accessKeySecret,
+        tenantId: config.rag.tenantId,
+      })
+    : undefined;
   const transcriptionWorker = new AudioTranscriptionWorker({
     repository: audioAnalysisRepository,
-    stt: new OpenRouterStt({
-      apiKey: config.rag.openRouterApiKey,
-    }),
+    dashScope,
     preprocessor: audioInputPreprocessor,
     reporter: executionReporter,
+    ...(ossStaging ? { ossStaging } : {}),
   });
   return {
     service,

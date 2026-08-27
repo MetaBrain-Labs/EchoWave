@@ -18,6 +18,7 @@ import {
   DefaultWorkspaceService,
 } from '../../dist/workspace/service.js';
 import { WorkspaceRepositoryError } from '../../dist/workspace/persistence/errors.js';
+import { AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES } from '@echowave/contracts';
 
 const sourceId = '11111111-1111-4111-8111-111111111111';
 
@@ -143,18 +144,20 @@ describe('DefaultWorkspaceService audio uploads', () => {
 });
 
 describe('DefaultWorkspaceService audio transcription', () => {
-  it('rechecks FFmpeg before queueing while direct mode remains independent', async () => {
+  it('rechecks FFmpeg before queueing the fixed whole-file route', async () => {
     const queued = [];
     const audioRepository = {
-      queueTranscription: async (id, model, preprocessing) => {
-        queued.push({ id, model, preprocessing });
+      queueTranscription: async (id, model, preprocessing, segmentationMode) => {
+        queued.push({ id, model, preprocessing, segmentationMode });
         return { audioFileId: id, revisionId: sourceId, status: 'queued' };
       },
     };
     const preprocessor = {
       capabilities: () => ({
+        defaultModel: 'qwen-audio-3.0-asr-flash-filetrans',
+        models: AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
         ffmpeg: { configured: true, available: false },
-        direct: { maxBytes: 209_715_200, formats: ['mp3'] },
+        transcriptionConfigured: true,
       }),
       refreshFfmpegAvailability: async () => false,
     };
@@ -162,31 +165,66 @@ describe('DefaultWorkspaceService audio transcription', () => {
       repository(),
       '.data/audio',
       audioRepository,
-      'x-ai/grok-stt-1.0',
+      'qwen-audio-3.0-asr-flash-filetrans',
       preprocessor,
     );
 
     await assert.rejects(
-      () => service.startAudioTranscription(sourceId, { preprocessing: 'ffmpeg' }),
+      () => service.startAudioTranscription(sourceId, { preprocessing: 'whole_file' }),
       (error) =>
         error instanceof WorkspaceRepositoryError && error.code === 'TRANSCODER_UNAVAILABLE',
     );
-    await service.startAudioTranscription(sourceId, { preprocessing: 'direct' });
+    assert.deepEqual(queued, []);
+  });
+
+  it('requires the available Qwen whole-file route for speaker-turn segmentation', async () => {
+    const queued = [];
+    const models = AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES.map((model) =>
+      model.id === 'qwen-audio-3.0-asr-flash-filetrans'
+        ? { ...model, available: true, unavailableReason: null }
+        : model,
+    );
+    const audioRepository = {
+      queueTranscription: async (...args) => {
+        queued.push(args);
+        return { audioFileId: args[0], revisionId: sourceId, status: 'queued' };
+      },
+    };
+    const preprocessor = {
+      capabilities: () => ({
+        defaultModel: 'qwen-audio-3.0-asr-flash-filetrans',
+        models,
+        ffmpeg: { configured: true, available: true },
+        transcriptionConfigured: true,
+      }),
+      refreshFfmpegAvailability: async () => true,
+    };
+    const service = new DefaultWorkspaceService(
+      repository(),
+      '.data/audio',
+      audioRepository,
+      'qwen-audio-3.0-asr-flash-filetrans',
+      preprocessor,
+    );
+
     await service.startAudioTranscription(sourceId, {
-      model: 'qwen/qwen3-asr-1.7b',
-      preprocessing: 'direct',
+      preprocessing: 'whole_file',
+      segmentationMode: 'speaker_turn',
     });
-    assert.deepEqual(queued, [
-      {
-        id: sourceId,
-        model: 'x-ai/grok-stt-1.0',
-        preprocessing: 'direct',
-      },
-      {
-        id: sourceId,
-        model: 'qwen/qwen3-asr-1.7b',
-        preprocessing: 'direct',
-      },
+    assert.deepEqual(queued[0], [
+      sourceId,
+      'qwen-audio-3.0-asr-flash-filetrans',
+      'whole_file',
+      'speaker_turn',
     ]);
+    await assert.rejects(
+      () =>
+        service.startAudioTranscription(sourceId, {
+          model: 'unknown/model',
+          preprocessing: 'whole_file',
+          segmentationMode: 'speaker_turn',
+        }),
+      (error) => error instanceof TypeError,
+    );
   });
 });

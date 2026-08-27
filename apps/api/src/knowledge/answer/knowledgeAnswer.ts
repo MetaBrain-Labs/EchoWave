@@ -28,8 +28,8 @@ import {
 import type { ApiConfig } from '../../config/env.ts';
 import {
   EmbeddingProviderError,
-  type OpenRouterEmbeddings,
-} from '../embeddings/openRouterEmbeddings.ts';
+  type DashScopeEmbeddings,
+} from '../embeddings/dashScopeEmbeddings.ts';
 import type { ConversationRepository } from '../persistence/conversationRepository.ts';
 import { RagRepositoryError } from '../persistence/errors.ts';
 import type { KnowledgeRepository, RetrievalChunk } from '../persistence/knowledgeRepository.ts';
@@ -66,7 +66,7 @@ export class KnowledgeAnswerError extends Error {
   }
 }
 
-type KnowledgeAnswerEmbeddings = Pick<OpenRouterEmbeddings, 'embedQueryWithUsage'>;
+type KnowledgeAnswerEmbeddings = Pick<DashScopeEmbeddings, 'embedQueryWithUsage'>;
 type KnowledgeAnswerAgent = Pick<DeepSeekQueryAgent, 'generate' | 'correctCitations'>;
 type KnowledgeAnswerCheckpointer = {
   deleteThread(threadId: string): Promise<void>;
@@ -270,13 +270,13 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
                   status: 'completed',
                   durationMs: now() - embeddingStartedAt,
                   inputTokens: embedded.tokens,
-                  estimatedCostUsd: embedded.estimatedCostUsd,
+                  estimatedCost: embedded.estimatedCost,
                   metadata: { dimensions: embedded.vectors[0]?.length ?? 0 },
                 });
               } catch (error) {
                 report.recordModelCall({
                   name: 'query-embedding',
-                  provider: 'openrouter',
+                  provider: 'dashscope',
                   model: this.options.ragConfig.embeddingModel,
                   status: 'failed',
                   durationMs: now() - embeddingStartedAt,
@@ -287,6 +287,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
               const chunks = await this.options.knowledgeRepository.search(
                 command.knowledgeBaseId,
                 embedded.vectors[0] ?? [],
+                this.options.ragConfig.embeddingModel,
               );
               for (const chunk of chunks) retrieved.set(chunk.id, chunk);
               const output = {

@@ -41,8 +41,13 @@ const EnvironmentSchema = z.object({
   REDIS_DB: z.coerce.number().int().min(0),
   REDIS_TLS: BooleanStringSchema,
   DEV_TENANT_ID: z.string().uuid(),
-  OPENROUTER_API_KEY: z.string().min(1),
-  RAG_EMBEDDING_MODEL: z.literal('qwen/qwen3-embedding-8b'),
+  DASHSCOPE_API_KEY: z.string().min(1),
+  DASHSCOPE_BASE_URL: z.string().url(),
+  ALIYUN_OSS_REGION: OptionalPathSchema,
+  ALIYUN_OSS_BUCKET: OptionalPathSchema,
+  ALIYUN_OSS_ACCESS_KEY_ID: OptionalPathSchema,
+  ALIYUN_OSS_ACCESS_KEY_SECRET: OptionalPathSchema,
+  RAG_EMBEDDING_MODEL: z.literal('qwen3.7-text-embedding'),
   RAG_EMBEDDING_DIMENSIONS: z.coerce
     .number()
     .int()
@@ -63,6 +68,7 @@ const EnvironmentSchema = z.object({
   AI_EXECUTION_REPORT_TOOL_CONTENT_ENABLED: BooleanStringSchema,
   AI_EXECUTION_REPORT_OUTPUT_ENABLED: BooleanStringSchema,
   AI_EXECUTION_REPORT_REASONING_ENABLED: BooleanStringSchema,
+  AI_EXECUTION_REPORT_STT_RAW_RESPONSE_ENABLED: BooleanStringSchema,
 });
 
 /** API 进程通过校验后可使用的完整运行时配置。 */
@@ -88,8 +94,17 @@ export type ApiConfig = {
   };
   rag: {
     tenantId: string;
-    openRouterApiKey: string;
-    embeddingModel: 'qwen/qwen3-embedding-8b';
+    dashScope: {
+      apiKey: string;
+      baseUrl: string;
+      oss?: {
+        region: string;
+        bucket: string;
+        accessKeyId: string;
+        accessKeySecret: string;
+      };
+    };
+    embeddingModel: 'qwen3.7-text-embedding';
     embeddingDimensions: 1024;
     deepSeekApiKey: string;
     deepSeekBaseUrl: string;
@@ -109,6 +124,7 @@ export type ApiConfig = {
     includeToolContent: boolean;
     includeOutput: boolean;
     includeReasoning: boolean;
+    includeSttRawResponses: boolean;
   };
 };
 
@@ -122,6 +138,28 @@ export function readApiConfig(values: Record<string, string | undefined>): ApiCo
   if (corsOrigins.length === 0) {
     throw new Error('CORS_ORIGINS must contain at least one origin.');
   }
+
+  const ossValues = [
+    parsed.ALIYUN_OSS_REGION,
+    parsed.ALIYUN_OSS_BUCKET,
+    parsed.ALIYUN_OSS_ACCESS_KEY_ID,
+    parsed.ALIYUN_OSS_ACCESS_KEY_SECRET,
+  ];
+  const configuredOssValues = ossValues.filter(Boolean).length;
+  if (configuredOssValues > 0 && configuredOssValues !== ossValues.length) {
+    throw new Error(
+      'OSS configuration must include ALIYUN_OSS_REGION, ALIYUN_OSS_BUCKET, ALIYUN_OSS_ACCESS_KEY_ID and ALIYUN_OSS_ACCESS_KEY_SECRET together.',
+    );
+  }
+  const oss =
+    configuredOssValues === ossValues.length
+      ? {
+          region: parsed.ALIYUN_OSS_REGION!,
+          bucket: parsed.ALIYUN_OSS_BUCKET!,
+          accessKeyId: parsed.ALIYUN_OSS_ACCESS_KEY_ID!,
+          accessKeySecret: parsed.ALIYUN_OSS_ACCESS_KEY_SECRET!,
+        }
+      : undefined;
 
   return {
     port: parsed.PORT,
@@ -145,7 +183,11 @@ export function readApiConfig(values: Record<string, string | undefined>): ApiCo
     },
     rag: {
       tenantId: parsed.DEV_TENANT_ID,
-      openRouterApiKey: parsed.OPENROUTER_API_KEY,
+      dashScope: {
+        apiKey: parsed.DASHSCOPE_API_KEY,
+        baseUrl: parsed.DASHSCOPE_BASE_URL.replace(/\/$/, ''),
+        ...(oss ? { oss } : {}),
+      },
       embeddingModel: parsed.RAG_EMBEDDING_MODEL,
       embeddingDimensions: parsed.RAG_EMBEDDING_DIMENSIONS,
       deepSeekApiKey: parsed.DEEPSEEK_API_KEY,
@@ -166,6 +208,7 @@ export function readApiConfig(values: Record<string, string | undefined>): ApiCo
       includeToolContent: parsed.AI_EXECUTION_REPORT_TOOL_CONTENT_ENABLED,
       includeOutput: parsed.AI_EXECUTION_REPORT_OUTPUT_ENABLED,
       includeReasoning: parsed.AI_EXECUTION_REPORT_REASONING_ENABLED,
+      includeSttRawResponses: parsed.AI_EXECUTION_REPORT_STT_RAW_RESPONSE_ENABLED,
     },
   };
 }

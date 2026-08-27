@@ -42,7 +42,7 @@ type PublishInput = {
   warnings: string[];
   provider: string;
   embeddingTokens: number;
-  estimatedCostUsd: number;
+  estimatedCost: { amount: number; currency: 'CNY' | 'USD' };
   embeddingModel: string;
 };
 
@@ -83,22 +83,36 @@ export class IngestionRepository {
       );
       if (!knowledgeBase.rowCount) throw new RagRepositoryError('NOT_FOUND', '知识库不存在。');
       const duplicate = await client.query(
-        `SELECT d.id FROM ${this.table('document_revisions')} r
+        `SELECT d.id, d.error_code FROM ${this.table('document_revisions')} r
          JOIN ${this.table('documents')} d ON d.tenant_id = r.tenant_id AND d.id = r.document_id
          WHERE r.tenant_id = $1 AND d.knowledge_base_id = $2 AND r.source_sha256 = $3
-           AND d.deleted_at IS NULL LIMIT 1`,
+           AND d.deleted_at IS NULL
+         ORDER BY d.updated_at DESC LIMIT 1 FOR UPDATE OF d`,
         [this.tenantId, input.knowledgeBaseId, input.sourceSha256],
       );
-      if (duplicate.rowCount) {
+      const staleDocument = duplicate.rows[0];
+      if (staleDocument && staleDocument.error_code !== 'EMBEDDING_MODEL_MIGRATION_REQUIRED') {
         throw new RagRepositoryError('DUPLICATE_DOCUMENT', '该文件已上传到此知识库。');
       }
-      const document = await client.query(
-        `INSERT INTO ${this.table('documents')}
-           (tenant_id, knowledge_base_id, title, format, size_bytes, status)
-         VALUES ($1, $2, $3, $4, $5, 'queued') RETURNING id`,
-        [this.tenantId, input.knowledgeBaseId, input.title, input.format, input.sizeBytes],
-      );
-      const documentId = document.rows[0].id as string;
+      let documentId: string;
+      if (staleDocument) {
+        documentId = staleDocument.id as string;
+        await client.query(
+          `UPDATE ${this.table('documents')}
+           SET title = $3, format = $4, size_bytes = $5, status = 'queued', progress = 0,
+               error_code = NULL, error_message = NULL, error_retryable = NULL, updated_at = now()
+           WHERE tenant_id = $1 AND id = $2`,
+          [this.tenantId, documentId, input.title, input.format, input.sizeBytes],
+        );
+      } else {
+        const document = await client.query(
+          `INSERT INTO ${this.table('documents')}
+             (tenant_id, knowledge_base_id, title, format, size_bytes, status)
+           VALUES ($1, $2, $3, $4, $5, 'queued') RETURNING id`,
+          [this.tenantId, input.knowledgeBaseId, input.title, input.format, input.sizeBytes],
+        );
+        documentId = document.rows[0].id as string;
+      }
       const revision = await client.query(
         `INSERT INTO ${this.table('document_revisions')}
            (tenant_id, document_id, source_sha256, parser_version, embedding_model, embedding_dimensions, status)
@@ -213,7 +227,8 @@ export class IngestionRepository {
       await client.query(
         `UPDATE ${this.table('document_revisions')}
          SET status = 'ready', preview_text = $3, warnings = $4::jsonb, published_at = now(),
-             embedding_provider = $5, embedding_tokens = $6, embedding_cost_usd = $7
+             embedding_provider = $5, embedding_tokens = $6, embedding_cost_amount = $7,
+             embedding_cost_currency = $8
          WHERE tenant_id = $1 AND id = $2`,
         [
           this.tenantId,
@@ -222,7 +237,8 @@ export class IngestionRepository {
           JSON.stringify(input.warnings),
           input.provider,
           input.embeddingTokens,
-          input.estimatedCostUsd,
+          input.estimatedCost.amount,
+          input.estimatedCost.currency,
         ],
       );
       await client.query(

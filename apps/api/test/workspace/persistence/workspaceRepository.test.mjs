@@ -113,6 +113,71 @@ describe('WorkspaceRepository group audio', () => {
   });
 });
 
+describe('WorkspaceRepository audio analysis metadata', () => {
+  it('exposes the selected model and actually observed diarization state', async () => {
+    const pool = {
+      query: async (sql) => {
+        if (/JOIN .*audio_analysis_revisions/.test(sql)) {
+          return {
+            rows: [
+              {
+                id: knowledgeId,
+                audio_file_id: audioId,
+                revision_no: 3,
+                published_at: new Date('2026-08-25T01:00:00.000Z'),
+                transcription_model: 'openai/gpt-4o-mini-transcribe',
+                settings_snapshot: {
+                  language: 'zh',
+                  diarizationRequested: true,
+                  diarizationObserved: false,
+                  responseGranularity: 'chunk',
+                },
+                title: '客户通话',
+                duration_ms: 45_000,
+              },
+            ],
+          };
+        }
+        if (/analysis_scenes/.test(sql)) {
+          return {
+            rows: [
+              {
+                scene_id: groupId,
+                scene_index: 1,
+                scene_title: '完整录音',
+                scene_start_ms: 0,
+                segment_id: audioId,
+                segment_index: 1,
+                speaker_key: 'Speaker 0',
+                speaker_label: 'unknown',
+                business_role: 'unknown',
+                emotion: 'unknown',
+                start_ms: 0,
+                end_ms: 45_000,
+                text: '您好。',
+                tag_id: null,
+              },
+            ],
+          };
+        }
+        return { rows: [] };
+      },
+    };
+    const repository = new WorkspaceRepository(pool, 'echowave', tenantId);
+
+    const response = await repository.getAudioAnalysis(audioId);
+
+    assert.deepEqual(response.transcription, {
+      model: 'openai/gpt-4o-mini-transcribe',
+      language: 'zh',
+      diarizationStatus: 'not_returned',
+      responseGranularity: 'chunk',
+      segmentationMode: 'readable',
+      speakerIdentityScope: 'none',
+    });
+  });
+});
+
 describe('WorkspaceRepository group lifecycle', () => {
   it('creates groups inside the fixed tenant with zero derived metrics', async () => {
     const calls = [];

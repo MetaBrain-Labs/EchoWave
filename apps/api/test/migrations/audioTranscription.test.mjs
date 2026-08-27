@@ -27,6 +27,18 @@ const sttModelMigration = await readFile(
   new URL('../../migrations/008_openrouter_stt_models.sql', import.meta.url),
   'utf8',
 );
+const sttTopModelsMigration = await readFile(
+  new URL('../../migrations/009_openrouter_stt_top_models.sql', import.meta.url),
+  'utf8',
+);
+const dashScopeMigration = await readFile(
+  new URL('../../migrations/010_dashscope_speaker_turns.sql', import.meta.url),
+  'utf8',
+);
+const officialProvidersMigration = await readFile(
+  new URL('../../migrations/011_dashscope_official_providers.sql', import.meta.url),
+  'utf8',
+);
 
 describe('audio transcription migration', () => {
   it('adds business roles and prevents concurrent active revisions', () => {
@@ -63,5 +75,39 @@ describe('audio transcription migration', () => {
     assert.match(sttModelMigration, /UPDATE data_sources/);
     assert.match(sttModelMigration, /transcription_model = 'x-ai\/grok-stt-1\.0'/);
     assert.doesNotMatch(sttModelMigration, /audio_analysis_revisions/);
+    assert.match(sttTopModelsMigration, /UPDATE data_sources/);
+    assert.match(sttTopModelsMigration, /transcription_model = 'openai\/gpt-4o-mini-transcribe'/);
+    assert.doesNotMatch(sttTopModelsMigration, /audio_analysis_revisions/);
+  });
+
+  it('persists resumable DashScope task and transient OSS artifact state', () => {
+    assert.match(dashScopeMigration, /ADD COLUMN transcription_provider text NOT NULL/);
+    assert.match(dashScopeMigration, /ADD COLUMN provider_task_id text/);
+    assert.match(dashScopeMigration, /ADD COLUMN provider_artifact_key text/);
+    assert.match(dashScopeMigration, /ADD COLUMN provider_submitted_at timestamptz/);
+    assert.match(dashScopeMigration, /audio_analysis_revisions_provider_task_idx/);
+  });
+
+  it('retires unfinished legacy tasks without changing published history', () => {
+    assert.match(officialProvidersMigration, /error_code = 'PROVIDER_REMOVED'/);
+    assert.match(officialProvidersMigration, /status IN \('queued', 'transcribing', 'analyzing'\)/);
+    assert.doesNotMatch(officialProvidersMigration, /status = 'published'/);
+    assert.match(officialProvidersMigration, /SET DEFAULT 'dashscope'/);
+    assert.match(
+      officialProvidersMigration,
+      /transcription_model = 'qwen-audio-3\.0-asr-flash-filetrans'/,
+    );
+  });
+
+  it('invalidates old vector spaces and preserves historical cost currency', () => {
+    assert.match(officialProvidersMigration, /embedding_model = 'qwen3\.7-text-embedding'/);
+    assert.match(officialProvidersMigration, /active_revision_id = NULL/);
+    assert.match(officialProvidersMigration, /EMBEDDING_MODEL_MIGRATION_REQUIRED/);
+    assert.match(officialProvidersMigration, /source_sha256, embedding_model\)/);
+    assert.match(
+      officialProvidersMigration,
+      /RENAME COLUMN embedding_cost_usd TO embedding_cost_amount/,
+    );
+    assert.match(officialProvidersMigration, /DEFAULT 'USD'/);
   });
 });

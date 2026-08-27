@@ -172,7 +172,7 @@ export const dataSourceDetailFixture: DataSourceDetail = {
   ...sourceFixtures[0],
   metrics: { audioCount: 9, totalDurationMs: 22_680_000, transcribedCount: 2, pendingCount: 7 },
   settings: {
-    transcriptionModel: 'x-ai/grok-stt-1.0',
+    transcriptionModel: 'qwen-audio-3.0-asr-flash-filetrans',
     autoTranscribe: true,
     emotionAnalysis: true,
     speakerDiarization: true,
@@ -233,6 +233,14 @@ export const analysisFixture: AudioAnalysisDetail = {
   title: '产品访谈分析',
   durationMs: 1_104_000,
   generatedAt: '2026-08-15T10:51:24.000Z',
+  transcription: {
+    model: 'qwen-audio-3.0-asr-flash-filetrans',
+    language: 'zh',
+    diarizationStatus: 'observed',
+    responseGranularity: 'word',
+    segmentationMode: 'speaker_turn',
+    speakerIdentityScope: 'recording',
+  },
   invalidSegments: [
     {
       id: 'a0000000-0000-4000-8000-000000000001',

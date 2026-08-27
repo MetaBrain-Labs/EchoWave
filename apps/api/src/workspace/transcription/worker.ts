@@ -1,18 +1,17 @@
 /**
- * 音频 ASR 后台 worker。
+ * DashScope 音频转写后台 worker。
  *
- * 通过显式 LangGraph 流程顺序完成转码分块、OpenRouter STT 转写、结果合并、原子发布和
- * 临时文件清理；当前与 API 同进程并保持单并发。
+ * 周期领取 PostgreSQL 中的转写修订，顺序完成整文件转码、OSS 暂存、DashScope 异步
+ * 任务恢复与轮询、严格结果发布和临时资源清理。
  *
  * Responsibilities:
- * - 周期领取 PostgreSQL 中排队的音频修订。
- * - 规范化跨分块 Speaker 与时间戳，不推断角色或情绪。
- * - 将失败安全收敛到当前修订并保留旧结果。
+ * - 保证供应商任务提交可恢复且不会因进程重启重复提交。
+ * - 原子发布录音级 Speaker 段落并保留旧 active revision。
+ * - 将失败安全收敛到当前修订，不暴露音频或供应商原始正文。
  *
  * Notes:
- * - 当前本地文件存储只支持单 API 实例，启动时会重新排队中断任务。
+ * - 当前本地文件存储只支持单 API 实例，worker 保持单并发。
  */
-import { Annotation, END, START, StateGraph } from '@langchain/langgraph';
 import type { AudioFailureDetails } from '@echowave/contracts';
 
 import {
@@ -20,39 +19,21 @@ import {
   type AiExecutionRecorder,
   type AiExecutionReporter,
 } from '../../ai-observability/executionReporter.ts';
-
-import type {
-  ClaimedAudioTranscription,
-  TranscriptDraft,
+import {
+  AudioAnalysisRepository,
+  type ClaimedAudioTranscription,
+  type TranscriptDraft,
 } from '../persistence/audioAnalysisRepository.ts';
-import { AudioAnalysisRepository } from '../persistence/audioAnalysisRepository.ts';
-import {
-  AudioPreprocessingError,
-  AudioInputPreprocessor,
-  MINIMUM_CHUNK_DURATION_MS,
-  type AudioChunk,
-} from './audioPreprocessor.ts';
-import {
-  AudioTranscriptionProviderError,
-  AudioTranscriptionSplitRequiredError,
-  OpenRouterStt,
-} from './openRouterStt.ts';
+import { AudioInputPreprocessor, AudioPreprocessingError } from './audioPreprocessor.ts';
+import type { DashScopeFileTranscription } from './dashScopeFileTranscription.ts';
+import { AudioTranscriptionProviderError } from './errors.ts';
+import type { OssStagingStore } from './ossStagingStore.ts';
 
-const TranscriptionState = Annotation.Root({
-  job: Annotation<ClaimedAudioTranscription>(),
-  report: Annotation<AiExecutionRecorder>(),
-  chunks: Annotation<AudioChunk[]>(),
-  chunkResults: Annotation<ChunkResult[]>(),
-  segments: Annotation<TranscriptDraft[]>(),
-});
-
-type ChunkResult = {
-  chunk: AudioChunk;
-  result: Awaited<ReturnType<OpenRouterStt['transcribeChunk']>>;
-};
+const AUDIO_TRANSCRIPTION_LANGUAGE = 'zh' as const;
 
 type WorkerOptions = {
-  stt: OpenRouterStt;
+  dashScope: DashScopeFileTranscription;
+  ossStaging?: OssStagingStore;
   preprocessor: AudioInputPreprocessor;
   repository: AudioAnalysisRepository;
   reporter?: AiExecutionReporter;
@@ -105,367 +86,16 @@ function failureDetails(error: unknown): AudioFailureDetails {
   };
 }
 
-/** 合并无重叠的顺序分块并把局部时间转换为全局毫秒。 */
-export function mergeChunkSegments(
-  chunks: {
-    chunk: AudioChunk;
-    result: Awaited<ReturnType<OpenRouterStt['transcribeChunk']>>;
-  }[],
-  durationMs: number,
-): TranscriptDraft[] {
-  const roles = new Map<string, string>();
-  for (const { result } of chunks) {
-    for (const speaker of result.speakers) {
-      const current = roles.get(speaker.speakerKey);
-      if (!current || (current === 'unknown' && speaker.businessRole !== 'unknown')) {
-        roles.set(speaker.speakerKey, speaker.businessRole);
-      }
-    }
-  }
-  const selected = chunks.flatMap(({ chunk, result }) =>
-    result.segments.flatMap((segment) => {
-      const startMs = Math.max(0, chunk.offsetMs + segment.startMs);
-      const endMs = Math.min(durationMs, chunk.offsetMs + segment.endMs);
-      const midpoint = (startMs + endMs) / 2;
-      if (endMs <= startMs || midpoint < chunk.primaryStartMs || midpoint >= chunk.primaryEndMs) {
-        return [];
-      }
-      return [
-        {
-          businessRole: roles.get(segment.speakerKey) ?? 'unknown',
-          emotion: segment.emotion,
-          endMs,
-          speakerKey: segment.speakerKey,
-          startMs,
-          text: segment.text.trim(),
-        },
-      ];
-    }),
-  );
-  selected.sort((left, right) => left.startMs - right.startMs || left.endMs - right.endMs);
-  const deduplicated = selected;
-  const canonical = new Map<string, string>();
-  for (const segment of deduplicated) {
-    if (!canonical.has(segment.speakerKey)) {
-      canonical.set(segment.speakerKey, `Speaker ${canonical.size}`);
-    }
-    segment.speakerKey = canonical.get(segment.speakerKey)!;
-  }
-  return deduplicated;
-}
-
-/** 管理音频任务领取、显式工作流执行和优雅停止。 */
+/** 管理单并发 DashScope 整文件转写任务的领取、恢复和收敛。 */
 export class AudioTranscriptionWorker {
   private active?: Promise<void>;
   private pumping = false;
   private stopping = false;
   private timer?: NodeJS.Timeout;
-  private readonly graph;
 
-  constructor(private readonly options: WorkerOptions) {
-    this.graph = new StateGraph(TranscriptionState)
-      .addNode('preprocess', async ({ job, report }) => {
-        let chunks: AudioChunk[];
-        try {
-          chunks = await reportedStep(
-            report,
-            'preprocess',
-            async () => {
-              await options.repository.updateActivity(job, {
-                stage: 'preprocessing',
-                progress: 5,
-              });
-              return options.preprocessor.createChunks(job);
-            },
-            (value) => ({
-              progress: 5,
-              preprocessingMode: job.preprocessingMode,
-              inputMimeType: job.mimeType,
-              chunkCount: value.length,
-              outputFormat: value[0]?.format ?? null,
-              overlapMs: 0,
-              chunks: value.map((chunk, index) => ({
-                index: index + 1,
-                durationMs: chunk.durationMs,
-                offsetMs: chunk.offsetMs,
-                primaryStartMs: chunk.primaryStartMs,
-                primaryEndMs: chunk.primaryEndMs,
-              })),
-            }),
-          );
-        } catch (error) {
-          if (job.preprocessingMode === 'ffmpeg') {
-            report.recordToolCall({
-              name: 'ffmpeg-preprocess',
-              status: 'failed',
-              summary: {
-                reason: error instanceof AudioPreprocessingError ? error.code : 'internal_error',
-              },
-            });
-          }
-          throw error;
-        }
-        if (job.preprocessingMode === 'ffmpeg') {
-          report.recordToolCall({
-            name: 'ffmpeg-preprocess',
-            status: 'completed',
-            summary: { chunkCount: chunks.length, outputFormat: 'mp3' },
-          });
-        }
-        return { chunks };
-      })
-      .addNode('transcribe', async ({ chunks, job, report }) => {
-        const chunkResults = await reportedStep(
-          report,
-          'transcribe',
-          async () => {
-            const results: ChunkResult[] = [];
-            for (let index = 0; index < chunks.length;) {
-              const chunk = chunks[index]!;
-              const primaryDurationMs = chunk.primaryEndMs - chunk.primaryStartMs;
-              const canSplit =
-                job.preprocessingMode === 'ffmpeg' &&
-                primaryDurationMs >= MINIMUM_CHUNK_DURATION_MS * 2;
-              const chunkProgressStart = 10 + (chunk.primaryStartMs / job.durationMs) * 75;
-              const chunkProgressEnd = 10 + (chunk.primaryEndMs / job.durationMs) * 75;
-              let result: Awaited<ReturnType<OpenRouterStt['transcribeChunk']>>;
-              try {
-                result = await options.stt.transcribeChunk({
-                  audioPath: chunk.path,
-                  chunkCount: chunks.length,
-                  chunkIndex: index + 1,
-                  durationMs: chunk.durationMs,
-                  format: chunk.format,
-                  model: job.model,
-                  preprocessingMode: job.preprocessingMode,
-                  report,
-                  onActivity: async (activity) => {
-                    const progress =
-                      activity.stage === 'validating'
-                        ? chunkProgressStart + (chunkProgressEnd - chunkProgressStart) * 0.8
-                        : chunkProgressStart;
-                    await options.repository.updateActivity(job, {
-                      stage: activity.stage,
-                      progress,
-                      chunkIndex: index + 1,
-                      chunkCount: chunks.length,
-                      chunkStartMs: chunk.offsetMs,
-                      chunkEndMs: chunk.offsetMs + chunk.durationMs,
-                      ...(activity.networkAttempt === null
-                        ? {}
-                        : { networkAttempt: activity.networkAttempt }),
-                    });
-                    report.recordStep({
-                      name: `activity:${activity.stage}`,
-                      status: 'completed',
-                      metadata: {
-                        chunkIndex: index + 1,
-                        chunkCount: chunks.length,
-                        networkAttempt: activity.networkAttempt,
-                        progress: Math.round(progress),
-                      },
-                    });
-                  },
-                });
-              } catch (error) {
-                if (!(error instanceof AudioTranscriptionSplitRequiredError)) {
-                  throw error;
-                }
-                const qualityDegradation = error.reason === 'quality_degradation';
-                const splitReason = error.reason;
-                report.recordStep({
-                  name: qualityDegradation
-                    ? 'quality-degradation-detected'
-                    : 'consecutive-timeout-detected',
-                  status: 'completed',
-                  metadata: {
-                    chunkIndex: index + 1,
-                    chunkCount: chunks.length,
-                    primaryStartMs: chunk.primaryStartMs,
-                    primaryEndMs: chunk.primaryEndMs,
-                    reason: error.details?.issues[0]?.code ?? splitReason,
-                    ...(error.qualityMetrics ? { quality: error.qualityMetrics } : {}),
-                  },
-                });
-                if (job.preprocessingMode === 'direct') {
-                  throw new AudioTranscriptionProviderError(
-                    'DIRECT_AUDIO_REJECTED',
-                    '原音频连续超时或质量校验失败，请重新转写并启用 FFmpeg 预处理。',
-                    true,
-                    undefined,
-                    error.details,
-                  );
-                }
-                if (!canSplit) {
-                  throw new AudioTranscriptionProviderError(
-                    'INVALID_MODEL_OUTPUT',
-                    `第 ${index + 1}/${chunks.length} 个最小音频分块${qualityDegradation ? '仍出现明显文本退化' : '仍连续超时'}，请重新转写。`,
-                    true,
-                    undefined,
-                    error.details,
-                  );
-                }
-                await options.repository.updateActivity(job, {
-                  stage: 'splitting',
-                  progress: chunkProgressStart,
-                  chunkIndex: index + 1,
-                  chunkCount: chunks.length,
-                  chunkStartMs: chunk.offsetMs,
-                  chunkEndMs: chunk.offsetMs + chunk.durationMs,
-                });
-                const splitStartedAt = Date.now();
-                report.recordStep({
-                  name: 'split-chunk',
-                  status: 'started',
-                  metadata: {
-                    chunkIndex: index + 1,
-                    chunkCount: chunks.length,
-                    reason: splitReason,
-                  },
-                });
-                const children = await options.preprocessor.splitChunk(job, chunk);
-                chunks.splice(index, 1, ...children);
-                report.recordStep({
-                  name: 'split-chunk',
-                  status: 'completed',
-                  durationMs: Date.now() - splitStartedAt,
-                  metadata: {
-                    chunkIndex: index + 1,
-                    chunkCount: chunks.length,
-                    reason: splitReason,
-                    children: children.map((child, childIndex) => ({
-                      index: index + childIndex + 1,
-                      durationMs: child.durationMs,
-                      offsetMs: child.offsetMs,
-                      primaryStartMs: child.primaryStartMs,
-                      primaryEndMs: child.primaryEndMs,
-                    })),
-                  },
-                });
-                report.recordStep({
-                  name: 'retry-child-chunks',
-                  status: 'completed',
-                  metadata: {
-                    firstChildIndex: index + 1,
-                    chunkCount: chunks.length,
-                    reason: splitReason,
-                  },
-                });
-                continue;
-              }
-              results.push({ chunk, result });
-              await options.repository.updateActivity(job, {
-                stage: 'validating',
-                progress: chunkProgressEnd,
-                chunkIndex: index + 1,
-                chunkCount: chunks.length,
-                chunkStartMs: chunk.offsetMs,
-                chunkEndMs: chunk.offsetMs + chunk.durationMs,
-              });
-              index += 1;
-            }
-            return results;
-          },
-          (value) => ({
-            progress: 90,
-            chunkCount: value.length,
-            modelSegmentCount: value.reduce(
-              (total, item) => total + item.result.segments.length,
-              0,
-            ),
-          }),
-        );
-        return { chunkResults };
-      })
-      .addNode('validate-merge', async ({ chunkResults, job, report }) => {
-        const modelSegmentCount = chunkResults.reduce(
-          (total, item) => total + item.result.segments.length,
-          0,
-        );
-        const segments = await reportedStep(
-          report,
-          'validate-merge',
-          async () => {
-            const lastChunk = chunkResults.at(-1)?.chunk;
-            await options.repository.updateActivity(job, {
-              stage: 'merging',
-              progress: 90,
-              ...(lastChunk
-                ? {
-                    chunkIndex: chunkResults.length,
-                    chunkCount: chunkResults.length,
-                    chunkStartMs: lastChunk.offsetMs,
-                    chunkEndMs: lastChunk.offsetMs + lastChunk.durationMs,
-                  }
-                : {}),
-            });
-            return mergeChunkSegments(chunkResults, job.durationMs);
-          },
-          (value) => ({
-            progress: 90,
-            modelSegmentCount,
-            finalSegmentCount: value.length,
-            deduplicatedCount: Math.max(0, modelSegmentCount - value.length),
-            speakerCount: new Set(value.map((segment) => segment.speakerKey)).size,
-            businessRoles: Object.fromEntries(
-              [...new Set(value.map((segment) => segment.businessRole))].map((role) => [
-                role,
-                value.filter((segment) => segment.businessRole === role).length,
-              ]),
-            ),
-            emotions: Object.fromEntries(
-              [...new Set(value.map((segment) => segment.emotion))].map((emotion) => [
-                emotion,
-                value.filter((segment) => segment.emotion === emotion).length,
-              ]),
-            ),
-          }),
-        );
-        return { segments };
-      })
-      .addNode('publish', async ({ chunks, job, segments, report }) => {
-        await reportedStep(
-          report,
-          'publish',
-          async () => {
-            const lastChunk = chunks.at(-1);
-            await options.repository.updateActivity(job, {
-              stage: 'publishing',
-              progress: 95,
-              ...(lastChunk
-                ? {
-                    chunkIndex: chunks.length,
-                    chunkCount: chunks.length,
-                    chunkStartMs: lastChunk.offsetMs,
-                    chunkEndMs: lastChunk.offsetMs + lastChunk.durationMs,
-                  }
-                : {}),
-            });
-            await options.repository.publishTranscription(job, segments);
-          },
-          () => ({ progress: 100, segmentCount: segments.length }),
-        );
-        return {};
-      })
-      .addNode('cleanup', async ({ job, report }) => {
-        await reportedStep(
-          report,
-          'cleanup',
-          () => options.preprocessor.cleanup(job),
-          () => ({ progress: 100 }),
-        );
-        return {};
-      })
-      .addEdge(START, 'preprocess')
-      .addEdge('preprocess', 'transcribe')
-      .addEdge('transcribe', 'validate-merge')
-      .addEdge('validate-merge', 'publish')
-      .addEdge('publish', 'cleanup')
-      .addEdge('cleanup', END)
-      .compile();
-  }
+  constructor(private readonly options: WorkerOptions) {}
 
-  /** 重新排队中断任务后启动周期领取；重复调用不会创建第二个 timer。 */
+  /** 重新排队中断的 DashScope 任务后启动周期领取。 */
   async start(): Promise<void> {
     if (this.timer) return;
     this.stopping = false;
@@ -475,7 +105,7 @@ export class AudioTranscriptionWorker {
     void this.pump();
   }
 
-  /** 停止领取新任务并等待当前模型调用安全收敛。 */
+  /** 停止领取新任务并等待当前供应商调用安全收敛。 */
   async stop(): Promise<void> {
     this.stopping = true;
     if (this.timer) clearInterval(this.timer);
@@ -509,10 +139,7 @@ export class AudioTranscriptionWorker {
       kind: 'audio-transcription',
       name: 'EchoWave audio transcription',
       metadata: {
-        source: {
-          dataSource: job.dataSource,
-          ingestionRunId: job.ingestionRunId,
-        },
+        source: { dataSource: job.dataSource, ingestionRunId: job.ingestionRunId },
         audio: {
           audioFileId: job.audioFileId,
           title: job.title,
@@ -526,19 +153,27 @@ export class AudioTranscriptionWorker {
           revisionNo: job.revisionNo,
           preprocessingMode: job.preprocessingMode,
           model: job.model,
+          provider: job.provider,
+          language: AUDIO_TRANSCRIPTION_LANGUAGE,
         },
       },
     });
     try {
-      const result = await this.graph.invoke({ job, report });
+      const segments = await this.executeDashScope(job, report);
       const durationMs = Date.now() - startedAt;
       await report.finish({
         status: 'completed',
         metadata: {
           durationMs,
-          chunkCount: result.chunks.length,
-          segmentCount: result.segments.length,
-          speakerCount: new Set(result.segments.map((segment) => segment.speakerKey)).size,
+          networkChunkCount: 1,
+          diarizationObserved: true,
+          diarizationRequested: true,
+          language: AUDIO_TRANSCRIPTION_LANGUAGE,
+          responseGranularity: 'segment',
+          segmentationMode: 'speaker_turn',
+          speakerIdentityScope: 'recording',
+          displaySegmentCount: segments.length,
+          speakerCount: new Set(segments.map((segment) => segment.speakerKey)).size,
         },
       });
       console.info('Audio transcription completed', {
@@ -547,74 +182,153 @@ export class AudioTranscriptionWorker {
         revisionId: job.revisionId,
       });
     } catch (error) {
-      const known =
-        error instanceof AudioPreprocessingError ||
-        error instanceof AudioTranscriptionProviderError;
-      const code = known ? error.code : 'INTERNAL_ERROR';
-      const message = known ? error.message : '音频转写失败，请稍后重试。';
-      const retryable = known ? error.retryable : true;
-      const details = failureDetails(error);
-      const providerHttpStatus =
-        error instanceof AudioTranscriptionProviderError ? error.providerHttpStatus : undefined;
-      const persistenceStartedAt = Date.now();
-      report.recordStep({ name: 'persist-failure', status: 'started' });
-      let persistenceError: unknown;
-      try {
-        await this.options.repository.failTranscription(job, code, message, retryable, details);
-        report.recordStep({
-          name: 'persist-failure',
-          status: 'completed',
-          durationMs: Date.now() - persistenceStartedAt,
+      await this.finishFailure(job, report, error, startedAt);
+    }
+  }
+
+  /** 恢复或提交 DashScope 整文件任务并原子发布录音级 Speaker 段落。 */
+  private async executeDashScope(
+    job: ClaimedAudioTranscription,
+    report: AiExecutionRecorder,
+  ): Promise<TranscriptDraft[]> {
+    const { dashScope, ossStaging, repository, preprocessor } = this.options;
+    if (!ossStaging) {
+      throw new AudioTranscriptionProviderError(
+        'MODEL_UNAVAILABLE',
+        'DashScope 转写所需的 OSS 尚未完整配置。',
+        false,
+      );
+    }
+
+    let objectKey = job.providerArtifactKey;
+    let taskId = job.providerTaskId;
+    let submittedAt = job.providerSubmittedAt;
+    if (!taskId) {
+      if (!objectKey) {
+        const wholeFile = await reportedStep(report, 'preprocess-whole-file', async () => {
+          await repository.updateActivity(job, { stage: 'preprocessing', progress: 5 });
+          return preprocessor.createWholeFile(job);
         });
-      } catch (reason) {
-        persistenceError = reason;
-        report.recordStep({
-          name: 'persist-failure',
-          status: 'failed',
-          durationMs: Date.now() - persistenceStartedAt,
-        });
+        objectKey = await reportedStep(report, 'oss-staging-upload', () =>
+          ossStaging.upload(job.revisionId, wholeFile.path),
+        );
+        job.providerArtifactKey = objectKey;
+        await repository.recordProviderArtifact(job, objectKey);
       }
-      const cleanupStartedAt = Date.now();
-      report.recordStep({ name: 'cleanup-failure', status: 'started' });
-      try {
-        await this.options.preprocessor.cleanup(job);
-        report.recordStep({
-          name: 'cleanup-failure',
-          status: 'completed',
-          durationMs: Date.now() - cleanupStartedAt,
-        });
-      } catch {
-        report.recordStep({
-          name: 'cleanup-failure',
-          status: 'failed',
-          durationMs: Date.now() - cleanupStartedAt,
-        });
-      }
-      await report.finish({
-        status: 'failed',
-        error,
-        metadata: {
-          code,
-          retryable,
-          details,
-          durationMs: Date.now() - startedAt,
-          ...(providerHttpStatus === undefined ? {} : { providerHttpStatus }),
-          ...(persistenceError
-            ? {
-                failurePersistenceError:
-                  persistenceError instanceof Error ? persistenceError.name : 'UnknownError',
-              }
-            : {}),
-        },
-      });
-      console.error('Audio transcription failed', {
-        audioFileId: job.audioFileId,
-        code,
-        ...(providerHttpStatus === undefined ? {} : { providerHttpStatus }),
+      await repository.updateActivity(job, { stage: 'transcribing', progress: 15 });
+      taskId = await reportedStep(report, 'dashscope-submit', () =>
+        dashScope.submit(ossStaging.signedGetUrl(objectKey!), {
+          revisionId: job.revisionId,
+          durationMs: job.durationMs,
+        }),
+      );
+      submittedAt = new Date();
+      job.providerTaskId = taskId;
+      job.providerSubmittedAt = submittedAt;
+      await repository.recordProviderTask(job, taskId, submittedAt);
+    }
+    if (!submittedAt) {
+      throw new AudioTranscriptionProviderError(
+        'INVALID_MODEL_OUTPUT',
+        '已保存的 DashScope 任务缺少提交时间。',
+        true,
+      );
+    }
+
+    await repository.updateActivity(job, { stage: 'transcribing', progress: 35 });
+    const result = await reportedStep(report, 'dashscope-poll', () =>
+      dashScope.waitForResult(taskId!, submittedAt!, {
         revisionId: job.revisionId,
+        durationMs: job.durationMs,
+      }),
+    );
+    await repository.updateActivity(job, { stage: 'publishing', progress: 95 });
+    await reportedStep(report, 'publish', () =>
+      repository.publishTranscription(job, result.segments, {
+        language: AUDIO_TRANSCRIPTION_LANGUAGE,
+        diarizationRequested: true,
+        diarizationObserved: true,
+        responseGranularity: 'segment',
+        segmentationMode: 'speaker_turn',
+        speakerIdentityScope: 'recording',
+      }),
+    );
+    await this.cleanupProviderArtifact(job, report);
+    await preprocessor.cleanup(job);
+    return result.segments;
+  }
+
+  private async finishFailure(
+    job: ClaimedAudioTranscription,
+    report: AiExecutionRecorder,
+    error: unknown,
+    startedAt: number,
+  ): Promise<void> {
+    const known =
+      error instanceof AudioPreprocessingError || error instanceof AudioTranscriptionProviderError;
+    const code = known ? error.code : 'INTERNAL_ERROR';
+    const message = known ? error.message : '音频转写失败，请稍后重试。';
+    const retryable = known ? error.retryable : true;
+    const details = failureDetails(error);
+    const providerHttpStatus =
+      error instanceof AudioTranscriptionProviderError ? error.providerHttpStatus : undefined;
+    let persistenceError: unknown;
+    try {
+      await this.options.repository.failTranscription(job, code, message, retryable, details);
+      report.recordStep({ name: 'persist-failure', status: 'completed' });
+    } catch (reason) {
+      persistenceError = reason;
+      report.recordStep({ name: 'persist-failure', status: 'failed' });
+    }
+    try {
+      await this.options.preprocessor.cleanup(job);
+      report.recordStep({ name: 'cleanup-failure', status: 'completed' });
+    } catch {
+      report.recordStep({ name: 'cleanup-failure', status: 'failed' });
+    }
+    await this.cleanupProviderArtifact(job, report);
+    await report.finish({
+      status: 'failed',
+      error,
+      metadata: {
+        code,
         retryable,
+        details,
+        durationMs: Date.now() - startedAt,
+        ...(providerHttpStatus === undefined ? {} : { providerHttpStatus }),
+        ...(persistenceError
+          ? {
+              failurePersistenceError:
+                persistenceError instanceof Error ? persistenceError.name : 'UnknownError',
+            }
+          : {}),
+      },
+    });
+    console.error('Audio transcription failed', {
+      audioFileId: job.audioFileId,
+      code,
+      revisionId: job.revisionId,
+      retryable,
+    });
+    if (persistenceError) throw persistenceError;
+  }
+
+  /** 供应商任务终止后尽力清理 OSS；失败时保留对象键交给生命周期规则兜底。 */
+  private async cleanupProviderArtifact(
+    job: ClaimedAudioTranscription,
+    report: AiExecutionRecorder,
+  ): Promise<void> {
+    if (!job.providerArtifactKey || !this.options.ossStaging) return;
+    try {
+      await this.options.ossStaging.delete(job.providerArtifactKey);
+      await this.options.repository.clearProviderArtifact(job);
+      job.providerArtifactKey = null;
+      report.recordStep({ name: 'oss-staging-cleanup', status: 'completed' });
+    } catch {
+      report.recordStep({ name: 'oss-staging-cleanup', status: 'failed' });
+      console.warn('Failed to clean transient OSS transcription object', {
+        revisionId: job.revisionId,
       });
-      if (persistenceError) throw persistenceError;
     }
   }
 }

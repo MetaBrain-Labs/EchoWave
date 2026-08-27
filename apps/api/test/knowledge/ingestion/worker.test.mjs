@@ -72,11 +72,11 @@ describe('knowledge ingestion execution diagnostics', () => {
           vectors: documents.map(() => Array(1024).fill(0.1)),
           tokens: 9,
           provider: 'test-provider',
-          model: 'qwen/qwen3-embedding-8b',
-          estimatedCostUsd: 0.00000009,
+          model: 'qwen3.7-text-embedding',
+          estimatedCost: { amount: 0.0000045, currency: 'CNY' },
         }),
       },
-      embeddingModel: 'qwen/qwen3-embedding-8b',
+      embeddingModel: 'qwen3.7-text-embedding',
       uploadTempDirectory: directory,
       reporter,
     });
@@ -129,7 +129,7 @@ describe('knowledge ingestion execution diagnostics', () => {
           throw new Error('provider unavailable');
         },
       },
-      embeddingModel: 'qwen/qwen3-embedding-8b',
+      embeddingModel: 'qwen3.7-text-embedding',
       uploadTempDirectory: directory,
       reporter,
     });
@@ -176,11 +176,11 @@ describe('knowledge ingestion execution diagnostics', () => {
           vectors: documents.map(() => Array(1024).fill(0.1)),
           tokens: 9,
           provider: 'test-provider',
-          model: 'qwen/qwen3-embedding-8b',
-          estimatedCostUsd: 0.00000009,
+          model: 'qwen3.7-text-embedding',
+          estimatedCost: { amount: 0.0000045, currency: 'CNY' },
         }),
       },
-      embeddingModel: 'qwen/qwen3-embedding-8b',
+      embeddingModel: 'qwen3.7-text-embedding',
       uploadTempDirectory: directory,
       reporter,
     });

@@ -15,7 +15,7 @@ import path from 'node:path';
 
 import { parseBuffer } from 'music-metadata';
 
-import type {
+import {
   DataSourceCreateRequest,
   DataSourceAudioUploadResponse,
   DataSourceGroupLinkRequest,
@@ -286,19 +286,27 @@ export class DefaultWorkspaceService implements WorkspaceService {
     return this.audioInputPreprocessor.capabilities();
   }
   async startAudioTranscription(id: string, input: AudioTranscriptionStartRequest) {
-    if (
-      input.preprocessing === 'ffmpeg' &&
-      !(await this.audioInputPreprocessor.refreshFfmpegAvailability())
-    ) {
+    const model = input.model ?? this.audioTranscriptionModel;
+    if (!(await this.audioInputPreprocessor.refreshFfmpegAvailability())) {
       throw new WorkspaceRepositoryError(
         'TRANSCODER_UNAVAILABLE',
-        'FFmpeg 当前不可用，请取消预处理后直接转写。',
+        'FFmpeg 当前不可用，无法生成说话人分离所需的单声道整文件。',
+      );
+    }
+    const refreshedCapability = this.audioInputPreprocessor
+      .capabilities()
+      .models.find((candidate) => candidate.id === model)!;
+    if (!refreshedCapability.available) {
+      throw new WorkspaceRepositoryError(
+        'CONFLICT',
+        refreshedCapability.unavailableReason ?? '所选转写模型当前不可用。',
       );
     }
     return await this.audioAnalysisRepository.queueTranscription(
       id,
-      input.model ?? this.audioTranscriptionModel,
-      input.preprocessing,
+      model,
+      input.preprocessing ?? 'whole_file',
+      input.segmentationMode ?? 'speaker_turn',
     );
   }
   getAudioAnalysis(id: string) {

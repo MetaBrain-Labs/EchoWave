@@ -8,8 +8,7 @@
  */
 export class WorkspaceRepositoryError extends Error {
   constructor(
-    public readonly code:
-      'CONFLICT' | 'DIRECT_AUDIO_REJECTED' | 'NOT_FOUND' | 'TRANSCODER_UNAVAILABLE',
+    public readonly code: 'CONFLICT' | 'NOT_FOUND' | 'TRANSCODER_UNAVAILABLE',
     message: string,
   ) {
     super(message);

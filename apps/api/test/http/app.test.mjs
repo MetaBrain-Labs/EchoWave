@@ -116,11 +116,7 @@ describe('workspace routes', () => {
       defaultModel: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
       models: AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
       ffmpeg: { configured: true, available: true },
-      direct: {
-        maxBytes: 209_715_200,
-        maxDurationMs: 45_000,
-        formats: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'webm'],
-      },
+      transcriptionConfigured: true,
     }),
     startAudioTranscription: async (id, input) => {
       startedTranscriptionInput = { id, input };
@@ -270,12 +266,15 @@ describe('workspace routes', () => {
     const response = await workspaceApp.request(`/api/audio-files/${groupId}/transcriptions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'openai/gpt-transcribe', preprocessing: 'direct' }),
+      body: JSON.stringify({}),
     });
     assert.equal(response.status, 202);
     assert.deepEqual(startedTranscriptionInput, {
       id: groupId,
-      input: { model: 'openai/gpt-transcribe', preprocessing: 'direct' },
+      input: {
+        preprocessing: 'whole_file',
+        segmentationMode: 'speaker_turn',
+      },
     });
     assert.deepEqual(await response.json(), {
       audioFileId: groupId,
@@ -287,8 +286,8 @@ describe('workspace routes', () => {
     assert.equal(capabilities.status, 200);
     const capabilityBody = await capabilities.json();
     assert.equal(capabilityBody.ffmpeg.available, true);
-    assert.equal(capabilityBody.defaultModel, 'x-ai/grok-stt-1.0');
-    assert.equal(capabilityBody.models.length, 5);
+    assert.equal(capabilityBody.defaultModel, 'qwen-audio-3.0-asr-flash-filetrans');
+    assert.equal(capabilityBody.models.length, 1);
 
     const invalid = await workspaceApp.request(`/api/audio-files/${groupId}/transcriptions`, {
       method: 'POST',
@@ -300,7 +299,7 @@ describe('workspace routes', () => {
     const invalidModel = await workspaceApp.request(`/api/audio-files/${groupId}/transcriptions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'unknown/model', preprocessing: 'direct' }),
+      body: JSON.stringify({ model: 'unknown/model', preprocessing: 'whole_file' }),
     });
     assert.equal(invalidModel.status, 400);
   });
@@ -323,7 +322,7 @@ describe('workspace routes', () => {
     const response = await unavailableApp.request(`/api/audio-files/${groupId}/transcriptions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ preprocessing: 'ffmpeg' }),
+      body: JSON.stringify({ preprocessing: 'whole_file' }),
     });
 
     assert.equal(response.status, 503);

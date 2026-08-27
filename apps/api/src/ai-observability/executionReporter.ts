@@ -75,7 +75,7 @@ export type AiModelCallEvent = {
   durationMs?: number;
   inputTokens?: number;
   outputTokens?: number;
-  estimatedCostUsd?: number;
+  estimatedCost?: { amount: number; currency: 'CNY' | 'USD' };
   metadata?: Record<string, unknown>;
 };
 

@@ -11,11 +11,7 @@
  * - 分析与接入配置只读，不进入创建或更新请求。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type {
-  AudioTranscriptionModel,
-  AudioTranscriptionModelCapability,
-  GroupSummary,
-} from '@echowave/contracts';
+import type { AudioTranscriptionModelCapability, GroupSummary } from '@echowave/contracts';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -49,6 +45,31 @@ type DataSourceFormSheetProps = {
   transcriptionModel?: string;
   visible: boolean;
 };
+
+const priceUnitLabels = {
+  million_tokens: '百万 tokens',
+  minute: '分钟',
+  second: '秒',
+  included: '已包含',
+} as const;
+
+function formatModelPrice(price: AudioTranscriptionModelCapability['pricing']['input']): string {
+  if (price.unit === 'included') return '已包含';
+  const symbol = price.currency === 'CNY' ? '¥' : '$';
+  return `${symbol}${price.amount}/${priceUnitLabels[price.unit]}`;
+}
+
+function timestampCapability(model: AudioTranscriptionModelCapability): string {
+  const granularity =
+    model.timestampGranularity === 'word'
+      ? '词级'
+      : model.timestampGranularity === 'segment'
+        ? '段级'
+        : 'Chunk 范围';
+  return model.timestampAvailability === 'best_effort'
+    ? `${granularity}（尽力返回）`
+    : `${granularity}（回退）`;
+}
 
 function ReadonlyItem({ label, value }: { label: string; value: string }) {
   return (
@@ -326,32 +347,24 @@ export function DataSourceConfirmDialog({
   );
 }
 
-/** 确认单次 ASR，并在服务端能力范围内选择 FFmpeg 或原文件直传。 */
+/** 确认唯一的 DashScope 整文件说话人分离转写。 */
 export function AudioTranscriptionConfirmDialog({
   audioTitle,
-  ffmpegAvailable,
-  ffmpegChecked,
   models,
   onCancel,
   onConfirm,
-  onToggleFfmpeg,
-  onSelectModel,
   pending,
   visible,
-  selectedModel,
 }: {
   audioTitle: string;
-  ffmpegAvailable: boolean;
-  ffmpegChecked: boolean;
   models: AudioTranscriptionModelCapability[];
   onCancel: () => void;
   onConfirm: () => void;
-  onToggleFfmpeg: () => void;
-  onSelectModel: (model: AudioTranscriptionModel) => void;
   pending: boolean;
   visible: boolean;
-  selectedModel: AudioTranscriptionModel;
 }) {
+  const selectedCapability = models[0];
+  const selectionAvailable = Boolean(selectedCapability?.available);
   return (
     <Modal animationType="fade" onRequestClose={onCancel} transparent visible={visible}>
       <View style={styles.dialogRoot}>
@@ -360,76 +373,66 @@ export function AudioTranscriptionConfirmDialog({
             开始 ASR 转写？
           </Text>
           <Text style={styles.dialogBody}>
-            将使用所选 STT 模型转写“{audioTitle}”。Speaker
-            与时间戳精度取决于模型实际返回；业务角色和情绪将标记为未知。
+            将通过 DashScope 官方接口整文件转写“{audioTitle}”。结果按说话人变化或明显停顿分段，
+            业务角色和情绪暂标记为未知。
           </Text>
+          <Text style={styles.transcriptionSectionTitle}>正文分段方式</Text>
+          <View style={[styles.segmentationOption, styles.selectedModelOption]}>
+            <Ionicons color={colors.ink} name="people-outline" size={22} />
+            <View style={styles.transcriptionOptionCopy}>
+              <Text style={styles.transcriptionOptionTitle}>按说话轮次</Text>
+              <Text style={styles.secondaryText}>说话人变化或明显停顿时开始新段</Text>
+            </View>
+          </View>
           <Text style={styles.transcriptionSectionTitle}>转写模型</Text>
-          {models.length === 0 ? (
+          {!selectedCapability ? (
             <Text accessibilityRole="alert" style={styles.directWarning}>
               转写模型目录加载失败，请关闭后重试。
             </Text>
-          ) : null}
-          <ScrollView style={styles.transcriptionModelList}>
-            {models.map((model) => {
-              const selected = model.id === selectedModel;
-              return (
-                <Pressable
-                  accessibilityLabel={`${model.displayName}，${model.description}`}
-                  accessibilityRole="radio"
-                  accessibilityState={{ checked: selected, disabled: pending }}
-                  disabled={pending}
-                  key={model.id}
-                  onPress={() => onSelectModel(model.id)}
-                  style={[styles.transcriptionModelOption, selected && styles.selectedModelOption]}
-                >
-                  <Ionicons
-                    color={selected ? colors.ink : textColors.tertiary}
-                    name={selected ? 'radio-button-on' : 'radio-button-off'}
-                    size={22}
-                  />
-                  <View style={styles.transcriptionOptionCopy}>
-                    <Text style={styles.transcriptionOptionTitle}>{model.displayName}</Text>
-                    <Text style={styles.secondaryText}>{model.description}</Text>
-                  </View>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-          <Pressable
-            accessibilityLabel="使用 FFmpeg 预处理"
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: ffmpegChecked, disabled: !ffmpegAvailable || pending }}
-            disabled={!ffmpegAvailable || pending}
-            onPress={onToggleFfmpeg}
-            style={[styles.transcriptionOption, !ffmpegAvailable && styles.disabledButton]}
-          >
-            <Ionicons
-              color={ffmpegAvailable ? textColors.primary : textColors.tertiary}
-              name={ffmpegChecked ? 'checkbox' : 'square-outline'}
-              size={24}
-            />
-            <View style={styles.transcriptionOptionCopy}>
-              <Text style={styles.transcriptionOptionTitle}>使用 FFmpeg 预处理</Text>
-              <Text style={styles.secondaryText}>
-                {ffmpegAvailable
-                  ? '转为统一 MP3 并对长音频分块，提高兼容性。'
-                  : 'FFmpeg 未配置或不可用，将直接发送原音频。'}
-              </Text>
+          ) : (
+            <View
+              accessibilityLabel={`${selectedCapability.displayName}，${selectedCapability.description}，输入${formatModelPrice(selectedCapability.pricing.input)}，输出${formatModelPrice(selectedCapability.pricing.output)}`}
+              style={[
+                styles.transcriptionModelOption,
+                styles.selectedModelOption,
+                !selectedCapability.available && styles.disabledButton,
+              ]}
+            >
+              <Ionicons color={colors.ink} name="hardware-chip-outline" size={22} />
+              <View style={styles.transcriptionOptionCopy}>
+                <Text style={styles.transcriptionOptionTitle}>
+                  {selectedCapability.displayName}
+                </Text>
+                <Text style={styles.secondaryText}>{selectedCapability.description}</Text>
+                <Text style={styles.transcriptionModelMeta}>
+                  价格（截至 {selectedCapability.pricing.asOf}）：输入{' '}
+                  {formatModelPrice(selectedCapability.pricing.input)} · 输出{' '}
+                  {formatModelPrice(selectedCapability.pricing.output)}
+                </Text>
+                <Text style={styles.transcriptionModelMeta}>
+                  时间戳：{timestampCapability(selectedCapability)} · Speaker：尽力分离
+                </Text>
+                <Text style={styles.transcriptionModelCapabilities}>
+                  {selectedCapability.notableCapabilities.join(' · ')}
+                </Text>
+                {!selectedCapability.available ? (
+                  <Text accessibilityRole="alert" style={styles.directWarning}>
+                    {selectedCapability.unavailableReason} 当前模式不会静默降级。
+                  </Text>
+                ) : null}
+              </View>
             </View>
-          </Pressable>
-          {!ffmpegChecked ? (
-            <Text accessibilityRole="alert" style={styles.directWarning}>
-              原音频将以 base64 直接发送；大文件可能被转写服务拒绝，失败后可勾选 FFmpeg 重新转写。
-            </Text>
-          ) : null}
+          )}
           <View style={styles.dialogActions}>
             <Pressable disabled={pending} onPress={onCancel} style={styles.dialogButton}>
               <Text style={styles.dialogButtonText}>取消</Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              accessibilityState={{ disabled: pending || models.length === 0 }}
-              disabled={pending || models.length === 0}
+              accessibilityState={{
+                disabled: pending || models.length === 0 || !selectionAvailable,
+              }}
+              disabled={pending || models.length === 0 || !selectionAvailable}
               onPress={onConfirm}
               style={[styles.dialogButton, styles.dialogConfirmButton]}
             >
@@ -587,9 +590,20 @@ const styles = StyleSheet.create({
     color: textColors.primary,
     fontFamily: fontFamilies.sansBold,
   },
+  segmentationOptions: { flexDirection: 'row', gap: spacing.sm },
+  segmentationOption: {
+    alignItems: 'flex-start',
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    padding: spacing.sm,
+  },
   transcriptionModelList: { maxHeight: 260 },
   transcriptionModelOption: {
-    alignItems: 'center',
+    alignItems: 'flex-start',
     borderColor: colors.divider,
     borderRadius: radii.default,
     borderWidth: 1,
@@ -599,6 +613,16 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
   },
   selectedModelOption: { borderColor: colors.ink, backgroundColor: colors.background },
+  transcriptionModelMeta: {
+    ...typography.label,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+  },
+  transcriptionModelCapabilities: {
+    ...typography.label,
+    color: textColors.tertiary,
+    fontFamily: fontFamilies.sans,
+  },
   dialogActions: { flexDirection: 'row', gap: spacing.sm, justifyContent: 'flex-end' },
   dialogButton: {
     borderColor: colors.divider,
