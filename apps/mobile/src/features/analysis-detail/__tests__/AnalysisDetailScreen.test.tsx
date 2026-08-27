@@ -18,7 +18,11 @@ import { setHideIrrelevantSegmentsPreference } from '../preferences';
 import * as workspaceApi from '@/shared/api/workspaceApi';
 import { analysisFixture } from '@/test/workspaceFixtures';
 
-jest.mock('@/shared/api/workspaceApi', () => ({ getAudioAnalysis: jest.fn() }));
+jest.mock('@/shared/api/workspaceApi', () => ({
+  getAudioAnalysis: jest.fn(),
+  startAudioEmotionAnalysis: jest.fn(),
+  startAudioRoleRecognition: jest.fn(),
+}));
 
 async function renderAnalysis(detailId = analysisFixture.audioFileId, onBack = jest.fn()) {
   const screen = render(<AnalysisDetailScreen detailId={detailId} onBack={onBack} />);
@@ -30,6 +34,105 @@ describe('AnalysisDetailScreen', () => {
   beforeEach(() => {
     setHideIrrelevantSegmentsPreference(false);
     jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValue(analysisFixture);
+    jest.mocked(workspaceApi.startAudioEmotionAnalysis).mockResolvedValue({
+      audioFileId: analysisFixture.audioFileId,
+      revisionId: '50000000-0000-4000-8000-000000000001',
+      jobId: '90000000-0000-4000-8000-000000000001',
+      type: 'emotion',
+      status: 'queued',
+    });
+    jest.mocked(workspaceApi.startAudioRoleRecognition).mockResolvedValue({
+      audioFileId: analysisFixture.audioFileId,
+      revisionId: '50000000-0000-4000-8000-000000000001',
+      jobId: '90000000-0000-4000-8000-000000000002',
+      type: 'role',
+      status: 'queued',
+    });
+  });
+
+  it('confirms and starts the two post-analysis tasks independently', async () => {
+    const screen = await renderAnalysis();
+
+    fireEvent.press(screen.getByRole('button', { name: '情绪分析' }));
+    expect(screen.getByText('开始情绪分析？')).toBeTruthy();
+    expect(screen.getByText(/Qwen3.5-Omni-Flash/)).toBeTruthy();
+    fireEvent.press(screen.getByRole('button', { name: '确认' }));
+    await waitFor(() =>
+      expect(workspaceApi.startAudioEmotionAnalysis).toHaveBeenCalledWith(
+        analysisFixture.audioFileId,
+      ),
+    );
+
+    fireEvent.press(screen.getByRole('button', { name: '角色识别' }));
+    expect(screen.getByText('开始角色识别？')).toBeTruthy();
+    fireEvent.press(screen.getByRole('button', { name: '确认' }));
+    await waitFor(() =>
+      expect(workspaceApi.startAudioRoleRecognition).toHaveBeenCalledWith(
+        analysisFixture.audioFileId,
+      ),
+    );
+  });
+
+  it('shows independent task progress and keeps a failed task retryable', async () => {
+    jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValueOnce({
+      ...analysisFixture,
+      postAnalysis: {
+        emotion: {
+          state: 'running',
+          jobId: '90000000-0000-4000-8000-000000000001',
+          model: 'qwen3.5-omni-flash',
+          progress: 45,
+        },
+        role: {
+          state: 'failed',
+          jobId: '90000000-0000-4000-8000-000000000002',
+          model: 'deepseek-v4-flash',
+          code: 'INVALID_MODEL_OUTPUT',
+          message: '模型返回格式无效，请重试。',
+          retryable: true,
+        },
+      },
+    });
+    const screen = await renderAnalysis();
+
+    expect(screen.getByText('分析中 45%')).toBeTruthy();
+    expect(screen.getByText('模型返回格式无效，请重试。')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '重新识别' })).toBeTruthy();
+  });
+
+  it('opens the rich acoustic emotion details for a published segment', async () => {
+    jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValueOnce({
+      ...analysisFixture,
+      scenes: [
+        {
+          ...analysisFixture.scenes[0],
+          segments: [
+            {
+              ...analysisFixture.scenes[0].segments[0],
+              emotion: 'anxious',
+              emotionAnalysis: {
+                label: 'anxious',
+                confidence: 0.88,
+                attitude: 'hesitant',
+                arousal: 'high',
+                pace: 'fast',
+                volumeTrend: 'rising',
+                pitchVariation: 'high',
+                pausePattern: 'frequent',
+                vocalCues: ['breathing becomes faster'],
+                model: 'qwen3.5-omni-flash',
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const screen = await renderAnalysis();
+
+    fireEvent.press(screen.getByText('焦虑'));
+    expect(screen.getByText('情绪分析详情')).toBeTruthy();
+    expect(screen.getByText('88%')).toBeTruthy();
+    expect(screen.getByText(/breathing becomes faster/)).toBeTruthy();
   });
 
   it('renders transcript content and toggles invalid segments', async () => {
@@ -46,7 +149,7 @@ describe('AnalysisDetailScreen', () => {
     expect(screen.queryByText('已跳过 12 秒无效片段')).toBeNull();
   });
 
-  it('shows ASR roles and hides the empty summary page', async () => {
+  it('promotes the recognized role and labels its confidence', async () => {
     jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValueOnce({
       ...analysisFixture,
       summarySections: [],
@@ -60,6 +163,13 @@ describe('AnalysisDetailScreen', () => {
               speakerLabel: '销售',
               businessRole: '销售',
               emotion: 'neutral',
+              roleAnalysis: {
+                kind: 'sales',
+                label: '销售',
+                confidence: 0.92,
+                evidenceSegmentIds: [],
+                model: 'deepseek-v4-flash',
+              },
             },
           ],
         },
@@ -67,8 +177,9 @@ describe('AnalysisDetailScreen', () => {
     });
     const screen = await renderAnalysis();
 
-    expect(screen.getByText('Speaker 0')).toBeTruthy();
     expect(screen.getByText('销售')).toBeTruthy();
+    expect(screen.getByText('Speaker 0 · 角色置信度 92%')).toBeTruthy();
+    expect(screen.queryByText('Speaker 0')).toBeNull();
     expect(screen.getByText('平静')).toBeTruthy();
     expect(screen.queryByRole('tab', { name: '分析总结' })).toBeNull();
   });

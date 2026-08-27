@@ -113,10 +113,14 @@ export function GroupScreen({
   initialGroupId,
   initialTab,
   onOpenAudio,
+  onOpenKnowledge,
+  onOpenSource,
 }: {
   initialGroupId?: string;
   initialTab?: TabKey;
   onOpenAudio?: (id: string) => void;
+  onOpenKnowledge?: (id: string) => void;
+  onOpenSource?: (id: string) => void;
 }) {
   const [activeTab, setActiveTab] = useState<TabKey>(initialTab ?? 'audio');
   const [groups, setGroups] = useState<GroupSummary[]>([]);
@@ -532,6 +536,7 @@ export function GroupScreen({
                   error={knowledgeError}
                   knowledgeBases={visibleKnowledge}
                   loading={knowledgeLoading}
+                  onOpenKnowledge={(id) => onOpenKnowledge?.(id)}
                   onRetry={() => {
                     void loadKnowledgeBases(group.id);
                   }}
@@ -552,6 +557,7 @@ export function GroupScreen({
                   emptyMessage={searchEmpty || '当前分组还没有连接数据源'}
                   error={sourcesError}
                   loading={sourcesLoading}
+                  onOpenSource={(id) => onOpenSource?.(id)}
                   onRetry={() => {
                     void loadSources(group.id);
                   }}

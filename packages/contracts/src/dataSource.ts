@@ -32,6 +32,30 @@ export const DataSourceConnectionStatusSchema = z.enum([
 
 const DataSourceNameSchema = z.string().trim().min(1).max(120);
 const DataSourceDescriptionSchema = z.string().trim().max(1_000);
+export const CORE_BUSINESS_ROLES = ['销售', '客户', '其他', '未知'] as const;
+const CoreBusinessRoleSet = new Set<string>(CORE_BUSINESS_ROLES);
+
+/** 数据源可追加到核心业务角色后的自定义角色标签。 */
+export const CustomBusinessRolesSchema = z
+  .array(z.string().trim().min(1).max(24))
+  .max(16)
+  .transform((roles) => roles.map((role) => role.trim()))
+  .superRefine((roles, context) => {
+    const seen = new Set<string>();
+    roles.forEach((role, index) => {
+      if (CoreBusinessRoleSet.has(role)) {
+        context.addIssue({
+          code: 'custom',
+          path: [index],
+          message: '自定义角色不能与核心角色重复。',
+        });
+      }
+      if (seen.has(role)) {
+        context.addIssue({ code: 'custom', path: [index], message: '自定义角色不能重复。' });
+      }
+      seen.add(role);
+    });
+  });
 
 /** 创建本地手动上传数据源时允许客户端提交的字段。 */
 export const DataSourceCreateRequestSchema = z.object({
@@ -44,10 +68,17 @@ export const DataSourceUpdateRequestSchema = z
   .object({
     name: DataSourceNameSchema.optional(),
     description: DataSourceDescriptionSchema.optional(),
+    customBusinessRoles: CustomBusinessRolesSchema.optional(),
   })
-  .refine((value) => value.name !== undefined || value.description !== undefined, {
-    message: '至少提供一个需要更新的字段。',
-  });
+  .refine(
+    (value) =>
+      value.name !== undefined ||
+      value.description !== undefined ||
+      value.customBusinessRoles !== undefined,
+    {
+      message: '至少提供一个需要更新的字段。',
+    },
+  );
 
 /** 批量关联活动分组的请求。 */
 export const DataSourceGroupLinkRequestSchema = z.object({
@@ -86,6 +117,7 @@ export const DataSourceAnalysisSettingsSchema = z.object({
   speakerDiarization: z.boolean(),
   sceneSegmentation: z.boolean(),
   skipInvalidAudio: z.boolean(),
+  customBusinessRoles: CustomBusinessRolesSchema.default([]),
 });
 
 export const DataSourceDetailSchema = DataSourceSummarySchema.extend({

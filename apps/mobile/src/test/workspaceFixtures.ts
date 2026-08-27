@@ -178,6 +178,7 @@ export const dataSourceDetailFixture: DataSourceDetail = {
     speakerDiarization: true,
     sceneSegmentation: true,
     skipInvalidAudio: true,
+    customBusinessRoles: [],
   },
 };
 
@@ -241,6 +242,10 @@ export const analysisFixture: AudioAnalysisDetail = {
     segmentationMode: 'speaker_turn',
     speakerIdentityScope: 'recording',
   },
+  postAnalysis: {
+    emotion: { state: 'idle' },
+    role: { state: 'idle' },
+  },
   invalidSegments: [
     {
       id: 'a0000000-0000-4000-8000-000000000001',
@@ -263,6 +268,8 @@ export const analysisFixture: AudioAnalysisDetail = {
           speakerLabel: '主持人',
           businessRole: '主持人',
           emotion: '专注',
+          roleAnalysis: null,
+          emotionAnalysis: null,
           startMs: 0,
           endMs: 28_000,
           text: '今天想和你聊聊最近使用团队音频整理工具的体验。先从日常工作开始，你通常会在什么场景下记录和回听访谈？',
@@ -280,6 +287,8 @@ export const analysisFixture: AudioAnalysisDetail = {
           speakerLabel: '我',
           businessRole: '客户',
           emotion: '平静',
+          roleAnalysis: null,
+          emotionAnalysis: null,
           startMs: 29_000,
           endMs: 71_000,
           text: '最常见的是用户访谈和每周复盘。我会先完整录音，结束后再回听并整理重点，但在很长的录音里寻找关键内容会花不少时间。',

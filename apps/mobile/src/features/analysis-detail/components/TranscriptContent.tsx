@@ -30,6 +30,10 @@ const emotionLabels: Record<string, string> = {
   sad: '悲伤',
   anxious: '焦虑',
   excited: '兴奋',
+  impatient: '不耐烦',
+  frustrated: '沮丧',
+  sarcastic: '讽刺',
+  other: '其他',
   unknown: '未知',
 };
 
@@ -50,26 +54,40 @@ function FilterButton({ label }: { label: string }) {
 function SegmentView({
   dimmed,
   onOpenAiTag,
+  onOpenEmotion,
   segment,
   speakerDisplayName,
 }: {
   dimmed: boolean;
   onOpenAiTag: (segment: TranscriptSegment) => void;
+  onOpenEmotion: (segment: TranscriptSegment) => void;
   segment: TranscriptSegment;
   speakerDisplayName: string;
 }) {
+  const identifiedRole = segment.roleAnalysis;
+  const primaryIdentity = identifiedRole?.label ?? speakerDisplayName;
+  const secondaryIdentity = identifiedRole
+    ? `${speakerDisplayName} · 角色置信度 ${Math.round(identifiedRole.confidence * 100)}%`
+    : segment.businessRole === 'unknown'
+      ? '角色未知'
+      : segment.businessRole;
+
   return (
     <View style={styles.segment}>
       <View style={styles.segmentMain}>
         <View style={styles.speakerRow}>
-          <Text style={[styles.speakerName, dimmed && styles.dimmedText]}>
-            {speakerDisplayName}
-          </Text>
+          <Text style={[styles.speakerName, dimmed && styles.dimmedText]}>{primaryIdentity}</Text>
           <Text style={[styles.businessRole, dimmed && styles.dimmedText]}>
-            {segment.businessRole === 'unknown' ? '角色未知' : segment.businessRole}
+            {secondaryIdentity}
           </Text>
         </View>
-        <View style={styles.emotionRow}>
+        <Pressable
+          accessibilityLabel={segment.emotionAnalysis ? '查看情绪分析详情' : '情绪尚未分析'}
+          accessibilityRole={segment.emotionAnalysis ? 'button' : 'text'}
+          disabled={!segment.emotionAnalysis}
+          onPress={() => onOpenEmotion(segment)}
+          style={styles.emotionRow}
+        >
           <Ionicons
             color={dimmed ? colors.muted : colors.secondary}
             name="happy-outline"
@@ -78,7 +96,10 @@ function SegmentView({
           <Text style={[styles.emotionText, dimmed && styles.dimmedText]}>
             {emotionLabels[segment.emotion] ?? segment.emotion}
           </Text>
-        </View>
+          {segment.emotionAnalysis ? (
+            <Ionicons color={colors.secondary} name="chevron-forward" size={16} />
+          ) : null}
+        </Pressable>
         <Text style={[styles.transcriptText, dimmed && styles.dimmedText]}>{segment.text}</Text>
         <Text style={styles.segmentTime}>
           {formatTime(segment.startSeconds)} – {formatTime(segment.endSeconds)}
@@ -112,11 +133,13 @@ export function TranscriptContent({
   detail,
   hideIrrelevant,
   onOpenAiTag,
+  onOpenEmotion,
   selectedSegmentId,
 }: {
   detail: AnalysisDetailView;
   hideIrrelevant: boolean;
   onOpenAiTag: (segment: TranscriptSegment) => void;
+  onOpenEmotion: (segment: TranscriptSegment) => void;
   selectedSegmentId?: string;
 }) {
   const [skipInvalid, setSkipInvalid] = useState(false);
@@ -215,6 +238,7 @@ export function TranscriptContent({
                   key={segment.id}
                   dimmed={hasSelectedSegment && segment.id !== selectedSegmentId}
                   onOpenAiTag={onOpenAiTag}
+                  onOpenEmotion={onOpenEmotion}
                   segment={segment}
                   speakerDisplayName={speakerDisplayNames.get(segment.speakerKey) ?? '发言'}
                 />

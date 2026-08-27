@@ -77,6 +77,8 @@ FFmpeg 是整文件转写的必需能力。配置 `FFMPEG_PATH` 后，API 启动
 
 按说话轮次分段使用北京地域 `qwen-audio-3.0-asr-flash-filetrans`。`DASHSCOPE_API_KEY` 和 `DASHSCOPE_BASE_URL` 始终必填，供知识库嵌入和转写复用；四项 `ALIYUN_OSS_*` 配置必须全部为空或全部配置，缺失时只禁用转写。服务端把本地权威音频转成单声道整文件后，临时上传到 `echowave/asr-staging/<tenant>/<revision>/`，使用 24 小时签名 GET URL 提交任务，并在成功或失败后尽力删除。OSS Bucket 必须另外配置该前缀的一天生命周期规则作为清理兜底。
 
+转写发布后可以独立启动情绪分析和角色识别。情绪分析固定使用北京地域 `qwen3.5-omni-flash`，通过 `DASHSCOPE_COMPATIBLE_BASE_URL` 的 OpenAI-compatible Chat Completions 接收短期 OSS 音频窗口；角色识别复用官方 DeepSeek `deepseek-v4-flash`。两类任务各自单并发运行并按 ASR revision 发布，失败或重跑不会修改转写，也不会清除上一次成功结果。情绪窗口使用 `echowave/emotion-staging/` 前缀，同样需要 Bucket 一天生命周期规则兜底。
+
 原音频直传支持 MP3、WAV、M4A、AAC、FLAC、OGG 和 WebM，但仅允许不超过 45 秒且不超过 200 MB 的音频；长音频必须启用 FFmpeg。base64 会使请求体增大约三分之一，供应商拒绝时应重新转写并勾选 FFmpeg，不会自动回退或覆盖旧结果。
 
 `apps/api/.env` 是 API 的唯一配置来源：启动时会直接读取并校验该文件，不合并系统环境变量，也不使用隐式默认值。移动端由 Expo CLI 自动加载 `apps/mobile/.env`，其中客户端可用变量必须以 `EXPO_PUBLIC_` 开头：
@@ -87,7 +89,7 @@ EXPO_PUBLIC_API_URL=http://localhost:3001
 
 `EXPO_PUBLIC_*` 会被写入客户端 bundle，不得放置密码、令牌或其他秘密。修改该文件后，需要在 Expo Go 中执行完整 Reload 才能确认新值已生效。详见 [Expo 环境变量文档](https://docs.expo.dev/guides/environment-variables/)。
 
-API 的 PostgreSQL 配置使用 `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_USER` 等分字段变量。RAG 嵌入要求 `DASHSCOPE_API_KEY`、北京地域业务空间 `DASHSCOPE_BASE_URL`、DeepSeek、固定开发租户与临时上传目录配置；音频转写额外要求完整 OSS 配置与 FFmpeg，字段清单见 `apps/api/.env.example`。Redis 字段仍仅作未来边界预留。
+API 的 PostgreSQL 配置使用 `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_USER` 等分字段变量。RAG 嵌入要求 `DASHSCOPE_API_KEY`、北京地域业务空间 `DASHSCOPE_BASE_URL`、DeepSeek、固定开发租户与临时上传目录配置；音频转写和情绪分析额外要求完整 OSS 配置与 FFmpeg，情绪分析还要求 `DASHSCOPE_COMPATIBLE_BASE_URL` 和固定的 `AUDIO_EMOTION_MODEL=qwen3.5-omni-flash`，字段清单见 `apps/api/.env.example`。Redis 字段仍仅作未来边界预留。
 
 ### 可选 AI 执行报告
 
@@ -227,6 +229,7 @@ pnpm check
 - PostgreSQL 数据源创建、编辑、软归档、分组关联/解除，以及本地批量音频上传与软归档
 - PostgreSQL 音频上传时间线和版本化分析结果查询纵切片
 - 数据源音频的后台 ASR、尽力而为的 Speaker 分离、实际响应时间戳及分块级实时进度
+- 基于 Qwen3.5-Omni 的逐片段声学情绪分析，以及基于 DeepSeek 的录音级说话人业务角色识别
 - DeepSeek + DeepAgents 知识问答、无证据拒答与短会话 checkpoint
 - 可选的知识问答、入库与音频转写 Markdown 执行诊断报告
 - 移动端知识库列表、文档/块详情、上传、动态问答反馈、最近六轮只读历史和可返回聊天的引用跳转
@@ -235,6 +238,6 @@ pnpm check
 
 ## 当前边界
 
-本里程碑不包含真实鉴权、转写后的二阶段摘要/标签分析、数据源同步、Redis、权威音频对象存储迁移、OCR、PDF、旧版 Office、多 API 实例部署或 EAS Build。OSS 只用于 DashScope 单次任务的短期中转；手动上传音频仍保存在 `AUDIO_STORAGE_DIR` 指定的单机持久化目录。知识入库与音频转写 worker 均与 API 同进程，本地文件模式仅支持单 API 实例，横向扩容前必须迁移到权威对象存储和独立 worker。详见 [文档索引](./docs/README.md) 与 [架构说明](./docs/architecture.md)。
+本里程碑不包含真实鉴权、正文编辑确认、意图分析、业务总结、情绪融合评分、精确声学数值测量、数据源同步、Redis、权威音频对象存储迁移、OCR、PDF、旧版 Office、多 API 实例部署或 EAS Build。OSS 只用于 DashScope 单次任务的短期中转；手动上传音频仍保存在 `AUDIO_STORAGE_DIR` 指定的单机持久化目录。知识入库、音频转写及两类后处理 worker 均与 API 同进程，本地文件模式仅支持单 API 实例，横向扩容前必须迁移到权威对象存储和独立 worker。详见 [文档索引](./docs/README.md) 与 [架构说明](./docs/architecture.md)。
 
 在 Windows 上无法运行 iOS Simulator；iOS 本轮通过 Expo bundle 导出、TypeScript 检查和应用配置校验，最终原生运行验收需在 macOS/Xcode 环境完成。

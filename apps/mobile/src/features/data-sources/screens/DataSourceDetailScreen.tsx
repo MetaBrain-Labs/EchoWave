@@ -311,7 +311,7 @@ function OverviewContent({
         />
         <InfoRow
           icon="people-outline"
-          label="角色分离"
+          label="说话人分离"
           value={source.roleSeparation ? '已开启' : '未开启'}
         />
         <InfoRow
@@ -904,7 +904,11 @@ export function DataSourceDetailScreen({
       />
       <DataSourceFormSheet
         error={formError}
-        initialValue={{ name: source.name, description: source.description }}
+        initialValue={{
+          name: source.name,
+          description: source.description,
+          customBusinessRoles: source.customBusinessRoles,
+        }}
         mode="edit"
         onClose={() => {
           if (!saving) setEditVisible(false);

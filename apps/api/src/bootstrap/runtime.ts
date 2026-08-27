@@ -25,11 +25,16 @@ import { KnowledgeRepository } from '../knowledge/persistence/knowledgeRepositor
 import { DefaultKnowledgeService } from '../knowledge/service.ts';
 import { WorkspaceRepository } from '../workspace/persistence/workspaceRepository.ts';
 import { AudioAnalysisRepository } from '../workspace/persistence/audioAnalysisRepository.ts';
+import { PostAnalysisRepository } from '../workspace/persistence/postAnalysisRepository.ts';
 import { DefaultWorkspaceService } from '../workspace/service.ts';
 import { AudioInputPreprocessor } from '../workspace/transcription/audioPreprocessor.ts';
 import { DashScopeFileTranscription } from '../workspace/transcription/dashScopeFileTranscription.ts';
 import { OssStagingStore } from '../workspace/transcription/ossStagingStore.ts';
 import { AudioTranscriptionWorker } from '../workspace/transcription/worker.ts';
+import { AudioWindowPreprocessor } from '../workspace/post-analysis/audioWindowPreprocessor.ts';
+import { DeepSeekRoleRecognizer } from '../workspace/post-analysis/deepSeekRoleRecognizer.ts';
+import { QwenEmotionAnalyzer } from '../workspace/post-analysis/qwenEmotionAnalyzer.ts';
+import { AudioPostAnalysisWorker } from '../workspace/post-analysis/worker.ts';
 
 /** 装配完整 RAG 运行时，并返回服务器所需的应用接口、worker 与关闭函数。 */
 export function createRagRuntime(config: ApiConfig) {
@@ -60,6 +65,11 @@ export function createRagRuntime(config: ApiConfig) {
     config.rag.tenantId,
   );
   const audioAnalysisRepository = new AudioAnalysisRepository(
+    pool,
+    config.database.schema,
+    config.rag.tenantId,
+  );
+  const postAnalysisRepository = new PostAnalysisRepository(
     pool,
     config.database.schema,
     config.rag.tenantId,
@@ -115,6 +125,10 @@ export function createRagRuntime(config: ApiConfig) {
     audioAnalysisRepository,
     config.rag.audioTranscriptionModel,
     audioInputPreprocessor,
+    postAnalysisRepository,
+    config.rag.audioEmotionModel,
+    config.rag.deepSeekChatModel,
+    Boolean(config.rag.dashScope.oss),
   );
   const dashScope = new DashScopeFileTranscription(
     config.rag.dashScope.apiKey,
@@ -140,15 +154,45 @@ export function createRagRuntime(config: ApiConfig) {
     reporter: executionReporter,
     ...(ossStaging ? { ossStaging } : {}),
   });
+  const audioWindowPreprocessor = new AudioWindowPreprocessor({
+    audioStorageDirectory: config.rag.audioStorageDir,
+    tempDirectory: config.rag.audioTranscriptionTempDir,
+    ...(config.rag.ffmpegPath ? { ffmpegPath: config.rag.ffmpegPath } : {}),
+  });
+  const emotionWorker = new AudioPostAnalysisWorker({
+    type: 'emotion',
+    repository: postAnalysisRepository,
+    preprocessor: audioWindowPreprocessor,
+    reporter: executionReporter,
+    emotionAnalyzer: new QwenEmotionAnalyzer({
+      apiKey: config.rag.dashScope.apiKey,
+      baseUrl: config.rag.dashScope.compatibleBaseUrl,
+      model: config.rag.audioEmotionModel,
+    }),
+    ...(ossStaging ? { ossStaging } : {}),
+  });
+  const roleWorker = new AudioPostAnalysisWorker({
+    type: 'role',
+    repository: postAnalysisRepository,
+    reporter: executionReporter,
+    roleRecognizer: new DeepSeekRoleRecognizer({
+      apiKey: config.rag.deepSeekApiKey,
+      baseUrl: config.rag.deepSeekBaseUrl,
+      model: config.rag.deepSeekChatModel,
+    }),
+  });
   return {
     service,
     workspaceService,
     worker,
     transcriptionWorker,
+    emotionWorker,
+    roleWorker,
     audioInputPreprocessor,
     async close() {
       await answers.dispose();
       await transcriptionWorker.stop();
+      await Promise.all([emotionWorker.stop(), roleWorker.stop()]);
       await worker.stop();
       await checkpointer.end();
       await pool.end();

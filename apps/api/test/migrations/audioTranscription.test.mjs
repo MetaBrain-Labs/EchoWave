@@ -39,6 +39,10 @@ const officialProvidersMigration = await readFile(
   new URL('../../migrations/011_dashscope_official_providers.sql', import.meta.url),
   'utf8',
 );
+const postAnalysisMigration = await readFile(
+  new URL('../../migrations/012_audio_post_analysis.sql', import.meta.url),
+  'utf8',
+);
 
 describe('audio transcription migration', () => {
   it('adds business roles and prevents concurrent active revisions', () => {
@@ -109,5 +113,15 @@ describe('audio transcription migration', () => {
       /RENAME COLUMN embedding_cost_usd TO embedding_cost_amount/,
     );
     assert.match(officialProvidersMigration, /DEFAULT 'USD'/);
+  });
+
+  it('adds independently versioned emotion and role analysis jobs', () => {
+    assert.match(postAnalysisMigration, /CREATE TABLE audio_post_analysis_jobs/);
+    assert.match(postAnalysisMigration, /analysis_type IN \('emotion', 'role'\)/);
+    assert.match(postAnalysisMigration, /audio_post_analysis_single_running_idx/);
+    assert.match(postAnalysisMigration, /CREATE TABLE segment_emotion_results/);
+    assert.match(postAnalysisMigration, /CREATE TABLE speaker_role_results/);
+    assert.match(postAnalysisMigration, /active_emotion_job_id/);
+    assert.match(postAnalysisMigration, /active_role_job_id/);
   });
 });

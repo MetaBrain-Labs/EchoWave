@@ -25,12 +25,14 @@ export function KnowledgeContent({
   emptyMessage,
   knowledgeBases,
   loading,
+  onOpenKnowledge,
   onRetry,
 }: {
   error: string;
   emptyMessage: string;
   knowledgeBases: KnowledgeBaseSummary[];
   loading: boolean;
+  onOpenKnowledge: (knowledgeId: string) => void;
   onRetry: () => void;
 }) {
   if (loading) {
@@ -55,7 +57,13 @@ export function KnowledgeContent({
       </Text>
       {knowledgeBases.length ? (
         knowledgeBases.map((knowledgeBase) => (
-          <View key={knowledgeBase.id} style={styles.card}>
+          <Pressable
+            accessibilityLabel={`打开知识库：${knowledgeBase.name}`}
+            accessibilityRole="button"
+            key={knowledgeBase.id}
+            onPress={() => onOpenKnowledge(knowledgeBase.id)}
+            style={({ pressed }) => [styles.card, pressed && styles.pressed]}
+          >
             <View style={styles.titleRow}>
               <Ionicons
                 color={colors.ink}
@@ -63,6 +71,7 @@ export function KnowledgeContent({
                 size={typography.heading3.lineHeight}
               />
               <Text style={styles.cardTitle}>{knowledgeBase.name}</Text>
+              <Ionicons color={colors.secondary} name="chevron-forward" size={20} />
             </View>
             <Text numberOfLines={2} style={styles.description}>
               {knowledgeBase.description}
@@ -71,7 +80,7 @@ export function KnowledgeContent({
             <Text style={styles.metaText}>
               更新于 {new Date(knowledgeBase.updatedAt).toLocaleDateString()}
             </Text>
-          </View>
+          </Pressable>
         ))
       ) : (
         <View style={styles.emptyState}>
@@ -124,6 +133,7 @@ const styles = StyleSheet.create({
   cardTitle: {
     ...typography.heading2,
     color: textColors.primary,
+    flex: 1,
     flexShrink: 1,
     fontFamily: fontFamilies.sansBold,
     fontWeight: 'bold',
@@ -144,5 +154,8 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sans,
     marginBottom: spacing.sm,
     marginTop: spacing.md,
+  },
+  pressed: {
+    opacity: 0.65,
   },
 });

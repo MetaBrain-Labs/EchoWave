@@ -23,12 +23,14 @@ export function DataSourcesContent({
   error,
   emptyMessage,
   loading,
+  onOpenSource,
   onRetry,
   sources,
 }: {
   error: string;
   emptyMessage: string;
   loading: boolean;
+  onOpenSource: (sourceId: string) => void;
   onRetry: () => void;
   sources: DataSourceSummary[];
 }) {
@@ -54,7 +56,13 @@ export function DataSourcesContent({
       </Text>
       {sources.length ? (
         sources.map((source) => (
-          <View key={source.id} style={styles.card}>
+          <Pressable
+            accessibilityLabel={`打开数据源：${source.name}`}
+            accessibilityRole="button"
+            key={source.id}
+            onPress={() => onOpenSource(source.id)}
+            style={({ pressed }) => [styles.card, pressed && styles.pressed]}
+          >
             <View style={styles.sourceTitleRow}>
               <View style={styles.titleRow}>
                 <Ionicons
@@ -64,8 +72,11 @@ export function DataSourcesContent({
                 />
                 <Text style={styles.cardTitle}>{source.name}</Text>
               </View>
-              <View style={styles.connectedBadge}>
-                <Text style={styles.connectedText}>已连接</Text>
+              <View style={styles.cardActions}>
+                <View style={styles.connectedBadge}>
+                  <Text style={styles.connectedText}>已连接</Text>
+                </View>
+                <Ionicons color={colors.secondary} name="chevron-forward" size={20} />
               </View>
             </View>
             <Text numberOfLines={2} style={styles.description}>
@@ -76,7 +87,7 @@ export function DataSourcesContent({
               最近上传{' '}
               {source.lastUploadedAt ? new Date(source.lastUploadedAt).toLocaleString() : '暂无'}
             </Text>
-          </View>
+          </Pressable>
         ))
       ) : (
         <View style={styles.emptyState}>
@@ -128,6 +139,11 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sansBold,
     fontWeight: 'bold',
   },
+  cardActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
   metaText: {
     ...typography.label,
     color: textColors.tertiary,
@@ -135,6 +151,7 @@ const styles = StyleSheet.create({
   },
   titleRow: {
     alignItems: 'center',
+    flex: 1,
     flexDirection: 'row',
     gap: spacing.sm,
   },
@@ -162,5 +179,8 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sans,
     marginBottom: spacing.sm,
     marginTop: spacing.md,
+  },
+  pressed: {
+    opacity: 0.65,
   },
 });

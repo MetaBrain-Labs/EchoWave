@@ -54,6 +54,14 @@ export class OssStagingStore {
     return objectKey;
   }
 
+  /** 上传后置情绪分析窗口，使用独立前缀便于生命周期审计和清理。 */
+  async uploadEmotionWindow(jobId: string, filePath: string): Promise<string> {
+    const extension = path.extname(filePath).toLowerCase() || '.mp3';
+    const objectKey = `echowave/emotion-staging/${this.config.tenantId}/${jobId}/${randomUUID()}${extension}`;
+    await this.client.put(objectKey, filePath);
+    return objectKey;
+  }
+
   /** 为已上传对象生成 24 小时 GET 签名地址。 */
   signedGetUrl(objectKey: string): string {
     return this.client.signatureUrl(objectKey, {

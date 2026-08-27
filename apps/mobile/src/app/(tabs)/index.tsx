@@ -32,6 +32,22 @@ export default function GroupRoute() {
       onOpenAudio={(id) => {
         void runWithLoading(() => router.push({ pathname: '/analysis/[id]', params: { id } }));
       }}
+      onOpenKnowledge={(knowledgeId) => {
+        void runWithLoading(() =>
+          router.push({
+            pathname: '/knowledge/[knowledgeId]',
+            params: { knowledgeId },
+          }),
+        );
+      }}
+      onOpenSource={(sourceId) => {
+        void runWithLoading(() =>
+          router.push({
+            pathname: '/sources/[sourceId]',
+            params: { sourceId },
+          }),
+        );
+      }}
     />
   );
 }

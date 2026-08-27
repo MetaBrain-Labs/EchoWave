@@ -11,7 +11,11 @@
  * - 分析与接入配置只读，不进入创建或更新请求。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { AudioTranscriptionModelCapability, GroupSummary } from '@echowave/contracts';
+import {
+  CORE_BUSINESS_ROLES,
+  type AudioTranscriptionModelCapability,
+  type GroupSummary,
+} from '@echowave/contracts';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -34,7 +38,11 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 
-export type DataSourceFormValue = { name: string; description: string };
+export type DataSourceFormValue = {
+  name: string;
+  description: string;
+  customBusinessRoles?: string[];
+};
 type DataSourceFormSheetProps = {
   error: string;
   initialValue: DataSourceFormValue;
@@ -92,10 +100,39 @@ function DataSourceFormSheetContent({
 }: DataSourceFormSheetProps) {
   const [name, setName] = useState(initialValue.name);
   const [description, setDescription] = useState(initialValue.description);
+  const [customBusinessRoles, setCustomBusinessRoles] = useState(
+    initialValue.customBusinessRoles ?? [],
+  );
+  const [roleDraft, setRoleDraft] = useState('');
+  const [roleError, setRoleError] = useState('');
 
   const trimmedName = name.trim();
   const submit = () => {
-    if (!pending && trimmedName) onSubmit({ name: trimmedName, description: description.trim() });
+    if (!pending && trimmedName)
+      onSubmit({
+        name: trimmedName,
+        description: description.trim(),
+        ...(mode === 'edit' ? { customBusinessRoles } : {}),
+      });
+  };
+  const addRole = () => {
+    const role = roleDraft.trim();
+    if (!role) return;
+    if (CORE_BUSINESS_ROLES.includes(role as (typeof CORE_BUSINESS_ROLES)[number])) {
+      setRoleError('核心角色已默认包含，无需重复添加。');
+      return;
+    }
+    if (customBusinessRoles.includes(role)) {
+      setRoleError('该自定义角色已存在。');
+      return;
+    }
+    if (customBusinessRoles.length >= 16) {
+      setRoleError('每个数据源最多添加 16 个自定义角色。');
+      return;
+    }
+    setCustomBusinessRoles((roles) => [...roles, role]);
+    setRoleDraft('');
+    setRoleError('');
   };
 
   return (
@@ -158,6 +195,54 @@ function DataSourceFormSheetContent({
             <Text style={styles.sectionTitle}>音频分析</Text>
             <ReadonlyItem label="转写模型" value={transcriptionModel ?? '由服务端配置'} />
             <ReadonlyItem label="分析设置" value="默认开启" />
+            {mode === 'edit' ? (
+              <View>
+                <Text style={styles.fieldLabel}>业务角色字典</Text>
+                <Text style={styles.roleHint}>核心角色：{CORE_BUSINESS_ROLES.join('、')}</Text>
+                <View style={styles.roleInputRow}>
+                  <TextInput
+                    accessibilityLabel="新增自定义业务角色"
+                    maxLength={24}
+                    onChangeText={setRoleDraft}
+                    onSubmitEditing={addRole}
+                    placeholder="例如：售后、技术顾问"
+                    placeholderTextColor={textColors.tertiary}
+                    style={[styles.nameInput, styles.roleInput]}
+                    value={roleDraft}
+                  />
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={addRole}
+                    style={({ pressed }) => [styles.roleAddButton, pressed && styles.pressed]}
+                  >
+                    <Text style={styles.roleAddText}>添加</Text>
+                  </Pressable>
+                </View>
+                <View style={styles.roleChips}>
+                  {customBusinessRoles.map((role) => (
+                    <Pressable
+                      accessibilityLabel={`删除自定义角色：${role}`}
+                      accessibilityRole="button"
+                      key={role}
+                      onPress={() =>
+                        setCustomBusinessRoles((roles) =>
+                          roles.filter((candidate) => candidate !== role),
+                        )
+                      }
+                      style={styles.roleChip}
+                    >
+                      <Text style={styles.roleChipText}>{role}</Text>
+                      <Ionicons color={colors.secondary} name="close" size={16} />
+                    </Pressable>
+                  ))}
+                </View>
+                {roleError ? (
+                  <Text accessibilityRole="alert" style={styles.errorText}>
+                    {roleError}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
             {error ? (
               <Text accessibilityRole="alert" style={styles.errorText}>
                 {error}
@@ -184,7 +269,7 @@ function DataSourceFormSheetContent({
   );
 }
 
-/** 创建或编辑数据源名称与描述，配置区始终只读。 */
+/** 创建或编辑数据源，并在编辑模式维护后置角色识别字典。 */
 export function DataSourceFormSheet(props: DataSourceFormSheetProps) {
   if (!props.visible) return null;
   return <DataSourceFormSheetContent {...props} />;
@@ -498,6 +583,48 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sans,
     minHeight: 88,
     padding: spacing.base,
+  },
+  roleHint: {
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    marginTop: spacing.xs,
+  },
+  roleInputRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  roleInput: { flex: 1 },
+  roleAddButton: {
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderRadius: radii.default,
+    justifyContent: 'center',
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+  },
+  roleAddText: {
+    ...typography.body,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  roleChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
+  roleChip: {
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderRadius: radii.round,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  roleChipText: {
+    ...typography.description,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sans,
   },
   sectionTitle: {
     ...typography.heading2,
