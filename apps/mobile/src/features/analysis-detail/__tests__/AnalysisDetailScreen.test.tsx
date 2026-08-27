@@ -14,7 +14,10 @@ import { StyleSheet } from 'react-native';
 
 import { fontFamilies, textColors } from '@/shared/theme/tokens';
 import { AnalysisDetailScreen } from '../AnalysisDetailScreen';
-import { setHideIrrelevantSegmentsPreference } from '../preferences';
+import {
+  setHideIrrelevantSegmentsPreference,
+  setPostAnalysisControlsCollapsedPreference,
+} from '../preferences';
 import * as workspaceApi from '@/shared/api/workspaceApi';
 import { analysisFixture } from '@/test/workspaceFixtures';
 
@@ -33,6 +36,7 @@ async function renderAnalysis(detailId = analysisFixture.audioFileId, onBack = j
 describe('AnalysisDetailScreen', () => {
   beforeEach(() => {
     setHideIrrelevantSegmentsPreference(false);
+    setPostAnalysisControlsCollapsedPreference(true);
     jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValue(analysisFixture);
     jest.mocked(workspaceApi.startAudioEmotionAnalysis).mockResolvedValue({
       audioFileId: analysisFixture.audioFileId,
@@ -52,6 +56,7 @@ describe('AnalysisDetailScreen', () => {
 
   it('confirms and starts the two post-analysis tasks independently', async () => {
     const screen = await renderAnalysis();
+    fireEvent.press(screen.getByRole('button', { name: '展开情绪分析与角色识别' }));
 
     fireEvent.press(screen.getByRole('button', { name: '情绪分析' }));
     expect(screen.getByText('开始情绪分析？')).toBeTruthy();
@@ -94,10 +99,39 @@ describe('AnalysisDetailScreen', () => {
       },
     });
     const screen = await renderAnalysis();
+    fireEvent.press(screen.getByRole('button', { name: '展开情绪分析与角色识别' }));
 
     expect(screen.getByText('分析中 45%')).toBeTruthy();
     expect(screen.getByText('模型返回格式无效，请重试。')).toBeTruthy();
     expect(screen.getByRole('button', { name: '重新识别' })).toBeTruthy();
+  });
+
+  it('defaults post-analysis controls to collapsed and remembers the latest session choice', async () => {
+    const firstScreen = await renderAnalysis();
+
+    expect(
+      firstScreen.getByRole('button', { name: '展开情绪分析与角色识别' }).props.accessibilityState,
+    ).toEqual(expect.objectContaining({ expanded: false }));
+    expect(firstScreen.queryByRole('button', { name: '情绪分析' })).toBeNull();
+    expect(firstScreen.queryByRole('button', { name: '角色识别' })).toBeNull();
+
+    fireEvent.press(firstScreen.getByRole('button', { name: '展开情绪分析与角色识别' }));
+    expect(firstScreen.getByRole('button', { name: '情绪分析' })).toBeTruthy();
+    expect(firstScreen.getByRole('button', { name: '角色识别' })).toBeTruthy();
+    firstScreen.unmount();
+
+    const secondScreen = await renderAnalysis('40000000-0000-4000-8000-000000000002');
+    expect(
+      secondScreen.getByRole('button', { name: '折叠情绪分析与角色识别' }).props.accessibilityState,
+    ).toEqual(expect.objectContaining({ expanded: true }));
+
+    fireEvent.press(secondScreen.getByRole('button', { name: '折叠情绪分析与角色识别' }));
+    secondScreen.unmount();
+
+    const thirdScreen = await renderAnalysis('40000000-0000-4000-8000-000000000003');
+    expect(
+      thirdScreen.getByRole('button', { name: '展开情绪分析与角色识别' }).props.accessibilityState,
+    ).toEqual(expect.objectContaining({ expanded: false }));
   });
 
   it('opens the rich acoustic emotion details for a published segment', async () => {
