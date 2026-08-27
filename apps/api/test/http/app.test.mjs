@@ -54,6 +54,7 @@ describe('workspace routes', () => {
   let archivedAudioInput;
   let uploadedAudioInput;
   let startedTranscriptionInput;
+  let startedPostAnalysisInput;
   const workspaceService = {
     listGroups: async () => ({
       items: [
@@ -121,6 +122,16 @@ describe('workspace routes', () => {
     startAudioTranscription: async (id, input) => {
       startedTranscriptionInput = { id, input };
       return { audioFileId: id, revisionId: groupId, status: 'queued' };
+    },
+    startAudioPostAnalysis: async (id, type) => {
+      startedPostAnalysisInput = { id, type };
+      return {
+        audioFileId: id,
+        revisionId: groupId,
+        jobId: groupId,
+        type,
+        status: 'queued',
+      };
     },
     listDataSourceIngestionRecords: async () => ({ items: [] }),
     listDataSourceGroups: async () => ({ items: [] }),
@@ -302,6 +313,55 @@ describe('workspace routes', () => {
       body: JSON.stringify({ model: 'unknown/model', preprocessing: 'whole_file' }),
     });
     assert.equal(invalidModel.status, 400);
+  });
+
+  it('queues emotion and role post-analysis independently', async () => {
+    const emotion = await workspaceApp.request(`/api/audio-files/${groupId}/analysis/emotion`, {
+      method: 'POST',
+    });
+    assert.equal(emotion.status, 202);
+    assert.deepEqual(startedPostAnalysisInput, { id: groupId, type: 'emotion' });
+    assert.deepEqual(await emotion.json(), {
+      audioFileId: groupId,
+      revisionId: groupId,
+      jobId: groupId,
+      type: 'emotion',
+      status: 'queued',
+    });
+
+    const role = await workspaceApp.request(`/api/audio-files/${groupId}/analysis/role`, {
+      method: 'POST',
+    });
+    assert.equal(role.status, 202);
+    assert.deepEqual(startedPostAnalysisInput, { id: groupId, type: 'role' });
+    assert.equal((await role.json()).type, 'role');
+  });
+
+  it('returns structured post-analysis conflicts', async () => {
+    const conflictApp = createApp(
+      { corsOrigins: ['http://localhost:8081'] },
+      {
+        workspaceService: {
+          ...workspaceService,
+          startAudioPostAnalysis: async () => {
+            throw new WorkspaceRepositoryError('CONFLICT', '该类型已有进行中的分析任务。');
+          },
+        },
+      },
+    );
+    const response = await conflictApp.request(`/api/audio-files/${groupId}/analysis/emotion`, {
+      method: 'POST',
+    });
+
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), {
+      ok: false,
+      error: {
+        code: 'CONFLICT',
+        message: '该类型已有进行中的分析任务。',
+        retryable: false,
+      },
+    });
   });
 
   it('returns 503 before queuing when selected FFmpeg is unavailable', async () => {

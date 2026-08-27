@@ -493,14 +493,21 @@ export class WorkspaceRepository {
     return this.getDataSource(String(result.rows[0].id));
   }
 
-  /** 只更新数据源展示字段，接入与分析配置在本轮保持只读。 */
+  /** 更新数据源展示字段与后置角色识别允许使用的自定义角色。 */
   async updateDataSource(dataSourceId: string, input: DataSourceUpdateRequest) {
     const result = await this.pool.query(
       `UPDATE ${this.table('data_sources')}
-       SET name = coalesce($3, name), description = coalesce($4, description), updated_at = now()
+       SET name = coalesce($3, name), description = coalesce($4, description),
+           custom_business_roles = coalesce($5::jsonb, custom_business_roles), updated_at = now()
        WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
        RETURNING id`,
-      [this.tenantId, dataSourceId, input.name ?? null, input.description ?? null],
+      [
+        this.tenantId,
+        dataSourceId,
+        input.name ?? null,
+        input.description ?? null,
+        input.customBusinessRoles === undefined ? null : JSON.stringify(input.customBusinessRoles),
+      ],
     );
     if (!result.rowCount) {
       throw new WorkspaceRepositoryError('NOT_FOUND', '数据源不存在或已归档。');
@@ -710,6 +717,7 @@ export class WorkspaceRepository {
         speakerDiarization: row.speaker_diarization_enabled,
         sceneSegmentation: row.scene_segmentation_enabled,
         skipInvalidAudio: row.skip_invalid_audio,
+        customBusinessRoles: row.custom_business_roles,
       },
     });
   }
@@ -832,6 +840,7 @@ export class WorkspaceRepository {
     const head = await this.pool.query(
       `SELECT ar.id, ar.audio_file_id, ar.revision_no, ar.published_at,
               ar.transcription_model, ar.settings_snapshot,
+              ar.active_emotion_job_id, ar.active_role_job_id,
               af.title, coalesce(af.duration_ms, 0)::bigint AS duration_ms
        FROM ${this.table('audio_files')} af
        JOIN ${this.table('audio_analysis_revisions')} ar
@@ -842,20 +851,36 @@ export class WorkspaceRepository {
     const row = head.rows[0];
     if (!row) throw new WorkspaceRepositoryError('NOT_FOUND', '音频分析不存在。');
 
-    const [segments, invalidSegments, summaries] = await Promise.all([
+    const [segments, invalidSegments, summaries, postAnalysisJobs] = await Promise.all([
       this.pool.query(
         `SELECT s.id AS scene_id, s.scene_index, s.title AS scene_title, s.start_ms AS scene_start_ms,
                 ts.id AS segment_id, ts.segment_index, ts.speaker_key, ts.speaker_label,
                 ts.business_role, ts.emotion, ts.start_ms, ts.end_ms, ts.text,
-                tag.id AS tag_id, tag.title AS tag_title, tag.summary AS tag_summary, tag.details
+                tag.id AS tag_id, tag.title AS tag_title, tag.summary AS tag_summary, tag.details,
+                er.emotion_label, er.confidence AS emotion_confidence,
+                er.attitude, er.arousal, er.pace, er.volume_trend,
+                er.pitch_variation, er.pause_pattern, er.vocal_cues,
+                ej.model AS emotion_model,
+                rr.role_kind, rr.role_label, rr.confidence AS role_confidence,
+                rr.evidence_segment_ids, rj.model AS role_model
          FROM ${this.table('analysis_scenes')} s
          LEFT JOIN ${this.table('transcript_segments')} ts
            ON ts.tenant_id = s.tenant_id AND ts.scene_id = s.id
          LEFT JOIN ${this.table('segment_ai_tags')} tag
            ON tag.tenant_id = ts.tenant_id AND tag.transcript_segment_id = ts.id
+         LEFT JOIN ${this.table('segment_emotion_results')} er
+           ON er.tenant_id = ts.tenant_id AND er.job_id = $3
+          AND er.transcript_segment_id = ts.id
+         LEFT JOIN ${this.table('audio_post_analysis_jobs')} ej
+           ON ej.tenant_id = er.tenant_id AND ej.id = er.job_id
+         LEFT JOIN ${this.table('speaker_role_results')} rr
+           ON rr.tenant_id = ts.tenant_id AND rr.job_id = $4
+          AND rr.speaker_key = ts.speaker_key
+         LEFT JOIN ${this.table('audio_post_analysis_jobs')} rj
+           ON rj.tenant_id = rr.tenant_id AND rj.id = rr.job_id
          WHERE s.tenant_id = $1 AND s.analysis_revision_id = $2
          ORDER BY s.scene_index, ts.segment_index`,
-        [this.tenantId, row.id],
+        [this.tenantId, row.id, row.active_emotion_job_id, row.active_role_job_id],
       ),
       this.pool.query(
         `SELECT id, start_ms, end_ms, reason
@@ -867,6 +892,15 @@ export class WorkspaceRepository {
         `SELECT id, section_index, title, body
          FROM ${this.table('analysis_summary_sections')}
          WHERE tenant_id = $1 AND analysis_revision_id = $2 ORDER BY section_index`,
+        [this.tenantId, row.id],
+      ),
+      this.pool.query(
+        `SELECT DISTINCT ON (analysis_type)
+                id, analysis_type, model, status, progress, completed_at,
+                error_code, error_message, error_retryable
+         FROM ${this.table('audio_post_analysis_jobs')}
+         WHERE tenant_id = $1 AND analysis_revision_id = $2
+         ORDER BY analysis_type, created_at DESC`,
         [this.tenantId, row.id],
       ),
     ]);
@@ -890,8 +924,31 @@ export class WorkspaceRepository {
           index: item.segment_index,
           speakerKey: item.speaker_key,
           speakerLabel: item.speaker_label,
-          businessRole: item.business_role,
-          emotion: item.emotion,
+          businessRole: item.role_label ?? item.business_role,
+          emotion: item.emotion_label ?? item.emotion,
+          roleAnalysis: item.role_label
+            ? {
+                kind: item.role_kind,
+                label: item.role_label,
+                confidence: Number(item.role_confidence),
+                evidenceSegmentIds: item.evidence_segment_ids,
+                model: item.role_model,
+              }
+            : null,
+          emotionAnalysis: item.emotion_label
+            ? {
+                label: item.emotion_label,
+                confidence: Number(item.emotion_confidence),
+                attitude: item.attitude,
+                arousal: item.arousal,
+                pace: item.pace,
+                volumeTrend: item.volume_trend,
+                pitchVariation: item.pitch_variation,
+                pausePattern: item.pause_pattern,
+                vocalCues: item.vocal_cues,
+                model: item.emotion_model,
+              }
+            : null,
           startMs: integer(item.start_ms),
           endMs: integer(item.end_ms),
           text: item.text,
@@ -939,6 +996,35 @@ export class WorkspaceRepository {
         ? settings.speakerIdentityScope
         : 'none';
 
+    const postAnalysisState = (type: 'emotion' | 'role') => {
+      const job = postAnalysisJobs.rows.find((item) => item.analysis_type === type);
+      if (!job) return { state: 'idle' as const };
+      if (job.status === 'queued' || job.status === 'running') {
+        return {
+          state: job.status,
+          jobId: job.id,
+          model: job.model,
+          progress: integer(job.progress),
+        };
+      }
+      if (job.status === 'ready') {
+        return {
+          state: 'ready' as const,
+          jobId: job.id,
+          model: job.model,
+          completedAt: iso(job.completed_at),
+        };
+      }
+      return {
+        state: 'failed' as const,
+        jobId: job.id,
+        model: job.model,
+        code: String(job.error_code ?? 'ANALYSIS_FAILED'),
+        message: String(job.error_message ?? '分析失败。'),
+        retryable: Boolean(job.error_retryable),
+      };
+    };
+
     return AudioAnalysisDetailSchema.parse({
       id: row.id,
       audioFileId: row.audio_file_id,
@@ -953,6 +1039,10 @@ export class WorkspaceRepository {
         responseGranularity,
         segmentationMode,
         speakerIdentityScope,
+      },
+      postAnalysis: {
+        emotion: postAnalysisState('emotion'),
+        role: postAnalysisState('role'),
       },
       scenes: [...scenes.values()],
       invalidSegments: invalidSegments.rows.map((item) => ({

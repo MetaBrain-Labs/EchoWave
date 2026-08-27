@@ -24,10 +24,12 @@ import {
   KnowledgeBaseGroupLinkRequest,
   AudioTranscriptionStartRequest,
   AudioTranscriptionModel,
+  AudioPostAnalysisType,
 } from '@echowave/contracts';
 
 import type { StoredAudioUpload, WorkspaceRepository } from './persistence/workspaceRepository.ts';
 import type { AudioAnalysisRepository } from './persistence/audioAnalysisRepository.ts';
+import type { PostAnalysisRepository } from './persistence/postAnalysisRepository.ts';
 import { WorkspaceRepositoryError } from './persistence/errors.ts';
 import type { AudioInputPreprocessor } from './transcription/audioPreprocessor.ts';
 
@@ -182,6 +184,10 @@ export interface WorkspaceService {
     input: AudioTranscriptionStartRequest,
   ): Promise<Awaited<ReturnType<AudioAnalysisRepository['queueTranscription']>>>;
   getAudioAnalysis(id: string): ReturnType<WorkspaceRepository['getAudioAnalysis']>;
+  startAudioPostAnalysis(
+    id: string,
+    type: AudioPostAnalysisType,
+  ): Promise<Awaited<ReturnType<PostAnalysisRepository['queue']>>>;
 }
 
 /** 直接组合窄仓储分组生命周期与读取能力的默认工作区服务。 */
@@ -192,6 +198,10 @@ export class DefaultWorkspaceService implements WorkspaceService {
     private readonly audioAnalysisRepository: AudioAnalysisRepository,
     private readonly audioTranscriptionModel: AudioTranscriptionModel,
     private readonly audioInputPreprocessor: AudioInputPreprocessor,
+    private readonly postAnalysisRepository: PostAnalysisRepository,
+    private readonly audioEmotionModel: 'qwen3.5-omni-flash',
+    private readonly roleModel: 'deepseek-v4-flash',
+    private readonly emotionProviderConfigured: boolean,
   ) {}
 
   listGroups() {
@@ -311,5 +321,23 @@ export class DefaultWorkspaceService implements WorkspaceService {
   }
   getAudioAnalysis(id: string) {
     return this.repository.getAudioAnalysis(id);
+  }
+
+  /** 校验情绪分析运行依赖后，为当前 ASR 修订创建指定后置任务。 */
+  async startAudioPostAnalysis(id: string, type: AudioPostAnalysisType) {
+    if (type === 'emotion') {
+      const ffmpegAvailable = await this.audioInputPreprocessor.refreshFfmpegAvailability();
+      if (!this.emotionProviderConfigured || !ffmpegAvailable) {
+        throw new WorkspaceRepositoryError(
+          'CONFLICT',
+          '情绪分析所需的 Qwen、北京地域 OSS 或 FFmpeg 尚未完整配置。',
+        );
+      }
+    }
+    return this.postAnalysisRepository.queue(
+      id,
+      type,
+      type === 'emotion' ? this.audioEmotionModel : this.roleModel,
+    );
   }
 }

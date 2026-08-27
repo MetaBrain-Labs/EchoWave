@@ -16,6 +16,7 @@ import { Platform } from 'react-native';
 import {
   ApiErrorResponseSchema,
   AudioAnalysisDetailSchema,
+  AudioPostAnalysisStartResponseSchema,
   AudioFileListResponseSchema,
   AudioTranscriptionCapabilitiesResponseSchema,
   AudioTranscriptionStartRequestSchema,
@@ -216,3 +217,11 @@ export const startAudioTranscription = (id: string, input: AudioTranscriptionSta
   });
 export const getAudioAnalysis = (id: string) =>
   request(`/api/audio-files/${id}/analysis`, AudioAnalysisDetailSchema);
+export const startAudioEmotionAnalysis = (id: string) =>
+  request(`/api/audio-files/${id}/analysis/emotion`, AudioPostAnalysisStartResponseSchema, {
+    method: 'POST',
+  });
+export const startAudioRoleRecognition = (id: string) =>
+  request(`/api/audio-files/${id}/analysis/role`, AudioPostAnalysisStartResponseSchema, {
+    method: 'POST',
+  });

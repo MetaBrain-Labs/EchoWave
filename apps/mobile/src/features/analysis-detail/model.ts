@@ -10,7 +10,13 @@
  * Notes:
  * - 不包含任何演示记录或设备持久化状态。
  */
-import type { AudioAnalysisDetail, AudioTranscriptionMetadata } from '@echowave/contracts';
+import type {
+  AudioAnalysisDetail,
+  AudioPostAnalysisState,
+  AudioTranscriptionMetadata,
+  SegmentEmotionAnalysis,
+  SegmentRoleAnalysis,
+} from '@echowave/contracts';
 
 export type AiTagAnalysis = {
   title: string;
@@ -22,10 +28,12 @@ export type TranscriptSegment = {
   aiTag?: AiTagAnalysis;
   businessRole: string;
   emotion: string;
+  emotionAnalysis?: SegmentEmotionAnalysis;
   endSeconds: number;
   id: string;
   speakerKey: string;
   speakerLabel: string;
+  roleAnalysis?: SegmentRoleAnalysis;
   startSeconds: number;
   text: string;
 };
@@ -52,6 +60,7 @@ export type AnalysisDetailView = {
   summarySections: readonly SummarySection[];
   title: string;
   transcription: AudioTranscriptionMetadata;
+  postAnalysis: { emotion: AudioPostAnalysisState; role: AudioPostAnalysisState };
 };
 
 /** 将服务端当前分析修订版转换为页面展示模型。 */
@@ -63,6 +72,7 @@ export function toAnalysisDetailView(detail: AudioAnalysisDetail): AnalysisDetai
     durationSeconds: detail.durationMs / 1_000,
     generatedAt: new Date(detail.generatedAt).toLocaleString(),
     transcription: detail.transcription,
+    postAnalysis: detail.postAnalysis,
     invalidSegment: invalid
       ? {
           startSeconds: invalid.startMs / 1_000,
@@ -79,6 +89,8 @@ export function toAnalysisDetailView(detail: AudioAnalysisDetail): AnalysisDetai
         speakerLabel: segment.speakerLabel,
         businessRole: segment.businessRole,
         emotion: segment.emotion,
+        roleAnalysis: segment.roleAnalysis ?? undefined,
+        emotionAnalysis: segment.emotionAnalysis ?? undefined,
         startSeconds: segment.startMs / 1_000,
         endSeconds: segment.endMs / 1_000,
         text: segment.text,

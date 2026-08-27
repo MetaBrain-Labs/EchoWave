@@ -228,3 +228,52 @@ describe('DefaultWorkspaceService audio transcription', () => {
     );
   });
 });
+
+describe('DefaultWorkspaceService audio post-analysis', () => {
+  it('rejects emotion queueing when FFmpeg or the Qwen staging path is unavailable', async () => {
+    const queued = [];
+    const service = new DefaultWorkspaceService(
+      repository(),
+      '.data/audio',
+      {},
+      'qwen-audio-3.0-asr-flash-filetrans',
+      { refreshFfmpegAvailability: async () => false },
+      { queue: async (...args) => queued.push(args) },
+      'qwen3.5-omni-flash',
+      'deepseek-v4-flash',
+      true,
+    );
+
+    await assert.rejects(
+      () => service.startAudioPostAnalysis(sourceId, 'emotion'),
+      (error) => error instanceof WorkspaceRepositoryError && error.code === 'CONFLICT',
+    );
+    assert.deepEqual(queued, []);
+  });
+
+  it('queues role recognition without coupling it to the emotion audio dependencies', async () => {
+    const queued = [];
+    const service = new DefaultWorkspaceService(
+      repository(),
+      '.data/audio',
+      {},
+      'qwen-audio-3.0-asr-flash-filetrans',
+      { refreshFfmpegAvailability: async () => false },
+      {
+        queue: async (...args) => {
+          queued.push(args);
+          return { audioFileId: args[0], type: args[1] };
+        },
+      },
+      'qwen3.5-omni-flash',
+      'deepseek-v4-flash',
+      false,
+    );
+
+    assert.deepEqual(await service.startAudioPostAnalysis(sourceId, 'role'), {
+      audioFileId: sourceId,
+      type: 'role',
+    });
+    assert.deepEqual(queued, [[sourceId, 'role', 'deepseek-v4-flash']]);
+  });
+});

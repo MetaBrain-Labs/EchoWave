@@ -11,9 +11,11 @@
  * - 只展示服务端已经原子发布的当前分析修订版。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
+import type { AudioPostAnalysisType } from '@echowave/contracts';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   BackHandler,
   Pressable,
   ScrollView,
@@ -24,7 +26,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
-import { getAudioAnalysis } from '@/shared/api/workspaceApi';
+import {
+  getAudioAnalysis,
+  startAudioEmotionAnalysis,
+  startAudioRoleRecognition,
+} from '@/shared/api/workspaceApi';
 import {
   colors,
   fontFamilies,
@@ -44,6 +50,8 @@ import { analysisTabKeys, DetailTabs, type AnalysisTab } from './components/Anal
 import { CompactPlayer, ExpandedPlayer } from './components/Player';
 import { SummaryContent } from './components/SummaryContent';
 import { TranscriptContent } from './components/TranscriptContent';
+import { EmotionAnalysisPanel } from './components/EmotionAnalysisPanel';
+import { PostAnalysisConfirmDialog, PostAnalysisControls } from './components/PostAnalysisControls';
 
 const playbackRates = [1, 1.5, 2] as const;
 
@@ -63,6 +71,9 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
   const [playbackRateIndex, setPlaybackRateIndex] = useState(0);
   const [positionSeconds, setPositionSeconds] = useState(0);
   const [selectedSegment, setSelectedSegment] = useState<TranscriptSegment>();
+  const [emotionSegment, setEmotionSegment] = useState<TranscriptSegment>();
+  const [confirmAnalysisType, setConfirmAnalysisType] = useState<AudioPostAnalysisType>();
+  const [startingAnalysis, setStartingAnalysis] = useState(false);
   const [hideIrrelevant, setHideIrrelevant] = useState(getHideIrrelevantSegmentsPreference);
   const changeHideIrrelevant = (value: boolean) => {
     setHideIrrelevantSegmentsPreference(value);
@@ -82,22 +93,51 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
     tabs: hasSummary ? analysisTabKeys : (['transcript'] as AnalysisTab[]),
   });
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      setDetail(toAnalysisDetailView(await getAudioAnalysis(detailId)));
-    } catch (reason) {
-      setDetail(undefined);
-      setError(reason instanceof Error ? reason.message : '分析详情加载失败。');
-    } finally {
-      setLoading(false);
-    }
-  }, [detailId]);
+  const load = useCallback(
+    async (showLoading = true) => {
+      if (showLoading) setLoading(true);
+      setError('');
+      try {
+        setDetail(toAnalysisDetailView(await getAudioAnalysis(detailId)));
+      } catch (reason) {
+        if (showLoading) setDetail(undefined);
+        setError(reason instanceof Error ? reason.message : '分析详情加载失败。');
+      } finally {
+        if (showLoading) setLoading(false);
+      }
+    },
+    [detailId],
+  );
   useEffect(() => {
     const task = setTimeout(() => void load(), 0);
     return () => clearTimeout(task);
   }, [load]);
+
+  const pollingPostAnalysis =
+    detail?.postAnalysis.emotion.state === 'queued' ||
+    detail?.postAnalysis.emotion.state === 'running' ||
+    detail?.postAnalysis.role.state === 'queued' ||
+    detail?.postAnalysis.role.state === 'running';
+  useEffect(() => {
+    if (!pollingPostAnalysis) return undefined;
+    const timer = setInterval(() => void load(false), 2_000);
+    return () => clearInterval(timer);
+  }, [load, pollingPostAnalysis]);
+
+  const confirmPostAnalysis = async () => {
+    if (!confirmAnalysisType || startingAnalysis) return;
+    setStartingAnalysis(true);
+    try {
+      if (confirmAnalysisType === 'emotion') await startAudioEmotionAnalysis(detailId);
+      else await startAudioRoleRecognition(detailId);
+      setConfirmAnalysisType(undefined);
+      await load(false);
+    } catch (reason) {
+      Alert.alert('无法开始分析', reason instanceof Error ? reason.message : '请稍后重试。');
+    } finally {
+      setStartingAnalysis(false);
+    }
+  };
 
   useEffect(() => {
     if (!selectedSegment) {
@@ -203,10 +243,16 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
         testID="analysis-tab-pager"
       >
         <View style={[styles.page, { width: pageWidth }]}>
+          <PostAnalysisControls
+            emotion={detail.postAnalysis.emotion}
+            onStart={setConfirmAnalysisType}
+            role={detail.postAnalysis.role}
+          />
           <TranscriptContent
             detail={detail}
             hideIrrelevant={hideIrrelevant}
             onOpenAiTag={setSelectedSegment}
+            onOpenEmotion={setEmotionSegment}
             selectedSegmentId={selectedSegment?.id}
           />
         </View>
@@ -224,6 +270,15 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
         onClose={() => setSelectedSegment(undefined)}
         onHideIrrelevantChange={changeHideIrrelevant}
         startSeconds={selectedSegment?.startSeconds ?? 0}
+      />
+      <EmotionAnalysisPanel onClose={() => setEmotionSegment(undefined)} segment={emotionSegment} />
+      <PostAnalysisConfirmDialog
+        onCancel={() => {
+          if (!startingAnalysis) setConfirmAnalysisType(undefined);
+        }}
+        onConfirm={() => void confirmPostAnalysis()}
+        pending={startingAnalysis}
+        type={confirmAnalysisType}
       />
     </SafeAreaView>
   );

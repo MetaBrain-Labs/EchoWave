@@ -272,6 +272,18 @@ export function createApp(
         202,
       );
     });
+    app.post('/api/audio-files/:audioFileId/analysis/emotion', async (context) =>
+      context.json(
+        await workspace.startAudioPostAnalysis(id(context.req.param('audioFileId')), 'emotion'),
+        202,
+      ),
+    );
+    app.post('/api/audio-files/:audioFileId/analysis/role', async (context) =>
+      context.json(
+        await workspace.startAudioPostAnalysis(id(context.req.param('audioFileId')), 'role'),
+        202,
+      ),
+    );
   }
 
   app.notFound((context) => context.json(errorBody('NOT_FOUND', 'Route not found.'), 404));

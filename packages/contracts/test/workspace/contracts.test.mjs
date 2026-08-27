@@ -23,6 +23,7 @@ import {
   DataSourceGroupLinkRequestSchema,
   DataSourceUpdateRequestSchema,
   GroupCreateRequestSchema,
+  AudioPostAnalysisStartResponseSchema,
 } from '../../dist/index.js';
 
 const firstId = '11111111-1111-4111-8111-111111111111';
@@ -237,6 +238,14 @@ describe('workspace contracts', () => {
     assert.deepEqual(DataSourceUpdateRequestSchema.parse({ description: '   ' }), {
       description: '',
     });
+    assert.deepEqual(
+      DataSourceUpdateRequestSchema.parse({ customBusinessRoles: [' 售后 ', '技术顾问'] }),
+      { customBusinessRoles: ['售后', '技术顾问'] },
+    );
+    assert.throws(() => DataSourceUpdateRequestSchema.parse({ customBusinessRoles: ['销售'] }));
+    assert.throws(() =>
+      DataSourceUpdateRequestSchema.parse({ customBusinessRoles: ['售后', '售后'] }),
+    );
     assert.throws(() => DataSourceCreateRequestSchema.parse({ name: '   ' }));
     assert.throws(() => DataSourceCreateRequestSchema.parse({ name: '名'.repeat(121) }));
     assert.throws(() =>
@@ -324,6 +333,100 @@ describe('workspace contracts', () => {
           {
             ...detail.scenes[0],
             segments: [{ ...detail.scenes[0].segments[0], startMs: 1_000, endMs: 500 }],
+          },
+        ],
+      }),
+    );
+  });
+
+  it('validates post-analysis task and rich segment results', () => {
+    const response = AudioPostAnalysisStartResponseSchema.parse({
+      audioFileId: firstId,
+      revisionId: secondId,
+      jobId: thirdId,
+      type: 'emotion',
+      status: 'queued',
+    });
+    assert.equal(response.type, 'emotion');
+
+    const detail = AudioAnalysisDetailSchema.parse({
+      id: firstId,
+      audioFileId: secondId,
+      revision: 1,
+      title: '客户通话',
+      durationMs: 2_000,
+      generatedAt: '2026-08-27T10:00:00.000Z',
+      transcription: {
+        model: 'qwen-audio-3.0-asr-flash-filetrans',
+        language: 'zh',
+        diarizationStatus: 'observed',
+        responseGranularity: 'segment',
+        segmentationMode: 'speaker_turn',
+        speakerIdentityScope: 'recording',
+      },
+      postAnalysis: {
+        emotion: {
+          state: 'ready',
+          jobId: thirdId,
+          model: 'qwen3.5-omni-flash',
+          completedAt: '2026-08-27T10:01:00.000Z',
+        },
+        role: { state: 'idle' },
+      },
+      scenes: [
+        {
+          id: thirdId,
+          index: 1,
+          title: '完整录音',
+          startMs: 0,
+          segments: [
+            {
+              id: firstId,
+              index: 1,
+              speakerKey: 'Speaker 0',
+              speakerLabel: 'Speaker 0',
+              businessRole: '客户',
+              emotion: 'impatient',
+              startMs: 0,
+              endMs: 1_000,
+              text: '行，我知道了。',
+              aiTag: null,
+              roleAnalysis: null,
+              emotionAnalysis: {
+                label: 'impatient',
+                confidence: 0.88,
+                attitude: 'dismissive',
+                arousal: 'high',
+                pace: 'fast',
+                volumeTrend: 'elevated',
+                pitchVariation: 'medium',
+                pausePattern: 'few',
+                vocalCues: ['语速明显加快'],
+                model: 'qwen3.5-omni-flash',
+              },
+            },
+          ],
+        },
+      ],
+      invalidSegments: [],
+      summarySections: [],
+    });
+    assert.equal(detail.scenes[0].segments[0].emotionAnalysis.confidence, 0.88);
+    assert.throws(() =>
+      AudioAnalysisDetailSchema.parse({
+        ...detail,
+        scenes: [
+          {
+            ...detail.scenes[0],
+            segments: [
+              {
+                ...detail.scenes[0].segments[0],
+                emotionAnalysis: {
+                  ...detail.scenes[0].segments[0].emotionAnalysis,
+                  confidence: 1.1,
+                },
+              },
+            ],
           },
         ],
       }),

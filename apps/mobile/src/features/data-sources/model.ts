@@ -71,6 +71,7 @@ export type DataSourceDetailView = {
   roleSeparation: boolean;
   sceneSeparation: boolean;
   skipInvalidAudio: boolean;
+  customBusinessRoles: string[];
   audioItems: SourceAudioItem[];
   uploadRecords: UploadRecord[];
   linkedGroups: LinkedDataSourceGroup[];
@@ -143,6 +144,7 @@ export function toDataSourceDetailView(
     roleSeparation: detail.settings.speakerDiarization,
     sceneSeparation: detail.settings.sceneSegmentation,
     skipInvalidAudio: detail.settings.skipInvalidAudio,
+    customBusinessRoles: detail.settings.customBusinessRoles,
     totalDuration: formatDuration(detail.metrics.totalDurationMs),
     audioItems: audioItems.map((audio) => ({
       id: audio.id,

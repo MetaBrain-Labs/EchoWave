@@ -22,6 +22,7 @@ const completeValues = {
   DEV_TENANT_ID: '00000000-0000-4000-8000-000000000001',
   DASHSCOPE_API_KEY: 'dashscope-test-key',
   DASHSCOPE_BASE_URL: 'https://workspace.example.com/api/v1/',
+  DASHSCOPE_COMPATIBLE_BASE_URL: 'https://workspace.example.com/compatible-mode/v1/',
   RAG_EMBEDDING_MODEL: 'qwen3.7-text-embedding',
   RAG_EMBEDDING_DIMENSIONS: '1024',
   DEEPSEEK_API_KEY: 'deepseek-test-key',
@@ -32,6 +33,7 @@ const completeValues = {
   UPLOAD_TEMP_DIR: '.tmp/uploads',
   AUDIO_STORAGE_DIR: '.data/audio',
   AUDIO_TRANSCRIPTION_MODEL: 'qwen-audio-3.0-asr-flash-filetrans',
+  AUDIO_EMOTION_MODEL: 'qwen3.5-omni-flash',
   AUDIO_TRANSCRIPTION_TEMP_DIR: '.tmp/audio-transcription',
   FFMPEG_PATH: 'C:\\ffmpeg\\ffmpeg.exe',
   AI_EXECUTION_REPORT_ENABLED: 'false',
@@ -49,10 +51,12 @@ describe('API environment', () => {
     assert.deepEqual(config.rag.dashScope, {
       apiKey: 'dashscope-test-key',
       baseUrl: 'https://workspace.example.com/api/v1',
+      compatibleBaseUrl: 'https://workspace.example.com/compatible-mode/v1',
     });
     assert.equal(config.rag.embeddingModel, 'qwen3.7-text-embedding');
     assert.equal(config.rag.embeddingDimensions, 1024);
     assert.equal(config.rag.audioTranscriptionModel, 'qwen-audio-3.0-asr-flash-filetrans');
+    assert.equal(config.rag.audioEmotionModel, 'qwen3.5-omni-flash');
     assert.equal(config.rag.ffmpegPath, 'C:\\ffmpeg\\ffmpeg.exe');
     assert.deepEqual(config.corsOrigins, ['http://localhost:8081', 'http://localhost:19006']);
   });
@@ -94,7 +98,10 @@ describe('API environment', () => {
   it('requires the official DashScope key and base URL', () => {
     const { DASHSCOPE_API_KEY: _apiKey, ...withoutKey } = completeValues;
     const { DASHSCOPE_BASE_URL: _baseUrl, ...withoutBaseUrl } = completeValues;
+    const { DASHSCOPE_COMPATIBLE_BASE_URL: _compatibleBaseUrl, ...withoutCompatibleBaseUrl } =
+      completeValues;
     assert.throws(() => readApiConfig(withoutKey));
     assert.throws(() => readApiConfig(withoutBaseUrl));
+    assert.throws(() => readApiConfig(withoutCompatibleBaseUrl));
   });
 });

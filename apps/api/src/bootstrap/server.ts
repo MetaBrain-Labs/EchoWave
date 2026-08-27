@@ -44,6 +44,7 @@ try {
   await startWorkersAfterListening(server, async () => {
     ragRuntime.worker.start();
     await ragRuntime.transcriptionWorker.start();
+    await Promise.all([ragRuntime.emotionWorker.start(), ragRuntime.roleWorker.start()]);
   });
   startupCompleted = true;
   console.log(`EchoWave API listening on http://localhost:${config.port}`);

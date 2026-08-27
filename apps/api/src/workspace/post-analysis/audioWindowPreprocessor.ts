@@ -1,0 +1,129 @@
+/**
+ * 情绪分析音频窗口预处理器。
+ *
+ * 根据已发布说话轮次裁剪带少量上下文的单声道 MP3，避免把完整录音重复发送给模型。
+ *
+ * Responsibilities:
+ * - 将窗口路径限制在配置的音频和临时目录内。
+ * - 生成 16kHz 单声道情绪分析片段并清理任务临时文件。
+ *
+ * Notes:
+ * - 窗口边界由 worker 计算，本模块不解释转写语义。
+ */
+import { spawn } from 'node:child_process';
+import { mkdir, rm } from 'node:fs/promises';
+import path from 'node:path';
+
+export class AudioWindowPreprocessingError extends Error {
+  constructor(
+    public readonly code: 'TRANSCODER_UNAVAILABLE' | 'ANALYSIS_PREPROCESSING_FAILED',
+    message: string,
+    public readonly retryable = false,
+  ) {
+    super(message);
+    this.name = 'AudioWindowPreprocessingError';
+  }
+}
+
+type ProcessRunner = (executable: string, args: string[]) => Promise<void>;
+
+const runProcess: ProcessRunner = (executable, args) =>
+  new Promise((resolve, reject) => {
+    const child = spawn(executable, args, { stdio: 'ignore', windowsHide: true });
+    child.once('error', () =>
+      reject(
+        new AudioWindowPreprocessingError(
+          'TRANSCODER_UNAVAILABLE',
+          'FFmpeg 不可用，无法生成情绪分析音频窗口。',
+        ),
+      ),
+    );
+    child.once('exit', (code) => {
+      if (code === 0) resolve();
+      else
+        reject(
+          new AudioWindowPreprocessingError(
+            'ANALYSIS_PREPROCESSING_FAILED',
+            '情绪分析音频窗口生成失败。',
+            true,
+          ),
+        );
+    });
+  });
+
+function resolveWithin(root: string, child: string): string {
+  const resolvedRoot = path.resolve(root);
+  const resolved = path.resolve(resolvedRoot, child);
+  if (resolved !== resolvedRoot && !resolved.startsWith(`${resolvedRoot}${path.sep}`)) {
+    throw new AudioWindowPreprocessingError(
+      'ANALYSIS_PREPROCESSING_FAILED',
+      '情绪分析音频路径无效。',
+    );
+  }
+  return resolved;
+}
+
+/** 为情绪 worker 创建和清理任务级音频窗口。 */
+export class AudioWindowPreprocessor {
+  private readonly runner: ProcessRunner;
+
+  constructor(
+    private readonly options: {
+      audioStorageDirectory: string;
+      ffmpegPath?: string;
+      tempDirectory: string;
+      processRunner?: ProcessRunner;
+    },
+  ) {
+    this.runner = options.processRunner ?? runProcess;
+  }
+
+  /** 裁剪指定绝对时间范围并统一编码为模型输入格式。 */
+  async createWindow(input: {
+    jobId: string;
+    storageKey: string;
+    windowIndex: number;
+    startMs: number;
+    endMs: number;
+  }): Promise<string> {
+    if (!this.options.ffmpegPath) {
+      throw new AudioWindowPreprocessingError(
+        'TRANSCODER_UNAVAILABLE',
+        'FFmpeg 尚未配置，无法执行情绪分析。',
+      );
+    }
+    const source = resolveWithin(this.options.audioStorageDirectory, input.storageKey);
+    const directory = resolveWithin(this.options.tempDirectory, `post-analysis/${input.jobId}`);
+    await mkdir(directory, { recursive: true });
+    const output = resolveWithin(directory, `window-${input.windowIndex}.mp3`);
+    await this.runner(this.options.ffmpegPath, [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-ss',
+      (input.startMs / 1_000).toFixed(3),
+      '-to',
+      (input.endMs / 1_000).toFixed(3),
+      '-i',
+      source,
+      '-vn',
+      '-ac',
+      '1',
+      '-ar',
+      '16000',
+      '-b:a',
+      '64k',
+      '-y',
+      output,
+    ]);
+    return output;
+  }
+
+  /** 删除一个后置分析任务的全部临时文件。 */
+  async cleanup(jobId: string): Promise<void> {
+    await rm(resolveWithin(this.options.tempDirectory, `post-analysis/${jobId}`), {
+      force: true,
+      recursive: true,
+    });
+  }
+}

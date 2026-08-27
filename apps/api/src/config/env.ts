@@ -43,6 +43,7 @@ const EnvironmentSchema = z.object({
   DEV_TENANT_ID: z.string().uuid(),
   DASHSCOPE_API_KEY: z.string().min(1),
   DASHSCOPE_BASE_URL: z.string().url(),
+  DASHSCOPE_COMPATIBLE_BASE_URL: z.string().url(),
   ALIYUN_OSS_REGION: OptionalPathSchema,
   ALIYUN_OSS_BUCKET: OptionalPathSchema,
   ALIYUN_OSS_ACCESS_KEY_ID: OptionalPathSchema,
@@ -60,6 +61,7 @@ const EnvironmentSchema = z.object({
   UPLOAD_TEMP_DIR: z.string().min(1),
   AUDIO_STORAGE_DIR: z.string().min(1),
   AUDIO_TRANSCRIPTION_MODEL: AudioTranscriptionModelSchema,
+  AUDIO_EMOTION_MODEL: z.literal('qwen3.5-omni-flash'),
   AUDIO_TRANSCRIPTION_TEMP_DIR: z.string().min(1),
   FFMPEG_PATH: OptionalPathSchema,
   AI_EXECUTION_REPORT_ENABLED: BooleanStringSchema,
@@ -97,6 +99,7 @@ export type ApiConfig = {
     dashScope: {
       apiKey: string;
       baseUrl: string;
+      compatibleBaseUrl: string;
       oss?: {
         region: string;
         bucket: string;
@@ -114,6 +117,7 @@ export type ApiConfig = {
     uploadTempDir: string;
     audioStorageDir: string;
     audioTranscriptionModel: AudioTranscriptionModel;
+    audioEmotionModel: 'qwen3.5-omni-flash';
     audioTranscriptionTempDir: string;
     ffmpegPath?: string;
   };
@@ -186,6 +190,7 @@ export function readApiConfig(values: Record<string, string | undefined>): ApiCo
       dashScope: {
         apiKey: parsed.DASHSCOPE_API_KEY,
         baseUrl: parsed.DASHSCOPE_BASE_URL.replace(/\/$/, ''),
+        compatibleBaseUrl: parsed.DASHSCOPE_COMPATIBLE_BASE_URL.replace(/\/$/, ''),
         ...(oss ? { oss } : {}),
       },
       embeddingModel: parsed.RAG_EMBEDDING_MODEL,
@@ -198,6 +203,7 @@ export function readApiConfig(values: Record<string, string | undefined>): ApiCo
       uploadTempDir: parsed.UPLOAD_TEMP_DIR,
       audioStorageDir: parsed.AUDIO_STORAGE_DIR,
       audioTranscriptionModel: parsed.AUDIO_TRANSCRIPTION_MODEL,
+      audioEmotionModel: parsed.AUDIO_EMOTION_MODEL,
       audioTranscriptionTempDir: parsed.AUDIO_TRANSCRIPTION_TEMP_DIR,
       ffmpegPath: parsed.FFMPEG_PATH,
     },

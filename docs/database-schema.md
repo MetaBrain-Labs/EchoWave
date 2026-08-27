@@ -240,6 +240,7 @@ group_data_sources 所关联数据源下的音频
 - `speaker_diarization_enabled`：是否启用说话人分离。
 - `scene_segmentation_enabled`：是否启用场景分段。
 - `skip_invalid_audio`：是否跳过无效音频。
+- `custom_business_roles`：供角色识别使用的自定义角色 JSON 字符串数组，最多 16 项；核心角色不存入该字段。
 
 数据源使用 `deleted_at` 软删除。API Key、密码、Authorization Header 等第三方凭据禁止写入本表。
 
@@ -327,6 +328,22 @@ Qwen Filetrans 提交单个 16kHz 单声道整文件；其带 `speaker_id` 的�
 活动字段只在进行中修订上作为轮询状态存在：queued 初始化阶段但没有 Chunk，worker 领取后进入预处理；Chunk 字段必须全部为空或全部存在，时间范围必须递增，尝试次数必须关联当前 Chunk。中断恢复会清空 Chunk/尝试并重新排队，成功或失败会清空活动字段；失败 Chunk 与最终尝试次数另由安全的 `error_details` 保留。
 
 物理删除音频时，修订版及其结构化结果级联删除。
+
+### `audio_post_analysis_jobs`
+
+ASR 发布后的情绪分析和角色识别任务。每条任务固化 `analysis_revision_id`、`type`、`model` 与 `custom_business_roles_snapshot`，状态为 `queued`、`running`、`ready` 或 `failed`，并保存进度、完成时间和脱敏错误。部分唯一索引阻止同一 revision、同一类型同时存在多个运行任务，但允许情绪与角色任务并行。
+
+任务由对应 worker 使用 `FOR UPDATE SKIP LOCKED` 领取。进程重启时中断任务重新排队；失败只更新当前任务，不修改 revision 的 active 结果指针。
+
+### `segment_emotion_results`
+
+情绪任务的逐转写片段结果，以任务和 `segment_id` 唯一。保存固定主情绪、置信度、态度、唤醒度、语速、音量趋势、音高变化、停顿模式、最多 5 条声音线索及实际模型。写入完整任务结果后，事务最后更新 `audio_analysis_revisions.active_emotion_job_id`。
+
+### `speaker_role_results`
+
+角色任务的录音级说话人结果，以任务和 `speaker_key` 唯一。保存核心或自定义角色类型、展示名称、置信度、最多 3 个证据片段 ID 及实际模型。读取时同一个 `speakerKey` 的结果应用到该说话人的所有转写片段；写入完成后，事务最后更新 `audio_analysis_revisions.active_role_job_id`。
+
+`active_emotion_job_id` 与 `active_role_job_id` 都属于 ASR revision，因此重转写产生的新 revision 不会泄漏旧 revision 的后处理结果。
 
 ### `analysis_scenes`
 
