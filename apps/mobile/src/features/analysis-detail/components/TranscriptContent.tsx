@@ -64,16 +64,21 @@ function SegmentView({
   segment: TranscriptSegment;
   speakerDisplayName: string;
 }) {
+  const identifiedRole = segment.roleAnalysis;
+  const primaryIdentity = identifiedRole?.label ?? speakerDisplayName;
+  const secondaryIdentity = identifiedRole
+    ? `${speakerDisplayName} · 角色置信度 ${Math.round(identifiedRole.confidence * 100)}%`
+    : segment.businessRole === 'unknown'
+      ? '角色未知'
+      : segment.businessRole;
+
   return (
     <View style={styles.segment}>
       <View style={styles.segmentMain}>
         <View style={styles.speakerRow}>
-          <Text style={[styles.speakerName, dimmed && styles.dimmedText]}>
-            {speakerDisplayName}
-          </Text>
+          <Text style={[styles.speakerName, dimmed && styles.dimmedText]}>{primaryIdentity}</Text>
           <Text style={[styles.businessRole, dimmed && styles.dimmedText]}>
-            {segment.businessRole === 'unknown' ? '角色未知' : segment.businessRole}
-            {segment.roleAnalysis ? ` · ${Math.round(segment.roleAnalysis.confidence * 100)}%` : ''}
+            {secondaryIdentity}
           </Text>
         </View>
         <Pressable

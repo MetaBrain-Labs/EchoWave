@@ -154,6 +154,20 @@ describe('GroupScreen', () => {
     expect(screen.getByText('共连接 3 个数据源')).toBeTruthy();
   });
 
+  it('opens linked knowledge bases and connected data sources from their cards', async () => {
+    const onOpenKnowledge = jest.fn();
+    const onOpenSource = jest.fn();
+    const screen = await renderGroup({ onOpenKnowledge, onOpenSource });
+
+    fireEvent.press(screen.getByText('关联知识库'));
+    fireEvent.press(screen.getByLabelText(`打开知识库：${knowledgeFixtures[0].name}`));
+    expect(onOpenKnowledge).toHaveBeenCalledWith(knowledgeFixtures[0].id);
+
+    fireEvent.press(screen.getByText('连接数据源'));
+    fireEvent.press(screen.getByLabelText(`打开数据源：${sourceFixtures[0].name}`));
+    expect(onOpenSource).toHaveBeenCalledWith(sourceFixtures[0].id);
+  });
+
   it('synchronizes the selected group tab after a horizontal swipe', async () => {
     const screen = await renderGroup();
 

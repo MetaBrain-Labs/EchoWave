@@ -149,7 +149,7 @@ describe('AnalysisDetailScreen', () => {
     expect(screen.queryByText('已跳过 12 秒无效片段')).toBeNull();
   });
 
-  it('shows ASR roles and hides the empty summary page', async () => {
+  it('promotes the recognized role and labels its confidence', async () => {
     jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValueOnce({
       ...analysisFixture,
       summarySections: [],
@@ -163,6 +163,13 @@ describe('AnalysisDetailScreen', () => {
               speakerLabel: '销售',
               businessRole: '销售',
               emotion: 'neutral',
+              roleAnalysis: {
+                kind: 'sales',
+                label: '销售',
+                confidence: 0.92,
+                evidenceSegmentIds: [],
+                model: 'deepseek-v4-flash',
+              },
             },
           ],
         },
@@ -170,8 +177,9 @@ describe('AnalysisDetailScreen', () => {
     });
     const screen = await renderAnalysis();
 
-    expect(screen.getByText('Speaker 0')).toBeTruthy();
     expect(screen.getByText('销售')).toBeTruthy();
+    expect(screen.getByText('Speaker 0 · 角色置信度 92%')).toBeTruthy();
+    expect(screen.queryByText('Speaker 0')).toBeNull();
     expect(screen.getByText('平静')).toBeTruthy();
     expect(screen.queryByRole('tab', { name: '分析总结' })).toBeNull();
   });
