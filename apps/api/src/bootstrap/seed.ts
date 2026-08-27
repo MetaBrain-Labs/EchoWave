@@ -148,6 +148,32 @@ async function seedPublishedAnalysis(client: PoolClient, value: SeedAnalysisIds)
       [segment[0], tenantId, value.analysis, ...segment.slice(1)],
     );
   }
+  const confirmation = await client.query(
+    `INSERT INTO ${table('transcript_confirmations')}
+       (tenant_id, analysis_revision_id, version_no, confirmed_at)
+     VALUES ($1, $2, 1, $3)
+     ON CONFLICT (tenant_id, analysis_revision_id, version_no)
+     DO UPDATE SET confirmed_at = EXCLUDED.confirmed_at
+     RETURNING id`,
+    [tenantId, value.analysis, value.publishedAt],
+  );
+  for (const segment of segmentRows) {
+    await client.query(
+      `INSERT INTO ${table('transcript_confirmation_segments')}
+         (tenant_id, transcript_confirmation_id, analysis_revision_id,
+          transcript_segment_id, text)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (tenant_id, transcript_confirmation_id, transcript_segment_id)
+       DO UPDATE SET text = EXCLUDED.text`,
+      [tenantId, confirmation.rows[0].id, value.analysis, segment[0], segment[8]],
+    );
+  }
+  await client.query(
+    `UPDATE ${table('audio_analysis_revisions')}
+     SET active_transcript_confirmation_id = $3
+     WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, value.analysis, confirmation.rows[0].id],
+  );
   const tagRows = [
     [
       value.tags[0],

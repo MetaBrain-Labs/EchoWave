@@ -245,6 +245,7 @@ describe('DefaultWorkspaceService audio post-analysis', () => {
       'qwen-audio-3.0-asr-flash-filetrans',
       { refreshFfmpegAvailability: async () => false },
       { queue: async (...args) => queued.push(args) },
+      { confirm: async () => undefined },
       'qwen3.5-omni-flash',
       'deepseek-v4-flash',
       true,
@@ -271,6 +272,7 @@ describe('DefaultWorkspaceService audio post-analysis', () => {
           return { audioFileId: args[0], type: args[1] };
         },
       },
+      { confirm: async () => undefined },
       'qwen3.5-omni-flash',
       'deepseek-v4-flash',
       false,

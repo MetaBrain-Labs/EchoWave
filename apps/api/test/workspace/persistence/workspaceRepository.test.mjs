@@ -132,6 +132,9 @@ describe('WorkspaceRepository audio analysis metadata', () => {
                   diarizationObserved: false,
                   responseGranularity: 'chunk',
                 },
+                active_transcript_confirmation_id: knowledgeId,
+                confirmation_version: 2,
+                confirmed_at: new Date('2026-08-25T01:02:00.000Z'),
                 title: '客户通话',
                 duration_ms: 45_000,
               },
@@ -154,7 +157,8 @@ describe('WorkspaceRepository audio analysis metadata', () => {
                 emotion: 'unknown',
                 start_ms: 0,
                 end_ms: 45_000,
-                text: '您好。',
+                raw_text: '您好呀。',
+                confirmed_text: '您好。',
                 tag_id: null,
               },
             ],
@@ -176,6 +180,13 @@ describe('WorkspaceRepository audio analysis metadata', () => {
       segmentationMode: 'readable',
       speakerIdentityScope: 'none',
     });
+    assert.deepEqual(response.transcriptConfirmation, {
+      status: 'confirmed',
+      currentVersion: 2,
+      confirmedAt: '2026-08-25T01:02:00.000Z',
+    });
+    assert.equal(response.scenes[0].segments[0].rawText, '您好呀。');
+    assert.equal(response.scenes[0].segments[0].confirmedText, '您好。');
   });
 });
 

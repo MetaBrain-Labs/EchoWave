@@ -841,10 +841,14 @@ export class WorkspaceRepository {
       `SELECT ar.id, ar.audio_file_id, ar.revision_no, ar.published_at,
               ar.transcription_model, ar.settings_snapshot,
               ar.active_emotion_job_id, ar.active_role_job_id,
+              ar.active_transcript_confirmation_id,
+              tc.version_no AS confirmation_version, tc.confirmed_at,
               af.title, coalesce(af.duration_ms, 0)::bigint AS duration_ms
        FROM ${this.table('audio_files')} af
        JOIN ${this.table('audio_analysis_revisions')} ar
          ON ar.tenant_id = af.tenant_id AND ar.id = af.active_analysis_revision_id
+       LEFT JOIN ${this.table('transcript_confirmations')} tc
+         ON tc.tenant_id = ar.tenant_id AND tc.id = ar.active_transcript_confirmation_id
        WHERE af.tenant_id = $1 AND af.id = $2 AND af.deleted_at IS NULL AND ar.status = 'ready'`,
       [this.tenantId, audioFileId],
     );
@@ -855,7 +859,8 @@ export class WorkspaceRepository {
       this.pool.query(
         `SELECT s.id AS scene_id, s.scene_index, s.title AS scene_title, s.start_ms AS scene_start_ms,
                 ts.id AS segment_id, ts.segment_index, ts.speaker_key, ts.speaker_label,
-                ts.business_role, ts.emotion, ts.start_ms, ts.end_ms, ts.text,
+                ts.business_role, ts.emotion, ts.start_ms, ts.end_ms,
+                ts.text AS raw_text, tcs.text AS confirmed_text,
                 tag.id AS tag_id, tag.title AS tag_title, tag.summary AS tag_summary, tag.details,
                 er.emotion_label, er.confidence AS emotion_confidence,
                 er.attitude, er.arousal, er.pace, er.volume_trend,
@@ -868,6 +873,9 @@ export class WorkspaceRepository {
            ON ts.tenant_id = s.tenant_id AND ts.scene_id = s.id
          LEFT JOIN ${this.table('segment_ai_tags')} tag
            ON tag.tenant_id = ts.tenant_id AND tag.transcript_segment_id = ts.id
+         LEFT JOIN ${this.table('transcript_confirmation_segments')} tcs
+           ON tcs.tenant_id = ts.tenant_id AND tcs.transcript_segment_id = ts.id
+          AND tcs.transcript_confirmation_id = $5
          LEFT JOIN ${this.table('segment_emotion_results')} er
            ON er.tenant_id = ts.tenant_id AND er.job_id = $3
           AND er.transcript_segment_id = ts.id
@@ -880,7 +888,13 @@ export class WorkspaceRepository {
            ON rj.tenant_id = rr.tenant_id AND rj.id = rr.job_id
          WHERE s.tenant_id = $1 AND s.analysis_revision_id = $2
          ORDER BY s.scene_index, ts.segment_index`,
-        [this.tenantId, row.id, row.active_emotion_job_id, row.active_role_job_id],
+        [
+          this.tenantId,
+          row.id,
+          row.active_emotion_job_id,
+          row.active_role_job_id,
+          row.active_transcript_confirmation_id,
+        ],
       ),
       this.pool.query(
         `SELECT id, start_ms, end_ms, reason
@@ -895,12 +909,15 @@ export class WorkspaceRepository {
         [this.tenantId, row.id],
       ),
       this.pool.query(
-        `SELECT DISTINCT ON (analysis_type)
-                id, analysis_type, model, status, progress, completed_at,
-                error_code, error_message, error_retryable
-         FROM ${this.table('audio_post_analysis_jobs')}
-         WHERE tenant_id = $1 AND analysis_revision_id = $2
-         ORDER BY analysis_type, created_at DESC`,
+        `SELECT DISTINCT ON (job.analysis_type)
+                job.id, job.analysis_type, job.model, job.status, job.progress,
+                job.completed_at, job.error_code, job.error_message, job.error_retryable,
+                tc.version_no AS confirmation_version
+         FROM ${this.table('audio_post_analysis_jobs')} job
+         JOIN ${this.table('transcript_confirmations')} tc
+           ON tc.tenant_id = job.tenant_id AND tc.id = job.transcript_confirmation_id
+         WHERE job.tenant_id = $1 AND job.analysis_revision_id = $2
+         ORDER BY job.analysis_type, job.created_at DESC`,
         [this.tenantId, row.id],
       ),
     ]);
@@ -951,7 +968,8 @@ export class WorkspaceRepository {
             : null,
           startMs: integer(item.start_ms),
           endMs: integer(item.end_ms),
-          text: item.text,
+          rawText: item.raw_text,
+          confirmedText: item.confirmed_text ?? null,
           aiTag: item.tag_id
             ? {
                 id: item.tag_id,
@@ -1007,6 +1025,7 @@ export class WorkspaceRepository {
           jobId: job.id,
           model: job.model,
           progress: integer(job.progress),
+          confirmationVersion: integer(job.confirmation_version),
         };
       }
       if (job.status === 'ready') {
@@ -1015,6 +1034,7 @@ export class WorkspaceRepository {
           jobId: job.id,
           model: job.model,
           completedAt: iso(job.completed_at),
+          confirmationVersion: integer(job.confirmation_version),
         };
       }
       return {
@@ -1024,6 +1044,7 @@ export class WorkspaceRepository {
         code: String(job.error_code ?? 'ANALYSIS_FAILED'),
         message: String(job.error_message ?? '分析失败。'),
         retryable: Boolean(job.error_retryable),
+        confirmationVersion: integer(job.confirmation_version),
       };
     };
 
@@ -1043,6 +1064,13 @@ export class WorkspaceRepository {
         speakerIdentityScope,
         preprocessingMode,
       },
+      transcriptConfirmation: row.active_transcript_confirmation_id
+        ? {
+            status: 'confirmed',
+            currentVersion: integer(row.confirmation_version),
+            confirmedAt: iso(row.confirmed_at),
+          }
+        : { status: 'pending', currentVersion: 0, confirmedAt: null },
       postAnalysis: {
         emotion: postAnalysisState('emotion'),
         role: postAnalysisState('role'),

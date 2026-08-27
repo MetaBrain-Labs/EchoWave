@@ -243,6 +243,11 @@ export const analysisFixture: AudioAnalysisDetail = {
     speakerIdentityScope: 'recording',
     preprocessingMode: 'whole_file',
   },
+  transcriptConfirmation: {
+    status: 'confirmed',
+    currentVersion: 1,
+    confirmedAt: '2026-08-15T10:52:00.000Z',
+  },
   postAnalysis: {
     emotion: { state: 'idle' },
     role: { state: 'idle' },
@@ -273,7 +278,10 @@ export const analysisFixture: AudioAnalysisDetail = {
           emotionAnalysis: null,
           startMs: 0,
           endMs: 28_000,
-          text: '今天想和你聊聊最近使用团队音频整理工具的体验。先从日常工作开始，你通常会在什么场景下记录和回听访谈？',
+          rawText:
+            '今天想和你聊聊最近使用团队音频整理工具的体验。先从日常工作开始，你通常会在什么场景下记录和回听访谈？',
+          confirmedText:
+            '今天想和你聊聊最近使用团队音频整理工具的体验。先从日常工作开始，你通常会在什么场景下记录和回听访谈？',
           aiTag: {
             id: '90000000-0000-4000-8000-000000000001',
             title: '高频访谈记录场景',
@@ -292,7 +300,10 @@ export const analysisFixture: AudioAnalysisDetail = {
           emotionAnalysis: null,
           startMs: 29_000,
           endMs: 71_000,
-          text: '最常见的是用户访谈和每周复盘。我会先完整录音，结束后再回听并整理重点，但在很长的录音里寻找关键内容会花不少时间。',
+          rawText:
+            '最常见的是用户访谈和每周复盘。我会先完整录音，结束后再回听并整理重点，但在很长的录音里寻找关键内容会花不少时间。',
+          confirmedText:
+            '最常见的是用户访谈和每周复盘。我会先完整录音，结束后再回听并整理重点，但在很长的录音里寻找关键内容会花不少时间。',
           aiTag: null,
         },
       ],

@@ -43,12 +43,13 @@ apps/api/src/http ───────> @echowave/contracts <──── apps/
 - PostgreSQL 同时保存租户级分组、数据源、音频元数据和已发布音频分析修订版；音频二进制与第三方凭据不进入业务表。
 - 手动上传音频先经扩展名、MIME 和媒体结构校验，再以随机文件名写入 `AUDIO_STORAGE_DIR`；数据库只保存相对 `storage_key`。文件写入或数据库事务失败时会补偿清理本批新文件。
 - 音频转写使用 `audio_analysis_revisions` 作为 PostgreSQL 队列，并把供应商、实际模型、分段模式、固定语言、声明能力、实际响应能力与预处理模式写入 revision 设置快照。`silero_vad` 路径以本地 ONNX 模型流式检测人声并压缩超过 30 秒的非人声区间，`whole_file` 路径保留完整音频；两者都通过 FFmpeg 生成单个 16kHz 单声道 MP3，经短期 OSS 对象和 24 小时签名 URL 提交北京地域 DashScope Qwen 文件转写，不在修订内自动切换模型或预处理模式。
-- 情绪分析和角色识别使用 `audio_post_analysis_jobs` 作为两个独立队列。任务创建时固化当前 ASR revision、模型和数据源自定义角色字典；两类 worker 各自单并发并通过 `FOR UPDATE SKIP LOCKED` 领取，因此可以并行运行但不会让同类型任务重入。
+- `transcript_segments.text` 永久保存供应商 Raw Transcript；人工确认通过 `transcript_confirmations` 与 `transcript_confirmation_segments` 保存完整不可变快照，并由 ASR revision 上的 active 指针选择当前 Confirmed Transcript。确认只替换正文快照，不重建片段或修改 Speaker、时间戳和既有分析指针。
+- 情绪分析和角色识别使用 `audio_post_analysis_jobs` 作为两个独立队列。任务只能从已确认的 ASR revision 创建，并固化当前确认版本、模型和数据源自定义角色字典；worker 始终从该确认快照读取正文。两类 worker 各自单并发并通过 `FOR UPDATE SKIP LOCKED` 领取，因此可以并行运行但不会让同类型任务重入。
 - 分组通过关联表连接知识库和数据源；分组可见音频由显式分享与关联数据源两条关系合并去重，页面计数不作为可写字段保存。
 - 分组和数据源允许在当前固定租户内创建和软归档；归档数据源会从活动列表、分组统计和数据源继承的音频可见关系中排除它，但不会删除关联、音频事实或本地文件。
 - 知识库保存当前只读的存储、索引、模型和解析模式；概览统计继续由活动文档事实动态聚合。
 - 知识库可通过租户隔离的批量接口关联多个活动分组；批量校验和插入在同一事务内完成，重复关联保持幂等。
-- 新音频修订版只有完整写入本次产生的场景和转写后才替换当前版本指针；情绪与角色结果分别写入版本化结果表，并在各自事务的最后切换 revision 上的 active 指针。任何后处理失败或重跑都不会覆盖旧结果，新 ASR revision 也不会读取旧 revision 的后处理指针。
+- 新音频修订版只有完整写入本次产生的场景和 Raw Transcript 后才替换当前版本指针，并以待确认状态展示；情绪与角色结果分别写入版本化结果表，并在各自事务的最后切换 revision 上的 active 指针。再次确认正文、后处理失败或重跑都不会覆盖旧分析结果，新 ASR revision 也不会读取旧 revision 的确认或后处理指针。
 - 所有仓储 SQL 都包含 `tenant_id`，检索还同时约束知识库和文档当前生效 revision。
 - `ingestion_jobs` 通过 `FOR UPDATE SKIP LOCKED`、租约和幂等 chunk 唯一键恢复执行。
 - 音频转写通过部分唯一索引阻止同一音频并发任务，并用 `FOR UPDATE SKIP LOCKED` 领取；单实例重启时会重新排队中断修订。DashScope 的任务 ID、临时 OSS 对象键和提交时间随修订持久化，恢复时继续轮询已有任务，不重复创建修订或提交供应商任务。

@@ -25,11 +25,13 @@ import {
   AudioTranscriptionStartRequest,
   AudioTranscriptionModel,
   AudioPostAnalysisType,
+  AudioTranscriptConfirmationRequest,
 } from '@echowave/contracts';
 
 import type { StoredAudioUpload, WorkspaceRepository } from './persistence/workspaceRepository.ts';
 import type { AudioAnalysisRepository } from './persistence/audioAnalysisRepository.ts';
 import type { PostAnalysisRepository } from './persistence/postAnalysisRepository.ts';
+import type { TranscriptConfirmationRepository } from './persistence/transcriptConfirmationRepository.ts';
 import { WorkspaceRepositoryError } from './persistence/errors.ts';
 import type { AudioInputPreprocessor } from './transcription/audioPreprocessor.ts';
 
@@ -184,6 +186,10 @@ export interface WorkspaceService {
     input: AudioTranscriptionStartRequest,
   ): Promise<Awaited<ReturnType<AudioAnalysisRepository['queueTranscription']>>>;
   getAudioAnalysis(id: string): ReturnType<WorkspaceRepository['getAudioAnalysis']>;
+  confirmAudioTranscript(
+    id: string,
+    input: AudioTranscriptConfirmationRequest,
+  ): ReturnType<TranscriptConfirmationRepository['confirm']>;
   startAudioPostAnalysis(
     id: string,
     type: AudioPostAnalysisType,
@@ -199,6 +205,7 @@ export class DefaultWorkspaceService implements WorkspaceService {
     private readonly audioTranscriptionModel: AudioTranscriptionModel,
     private readonly audioInputPreprocessor: AudioInputPreprocessor,
     private readonly postAnalysisRepository: PostAnalysisRepository,
+    private readonly transcriptConfirmationRepository: TranscriptConfirmationRepository,
     private readonly audioEmotionModel: 'qwen3.5-omni-flash',
     private readonly roleModel: 'deepseek-v4-flash',
     private readonly emotionProviderConfigured: boolean,
@@ -325,6 +332,10 @@ export class DefaultWorkspaceService implements WorkspaceService {
   }
   getAudioAnalysis(id: string) {
     return this.repository.getAudioAnalysis(id);
+  }
+
+  confirmAudioTranscript(id: string, input: AudioTranscriptConfirmationRequest) {
+    return this.transcriptConfirmationRepository.confirm(id, input);
   }
 
   /** 校验情绪分析运行依赖后，为当前 ASR 修订创建指定后置任务。 */

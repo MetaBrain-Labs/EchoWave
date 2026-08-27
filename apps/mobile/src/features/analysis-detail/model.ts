@@ -14,6 +14,7 @@ import type {
   AudioAnalysisDetail,
   AudioPostAnalysisState,
   AudioTranscriptionMetadata,
+  AudioTranscriptConfirmationState,
   SegmentEmotionAnalysis,
   SegmentRoleAnalysis,
 } from '@echowave/contracts';
@@ -34,6 +35,8 @@ export type TranscriptSegment = {
   speakerKey: string;
   speakerLabel: string;
   roleAnalysis?: SegmentRoleAnalysis;
+  rawText: string;
+  confirmedText?: string;
   startSeconds: number;
   text: string;
 };
@@ -67,11 +70,13 @@ export type AnalysisDetailView = {
   durationSeconds: number;
   generatedAt: string;
   id: string;
+  revisionId: string;
   invalidSegments: readonly TranscriptInvalidSegment[];
   scenes: readonly TranscriptScene[];
   summarySections: readonly SummarySection[];
   title: string;
   transcription: AudioTranscriptionMetadata;
+  transcriptConfirmation: AudioTranscriptConfirmationState;
   postAnalysis: { emotion: AudioPostAnalysisState; role: AudioPostAnalysisState };
 };
 
@@ -161,7 +166,9 @@ export function toAnalysisDetailView(detail: AudioAnalysisDetail): AnalysisDetai
       emotionAnalysis: segment.emotionAnalysis ?? undefined,
       startSeconds: segment.startMs / 1_000,
       endSeconds: segment.endMs / 1_000,
-      text: segment.text,
+      rawText: segment.rawText,
+      confirmedText: segment.confirmedText ?? undefined,
+      text: segment.confirmedText ?? segment.rawText,
       aiTag: segment.aiTag
         ? {
             title: segment.aiTag.title,
@@ -173,10 +180,12 @@ export function toAnalysisDetailView(detail: AudioAnalysisDetail): AnalysisDetai
   }));
   return {
     id: detail.audioFileId,
+    revisionId: detail.id,
     title: detail.title,
     durationSeconds: detail.durationMs / 1_000,
     generatedAt: new Date(detail.generatedAt).toLocaleString(),
     transcription: detail.transcription,
+    transcriptConfirmation: detail.transcriptConfirmation,
     postAnalysis: detail.postAnalysis,
     invalidSegments,
     scenes: attachTimelineItems(scenes, invalidSegments),

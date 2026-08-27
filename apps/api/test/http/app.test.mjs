@@ -55,6 +55,7 @@ describe('workspace routes', () => {
   let uploadedAudioInput;
   let startedTranscriptionInput;
   let startedPostAnalysisInput;
+  let confirmedTranscriptInput;
   const workspaceService = {
     listGroups: async () => ({
       items: [
@@ -123,6 +124,16 @@ describe('workspace routes', () => {
     startAudioTranscription: async (id, input) => {
       startedTranscriptionInput = { id, input };
       return { audioFileId: id, revisionId: groupId, status: 'queued' };
+    },
+    confirmAudioTranscript: async (id, input) => {
+      confirmedTranscriptInput = { id, input };
+      return {
+        audioFileId: id,
+        analysisRevisionId: input.analysisRevisionId,
+        confirmationId: groupId,
+        version: input.baseVersion + 1,
+        confirmedAt: '2026-08-28T01:00:00.000Z',
+      };
     },
     startAudioPostAnalysis: async (id, type) => {
       startedPostAnalysisInput = { id, type };
@@ -314,6 +325,76 @@ describe('workspace routes', () => {
       body: JSON.stringify({ model: 'unknown/model', preprocessing: 'whole_file' }),
     });
     assert.equal(invalidModel.status, 400);
+  });
+
+  it('validates and publishes a complete transcript confirmation', async () => {
+    const response = await workspaceApp.request(
+      `/api/audio-files/${groupId}/transcript-confirmations`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          analysisRevisionId: groupId,
+          baseVersion: 0,
+          segments: [{ segmentId: groupId, text: '  修正正文  ' }],
+        }),
+      },
+    );
+    assert.equal(response.status, 201);
+    assert.deepEqual(confirmedTranscriptInput, {
+      id: groupId,
+      input: {
+        analysisRevisionId: groupId,
+        baseVersion: 0,
+        segments: [{ segmentId: groupId, text: '修正正文' }],
+      },
+    });
+    assert.equal((await response.json()).version, 1);
+
+    const invalid = await workspaceApp.request(
+      `/api/audio-files/${groupId}/transcript-confirmations`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          analysisRevisionId: groupId,
+          baseVersion: 0,
+          segments: [
+            { segmentId: groupId, text: '甲' },
+            { segmentId: groupId, text: '乙' },
+          ],
+        }),
+      },
+    );
+    assert.equal(invalid.status, 400);
+  });
+
+  it('returns a structured conflict for a stale transcript confirmation', async () => {
+    const conflictApp = createApp(
+      { corsOrigins: ['http://localhost:8081'] },
+      {
+        workspaceService: {
+          ...workspaceService,
+          confirmAudioTranscript: async () => {
+            throw new WorkspaceRepositoryError('CONFLICT', '确认版本已变化，请重新加载后再编辑。');
+          },
+        },
+      },
+    );
+    const response = await conflictApp.request(
+      `/api/audio-files/${groupId}/transcript-confirmations`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          analysisRevisionId: groupId,
+          baseVersion: 1,
+          segments: [{ segmentId: groupId, text: '修改' }],
+        }),
+      },
+    );
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).error.code, 'CONFLICT');
   });
 
   it('queues emotion and role post-analysis independently', async () => {

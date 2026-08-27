@@ -68,9 +68,12 @@ create table public.audio_analysis_revisions (
   provider_submitted_at timestamp with time zone,
   active_emotion_job_id uuid,
   active_role_job_id uuid,
+  active_transcript_confirmation_id uuid,
   foreign key (tenant_id, id, active_emotion_job_id) references public.audio_post_analysis_jobs (tenant_id, analysis_revision_id, id)
   match simple on update no action on delete no action,
   foreign key (tenant_id, id, active_role_job_id) references public.audio_post_analysis_jobs (tenant_id, analysis_revision_id, id)
+  match simple on update no action on delete no action,
+  foreign key (tenant_id, id, active_transcript_confirmation_id) references public.transcript_confirmations (tenant_id, analysis_revision_id, id)
   match simple on update no action on delete no action,
   foreign key (tenant_id, audio_file_id) references public.audio_files (tenant_id, id)
   match simple on update no action on delete cascade
@@ -135,10 +138,13 @@ create table public.audio_post_analysis_jobs (
   created_at timestamp with time zone not null default now(),
   completed_at timestamp with time zone,
   published_at timestamp with time zone,
+  transcript_confirmation_id uuid not null,
   foreign key (tenant_id, audio_file_id, analysis_revision_id) references public.audio_analysis_revisions (tenant_id, audio_file_id, id)
   match simple on update no action on delete cascade,
   foreign key (tenant_id, audio_file_id) references public.audio_files (tenant_id, id)
-  match simple on update no action on delete cascade
+  match simple on update no action on delete cascade,
+  foreign key (tenant_id, analysis_revision_id, transcript_confirmation_id) references public.transcript_confirmations (tenant_id, analysis_revision_id, id)
+  match simple on update no action on delete no action
 );
 create unique index audio_post_analysis_jobs_tenant_id_id_key on audio_post_analysis_jobs using btree (tenant_id, id);
 create unique index audio_post_analysis_jobs_tenant_id_analysis_revision_id_id_key on audio_post_analysis_jobs using btree (tenant_id, analysis_revision_id, id);
@@ -466,6 +472,33 @@ create table public.tenants (
   name text not null,
   created_at timestamp with time zone not null default now()
 );
+
+create table public.transcript_confirmation_segments (
+  tenant_id uuid not null,
+  transcript_confirmation_id uuid not null,
+  analysis_revision_id uuid not null,
+  transcript_segment_id uuid not null,
+  text text not null,
+  primary key (tenant_id, transcript_confirmation_id, transcript_segment_id),
+  foreign key (tenant_id, analysis_revision_id, transcript_segment_id) references public.transcript_segments (tenant_id, analysis_revision_id, id)
+  match simple on update no action on delete cascade,
+  foreign key (tenant_id, analysis_revision_id, transcript_confirmation_id) references public.transcript_confirmations (tenant_id, analysis_revision_id, id)
+  match simple on update no action on delete cascade
+);
+create index transcript_confirmation_segments_raw_idx on transcript_confirmation_segments using btree (tenant_id, analysis_revision_id, transcript_segment_id);
+
+create table public.transcript_confirmations (
+  id uuid primary key not null default gen_random_uuid(),
+  tenant_id uuid not null,
+  analysis_revision_id uuid not null,
+  version_no integer not null,
+  confirmed_at timestamp with time zone not null default now(),
+  foreign key (tenant_id, analysis_revision_id) references public.audio_analysis_revisions (tenant_id, id)
+  match simple on update no action on delete cascade
+);
+create unique index transcript_confirmations_tenant_id_id_key on transcript_confirmations using btree (tenant_id, id);
+create unique index transcript_confirmations_tenant_id_analysis_revision_id_id_key on transcript_confirmations using btree (tenant_id, analysis_revision_id, id);
+create unique index transcript_confirmations_tenant_id_analysis_revision_id_ver_key on transcript_confirmations using btree (tenant_id, analysis_revision_id, version_no);
 
 create table public.transcript_segments (
   id uuid primary key not null default gen_random_uuid(),

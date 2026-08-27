@@ -17,6 +17,8 @@ import {
   ApiErrorResponseSchema,
   AudioAnalysisDetailSchema,
   AudioPostAnalysisStartResponseSchema,
+  AudioTranscriptConfirmationRequestSchema,
+  AudioTranscriptConfirmationResponseSchema,
   AudioFileListResponseSchema,
   AudioTranscriptionCapabilitiesResponseSchema,
   AudioTranscriptionStartRequestSchema,
@@ -40,6 +42,7 @@ import {
   type GroupCreateRequest,
   type KnowledgeBaseGroupLinkRequest,
   type AudioTranscriptionStartRequest,
+  type AudioTranscriptConfirmationRequest,
 } from '@echowave/contracts';
 
 import { apiUrl } from './apiUrl';
@@ -217,6 +220,15 @@ export const startAudioTranscription = (id: string, input: AudioTranscriptionSta
   });
 export const getAudioAnalysis = (id: string) =>
   request(`/api/audio-files/${id}/analysis`, AudioAnalysisDetailSchema);
+export const confirmAudioTranscript = (id: string, input: AudioTranscriptConfirmationRequest) =>
+  request(
+    `/api/audio-files/${id}/transcript-confirmations`,
+    AudioTranscriptConfirmationResponseSchema,
+    {
+      body: AudioTranscriptConfirmationRequestSchema.parse(input),
+      method: 'POST',
+    },
+  );
 export const startAudioEmotionAnalysis = (id: string) =>
   request(`/api/audio-files/${id}/analysis/emotion`, AudioPostAnalysisStartResponseSchema, {
     method: 'POST',
