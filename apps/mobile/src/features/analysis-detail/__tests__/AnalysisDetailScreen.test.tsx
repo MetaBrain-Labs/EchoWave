@@ -135,30 +135,89 @@ describe('AnalysisDetailScreen', () => {
     expect(screen.getByText(/breathing becomes faster/)).toBeTruthy();
   });
 
-  it('renders transcript content and toggles invalid segments', async () => {
+  it('renders every invalid interval at its original timeline position and hides all on request', async () => {
+    const firstSegment = {
+      ...analysisFixture.scenes[0].segments[0],
+      startMs: 35_000,
+      endMs: 45_000,
+    };
+    const secondSegment = {
+      ...analysisFixture.scenes[0].segments[1],
+      startMs: 95_000,
+      endMs: 105_000,
+    };
     jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValueOnce({
       ...analysisFixture,
       invalidSegments: [
-        ...analysisFixture.invalidSegments,
+        {
+          id: 'a0000000-0000-4000-8000-000000000001',
+          startMs: 0,
+          endMs: 35_000,
+          reason: 'silero_vad_non_speech',
+        },
         {
           id: 'a0000000-0000-4000-8000-000000000002',
-          startMs: 120_000,
+          startMs: 45_000,
+          endMs: 95_000,
+          reason: 'silero_vad_non_speech',
+        },
+        {
+          id: 'a0000000-0000-4000-8000-000000000003',
+          startMs: 105_000,
           endMs: 130_000,
           reason: 'silero_vad_non_speech',
+        },
+      ],
+      scenes: [
+        {
+          ...analysisFixture.scenes[0],
+          segments: [firstSegment],
+        },
+        {
+          ...analysisFixture.scenes[0],
+          id: '60000000-0000-4000-8000-000000000002',
+          index: 2,
+          title: '第二场景',
+          startMs: 95_000,
+          segments: [secondSegment],
         },
       ],
     });
     const screen = await renderAnalysis();
 
     expect(screen.getByText('1. 开场与访谈背景')).toBeTruthy();
-    expect(screen.getByText('已跳过 22 秒无效片段')).toBeTruthy();
+    expect(screen.getByText('已跳过 35 秒无效片段')).toBeTruthy();
+    expect(screen.getByText('已跳过 50 秒无效片段')).toBeTruthy();
+    expect(screen.getByText('已跳过 25 秒无效片段')).toBeTruthy();
+    expect(screen.queryByText('已跳过 110 秒无效片段')).toBeNull();
+    expect(
+      screen.getAllByTestId(/^transcript-timeline-item-/).map((item) => item.props.testID),
+    ).toEqual([
+      'transcript-timeline-item-invalid-a0000000-0000-4000-8000-000000000001',
+      `transcript-timeline-item-segment-${firstSegment.id}`,
+      'transcript-timeline-item-invalid-a0000000-0000-4000-8000-000000000002',
+      `transcript-timeline-item-segment-${secondSegment.id}`,
+      'transcript-timeline-item-invalid-a0000000-0000-4000-8000-000000000003',
+    ]);
     expect(StyleSheet.flatten(screen.getByText('转写分析').props.style)).toEqual(
       expect.objectContaining({ paddingBottom: 4 }),
     );
 
     fireEvent.press(screen.getByText('跳过无效音频'));
 
-    expect(screen.queryByText('已跳过 22 秒无效片段')).toBeNull();
+    expect(screen.queryByText('已跳过 35 秒无效片段')).toBeNull();
+    expect(screen.queryByText('已跳过 50 秒无效片段')).toBeNull();
+    expect(screen.queryByText('已跳过 25 秒无效片段')).toBeNull();
+  });
+
+  it('does not render an invalid-audio marker when no interval was skipped', async () => {
+    jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValueOnce({
+      ...analysisFixture,
+      invalidSegments: [],
+    });
+    const screen = await renderAnalysis();
+
+    expect(screen.queryAllByTestId(/^transcript-timeline-item-invalid-/)).toHaveLength(0);
   });
 
   it('promotes the recognized role and labels its confidence', async () => {
@@ -340,6 +399,7 @@ describe('AnalysisDetailScreen', () => {
 
     expect(screen.getByText(selectedText)).toBeTruthy();
     expect(screen.queryByText(unrelatedText)).toBeNull();
+    expect(screen.queryAllByTestId(/^transcript-timeline-item-invalid-/)).toHaveLength(0);
   });
 
   it('keeps the hide preference across analysis records in the app session', async () => {
