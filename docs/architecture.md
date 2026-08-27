@@ -42,7 +42,7 @@ apps/api/src/http ───────> @echowave/contracts <──── apps/
 - PostgreSQL 是知识库、文档、revision、chunk、任务、会话和运行记录的权威来源。
 - PostgreSQL 同时保存租户级分组、数据源、音频元数据和已发布音频分析修订版；音频二进制与第三方凭据不进入业务表。
 - 手动上传音频先经扩展名、MIME 和媒体结构校验，再以随机文件名写入 `AUDIO_STORAGE_DIR`；数据库只保存相对 `storage_key`。文件写入或数据库事务失败时会补偿清理本批新文件。
-- 音频转写使用 `audio_analysis_revisions` 作为 PostgreSQL 队列，并把供应商、实际模型、分段模式、固定语言、声明能力、实际响应能力与预处理模式写入 revision 设置快照。唯一运行时路径通过 FFmpeg 生成单个 16kHz 单声道 MP3，经短期 OSS 对象和 24 小时签名 URL 提交北京地域 DashScope Qwen 文件转写，不在修订内自动切换模型。
+- 音频转写使用 `audio_analysis_revisions` 作为 PostgreSQL 队列，并把供应商、实际模型、分段模式、固定语言、声明能力、实际响应能力与预处理模式写入 revision 设置快照。`silero_vad` 路径以本地 ONNX 模型流式检测人声并压缩超过 30 秒的非人声区间，`whole_file` 路径保留完整音频；两者都通过 FFmpeg 生成单个 16kHz 单声道 MP3，经短期 OSS 对象和 24 小时签名 URL 提交北京地域 DashScope Qwen 文件转写，不在修订内自动切换模型或预处理模式。
 - 情绪分析和角色识别使用 `audio_post_analysis_jobs` 作为两个独立队列。任务创建时固化当前 ASR revision、模型和数据源自定义角色字典；两类 worker 各自单并发并通过 `FOR UPDATE SKIP LOCKED` 领取，因此可以并行运行但不会让同类型任务重入。
 - 分组通过关联表连接知识库和数据源；分组可见音频由显式分享与关联数据源两条关系合并去重，页面计数不作为可写字段保存。
 - 分组和数据源允许在当前固定租户内创建和软归档；归档数据源会从活动列表、分组统计和数据源继承的音频可见关系中排除它，但不会删除关联、音频事实或本地文件。
@@ -69,7 +69,7 @@ apps/api/src/http ───────> @echowave/contracts <──── apps/
 ## 模型与 Agent 边界
 
 - DashScope 原生 TextEmbedding 接口使用 `qwen3.7-text-embedding`，固定输出 1024 维密集向量，文档批次最多 20；文档发送 `text_type=document`，查询发送 `text_type=query` 并添加英文检索指令。
-- `qwen-audio-3.0-asr-flash-filetrans` 固定使用 `speaker_turn + whole_file` 组合，通过 DashScope 异步任务和 `diarization_enabled=true` 转写。移动端只展示该组合；OSS 配置或 FFmpeg 缺失时保持可见但禁用，绝不静默降级。
+- `qwen-audio-3.0-asr-flash-filetrans` 固定使用 `speaker_turn`，预处理可明确选择 `silero_vad` 或 `whole_file`。Silero 清单与临时 OSS 对象键原子保存，重启恢复轮询后仍用压缩时长校验供应商结果并把时间戳映射回原录音；跨折叠边界的模糊结果拒绝发布。OSS 配置或 FFmpeg 缺失时模型保持可见但禁用；VAD 缺失时整文件模式仍可显式选择，绝不静默降级。
 - `qwen3.5-omni-flash` 仅负责逐片段声学情绪，通过北京地域 OpenAI-compatible Chat Completions 接收签名 OSS URL；Prompt 与 Schema 描述为英文，用户正文保持原文。结果必须逐一覆盖目标片段，并保存固定枚举、置信度及声音线索。
 - `deepseek-v4-flash` 以非思考模式和 JSON Output 识别录音级业务角色。核心角色为“销售、客户、其他、未知”，数据源可在此基础上增加最多 16 个自定义角色。
 - 检索使用 cosine HNSW、`ef_search=100` 和 pgvector iterative scan，初召回 30，去重和文档配额后最多向 Agent 提供 8 块/12000 字符。

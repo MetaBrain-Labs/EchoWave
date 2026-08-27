@@ -19,7 +19,7 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
-import type { AnalysisDetailView, TranscriptSegment } from '../model';
+import type { AnalysisDetailView, TranscriptInvalidSegment, TranscriptSegment } from '../model';
 import { Checkbox } from './AnalysisControls';
 import { formatTime, showComingSoon } from './utils';
 
@@ -73,7 +73,7 @@ function SegmentView({
       : segment.businessRole;
 
   return (
-    <View style={styles.segment}>
+    <View style={styles.segment} testID={`transcript-timeline-item-segment-${segment.id}`}>
       <View style={styles.segmentMain}>
         <View style={styles.speakerRow}>
           <Text style={[styles.speakerName, dimmed && styles.dimmedText]}>{primaryIdentity}</Text>
@@ -125,6 +125,26 @@ function SegmentView({
           </Pressable>
         ) : null}
       </View>
+    </View>
+  );
+}
+
+function InvalidSegmentView({ invalidSegment }: { invalidSegment: TranscriptInvalidSegment }) {
+  return (
+    <View
+      accessibilityLabel={`已跳过 ${invalidSegment.durationSeconds} 秒无效片段`}
+      accessible
+      style={styles.invalidSegment}
+      testID={`transcript-timeline-item-invalid-${invalidSegment.id}`}
+    >
+      <Ionicons
+        color={colors.muted}
+        name="volume-mute-outline"
+        size={typography.description.lineHeight}
+      />
+      <Text style={styles.invalidSegmentText}>
+        已跳过 {invalidSegment.durationSeconds} 秒无效片段
+      </Text>
     </View>
   );
 }
@@ -207,16 +227,21 @@ export function TranscriptContent({
           <Text style={styles.emptyTranscriptText}>未识别到可转写的语音内容。</Text>
         </View>
       ) : null}
+      {visibleScenes.length === 0 && !skipInvalid && !hasSelectedSegment
+        ? detail.invalidSegments.map((invalidSegment) => (
+            <InvalidSegmentView invalidSegment={invalidSegment} key={invalidSegment.id} />
+          ))
+        : null}
       {visibleScenes.map((scene) => {
         const sceneIndex = detail.scenes.indexOf(scene);
-        const visibleSegments =
+        const visibleTimelineItems =
           hasSelectedSegment && hideIrrelevant
-            ? scene.segments.filter((segment) => segment.id === selectedSegmentId)
-            : scene.segments;
-        const invalidSegment =
-          !skipInvalid && !(hasSelectedSegment && hideIrrelevant) && sceneIndex === 0
-            ? detail.invalidSegment
-            : undefined;
+            ? scene.timelineItems.filter(
+                (item) => item.kind === 'segment' && item.segment.id === selectedSegmentId,
+              )
+            : skipInvalid
+              ? scene.timelineItems.filter((item) => item.kind === 'segment')
+              : scene.timelineItems;
 
         return (
           <View key={scene.id} style={styles.scene}>
@@ -233,29 +258,21 @@ export function TranscriptContent({
             </View>
             <View style={styles.sceneBody}>
               <View style={styles.timelineLine} />
-              {visibleSegments.map((segment) => (
-                <SegmentView
-                  key={segment.id}
-                  dimmed={hasSelectedSegment && segment.id !== selectedSegmentId}
-                  onOpenAiTag={onOpenAiTag}
-                  onOpenEmotion={onOpenEmotion}
-                  segment={segment}
-                  speakerDisplayName={speakerDisplayNames.get(segment.speakerKey) ?? '发言'}
-                />
-              ))}
+              {visibleTimelineItems.map((item) =>
+                item.kind === 'invalid' ? (
+                  <InvalidSegmentView invalidSegment={item.invalidSegment} key={item.id} />
+                ) : (
+                  <SegmentView
+                    key={item.id}
+                    dimmed={hasSelectedSegment && item.segment.id !== selectedSegmentId}
+                    onOpenAiTag={onOpenAiTag}
+                    onOpenEmotion={onOpenEmotion}
+                    segment={item.segment}
+                    speakerDisplayName={speakerDisplayNames.get(item.segment.speakerKey) ?? '发言'}
+                  />
+                ),
+              )}
             </View>
-            {invalidSegment ? (
-              <View style={styles.invalidSegment}>
-                <Ionicons
-                  color={colors.muted}
-                  name="volume-mute-outline"
-                  size={typography.description.lineHeight}
-                />
-                <Text style={styles.invalidSegmentText}>
-                  已跳过 {invalidSegment.durationSeconds} 秒无效片段
-                </Text>
-              </View>
-            ) : null}
           </View>
         );
       })}

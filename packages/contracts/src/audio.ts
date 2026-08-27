@@ -218,7 +218,7 @@ export const AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES = [
   },
 ] as const satisfies readonly z.infer<typeof AudioTranscriptionModelCapabilitySchema>[];
 
-export const AudioTranscriptionPreprocessingSchema = z.literal('whole_file');
+export const AudioTranscriptionPreprocessingSchema = z.enum(['silero_vad', 'whole_file']);
 
 /** 创建音频转写修订时选择的预处理方式。 */
 export const AudioTranscriptionStartRequestSchema = z
@@ -244,6 +244,11 @@ export const AudioTranscriptionCapabilitiesResponseSchema = z.object({
     .array(AudioTranscriptionModelCapabilitySchema)
     .length(AUDIO_TRANSCRIPTION_MODELS.length),
   ffmpeg: z.object({ configured: z.boolean(), available: z.boolean() }),
+  sileroVad: z.object({
+    model: z.literal('silero-vad-v6.2.1'),
+    available: z.boolean(),
+    unavailableReason: z.string().min(1).nullable(),
+  }),
   transcriptionConfigured: z.boolean(),
 });
 

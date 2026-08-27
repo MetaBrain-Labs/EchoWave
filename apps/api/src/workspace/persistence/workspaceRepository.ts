@@ -995,6 +995,8 @@ export class WorkspaceRepository {
       settings.speakerIdentityScope === 'recording' || settings.speakerIdentityScope === 'chunk'
         ? settings.speakerIdentityScope
         : 'none';
+    const preprocessingMode =
+      settings.preprocessingMode === 'silero_vad' ? 'silero_vad' : 'whole_file';
 
     const postAnalysisState = (type: 'emotion' | 'role') => {
       const job = postAnalysisJobs.rows.find((item) => item.analysis_type === type);
@@ -1039,6 +1041,7 @@ export class WorkspaceRepository {
         responseGranularity,
         segmentationMode,
         speakerIdentityScope,
+        preprocessingMode,
       },
       postAnalysis: {
         emotion: postAnalysisState('emotion'),

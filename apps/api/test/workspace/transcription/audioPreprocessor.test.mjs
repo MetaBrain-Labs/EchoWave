@@ -26,6 +26,40 @@ const job = {
   title: '访谈',
 };
 
+const manifest = {
+  version: 1,
+  mode: 'silero_vad',
+  model: 'silero-vad-v6.2.1',
+  modelSha256: '1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3',
+  originalDurationMs: 100_000,
+  processedDurationMs: 12_000,
+  skippedDurationMs: 88_000,
+  policy: {
+    sampleRate: 16_000,
+    frameSamples: 512,
+    startThreshold: 0.5,
+    endThreshold: 0.35,
+    minSpeechMs: 250,
+    minSilenceMs: 100,
+    speechPrePadMs: 400,
+    speechPostPadMs: 600,
+    collapseGapOverMs: 30_000,
+    separatorMs: 2_000,
+  },
+  sourceSpans: [
+    {
+      originalStartMs: 40_000,
+      originalEndMs: 52_000,
+      processedStartMs: 0,
+      processedEndMs: 12_000,
+    },
+  ],
+  skippedIntervals: [
+    { startMs: 0, endMs: 40_000, reason: 'silero_vad_non_speech' },
+    { startMs: 52_000, endMs: 100_000, reason: 'silero_vad_non_speech' },
+  ],
+};
+
 describe('FfmpegAudioPreprocessor', () => {
   it('creates one 16kHz mono MP3 for the whole recording', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'echowave-preprocessor-'));
@@ -66,6 +100,7 @@ describe('FfmpegAudioPreprocessor', () => {
       ffmpegPath: 'ffmpeg-test',
       tempDirectory: '.tmp/audio-transcription',
       processRunner: async () => undefined,
+      voiceActivityDetector: { verify: async () => undefined, detect: async () => manifest },
       defaultModel: 'qwen-audio-3.0-asr-flash-filetrans',
       transcriptionConfigured: true,
     });
@@ -74,5 +109,39 @@ describe('FfmpegAudioPreprocessor', () => {
     assert.equal(capabilities.transcriptionConfigured, true);
     assert.equal(capabilities.models.length, 1);
     assert.equal(capabilities.models[0].available, true);
+    assert.equal(capabilities.sileroVad.available, true);
+  });
+
+  it('uses the explicit Silero path and returns its processed duration and manifest', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'echowave-vad-preprocessor-'));
+    const calls = [];
+    const preprocessor = new FfmpegAudioPreprocessor({
+      audioStorageDirectory: path.join(root, 'audio'),
+      ffmpegPath: 'ffmpeg-test',
+      tempDirectory: path.join(root, 'temp'),
+      processRunner: async () => undefined,
+      voiceActivityDetector: { verify: async () => undefined, detect: async () => manifest },
+      voiceActivityFileProcessor: {
+        detect: async (sourcePath) => {
+          calls.push(['detect', sourcePath]);
+          return manifest;
+        },
+        encode: async (sourcePath, outputPath) => calls.push(['encode', sourcePath, outputPath]),
+      },
+    });
+    try {
+      const result = await preprocessor.createWholeFile({
+        ...job,
+        preprocessingMode: 'silero_vad',
+      });
+      assert.equal(result.durationMs, 12_000);
+      assert.equal(result.manifest, manifest);
+      assert.deepEqual(
+        calls.map(([name]) => name),
+        ['detect', 'encode'],
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
   });
 });

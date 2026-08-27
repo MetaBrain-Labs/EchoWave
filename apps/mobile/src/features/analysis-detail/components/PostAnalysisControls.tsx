@@ -9,6 +9,7 @@
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { AudioPostAnalysisState, AudioPostAnalysisType } from '@echowave/contracts';
+import { useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
@@ -19,6 +20,10 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import {
+  getPostAnalysisControlsCollapsedPreference,
+  setPostAnalysisControlsCollapsedPreference,
+} from '../preferences';
 
 function TaskCard({
   type,
@@ -95,10 +100,41 @@ export function PostAnalysisControls({
   role: AudioPostAnalysisState;
   onStart: (type: AudioPostAnalysisType) => void;
 }) {
+  const [collapsed, setCollapsed] = useState(getPostAnalysisControlsCollapsedPreference);
+  const toggleCollapsed = () => {
+    const nextCollapsed = !collapsed;
+    setCollapsed(nextCollapsed);
+    setPostAnalysisControlsCollapsedPreference(nextCollapsed);
+  };
+
   return (
     <View style={styles.container}>
-      <TaskCard onStart={onStart} state={emotion} type="emotion" />
-      <TaskCard onStart={onStart} state={role} type="role" />
+      <Pressable
+        accessibilityLabel={collapsed ? '展开情绪分析与角色识别' : '折叠情绪分析与角色识别'}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: !collapsed }}
+        onPress={toggleCollapsed}
+        style={({ pressed }) => [styles.collapseHeader, pressed && styles.pressed]}
+      >
+        <Ionicons color={colors.secondary} name="analytics-outline" size={22} />
+        <View style={styles.collapseCopy}>
+          <Text style={styles.collapseTitle}>情绪分析与角色识别</Text>
+          <Text style={styles.collapseDescription}>
+            {collapsed ? '点击展开分析状态与操作' : '可分别查看状态或重新运行分析'}
+          </Text>
+        </View>
+        <Ionicons
+          color={colors.secondary}
+          name={collapsed ? 'chevron-down' : 'chevron-up'}
+          size={20}
+        />
+      </Pressable>
+      {!collapsed ? (
+        <View style={styles.cards}>
+          <TaskCard onStart={onStart} state={emotion} type="emotion" />
+          <TaskCard onStart={onStart} state={role} type="role" />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -149,7 +185,28 @@ export function PostAnalysisConfirmDialog({
 }
 
 const styles = StyleSheet.create({
-  container: { gap: spacing.sm, paddingHorizontal: spacing.md, paddingTop: spacing.md },
+  container: { paddingHorizontal: spacing.md, paddingTop: spacing.md },
+  collapseHeader: {
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderRadius: radii.default,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 56,
+    padding: spacing.base,
+  },
+  collapseCopy: { flex: 1 },
+  collapseTitle: {
+    ...typography.heading3,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+  },
+  collapseDescription: {
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+  },
+  cards: { gap: spacing.sm, marginTop: spacing.sm },
   card: { backgroundColor: colors.background, borderRadius: radii.default, padding: spacing.base },
   cardHeader: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
   cardCopy: { flex: 1 },

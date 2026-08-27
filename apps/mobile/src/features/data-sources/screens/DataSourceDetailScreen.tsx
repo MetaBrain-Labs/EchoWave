@@ -14,6 +14,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type {
   AudioTranscriptionCapabilitiesResponse,
+  AudioTranscriptionPreprocessing,
   GroupSummary,
   LinkedDataSourceGroup,
 } from '@echowave/contracts';
@@ -570,6 +571,8 @@ export function DataSourceDetailScreen({
   const [transcriptionTarget, setTranscriptionTarget] = useState<SourceAudioItem>();
   const [transcriptionCapabilities, setTranscriptionCapabilities] =
     useState<AudioTranscriptionCapabilitiesResponse>();
+  const [transcriptionPreprocessing, setTranscriptionPreprocessing] =
+    useState<AudioTranscriptionPreprocessing>('silero_vad');
   const [startingTranscription, setStartingTranscription] = useState(false);
   const [unlinkTarget, setUnlinkTarget] = useState<LinkedDataSourceGroup>();
   const [switchTarget, setSwitchTarget] = useState<LinkedDataSourceGroup>();
@@ -781,7 +784,7 @@ export function DataSourceDetailScreen({
     try {
       await startAudioTranscription(target.id, {
         model: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
-        preprocessing: 'whole_file',
+        preprocessing: transcriptionPreprocessing,
         segmentationMode: 'speaker_turn',
       });
       setTranscriptionTarget(undefined);
@@ -853,6 +856,7 @@ export function DataSourceDetailScreen({
   );
   const uploadDates = [...new Set(source.uploadRecords.map((record) => record.date))];
   const prepareTranscription = (target: SourceAudioItem) => {
+    setTranscriptionPreprocessing('silero_vad');
     setTranscriptionTarget(target);
   };
   const openMoreActions = () =>
@@ -964,6 +968,7 @@ export function DataSourceDetailScreen({
       <AudioTranscriptionConfirmDialog
         audioTitle={transcriptionTarget?.title ?? ''}
         models={[...(transcriptionCapabilities?.models ?? [])]}
+        onPreprocessingChange={setTranscriptionPreprocessing}
         onCancel={() => {
           if (!startingTranscription) setTranscriptionTarget(undefined);
         }}
@@ -971,6 +976,8 @@ export function DataSourceDetailScreen({
           void confirmTranscription();
         }}
         pending={startingTranscription}
+        preprocessing={transcriptionPreprocessing}
+        sileroVad={transcriptionCapabilities?.sileroVad}
         visible={Boolean(transcriptionTarget)}
       />
       <DataSourceConfirmDialog

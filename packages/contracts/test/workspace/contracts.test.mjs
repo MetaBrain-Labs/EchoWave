@@ -155,6 +155,10 @@ describe('workspace contracts', () => {
         preprocessing: 'whole_file',
       }),
     );
+    assert.equal(
+      AudioTranscriptionStartRequestSchema.parse({ preprocessing: 'silero_vad' }).preprocessing,
+      'silero_vad',
+    );
     assert.throws(() => AudioTranscriptionStartRequestSchema.parse({ preprocessing: 'direct' }));
     assert.deepEqual(
       AudioTranscriptionStartRequestSchema.parse({
@@ -186,6 +190,11 @@ describe('workspace contracts', () => {
       defaultModel: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
       models: AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
       ffmpeg: { configured: false, available: false },
+      sileroVad: {
+        model: 'silero-vad-v6.2.1',
+        available: false,
+        unavailableReason: 'Silero VAD unavailable.',
+      },
       transcriptionConfigured: false,
     });
     assert.equal(capabilities.transcriptionConfigured, false);
@@ -323,6 +332,7 @@ describe('workspace contracts', () => {
     assert.equal(AudioAnalysisDetailSchema.parse(detail).scenes.length, 1);
     assert.deepEqual(AudioAnalysisDetailSchema.parse(detail).transcription, {
       ...detail.transcription,
+      preprocessingMode: 'whole_file',
       segmentationMode: 'readable',
       speakerIdentityScope: 'none',
     });

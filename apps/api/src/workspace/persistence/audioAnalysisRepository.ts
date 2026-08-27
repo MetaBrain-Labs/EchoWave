@@ -15,6 +15,7 @@
 import {
   AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
   AudioTranscriptionModelSchema,
+  AudioTranscriptionPreprocessingSchema,
   AudioTranscriptionSegmentationModeSchema,
   AudioTranscriptionStartResponseSchema,
   type AudioFailureDetails,
@@ -28,6 +29,10 @@ import {
 } from '@echowave/contracts';
 
 import { quoteIdentifier, type DatabasePool } from '../../infrastructure/postgres.ts';
+import {
+  VoiceActivityManifestSchema,
+  type VoiceActivityManifest,
+} from '../transcription/voiceActivity.ts';
 import { WorkspaceRepositoryError } from './errors.ts';
 
 /** worker 已领取的音频转写任务快照。 */
@@ -45,6 +50,7 @@ export type ClaimedAudioTranscription = {
   mimeType: string;
   model: AudioTranscriptionModel;
   originalFilename: string | null;
+  preprocessingManifest: VoiceActivityManifest | null;
   preprocessingMode: AudioTranscriptionPreprocessing;
   provider: AudioTranscriptionProvider;
   providerArtifactKey: string | null;
@@ -217,6 +223,7 @@ export class AudioAnalysisRepository {
                  ds.source_type, ds.location AS data_source_location,
                  ds.connection_status AS data_source_connection_status,
                  ar.settings_snapshot->>'preprocessingMode' AS preprocessing_mode,
+                 ar.settings_snapshot->'preprocessingManifest' AS preprocessing_manifest,
                  ar.settings_snapshot->>'segmentationMode' AS segmentation_mode,
                  ar.transcription_provider, ar.provider_task_id, ar.provider_artifact_key,
                  ar.provider_submitted_at`,
@@ -240,7 +247,13 @@ export class AudioAnalysisRepository {
       mimeType: row.mime_type ?? 'application/octet-stream',
       model: AudioTranscriptionModelSchema.parse(row.transcription_model),
       originalFilename: row.original_filename ?? null,
-      preprocessingMode: 'whole_file',
+      preprocessingManifest:
+        row.preprocessing_manifest == null
+          ? null
+          : VoiceActivityManifestSchema.parse(row.preprocessing_manifest),
+      preprocessingMode: AudioTranscriptionPreprocessingSchema.parse(
+        row.preprocessing_mode ?? 'whole_file',
+      ),
       provider: 'dashscope',
       providerArtifactKey: row.provider_artifact_key ?? null,
       providerSubmittedAt: row.provider_submitted_at
@@ -259,12 +272,18 @@ export class AudioAnalysisRepository {
   }
 
   /** 保存临时 OSS 对象键，使重启后的 worker 能继续提交而不重复上传。 */
-  async recordProviderArtifact(job: ClaimedAudioTranscription, objectKey: string): Promise<void> {
+  async recordProviderArtifact(
+    job: ClaimedAudioTranscription,
+    objectKey: string,
+    manifest: VoiceActivityManifest | null,
+  ): Promise<void> {
     await this.pool.query(
       `UPDATE ${this.table('audio_analysis_revisions')}
-       SET provider_artifact_key = $3
+       SET provider_artifact_key = $3,
+           settings_snapshot = CASE WHEN $4::jsonb IS NULL THEN settings_snapshot
+             ELSE settings_snapshot || jsonb_build_object('preprocessingManifest', $4::jsonb) END
        WHERE tenant_id = $1 AND id = $2 AND status = 'transcribing'`,
-      [this.tenantId, job.revisionId, objectKey],
+      [this.tenantId, job.revisionId, objectKey, manifest ? JSON.stringify(manifest) : null],
     );
   }
 
@@ -354,6 +373,14 @@ export class AudioAnalysisRepository {
             segment.endMs,
             segment.text,
           ],
+        );
+      }
+      for (const interval of job.preprocessingManifest?.skippedIntervals ?? []) {
+        await client.query(
+          `INSERT INTO ${this.table('analysis_invalid_segments')}
+             (tenant_id, analysis_revision_id, start_ms, end_ms, reason)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [this.tenantId, job.revisionId, interval.startMs, interval.endMs, interval.reason],
         );
       }
       await client.query(

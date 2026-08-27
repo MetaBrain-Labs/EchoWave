@@ -38,10 +38,22 @@ export type TranscriptSegment = {
   text: string;
 };
 
+export type TranscriptInvalidSegment = {
+  durationSeconds: number;
+  endSeconds: number;
+  id: string;
+  startSeconds: number;
+};
+
+export type TranscriptTimelineItem =
+  | { id: string; kind: 'invalid'; invalidSegment: TranscriptInvalidSegment }
+  | { id: string; kind: 'segment'; segment: TranscriptSegment };
+
 export type TranscriptScene = {
   id: string;
   segments: readonly TranscriptSegment[];
   startSeconds: number;
+  timelineItems: readonly TranscriptTimelineItem[];
   title: string;
 };
 
@@ -55,7 +67,7 @@ export type AnalysisDetailView = {
   durationSeconds: number;
   generatedAt: string;
   id: string;
-  invalidSegment?: { durationSeconds: number; startSeconds: number };
+  invalidSegments: readonly TranscriptInvalidSegment[];
   scenes: readonly TranscriptScene[];
   summarySections: readonly SummarySection[];
   title: string;
@@ -63,9 +75,102 @@ export type AnalysisDetailView = {
   postAnalysis: { emotion: AudioPostAnalysisState; role: AudioPostAnalysisState };
 };
 
+type TranscriptSceneDraft = Omit<TranscriptScene, 'timelineItems'>;
+
+function appendInvalidSegment(
+  buckets: Map<string, TranscriptInvalidSegment[]>,
+  key: string,
+  invalidSegment: TranscriptInvalidSegment,
+): void {
+  const existing = buckets.get(key);
+  if (existing) existing.push(invalidSegment);
+  else buckets.set(key, [invalidSegment]);
+}
+
+function attachTimelineItems(
+  scenes: readonly TranscriptSceneDraft[],
+  invalidSegments: readonly TranscriptInvalidSegment[],
+): TranscriptScene[] {
+  const segmentLocations = scenes.flatMap((scene, sceneIndex) =>
+    scene.segments.map((segment) => ({ sceneIndex, segment })),
+  );
+  const buckets = new Map<string, TranscriptInvalidSegment[]>();
+
+  for (const invalidSegment of invalidSegments) {
+    const previous = segmentLocations.findLast(
+      ({ segment }) => segment.endSeconds <= invalidSegment.startSeconds,
+    );
+    const next = segmentLocations.find(
+      ({ segment }) => segment.startSeconds >= invalidSegment.endSeconds,
+    );
+
+    if (previous) {
+      appendInvalidSegment(buckets, `after:${previous.segment.id}`, invalidSegment);
+    } else if (next) {
+      appendInvalidSegment(buckets, `before:${next.sceneIndex}`, invalidSegment);
+    } else if (segmentLocations.length > 0) {
+      appendInvalidSegment(buckets, `after:${segmentLocations.at(-1)!.segment.id}`, invalidSegment);
+    } else if (scenes.length > 0) {
+      appendInvalidSegment(buckets, 'before:0', invalidSegment);
+    }
+  }
+
+  return scenes.map((scene, sceneIndex) => ({
+    ...scene,
+    timelineItems: [
+      ...(buckets.get(`before:${sceneIndex}`) ?? []).map(
+        (invalidSegment): TranscriptTimelineItem => ({
+          id: invalidSegment.id,
+          kind: 'invalid',
+          invalidSegment,
+        }),
+      ),
+      ...scene.segments.flatMap((segment): TranscriptTimelineItem[] => [
+        { id: segment.id, kind: 'segment', segment },
+        ...(buckets.get(`after:${segment.id}`) ?? []).map((invalidSegment) => ({
+          id: invalidSegment.id,
+          kind: 'invalid' as const,
+          invalidSegment,
+        })),
+      ]),
+    ],
+  }));
+}
+
 /** 将服务端当前分析修订版转换为页面展示模型。 */
 export function toAnalysisDetailView(detail: AudioAnalysisDetail): AnalysisDetailView {
-  const invalid = detail.invalidSegments[0];
+  const invalidSegments = [...detail.invalidSegments]
+    .sort((left, right) => left.startMs - right.startMs)
+    .map((interval) => ({
+      id: interval.id,
+      startSeconds: interval.startMs / 1_000,
+      endSeconds: interval.endMs / 1_000,
+      durationSeconds: Math.round((interval.endMs - interval.startMs) / 1_000),
+    }));
+  const scenes: TranscriptSceneDraft[] = detail.scenes.map((scene) => ({
+    id: scene.id,
+    title: scene.title,
+    startSeconds: scene.startMs / 1_000,
+    segments: scene.segments.map((segment) => ({
+      id: segment.id,
+      speakerKey: segment.speakerKey,
+      speakerLabel: segment.speakerLabel,
+      businessRole: segment.businessRole,
+      emotion: segment.emotion,
+      roleAnalysis: segment.roleAnalysis ?? undefined,
+      emotionAnalysis: segment.emotionAnalysis ?? undefined,
+      startSeconds: segment.startMs / 1_000,
+      endSeconds: segment.endMs / 1_000,
+      text: segment.text,
+      aiTag: segment.aiTag
+        ? {
+            title: segment.aiTag.title,
+            summary: segment.aiTag.summary,
+            details: segment.aiTag.details,
+          }
+        : undefined,
+    })),
+  }));
   return {
     id: detail.audioFileId,
     title: detail.title,
@@ -73,36 +178,8 @@ export function toAnalysisDetailView(detail: AudioAnalysisDetail): AnalysisDetai
     generatedAt: new Date(detail.generatedAt).toLocaleString(),
     transcription: detail.transcription,
     postAnalysis: detail.postAnalysis,
-    invalidSegment: invalid
-      ? {
-          startSeconds: invalid.startMs / 1_000,
-          durationSeconds: (invalid.endMs - invalid.startMs) / 1_000,
-        }
-      : undefined,
-    scenes: detail.scenes.map((scene) => ({
-      id: scene.id,
-      title: scene.title,
-      startSeconds: scene.startMs / 1_000,
-      segments: scene.segments.map((segment) => ({
-        id: segment.id,
-        speakerKey: segment.speakerKey,
-        speakerLabel: segment.speakerLabel,
-        businessRole: segment.businessRole,
-        emotion: segment.emotion,
-        roleAnalysis: segment.roleAnalysis ?? undefined,
-        emotionAnalysis: segment.emotionAnalysis ?? undefined,
-        startSeconds: segment.startMs / 1_000,
-        endSeconds: segment.endMs / 1_000,
-        text: segment.text,
-        aiTag: segment.aiTag
-          ? {
-              title: segment.aiTag.title,
-              summary: segment.aiTag.summary,
-              details: segment.aiTag.details,
-            }
-          : undefined,
-      })),
-    })),
+    invalidSegments,
+    scenes: attachTimelineItems(scenes, invalidSegments),
     summarySections: detail.summarySections.map((section) => ({
       id: section.id,
       title: section.title,

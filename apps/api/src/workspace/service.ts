@@ -297,10 +297,14 @@ export class DefaultWorkspaceService implements WorkspaceService {
   }
   async startAudioTranscription(id: string, input: AudioTranscriptionStartRequest) {
     const model = input.model ?? this.audioTranscriptionModel;
-    if (!(await this.audioInputPreprocessor.refreshFfmpegAvailability())) {
+    const preprocessing = input.preprocessing ?? 'whole_file';
+    if (!(await this.audioInputPreprocessor.refreshModeAvailability(preprocessing))) {
+      const capabilities = this.audioInputPreprocessor.capabilities();
       throw new WorkspaceRepositoryError(
         'TRANSCODER_UNAVAILABLE',
-        'FFmpeg 当前不可用，无法生成说话人分离所需的单声道整文件。',
+        preprocessing === 'silero_vad'
+          ? (capabilities.sileroVad.unavailableReason ?? 'Silero VAD 当前不可用。')
+          : 'FFmpeg 当前不可用，无法生成说话人分离所需的单声道整文件。',
       );
     }
     const refreshedCapability = this.audioInputPreprocessor
@@ -315,7 +319,7 @@ export class DefaultWorkspaceService implements WorkspaceService {
     return await this.audioAnalysisRepository.queueTranscription(
       id,
       model,
-      input.preprocessing ?? 'whole_file',
+      preprocessing,
       input.segmentationMode ?? 'speaker_turn',
     );
   }
