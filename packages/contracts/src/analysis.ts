@@ -52,12 +52,14 @@ export const AudioPostAnalysisStateSchema = z.discriminatedUnion('state', [
     jobId: EntityIdSchema,
     model: z.string().min(1),
     progress: z.number().int().min(0).max(100),
+    confirmationVersion: z.number().int().positive(),
   }),
   z.object({
     state: z.literal('ready'),
     jobId: EntityIdSchema,
     model: z.string().min(1),
     completedAt: z.string().datetime(),
+    confirmationVersion: z.number().int().positive(),
   }),
   z.object({
     state: z.literal('failed'),
@@ -66,8 +68,59 @@ export const AudioPostAnalysisStateSchema = z.discriminatedUnion('state', [
     code: z.string().min(1),
     message: z.string().min(1),
     retryable: z.boolean(),
+    confirmationVersion: z.number().int().positive(),
   }),
 ]);
+
+/** 当前 ASR 修订的人工确认状态。 */
+export const AudioTranscriptConfirmationStateSchema = z.discriminatedUnion('status', [
+  z.object({
+    status: z.literal('pending'),
+    currentVersion: z.literal(0),
+    confirmedAt: z.null(),
+  }),
+  z.object({
+    status: z.literal('confirmed'),
+    currentVersion: z.number().int().positive(),
+    confirmedAt: z.string().datetime(),
+  }),
+]);
+
+/** 用户确认时提交的单个原始片段正文覆盖。 */
+export const AudioTranscriptConfirmationSegmentInputSchema = z.object({
+  segmentId: EntityIdSchema,
+  text: z.string().trim().min(1),
+});
+
+/** 完整确认请求；服务端还会校验其片段集合与当前 Raw Transcript 完全一致。 */
+export const AudioTranscriptConfirmationRequestSchema = z
+  .object({
+    analysisRevisionId: EntityIdSchema,
+    baseVersion: z.number().int().nonnegative(),
+    segments: z.array(AudioTranscriptConfirmationSegmentInputSchema),
+  })
+  .superRefine((input, context) => {
+    const seen = new Set<string>();
+    for (const [index, segment] of input.segments.entries()) {
+      if (seen.has(segment.segmentId)) {
+        context.addIssue({
+          code: 'custom',
+          message: 'segmentId must be unique.',
+          path: ['segments', index, 'segmentId'],
+        });
+      }
+      seen.add(segment.segmentId);
+    }
+  });
+
+/** 成功发布的新 Confirmed Transcript 元数据。 */
+export const AudioTranscriptConfirmationResponseSchema = z.object({
+  audioFileId: EntityIdSchema,
+  analysisRevisionId: EntityIdSchema,
+  confirmationId: EntityIdSchema,
+  version: z.number().int().positive(),
+  confirmedAt: z.string().datetime(),
+});
 
 export const AudioEmotionLabelSchema = z.enum([
   'neutral',
@@ -151,7 +204,8 @@ export const TranscriptSegmentSchema = z
     emotionAnalysis: SegmentEmotionAnalysisSchema.nullable().default(null),
     startMs: z.number().int().nonnegative(),
     endMs: z.number().int().positive(),
-    text: z.string(),
+    rawText: z.string(),
+    confirmedText: z.string().nullable(),
     aiTag: SegmentAiTagSchema.nullable(),
   })
   .refine((segment) => segment.endMs > segment.startMs, {
@@ -192,6 +246,7 @@ export const AudioAnalysisDetailSchema = z.object({
   durationMs: z.number().int().nonnegative(),
   generatedAt: z.string().datetime(),
   transcription: AudioTranscriptionMetadataSchema,
+  transcriptConfirmation: AudioTranscriptConfirmationStateSchema,
   postAnalysis: z
     .object({
       emotion: AudioPostAnalysisStateSchema,
@@ -224,6 +279,15 @@ export type AudioAnalysisDetail = z.infer<typeof AudioAnalysisDetailSchema>;
 export type AudioPostAnalysisType = z.infer<typeof AudioPostAnalysisTypeSchema>;
 export type AudioPostAnalysisState = z.infer<typeof AudioPostAnalysisStateSchema>;
 export type AudioPostAnalysisStartResponse = z.infer<typeof AudioPostAnalysisStartResponseSchema>;
+export type AudioTranscriptConfirmationState = z.infer<
+  typeof AudioTranscriptConfirmationStateSchema
+>;
+export type AudioTranscriptConfirmationRequest = z.infer<
+  typeof AudioTranscriptConfirmationRequestSchema
+>;
+export type AudioTranscriptConfirmationResponse = z.infer<
+  typeof AudioTranscriptConfirmationResponseSchema
+>;
 export type AudioEmotionLabel = z.infer<typeof AudioEmotionLabelSchema>;
 export type SegmentEmotionAnalysis = z.infer<typeof SegmentEmotionAnalysisSchema>;
 export type BusinessRoleKind = z.infer<typeof BusinessRoleKindSchema>;

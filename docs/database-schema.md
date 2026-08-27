@@ -317,6 +317,7 @@ group_data_sources 所关联数据源下的音频
 - `processing_updated_at`：最近一次可观察活动更新时间。
 - `error_stage`：失败发生在 `transcription`、`analysis` 或 `publish`。
 - `error_details`：可空 JSON 对象，只保存安全失败分类、分块位置、最多 20 条稳定校验问题，以及兼容旧修订的结构尝试/输出指纹字段；新 STT 任务不保存模型正文或输出指纹。
+- `active_transcript_confirmation_id`：当前 Confirmed Transcript 指针；新 ASR revision 发布后为空，用户首次确认后才设置。
 - 结构化错误摘要、创建、完成和发布时间。
 
 同一音频的 `revision_no` 唯一，部分唯一索引同时只允许一个 `queued`、`transcribing` 或 `analyzing` 修订。新版本只有在本次结构化结果完整写入后，才在同一事务中替换 `audio_files.active_analysis_revision_id`；ASR-only 版本允许摘要与标签为空，失败版本不会覆盖旧的有效版本。
@@ -329,9 +330,17 @@ Qwen Filetrans 提交单个 16kHz 单声道整文件；其带 `speaker_id` 的�
 
 物理删除音频时，修订版及其结构化结果级联删除。
 
+### `transcript_confirmations`
+
+用户对一个 ASR revision 的不可变确认版本。`version_no` 在同一 revision 内递增，`confirmed_at` 记录确认时间；`audio_analysis_revisions.active_transcript_confirmation_id` 只指向当前版本。历史 ready revision 在迁移时以原始正文回填为 v1。
+
+### `transcript_confirmation_segments`
+
+一个确认版本对全部 Raw 片段的完整正文快照。每行通过复合外键同时关联确认版本和原始 `transcript_segment_id`，正文不能为空；确认事务必须完整覆盖当前 revision 的片段集合。Raw 与每个 Confirmed 版本可直接联表计算修正差异，当前里程碑不提供统计或导出接口。
+
 ### `audio_post_analysis_jobs`
 
-ASR 发布后的情绪分析和角色识别任务。每条任务固化 `analysis_revision_id`、`type`、`model` 与 `custom_business_roles_snapshot`，状态为 `queued`、`running`、`ready` 或 `failed`，并保存进度、完成时间和脱敏错误。部分唯一索引阻止同一 revision、同一类型同时存在多个运行任务，但允许情绪与角色任务并行。
+ASR 确认后的情绪分析和角色识别任务。每条任务固化 `analysis_revision_id`、`transcript_confirmation_id`、`type`、`model` 与 `custom_business_roles_snapshot`，状态为 `queued`、`running`、`ready` 或 `failed`，并保存进度、完成时间和脱敏错误。worker 从固化的 Confirmed Transcript 读取正文；后续再次确认不会改变运行中或已发布任务的输入。部分唯一索引阻止同一 revision、同一类型同时存在多个运行任务，但允许情绪与角色任务并行。
 
 任务由对应 worker 使用 `FOR UPDATE SKIP LOCKED` 领取。进程重启时中断任务重新排队；失败只更新当前任务，不修改 revision 的 active 结果指针。
 
@@ -362,7 +371,7 @@ ASR 发布后的情绪分析和角色识别任务。每条任务固化 `analysis
 - `business_role`：STT 修订固定为 `unknown`，后续文本分析可在独立流程中补充。
 - `emotion`：STT 修订固定为 `unknown`，不根据转写正文猜测。
 - `start_ms`、`end_ms`：音频时间区间。
-- `text`：转写文本。
+- `text`：供应商原始转写正文，即不可变 Raw Transcript；人工修正只写入确认快照表。
 
 数据库保证 `0 <= start_ms < end_ms`，并通过复合外键保证片段和场景属于同一租户、同一分析修订版。时间轴索引支持按场景和播放顺序恢复内容。
 

@@ -10,7 +10,7 @@
  * - 不连接真实分析后端。
  */
 import { fireEvent, render, waitFor, within } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { Alert, StyleSheet } from 'react-native';
 
 import { fontFamilies, textColors } from '@/shared/theme/tokens';
 import { AnalysisDetailScreen } from '../AnalysisDetailScreen';
@@ -21,11 +21,16 @@ import {
 import * as workspaceApi from '@/shared/api/workspaceApi';
 import { analysisFixture } from '@/test/workspaceFixtures';
 
-jest.mock('@/shared/api/workspaceApi', () => ({
-  getAudioAnalysis: jest.fn(),
-  startAudioEmotionAnalysis: jest.fn(),
-  startAudioRoleRecognition: jest.fn(),
-}));
+jest.mock('@/shared/api/workspaceApi', () => {
+  const actual = jest.requireActual('@/shared/api/workspaceApi');
+  return {
+    ...actual,
+    confirmAudioTranscript: jest.fn(),
+    getAudioAnalysis: jest.fn(),
+    startAudioEmotionAnalysis: jest.fn(),
+    startAudioRoleRecognition: jest.fn(),
+  };
+});
 
 async function renderAnalysis(detailId = analysisFixture.audioFileId, onBack = jest.fn()) {
   const screen = render(<AnalysisDetailScreen detailId={detailId} onBack={onBack} />);
@@ -35,9 +40,17 @@ async function renderAnalysis(detailId = analysisFixture.audioFileId, onBack = j
 
 describe('AnalysisDetailScreen', () => {
   beforeEach(() => {
+    jest.clearAllMocks();
     setHideIrrelevantSegmentsPreference(false);
     setPostAnalysisControlsCollapsedPreference(true);
     jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValue(analysisFixture);
+    jest.mocked(workspaceApi.confirmAudioTranscript).mockResolvedValue({
+      audioFileId: analysisFixture.audioFileId,
+      analysisRevisionId: analysisFixture.id,
+      confirmationId: 'a1000000-0000-4000-8000-000000000001',
+      version: 2,
+      confirmedAt: '2026-08-28T01:00:00.000Z',
+    });
     jest.mocked(workspaceApi.startAudioEmotionAnalysis).mockResolvedValue({
       audioFileId: analysisFixture.audioFileId,
       revisionId: '50000000-0000-4000-8000-000000000001',
@@ -87,6 +100,7 @@ describe('AnalysisDetailScreen', () => {
           jobId: '90000000-0000-4000-8000-000000000001',
           model: 'qwen3.5-omni-flash',
           progress: 45,
+          confirmationVersion: 1,
         },
         role: {
           state: 'failed',
@@ -95,15 +109,133 @@ describe('AnalysisDetailScreen', () => {
           code: 'INVALID_MODEL_OUTPUT',
           message: '模型返回格式无效，请重试。',
           retryable: true,
+          confirmationVersion: 1,
         },
       },
     });
     const screen = await renderAnalysis();
     fireEvent.press(screen.getByRole('button', { name: '展开情绪分析与角色识别' }));
 
-    expect(screen.getByText('分析中 45%')).toBeTruthy();
-    expect(screen.getByText('模型返回格式无效，请重试。')).toBeTruthy();
+    expect(screen.getByText('分析中 45% · 基于确认版 v1')).toBeTruthy();
+    expect(screen.getByText('模型返回格式无效，请重试。 · 基于确认版 v1')).toBeTruthy();
     expect(screen.getByRole('button', { name: '重新识别' })).toBeTruthy();
+  });
+
+  it('requires confirmation before analysis and allows an unchanged first confirmation', async () => {
+    const pendingFixture = {
+      ...analysisFixture,
+      transcriptConfirmation: {
+        status: 'pending' as const,
+        currentVersion: 0 as const,
+        confirmedAt: null,
+      },
+      scenes: analysisFixture.scenes.map((scene) => ({
+        ...scene,
+        segments: scene.segments.map((segment) => ({ ...segment, confirmedText: null })),
+      })),
+    };
+    jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValueOnce(pendingFixture);
+    const screen = await renderAnalysis();
+
+    fireEvent.press(screen.getByRole('button', { name: '展开情绪分析与角色识别' }));
+    expect(screen.getAllByText('请先确认转写正文')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: '情绪分析' }).props.accessibilityState).toEqual({
+      disabled: true,
+    });
+
+    fireEvent.press(screen.getByRole('button', { name: '编辑并确认' }));
+    fireEvent.press(screen.getAllByRole('button', { name: '确认整份转写' })[0]);
+    await waitFor(() => expect(workspaceApi.confirmAudioTranscript).toHaveBeenCalledTimes(1));
+    expect(workspaceApi.confirmAudioTranscript).toHaveBeenCalledWith(
+      analysisFixture.audioFileId,
+      expect.objectContaining({
+        analysisRevisionId: analysisFixture.id,
+        baseVersion: 0,
+        segments: expect.arrayContaining([
+          {
+            segmentId: analysisFixture.scenes[0].segments[0].id,
+            text: analysisFixture.scenes[0].segments[0].rawText,
+          },
+        ]),
+      }),
+    );
+  });
+
+  it('switches between confirmed and raw text and submits all edited segments', async () => {
+    jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValueOnce({
+      ...analysisFixture,
+      scenes: analysisFixture.scenes.map((scene, sceneIndex) => ({
+        ...scene,
+        segments: scene.segments.map((segment, segmentIndex) =>
+          sceneIndex === 0 && segmentIndex === 0
+            ? { ...segment, rawText: '阿里运服务', confirmedText: '阿里云服务' }
+            : segment,
+        ),
+      })),
+    });
+    const screen = await renderAnalysis();
+    expect(screen.getByText('阿里云服务')).toBeTruthy();
+    fireEvent.press(screen.getByRole('tab', { name: '原始转写' }));
+    expect(screen.getByText('阿里运服务')).toBeTruthy();
+
+    fireEvent.press(screen.getByRole('button', { name: '继续修正' }));
+    const input = screen.getByLabelText('host的转写正文');
+    fireEvent.changeText(input, '阿里云计算服务');
+    fireEvent.press(screen.getAllByRole('button', { name: '确认整份转写' })[0]);
+    await waitFor(() => expect(workspaceApi.confirmAudioTranscript).toHaveBeenCalledTimes(1));
+    expect(workspaceApi.confirmAudioTranscript).toHaveBeenCalledWith(
+      analysisFixture.audioFileId,
+      expect.objectContaining({
+        baseVersion: 1,
+        segments: expect.arrayContaining([
+          { segmentId: analysisFixture.scenes[0].segments[0].id, text: '阿里云计算服务' },
+        ]),
+      }),
+    );
+  });
+
+  it('keeps a failed draft and warns before leaving with unconfirmed changes', async () => {
+    jest.mocked(workspaceApi.confirmAudioTranscript).mockRejectedValueOnce(new Error('网络不可用'));
+    const alert = jest.spyOn(Alert, 'alert');
+    const onBack = jest.fn();
+    const screen = await renderAnalysis(analysisFixture.audioFileId, onBack);
+    fireEvent.press(screen.getByRole('button', { name: '继续修正' }));
+    const input = screen.getByLabelText('host的转写正文');
+    fireEvent.changeText(input, '仍需保留的草稿');
+    fireEvent.press(screen.getAllByRole('button', { name: '确认整份转写' })[0]);
+    await waitFor(() => expect(alert).toHaveBeenCalledWith('无法确认转写', '网络不可用'));
+    expect(screen.getByDisplayValue('仍需保留的草稿')).toBeTruthy();
+
+    alert.mockClear();
+    fireEvent.press(screen.getByLabelText('返回'));
+    expect(onBack).not.toHaveBeenCalled();
+    expect(alert).toHaveBeenCalledWith(
+      '放弃未确认的修改？',
+      '返回后，本次修改不会被保存。',
+      expect.any(Array),
+    );
+  });
+
+  it('keeps the draft when the server rejects a stale confirmation version', async () => {
+    jest
+      .mocked(workspaceApi.confirmAudioTranscript)
+      .mockRejectedValueOnce(
+        new workspaceApi.WorkspaceRequestError('CONFLICT', '确认版本已变化，请重新加载后再编辑。'),
+      );
+    const alert = jest.spyOn(Alert, 'alert');
+    const screen = await renderAnalysis();
+    fireEvent.press(screen.getByRole('button', { name: '继续修正' }));
+    fireEvent.changeText(screen.getByLabelText('host的转写正文'), '冲突时保留的草稿');
+    fireEvent.press(screen.getAllByRole('button', { name: '确认整份转写' })[0]);
+
+    await waitFor(() =>
+      expect(alert).toHaveBeenCalledWith(
+        '确认版本已更新',
+        '确认版本已变化，请重新加载后再编辑。',
+        expect.any(Array),
+      ),
+    );
+    expect(screen.getByDisplayValue('冲突时保留的草稿')).toBeTruthy();
   });
 
   it('defaults post-analysis controls to collapsed and remembers the latest session choice', async () => {

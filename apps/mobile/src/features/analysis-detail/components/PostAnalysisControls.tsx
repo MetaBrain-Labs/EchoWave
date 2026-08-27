@@ -26,10 +26,12 @@ import {
 } from '../preferences';
 
 function TaskCard({
+  confirmed,
   type,
   state,
   onStart,
 }: {
+  confirmed: boolean;
   type: AudioPostAnalysisType;
   state: AudioPostAnalysisState;
   onStart: (type: AudioPostAnalysisType) => void;
@@ -37,6 +39,7 @@ function TaskCard({
   const emotion = type === 'emotion';
   const title = emotion ? '情绪分析' : '角色识别';
   const running = state.state === 'queued' || state.state === 'running';
+  const versionLabel = state.state === 'idle' ? '' : ` · 基于确认版 v${state.confirmationVersion}`;
   const action =
     state.state === 'ready' || state.state === 'failed'
       ? emotion
@@ -54,19 +57,22 @@ function TaskCard({
         <View style={styles.cardCopy}>
           <Text style={styles.title}>{title}</Text>
           <Text style={styles.meta}>
-            {state.state === 'idle'
-              ? emotion
-                ? '使用 Qwen3.5-Omni 分析每个说话轮次'
-                : '使用 DeepSeek 识别录音级业务角色'
-              : state.state === 'queued'
-                ? '等待后台任务'
-                : state.state === 'running'
-                  ? `分析中 ${state.progress}%`
-                  : state.state === 'ready'
-                    ? `已完成 · ${new Date(state.completedAt).toLocaleString()}`
-                    : state.state === 'failed'
-                      ? state.message
-                      : '等待后台任务'}
+            {!confirmed
+              ? '请先确认转写正文'
+              : state.state === 'idle'
+                ? emotion
+                  ? '使用 Qwen3.5-Omni 分析每个说话轮次'
+                  : '使用 DeepSeek 识别录音级业务角色'
+                : state.state === 'queued'
+                  ? '等待后台任务'
+                  : state.state === 'running'
+                    ? `分析中 ${state.progress}%`
+                    : state.state === 'ready'
+                      ? `已完成 · ${new Date(state.completedAt).toLocaleString()}`
+                      : state.state === 'failed'
+                        ? state.message
+                        : '等待后台任务'}
+            {confirmed ? versionLabel : ''}
           </Text>
         </View>
       </View>
@@ -80,8 +86,14 @@ function TaskCard({
       ) : (
         <Pressable
           accessibilityRole="button"
+          accessibilityState={{ disabled: !confirmed }}
+          disabled={!confirmed}
           onPress={() => onStart(type)}
-          style={({ pressed }) => [styles.action, pressed && styles.pressed]}
+          style={({ pressed }) => [
+            styles.action,
+            !confirmed && styles.disabledAction,
+            pressed && confirmed && styles.pressed,
+          ]}
         >
           <Text style={styles.actionText}>{action}</Text>
         </Pressable>
@@ -92,10 +104,12 @@ function TaskCard({
 
 /** 渲染两个可独立运行的后置分析任务。 */
 export function PostAnalysisControls({
+  confirmed,
   emotion,
   role,
   onStart,
 }: {
+  confirmed: boolean;
   emotion: AudioPostAnalysisState;
   role: AudioPostAnalysisState;
   onStart: (type: AudioPostAnalysisType) => void;
@@ -131,8 +145,8 @@ export function PostAnalysisControls({
       </Pressable>
       {!collapsed ? (
         <View style={styles.cards}>
-          <TaskCard onStart={onStart} state={emotion} type="emotion" />
-          <TaskCard onStart={onStart} state={role} type="role" />
+          <TaskCard confirmed={confirmed} onStart={onStart} state={emotion} type="emotion" />
+          <TaskCard confirmed={confirmed} onStart={onStart} state={role} type="role" />
         </View>
       ) : null}
     </View>
@@ -231,6 +245,7 @@ const styles = StyleSheet.create({
     color: textColors.primary,
     fontFamily: fontFamilies.sansBold,
   },
+  disabledAction: { opacity: 0.45 },
   pressed: { opacity: 0.65 },
   dialogRoot: {
     alignItems: 'center',

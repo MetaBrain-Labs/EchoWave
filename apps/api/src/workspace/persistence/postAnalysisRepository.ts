@@ -41,6 +41,8 @@ export type ClaimedPostAnalysisJob = {
   storageKey: string;
   durationMs: number;
   customBusinessRoles: string[];
+  confirmationId: string;
+  confirmationVersion: number;
   segments: PostAnalysisTranscriptSegment[];
 };
 
@@ -70,12 +72,16 @@ export class PostAnalysisRepository {
       await client.query('BEGIN');
       const source = await client.query(
         `SELECT af.active_analysis_revision_id AS revision_id,
+                ar.active_transcript_confirmation_id AS confirmation_id,
+                tc.version_no AS confirmation_version,
                 coalesce(ds.custom_business_roles, '[]'::jsonb) AS custom_business_roles
          FROM ${this.table('audio_files')} af
          LEFT JOIN ${this.table('data_sources')} ds
            ON ds.tenant_id = af.tenant_id AND ds.id = af.data_source_id
          JOIN ${this.table('audio_analysis_revisions')} ar
            ON ar.tenant_id = af.tenant_id AND ar.id = af.active_analysis_revision_id
+         LEFT JOIN ${this.table('transcript_confirmations')} tc
+           ON tc.tenant_id = ar.tenant_id AND tc.id = ar.active_transcript_confirmation_id
          WHERE af.tenant_id = $1 AND af.id = $2 AND af.deleted_at IS NULL
            AND ar.status = 'ready' FOR UPDATE OF af`,
         [this.tenantId, audioFileId],
@@ -84,20 +90,24 @@ export class PostAnalysisRepository {
       if (!row) {
         throw new WorkspaceRepositoryError('CONFLICT', '音频尚无已发布转写，无法开始分析。');
       }
+      if (!row.confirmation_id) {
+        throw new WorkspaceRepositoryError('CONFLICT', '请先确认转写正文，再开始后续分析。');
+      }
       const customBusinessRoles = Array.isArray(row.custom_business_roles)
         ? row.custom_business_roles
         : [];
       const created = await client.query(
         `INSERT INTO ${this.table('audio_post_analysis_jobs')}
-           (tenant_id, audio_file_id, analysis_revision_id, analysis_type, model,
-            input_snapshot, status, progress)
-         VALUES ($1, $2, $3, $4, $5,
-                 jsonb_build_object('customBusinessRoles', $6::jsonb), 'queued', 0)
+           (tenant_id, audio_file_id, analysis_revision_id, transcript_confirmation_id,
+            analysis_type, model, input_snapshot, status, progress)
+         VALUES ($1, $2, $3, $4, $5, $6,
+                 jsonb_build_object('customBusinessRoles', $7::jsonb), 'queued', 0)
          RETURNING id`,
         [
           this.tenantId,
           audioFileId,
           row.revision_id,
+          row.confirmation_id,
           type,
           model,
           JSON.stringify(customBusinessRoles),
@@ -144,11 +154,14 @@ export class PostAnalysisRepository {
        )
        UPDATE ${this.table('audio_post_analysis_jobs')} job
        SET status = 'running', progress = 1
-       FROM candidate, ${this.table('audio_files')} af
+       FROM candidate, ${this.table('audio_files')} af,
+            ${this.table('transcript_confirmations')} tc
        WHERE job.id = candidate.id AND af.tenant_id = job.tenant_id
          AND af.id = job.audio_file_id
+         AND tc.tenant_id = job.tenant_id AND tc.id = job.transcript_confirmation_id
        RETURNING job.id, job.analysis_type, job.model, job.audio_file_id,
-                 job.analysis_revision_id, job.input_snapshot,
+                 job.analysis_revision_id, job.transcript_confirmation_id,
+                 tc.version_no AS confirmation_version, job.input_snapshot,
                  af.storage_key, af.duration_ms, af.deleted_at`,
       [this.tenantId, type],
     );
@@ -159,11 +172,16 @@ export class PostAnalysisRepository {
       return undefined;
     }
     const segments = await this.pool.query(
-      `SELECT id, speaker_key, start_ms, end_ms, text
-       FROM ${this.table('transcript_segments')}
-       WHERE tenant_id = $1 AND analysis_revision_id = $2
-       ORDER BY start_ms, segment_index`,
-      [this.tenantId, row.analysis_revision_id],
+      `SELECT ts.id, ts.speaker_key, ts.start_ms, ts.end_ms, confirmed.text
+       FROM ${this.table('transcript_confirmation_segments')} confirmed
+       JOIN ${this.table('transcript_segments')} ts
+         ON ts.tenant_id = confirmed.tenant_id
+        AND ts.analysis_revision_id = confirmed.analysis_revision_id
+        AND ts.id = confirmed.transcript_segment_id
+       WHERE confirmed.tenant_id = $1
+         AND confirmed.transcript_confirmation_id = $2
+       ORDER BY ts.start_ms, ts.segment_index`,
+      [this.tenantId, row.transcript_confirmation_id],
     );
     const snapshot =
       row.input_snapshot && typeof row.input_snapshot === 'object'
@@ -177,6 +195,8 @@ export class PostAnalysisRepository {
       revisionId: row.analysis_revision_id,
       storageKey: row.storage_key,
       durationMs: Number(row.duration_ms),
+      confirmationId: row.transcript_confirmation_id,
+      confirmationVersion: Number(row.confirmation_version),
       customBusinessRoles: Array.isArray(snapshot.customBusinessRoles)
         ? snapshot.customBusinessRoles.filter((value): value is string => typeof value === 'string')
         : [],

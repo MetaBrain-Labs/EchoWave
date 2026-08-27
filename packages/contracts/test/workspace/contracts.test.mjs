@@ -24,6 +24,7 @@ import {
   DataSourceUpdateRequestSchema,
   GroupCreateRequestSchema,
   AudioPostAnalysisStartResponseSchema,
+  AudioTranscriptConfirmationRequestSchema,
 } from '../../dist/index.js';
 
 const firstId = '11111111-1111-4111-8111-111111111111';
@@ -303,6 +304,7 @@ describe('workspace contracts', () => {
         diarizationStatus: 'not_returned',
         responseGranularity: 'chunk',
       },
+      transcriptConfirmation: { status: 'pending', currentVersion: 0, confirmedAt: null },
       scenes: [
         {
           id: thirdId,
@@ -319,7 +321,8 @@ describe('workspace contracts', () => {
               emotion: '专注',
               startMs: 0,
               endMs: 1_000,
-              text: '你好。',
+              rawText: '你好。',
+              confirmedText: null,
               aiTag: null,
             },
           ],
@@ -374,12 +377,18 @@ describe('workspace contracts', () => {
         segmentationMode: 'speaker_turn',
         speakerIdentityScope: 'recording',
       },
+      transcriptConfirmation: {
+        status: 'confirmed',
+        currentVersion: 2,
+        confirmedAt: '2026-08-27T10:00:30.000Z',
+      },
       postAnalysis: {
         emotion: {
           state: 'ready',
           jobId: thirdId,
           model: 'qwen3.5-omni-flash',
           completedAt: '2026-08-27T10:01:00.000Z',
+          confirmationVersion: 1,
         },
         role: { state: 'idle' },
       },
@@ -399,7 +408,8 @@ describe('workspace contracts', () => {
               emotion: 'impatient',
               startMs: 0,
               endMs: 1_000,
-              text: '行，我知道了。',
+              rawText: '行，我晓得了。',
+              confirmedText: '行，我知道了。',
               aiTag: null,
               roleAnalysis: null,
               emotionAnalysis: {
@@ -439,6 +449,32 @@ describe('workspace contracts', () => {
             ],
           },
         ],
+      }),
+    );
+  });
+
+  it('validates complete transcript confirmation request syntax and rejects duplicate segments', () => {
+    const request = AudioTranscriptConfirmationRequestSchema.parse({
+      analysisRevisionId: firstId,
+      baseVersion: 0,
+      segments: [{ segmentId: secondId, text: '  修正后的正文  ' }],
+    });
+    assert.equal(request.segments[0].text, '修正后的正文');
+    assert.throws(() =>
+      AudioTranscriptConfirmationRequestSchema.parse({
+        analysisRevisionId: firstId,
+        baseVersion: 1,
+        segments: [
+          { segmentId: secondId, text: '甲' },
+          { segmentId: secondId, text: '乙' },
+        ],
+      }),
+    );
+    assert.throws(() =>
+      AudioTranscriptConfirmationRequestSchema.parse({
+        analysisRevisionId: firstId,
+        baseVersion: -1,
+        segments: [{ segmentId: secondId, text: '   ' }],
       }),
     );
   });

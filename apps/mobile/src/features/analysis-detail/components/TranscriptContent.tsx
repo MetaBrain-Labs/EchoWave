@@ -9,7 +9,7 @@
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import {
   colors,
@@ -37,6 +37,8 @@ const emotionLabels: Record<string, string> = {
   unknown: '未知',
 };
 
+export type TranscriptDisplayMode = 'current' | 'raw';
+
 function FilterButton({ label }: { label: string }) {
   return (
     <Pressable
@@ -52,13 +54,21 @@ function FilterButton({ label }: { label: string }) {
 }
 
 function SegmentView({
+  displayMode,
+  draftText,
+  editing,
   dimmed,
+  onDraftChange,
   onOpenAiTag,
   onOpenEmotion,
   segment,
   speakerDisplayName,
 }: {
+  displayMode: TranscriptDisplayMode;
+  draftText?: string;
+  editing: boolean;
   dimmed: boolean;
+  onDraftChange: (segmentId: string, text: string) => void;
   onOpenAiTag: (segment: TranscriptSegment) => void;
   onOpenEmotion: (segment: TranscriptSegment) => void;
   segment: TranscriptSegment;
@@ -100,7 +110,20 @@ function SegmentView({
             <Ionicons color={colors.secondary} name="chevron-forward" size={16} />
           ) : null}
         </Pressable>
-        <Text style={[styles.transcriptText, dimmed && styles.dimmedText]}>{segment.text}</Text>
+        {editing ? (
+          <TextInput
+            accessibilityLabel={`${speakerDisplayName}的转写正文`}
+            multiline
+            onChangeText={(text) => onDraftChange(segment.id, text)}
+            style={styles.transcriptInput}
+            textAlignVertical="top"
+            value={draftText ?? segment.text}
+          />
+        ) : (
+          <Text style={[styles.transcriptText, dimmed && styles.dimmedText]}>
+            {displayMode === 'raw' ? segment.rawText : segment.text}
+          </Text>
+        )}
         <Text style={styles.segmentTime}>
           {formatTime(segment.startSeconds)} – {formatTime(segment.endSeconds)}
         </Text>
@@ -150,16 +173,34 @@ function InvalidSegmentView({ invalidSegment }: { invalidSegment: TranscriptInva
 }
 
 export function TranscriptContent({
+  confirming,
   detail,
+  displayMode,
+  draftTexts,
+  editing,
   hideIrrelevant,
+  onCancelEditing,
+  onConfirmEditing,
+  onDisplayModeChange,
+  onDraftChange,
   onOpenAiTag,
   onOpenEmotion,
+  onStartEditing,
   selectedSegmentId,
 }: {
+  confirming: boolean;
   detail: AnalysisDetailView;
+  displayMode: TranscriptDisplayMode;
+  draftTexts: Readonly<Record<string, string>>;
+  editing: boolean;
   hideIrrelevant: boolean;
+  onCancelEditing: () => void;
+  onConfirmEditing: () => void;
+  onDisplayModeChange: (mode: TranscriptDisplayMode) => void;
+  onDraftChange: (segmentId: string, text: string) => void;
   onOpenAiTag: (segment: TranscriptSegment) => void;
   onOpenEmotion: (segment: TranscriptSegment) => void;
+  onStartEditing: () => void;
   selectedSegmentId?: string;
 }) {
   const [skipInvalid, setSkipInvalid] = useState(false);
@@ -171,6 +212,7 @@ export function TranscriptContent({
         )
       : detail.scenes;
   const speakerDisplayNames = new Map<string, string>();
+  const confirmation = detail.transcriptConfirmation;
   for (const scene of detail.scenes) {
     for (const segment of scene.segments) {
       if (!speakerDisplayNames.has(segment.speakerKey)) {
@@ -191,6 +233,70 @@ export function TranscriptContent({
       showsVerticalScrollIndicator={false}
       style={styles.pageScroll}
     >
+      <View accessibilityRole="summary" style={styles.confirmationCard}>
+        <View style={styles.confirmationCopy}>
+          <Text style={styles.confirmationTitle}>
+            {confirmation.status === 'confirmed'
+              ? `已确认转写 v${confirmation.currentVersion}`
+              : '转写待确认'}
+          </Text>
+          <Text style={styles.confirmationDescription}>
+            {confirmation.status === 'confirmed'
+              ? `确认于 ${new Date(confirmation.confirmedAt).toLocaleString()}，后续分析使用当前确认版。`
+              : '请检查正文并确认；确认前不能开始情绪分析或角色识别。'}
+          </Text>
+        </View>
+        {!editing ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={onStartEditing}
+            style={({ pressed }) => [styles.confirmationAction, pressed && styles.pressed]}
+          >
+            <Text style={styles.confirmationActionText}>
+              {confirmation.status === 'confirmed' ? '继续修正' : '编辑并确认'}
+            </Text>
+          </Pressable>
+        ) : null}
+        {confirmation.status === 'confirmed' && !editing ? (
+          <View accessibilityRole="tablist" style={styles.versionSwitch}>
+            {(['current', 'raw'] as const).map((mode) => (
+              <Pressable
+                accessibilityRole="tab"
+                accessibilityState={{ selected: displayMode === mode }}
+                key={mode}
+                onPress={() => onDisplayModeChange(mode)}
+                style={[styles.versionOption, displayMode === mode && styles.versionOptionActive]}
+              >
+                <Text
+                  style={[
+                    styles.versionOptionText,
+                    displayMode === mode && styles.versionOptionTextActive,
+                  ]}
+                >
+                  {mode === 'current' ? '当前确认版' : '原始转写'}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+        {editing ? (
+          <View style={styles.editActions}>
+            <Pressable disabled={confirming} onPress={onCancelEditing} style={styles.editButton}>
+              <Text style={styles.editCancelText}>取消</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              disabled={confirming}
+              onPress={onConfirmEditing}
+              style={[styles.editButton, styles.editConfirmButton]}
+            >
+              <Text style={styles.editConfirmText}>
+                {confirming ? '正在确认…' : '确认整份转写'}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
+      </View>
       {detail.transcription.diarizationStatus === 'not_returned' ? (
         <View
           accessibilityLabel="本次模型未返回说话人信息，以下使用匿名发言编号。"
@@ -264,7 +370,11 @@ export function TranscriptContent({
                 ) : (
                   <SegmentView
                     key={item.id}
+                    displayMode={displayMode}
                     dimmed={hasSelectedSegment && item.segment.id !== selectedSegmentId}
+                    draftText={draftTexts[item.segment.id]}
+                    editing={editing}
+                    onDraftChange={onDraftChange}
                     onOpenAiTag={onOpenAiTag}
                     onOpenEmotion={onOpenEmotion}
                     segment={item.segment}
@@ -276,6 +386,21 @@ export function TranscriptContent({
           </View>
         );
       })}
+      {editing ? (
+        <View style={styles.bottomEditActions}>
+          <Pressable disabled={confirming} onPress={onCancelEditing} style={styles.editButton}>
+            <Text style={styles.editCancelText}>取消</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            disabled={confirming}
+            onPress={onConfirmEditing}
+            style={[styles.editButton, styles.editConfirmButton]}
+          >
+            <Text style={styles.editConfirmText}>{confirming ? '正在确认…' : '确认整份转写'}</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </ScrollView>
   );
 }
@@ -291,6 +416,63 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl,
     paddingHorizontal: spacing.md,
   },
+  confirmationCard: {
+    backgroundColor: colors.background,
+    borderRadius: radii.default,
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    padding: spacing.md,
+  },
+  confirmationCopy: { gap: spacing.xs },
+  confirmationTitle: {
+    ...typography.heading3,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+  },
+  confirmationDescription: {
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+  },
+  confirmationAction: { alignSelf: 'flex-end', padding: spacing.xs },
+  confirmationActionText: {
+    ...typography.heading5,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+  },
+  versionSwitch: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.canvas,
+    borderRadius: radii.default,
+    flexDirection: 'row',
+    padding: 2,
+  },
+  versionOption: { borderRadius: radii.default, paddingHorizontal: spacing.sm, paddingVertical: 6 },
+  versionOptionActive: { backgroundColor: colors.ink },
+  versionOptionText: {
+    ...typography.label,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+  },
+  versionOptionTextActive: { color: colors.white, fontFamily: fontFamilies.sansBold },
+  editActions: { flexDirection: 'row', gap: spacing.sm, justifyContent: 'flex-end' },
+  bottomEditActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'flex-end',
+    paddingTop: spacing.lg,
+  },
+  editButton: {
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    minWidth: 96,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  editConfirmButton: { backgroundColor: colors.ink, borderColor: colors.ink },
+  editCancelText: { ...typography.heading5, color: textColors.primary, textAlign: 'center' },
+  editConfirmText: { ...typography.heading5, color: colors.white, textAlign: 'center' },
   diarizationNotice: {
     alignItems: 'center',
     backgroundColor: colors.background,
@@ -425,6 +607,18 @@ const styles = StyleSheet.create({
     color: textColors.primary,
     fontFamily: fontFamilies.kai,
     marginTop: spacing.sm,
+  },
+  transcriptInput: {
+    ...typography.body,
+    backgroundColor: colors.white,
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    color: textColors.primary,
+    fontFamily: fontFamilies.kai,
+    marginTop: spacing.sm,
+    minHeight: 88,
+    padding: spacing.sm,
   },
   aiTagButton: {
     alignItems: 'center',

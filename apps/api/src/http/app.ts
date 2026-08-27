@@ -14,6 +14,7 @@
  */
 import {
   ApiErrorResponseSchema,
+  AudioTranscriptConfirmationRequestSchema,
   AudioTranscriptionStartRequestSchema,
   DataSourceCreateRequestSchema,
   DataSourceGroupLinkRequestSchema,
@@ -262,6 +263,13 @@ export function createApp(
     app.get('/api/audio-files/:audioFileId/analysis', async (context) =>
       context.json(await workspace.getAudioAnalysis(id(context.req.param('audioFileId')))),
     );
+    app.post('/api/audio-files/:audioFileId/transcript-confirmations', async (context) => {
+      const input = AudioTranscriptConfirmationRequestSchema.parse(await context.req.json());
+      return context.json(
+        await workspace.confirmAudioTranscript(id(context.req.param('audioFileId')), input),
+        201,
+      );
+    });
     app.get('/api/audio-transcription/capabilities', (context) =>
       context.json(workspace.getAudioTranscriptionCapabilities()),
     );

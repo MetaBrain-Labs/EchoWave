@@ -43,6 +43,10 @@ const postAnalysisMigration = await readFile(
   new URL('../../migrations/012_audio_post_analysis.sql', import.meta.url),
   'utf8',
 );
+const transcriptConfirmationMigration = await readFile(
+  new URL('../../migrations/013_transcript_confirmations.sql', import.meta.url),
+  'utf8',
+);
 
 describe('audio transcription migration', () => {
   it('adds business roles and prevents concurrent active revisions', () => {
@@ -123,5 +127,20 @@ describe('audio transcription migration', () => {
     assert.match(postAnalysisMigration, /CREATE TABLE speaker_role_results/);
     assert.match(postAnalysisMigration, /active_emotion_job_id/);
     assert.match(postAnalysisMigration, /active_role_job_id/);
+  });
+
+  it('separates immutable raw text from versioned confirmed transcript snapshots', () => {
+    assert.match(transcriptConfirmationMigration, /CREATE TABLE transcript_confirmations/);
+    assert.match(transcriptConfirmationMigration, /CREATE TABLE transcript_confirmation_segments/);
+    assert.match(transcriptConfirmationMigration, /active_transcript_confirmation_id/);
+    assert.match(transcriptConfirmationMigration, /WHERE status = 'ready'/);
+    assert.match(
+      transcriptConfirmationMigration,
+      /ALTER COLUMN transcript_confirmation_id SET NOT NULL/,
+    );
+    assert.doesNotMatch(
+      transcriptConfirmationMigration,
+      /UPDATE transcript_segments[\s\S]*SET text/,
+    );
   });
 });

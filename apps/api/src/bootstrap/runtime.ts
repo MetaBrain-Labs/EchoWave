@@ -26,6 +26,7 @@ import { DefaultKnowledgeService } from '../knowledge/service.ts';
 import { WorkspaceRepository } from '../workspace/persistence/workspaceRepository.ts';
 import { AudioAnalysisRepository } from '../workspace/persistence/audioAnalysisRepository.ts';
 import { PostAnalysisRepository } from '../workspace/persistence/postAnalysisRepository.ts';
+import { TranscriptConfirmationRepository } from '../workspace/persistence/transcriptConfirmationRepository.ts';
 import { DefaultWorkspaceService } from '../workspace/service.ts';
 import { AudioInputPreprocessor } from '../workspace/transcription/audioPreprocessor.ts';
 import { DashScopeFileTranscription } from '../workspace/transcription/dashScopeFileTranscription.ts';
@@ -70,6 +71,11 @@ export function createRagRuntime(config: ApiConfig) {
     config.rag.tenantId,
   );
   const postAnalysisRepository = new PostAnalysisRepository(
+    pool,
+    config.database.schema,
+    config.rag.tenantId,
+  );
+  const transcriptConfirmationRepository = new TranscriptConfirmationRepository(
     pool,
     config.database.schema,
     config.rag.tenantId,
@@ -126,6 +132,7 @@ export function createRagRuntime(config: ApiConfig) {
     config.rag.audioTranscriptionModel,
     audioInputPreprocessor,
     postAnalysisRepository,
+    transcriptConfirmationRepository,
     config.rag.audioEmotionModel,
     config.rag.deepSeekChatModel,
     Boolean(config.rag.dashScope.oss),

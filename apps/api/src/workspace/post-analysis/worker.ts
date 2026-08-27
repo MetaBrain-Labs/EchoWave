@@ -125,6 +125,8 @@ export class AudioPostAnalysisWorker {
       metadata: {
         audioFileId: job.audioFileId,
         revisionId: job.revisionId,
+        confirmationId: job.confirmationId,
+        confirmationVersion: job.confirmationVersion,
         jobId: job.id,
         model: job.model,
         segmentCount: job.segments.length,

@@ -27,9 +27,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
 import {
+  confirmAudioTranscript,
   getAudioAnalysis,
   startAudioEmotionAnalysis,
   startAudioRoleRecognition,
+  WorkspaceRequestError,
 } from '@/shared/api/workspaceApi';
 import {
   colors,
@@ -49,7 +51,7 @@ import { IconButton } from './components/AnalysisControls';
 import { analysisTabKeys, DetailTabs, type AnalysisTab } from './components/AnalysisTabs';
 import { CompactPlayer, ExpandedPlayer } from './components/Player';
 import { SummaryContent } from './components/SummaryContent';
-import { TranscriptContent } from './components/TranscriptContent';
+import { TranscriptContent, type TranscriptDisplayMode } from './components/TranscriptContent';
 import { EmotionAnalysisPanel } from './components/EmotionAnalysisPanel';
 import { PostAnalysisConfirmDialog, PostAnalysisControls } from './components/PostAnalysisControls';
 
@@ -74,12 +76,23 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
   const [emotionSegment, setEmotionSegment] = useState<TranscriptSegment>();
   const [confirmAnalysisType, setConfirmAnalysisType] = useState<AudioPostAnalysisType>();
   const [startingAnalysis, setStartingAnalysis] = useState(false);
+  const [editingTranscript, setEditingTranscript] = useState(false);
+  const [confirmingTranscript, setConfirmingTranscript] = useState(false);
+  const [transcriptDisplayMode, setTranscriptDisplayMode] =
+    useState<TranscriptDisplayMode>('current');
+  const [transcriptDrafts, setTranscriptDrafts] = useState<Record<string, string>>({});
   const [hideIrrelevant, setHideIrrelevant] = useState(getHideIrrelevantSegmentsPreference);
   const changeHideIrrelevant = (value: boolean) => {
     setHideIrrelevantSegmentsPreference(value);
     setHideIrrelevant(value);
   };
   const hasSummary = Boolean(detail?.summarySections.length);
+  const transcriptSegments = detail?.scenes.flatMap((scene) => scene.segments) ?? [];
+  const transcriptDirty =
+    editingTranscript &&
+    transcriptSegments.some(
+      (segment) => (transcriptDrafts[segment.id] ?? segment.text) !== segment.text,
+    );
   const applyTabChange = (tab: AnalysisTab) => {
     setActiveTab(tab);
     if (tab === 'summary') {
@@ -126,6 +139,10 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
 
   const confirmPostAnalysis = async () => {
     if (!confirmAnalysisType || startingAnalysis) return;
+    if (detail?.transcriptConfirmation.status !== 'confirmed') {
+      Alert.alert('请先确认转写', '情绪分析和角色识别始终使用用户确认后的正文。');
+      return;
+    }
     setStartingAnalysis(true);
     try {
       if (confirmAnalysisType === 'emotion') await startAudioEmotionAnalysis(detailId);
@@ -139,24 +156,109 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
     }
   };
 
-  useEffect(() => {
-    if (!selectedSegment) {
-      return undefined;
-    }
+  const finishTranscriptEditing = () => {
+    setEditingTranscript(false);
+    setConfirmingTranscript(false);
+    setTranscriptDrafts({});
+    setTranscriptDisplayMode('current');
+  };
 
+  const startTranscriptEditing = () => {
+    if (!detail) return;
+    setTranscriptDrafts(
+      Object.fromEntries(
+        detail.scenes.flatMap((scene) =>
+          scene.segments.map((segment) => [segment.id, segment.text]),
+        ),
+      ),
+    );
+    setTranscriptDisplayMode('current');
+    setEditingTranscript(true);
+  };
+
+  const cancelTranscriptEditing = () => {
+    if (!transcriptDirty) {
+      finishTranscriptEditing();
+      return;
+    }
+    Alert.alert('放弃未确认的修改？', '离开编辑后，本次修改不会被保存。', [
+      { text: '继续编辑', style: 'cancel' },
+      { text: '放弃修改', style: 'destructive', onPress: finishTranscriptEditing },
+    ]);
+  };
+
+  const confirmTranscript = async () => {
+    if (!detail || confirmingTranscript) return;
+    const segments = transcriptSegments.map((segment) => ({
+      segmentId: segment.id,
+      text: transcriptDrafts[segment.id] ?? segment.text,
+    }));
+    if (segments.some((segment) => segment.text.trim().length === 0)) {
+      Alert.alert('无法确认转写', '每个转写片段都必须保留非空正文。');
+      return;
+    }
+    setConfirmingTranscript(true);
+    try {
+      await confirmAudioTranscript(detail.id, {
+        analysisRevisionId: detail.revisionId,
+        baseVersion: detail.transcriptConfirmation.currentVersion,
+        segments,
+      });
+      finishTranscriptEditing();
+      await load(false);
+    } catch (reason) {
+      if (reason instanceof WorkspaceRequestError && reason.code === 'CONFLICT') {
+        Alert.alert('确认版本已更新', reason.message, [
+          { text: '保留草稿', style: 'cancel' },
+          {
+            text: '重新加载并放弃草稿',
+            style: 'destructive',
+            onPress: () => {
+              finishTranscriptEditing();
+              void load(false);
+            },
+          },
+        ]);
+      } else {
+        Alert.alert('无法确认转写', reason instanceof Error ? reason.message : '请稍后重试。');
+      }
+    } finally {
+      setConfirmingTranscript(false);
+    }
+  };
+
+  const requestBack = useCallback(() => {
+    if (!transcriptDirty) {
+      onBack();
+      return;
+    }
+    Alert.alert('放弃未确认的修改？', '返回后，本次修改不会被保存。', [
+      { text: '继续编辑', style: 'cancel' },
+      { text: '放弃并返回', style: 'destructive', onPress: onBack },
+    ]);
+  }, [onBack, transcriptDirty]);
+
+  useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      setSelectedSegment(undefined);
-      return true;
+      if (selectedSegment) {
+        setSelectedSegment(undefined);
+        return true;
+      }
+      if (transcriptDirty) {
+        requestBack();
+        return true;
+      }
+      return false;
     });
 
     return () => subscription.remove();
-  }, [selectedSegment]);
+  }, [requestBack, selectedSegment, transcriptDirty]);
 
   if (loading) {
     return (
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
         <View style={styles.unknownTopBar}>
-          <IconButton icon="chevron-back" label="返回" onPress={onBack} />
+          <IconButton icon="chevron-back" label="返回" onPress={requestBack} />
         </View>
         <ActivityIndicator
           accessibilityLabel="正在加载分析详情"
@@ -171,7 +273,7 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
     return (
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
         <View style={styles.unknownTopBar}>
-          <IconButton icon="chevron-back" label="返回" onPress={onBack} />
+          <IconButton icon="chevron-back" label="返回" onPress={requestBack} />
         </View>
         <View accessibilityRole="alert" style={styles.emptyState}>
           <Ionicons color={colors.secondary} name="document-outline" size={36} />
@@ -188,7 +290,7 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            onPress={onBack}
+            onPress={requestBack}
             style={({ pressed }) => [styles.returnButton, pressed && styles.pressed]}
           >
             <Text style={styles.returnButtonText}>返回分组</Text>
@@ -211,7 +313,7 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
         <ExpandedPlayer
           durationSeconds={detail.durationSeconds}
           isPlaying={isPlaying}
-          onBack={onBack}
+          onBack={requestBack}
           onCollapse={() => setExpandedPlayer(false)}
           onJump={jump}
           onPlayPause={() => setIsPlaying((value) => !value)}
@@ -223,7 +325,7 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
         <CompactPlayer
           durationSeconds={detail.durationSeconds}
           isPlaying={isPlaying}
-          onBack={onBack}
+          onBack={requestBack}
           onExpand={() => setExpandedPlayer(true)}
           onPlayPause={() => setIsPlaying((value) => !value)}
           positionSeconds={positionSeconds}
@@ -244,15 +346,27 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
       >
         <View style={[styles.page, { width: pageWidth }]}>
           <PostAnalysisControls
+            confirmed={detail.transcriptConfirmation.status === 'confirmed'}
             emotion={detail.postAnalysis.emotion}
             onStart={setConfirmAnalysisType}
             role={detail.postAnalysis.role}
           />
           <TranscriptContent
+            confirming={confirmingTranscript}
             detail={detail}
+            displayMode={transcriptDisplayMode}
+            draftTexts={transcriptDrafts}
+            editing={editingTranscript}
             hideIrrelevant={hideIrrelevant}
+            onCancelEditing={cancelTranscriptEditing}
+            onConfirmEditing={() => void confirmTranscript()}
+            onDisplayModeChange={setTranscriptDisplayMode}
+            onDraftChange={(segmentId, text) =>
+              setTranscriptDrafts((current) => ({ ...current, [segmentId]: text }))
+            }
             onOpenAiTag={setSelectedSegment}
             onOpenEmotion={setEmotionSegment}
+            onStartEditing={startTranscriptEditing}
             selectedSegmentId={selectedSegment?.id}
           />
         </View>

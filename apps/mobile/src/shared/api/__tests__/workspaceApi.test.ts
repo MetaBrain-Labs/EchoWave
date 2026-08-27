@@ -9,7 +9,12 @@
  * Notes:
  * - 不发起真实网络请求。
  */
-import { audioFixtures, dataSourceDetailFixture, groupFixture } from '@/test/workspaceFixtures';
+import {
+  analysisFixture,
+  audioFixtures,
+  dataSourceDetailFixture,
+  groupFixture,
+} from '@/test/workspaceFixtures';
 import {
   AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
   DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
@@ -18,6 +23,7 @@ import {
   archiveDataSource,
   archiveDataSourceAudioFile,
   archiveGroup,
+  confirmAudioTranscript,
   createDataSource,
   createGroup,
   getAudioTranscriptionCapabilities,
@@ -285,5 +291,43 @@ describe('workspace API client', () => {
     );
 
     await expect(getAudioTranscriptionCapabilities()).resolves.toEqual(capabilities);
+  });
+
+  it('publishes one validated complete transcript confirmation', async () => {
+    const segment = analysisFixture.scenes[0].segments[0];
+    const response = {
+      audioFileId: analysisFixture.audioFileId,
+      analysisRevisionId: analysisFixture.id,
+      confirmationId: 'a1000000-0000-4000-8000-000000000001',
+      version: 2,
+      confirmedAt: '2026-08-28T01:00:00.000Z',
+    };
+    const fetch = jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify(response), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    await expect(
+      confirmAudioTranscript(analysisFixture.audioFileId, {
+        analysisRevisionId: analysisFixture.id,
+        baseVersion: 1,
+        segments: [{ segmentId: segment.id, text: '  修正正文  ' }],
+      }),
+    ).resolves.toEqual(response);
+    expect(fetch.mock.calls[0][0]).toContain(
+      `/api/audio-files/${analysisFixture.audioFileId}/transcript-confirmations`,
+    );
+    expect(fetch.mock.calls[0][1]).toEqual(
+      expect.objectContaining({
+        body: JSON.stringify({
+          analysisRevisionId: analysisFixture.id,
+          baseVersion: 1,
+          segments: [{ segmentId: segment.id, text: '修正正文' }],
+        }),
+        method: 'POST',
+      }),
+    );
   });
 });
