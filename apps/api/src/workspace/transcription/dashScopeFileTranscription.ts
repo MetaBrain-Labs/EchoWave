@@ -55,7 +55,11 @@ const TranscriptionResultSchema = z.object({
 
 type FetchLike = typeof fetch;
 type Sleep = (durationMs: number) => Promise<void>;
-export type DashScopeRawResponseContext = { revisionId: string; durationMs: number };
+export type DashScopeRawResponseContext = {
+  revisionId: string;
+  durationMs: number;
+  preprocessing?: 'silero_vad' | 'whole_file';
+};
 
 /** DashScope 完成态返回的安全归一化结果。 */
 export type DashScopeTranscriptionResult = {
@@ -354,7 +358,7 @@ export class DashScopeFileTranscription {
       model: 'qwen-audio-3.0-asr-flash-filetrans',
       provider: 'dashscope',
       responseKind,
-      preprocessing: 'whole_file',
+      preprocessing: context.preprocessing ?? 'whole_file',
       format: 'mp3',
       chunkIndex: 1,
       chunkCount: 1,

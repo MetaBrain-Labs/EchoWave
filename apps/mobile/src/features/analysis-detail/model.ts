@@ -65,7 +65,10 @@ export type AnalysisDetailView = {
 
 /** 将服务端当前分析修订版转换为页面展示模型。 */
 export function toAnalysisDetailView(detail: AudioAnalysisDetail): AnalysisDetailView {
-  const invalid = detail.invalidSegments[0];
+  const invalidDurationMs = detail.invalidSegments.reduce(
+    (sum, interval) => sum + interval.endMs - interval.startMs,
+    0,
+  );
   return {
     id: detail.audioFileId,
     title: detail.title,
@@ -73,12 +76,13 @@ export function toAnalysisDetailView(detail: AudioAnalysisDetail): AnalysisDetai
     generatedAt: new Date(detail.generatedAt).toLocaleString(),
     transcription: detail.transcription,
     postAnalysis: detail.postAnalysis,
-    invalidSegment: invalid
-      ? {
-          startSeconds: invalid.startMs / 1_000,
-          durationSeconds: (invalid.endMs - invalid.startMs) / 1_000,
-        }
-      : undefined,
+    invalidSegment:
+      invalidDurationMs > 0
+        ? {
+            startSeconds: (detail.invalidSegments[0]?.startMs ?? 0) / 1_000,
+            durationSeconds: Math.round(invalidDurationMs / 1_000),
+          }
+        : undefined,
     scenes: detail.scenes.map((scene) => ({
       id: scene.id,
       title: scene.title,

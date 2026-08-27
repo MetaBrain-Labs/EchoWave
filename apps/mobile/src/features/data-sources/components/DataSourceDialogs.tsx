@@ -14,6 +14,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   CORE_BUSINESS_ROLES,
   type AudioTranscriptionModelCapability,
+  type AudioTranscriptionPreprocessing,
+  type AudioTranscriptionCapabilitiesResponse,
   type GroupSummary,
 } from '@echowave/contracts';
 import { useState } from 'react';
@@ -438,18 +440,25 @@ export function AudioTranscriptionConfirmDialog({
   models,
   onCancel,
   onConfirm,
+  onPreprocessingChange,
   pending,
+  preprocessing,
+  sileroVad,
   visible,
 }: {
   audioTitle: string;
   models: AudioTranscriptionModelCapability[];
   onCancel: () => void;
   onConfirm: () => void;
+  onPreprocessingChange: (value: AudioTranscriptionPreprocessing) => void;
   pending: boolean;
+  preprocessing: AudioTranscriptionPreprocessing;
+  sileroVad?: AudioTranscriptionCapabilitiesResponse['sileroVad'];
   visible: boolean;
 }) {
   const selectedCapability = models[0];
-  const selectionAvailable = Boolean(selectedCapability?.available);
+  const preprocessingAvailable = preprocessing === 'whole_file' || Boolean(sileroVad?.available);
+  const selectionAvailable = Boolean(selectedCapability?.available) && preprocessingAvailable;
   return (
     <Modal animationType="fade" onRequestClose={onCancel} transparent visible={visible}>
       <View style={styles.dialogRoot}>
@@ -461,6 +470,58 @@ export function AudioTranscriptionConfirmDialog({
             将通过 DashScope 官方接口整文件转写“{audioTitle}”。结果按说话人变化或明显停顿分段，
             业务角色和情绪暂标记为未知。
           </Text>
+          <Text style={styles.transcriptionSectionTitle}>音频预处理</Text>
+          <Pressable
+            accessibilityLabel={`空闲音频过滤（Silero VAD）${sileroVad?.available ? '' : '，当前不可用'}`}
+            accessibilityRole="radio"
+            accessibilityState={{
+              checked: preprocessing === 'silero_vad',
+              disabled: pending || !sileroVad?.available,
+            }}
+            disabled={pending || !sileroVad?.available}
+            onPress={() => onPreprocessingChange('silero_vad')}
+            style={[
+              styles.segmentationOption,
+              preprocessing === 'silero_vad' && styles.selectedModelOption,
+              !sileroVad?.available && styles.disabledButton,
+            ]}
+          >
+            <Ionicons
+              color={colors.ink}
+              name={preprocessing === 'silero_vad' ? 'radio-button-on' : 'radio-button-off'}
+              size={22}
+            />
+            <View style={styles.transcriptionOptionCopy}>
+              <Text style={styles.transcriptionOptionTitle}>空闲音频过滤（Silero VAD）</Text>
+              <Text style={styles.secondaryText}>仅压缩连续超过 30 秒的非人声区间</Text>
+              {!sileroVad?.available ? (
+                <Text accessibilityRole="alert" style={styles.directWarning}>
+                  {sileroVad?.unavailableReason ?? 'Silero VAD 能力尚未加载。'}
+                </Text>
+              ) : null}
+            </View>
+          </Pressable>
+          <Pressable
+            accessibilityLabel="保留完整音频"
+            accessibilityRole="radio"
+            accessibilityState={{ checked: preprocessing === 'whole_file', disabled: pending }}
+            disabled={pending}
+            onPress={() => onPreprocessingChange('whole_file')}
+            style={[
+              styles.segmentationOption,
+              preprocessing === 'whole_file' && styles.selectedModelOption,
+            ]}
+          >
+            <Ionicons
+              color={colors.ink}
+              name={preprocessing === 'whole_file' ? 'radio-button-on' : 'radio-button-off'}
+              size={22}
+            />
+            <View style={styles.transcriptionOptionCopy}>
+              <Text style={styles.transcriptionOptionTitle}>保留完整音频</Text>
+              <Text style={styles.secondaryText}>不执行人声检测，完整音频进入 ASR</Text>
+            </View>
+          </Pressable>
           <Text style={styles.transcriptionSectionTitle}>正文分段方式</Text>
           <View style={[styles.segmentationOption, styles.selectedModelOption]}>
             <Ionicons color={colors.ink} name="people-outline" size={22} />

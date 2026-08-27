@@ -206,7 +206,10 @@ describe('AudioAnalysisRepository', () => {
       audioFileId,
       durationMs: 1_000,
       mimeType: 'audio/wav',
-      preprocessingMode: 'whole_file',
+      preprocessingManifest: {
+        skippedIntervals: [{ startMs: 100, endMs: 500, reason: 'silero_vad_non_speech' }],
+      },
+      preprocessingMode: 'silero_vad',
       revisionId,
       revisionNo: 1,
       sizeBytes: 1_000,
@@ -245,6 +248,10 @@ describe('AudioAnalysisRepository', () => {
     const segmentInsert = calls.find((call) => /INSERT INTO .*transcript_segments/.test(call.sql));
     assert.match(segmentInsert.sql, /business_role/);
     assert.equal(segmentInsert.values[5], '销售');
+    const invalidInsert = calls.find((call) =>
+      /INSERT INTO .*analysis_invalid_segments/.test(call.sql),
+    );
+    assert.deepEqual(invalidInsert.values.slice(2), [100, 500, 'silero_vad_non_speech']);
     const revisionUpdate = calls.findIndex((call) =>
       /UPDATE .*audio_analysis_revisions/.test(call.sql),
     );
@@ -319,12 +326,19 @@ describe('AudioAnalysisRepository', () => {
     };
     const submittedAt = new Date('2026-08-26T00:00:00.000Z');
 
-    await repository.recordProviderArtifact(providerJob, 'temporary/object.mp3');
+    const manifest = { version: 1, mode: 'silero_vad', sourceSpans: [] };
+    await repository.recordProviderArtifact(providerJob, 'temporary/object.mp3', manifest);
     await repository.recordProviderTask(providerJob, 'task-1', submittedAt);
     await repository.clearProviderArtifact(providerJob);
 
     assert.match(calls[0].sql, /SET provider_artifact_key = \$3/);
-    assert.deepEqual(calls[0].values, [tenantId, revisionId, 'temporary/object.mp3']);
+    assert.match(calls[0].sql, /'preprocessingManifest'/);
+    assert.deepEqual(calls[0].values, [
+      tenantId,
+      revisionId,
+      'temporary/object.mp3',
+      JSON.stringify(manifest),
+    ]);
     assert.match(calls[1].sql, /provider_task_id = \$3, provider_submitted_at = \$4/);
     assert.deepEqual(calls[1].values, [tenantId, revisionId, 'task-1', submittedAt]);
     assert.match(calls[2].sql, /SET provider_artifact_key = NULL/);

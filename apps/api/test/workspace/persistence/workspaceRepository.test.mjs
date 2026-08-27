@@ -171,6 +171,7 @@ describe('WorkspaceRepository audio analysis metadata', () => {
       model: 'openai/gpt-4o-mini-transcribe',
       language: 'zh',
       diarizationStatus: 'not_returned',
+      preprocessingMode: 'whole_file',
       responseGranularity: 'chunk',
       segmentationMode: 'readable',
       speakerIdentityScope: 'none',

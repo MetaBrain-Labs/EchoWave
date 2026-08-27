@@ -157,9 +157,14 @@ describe('DefaultWorkspaceService audio transcription', () => {
         defaultModel: 'qwen-audio-3.0-asr-flash-filetrans',
         models: AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
         ffmpeg: { configured: true, available: false },
+        sileroVad: {
+          model: 'silero-vad-v6.2.1',
+          available: false,
+          unavailableReason: 'Silero VAD unavailable.',
+        },
         transcriptionConfigured: true,
       }),
-      refreshFfmpegAvailability: async () => false,
+      refreshModeAvailability: async () => false,
     };
     const service = new DefaultWorkspaceService(
       repository(),
@@ -195,9 +200,10 @@ describe('DefaultWorkspaceService audio transcription', () => {
         defaultModel: 'qwen-audio-3.0-asr-flash-filetrans',
         models,
         ffmpeg: { configured: true, available: true },
+        sileroVad: { model: 'silero-vad-v6.2.1', available: true, unavailableReason: null },
         transcriptionConfigured: true,
       }),
-      refreshFfmpegAvailability: async () => true,
+      refreshModeAvailability: async () => true,
     };
     const service = new DefaultWorkspaceService(
       repository(),

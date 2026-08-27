@@ -26,6 +26,9 @@ const transcriptionCapabilities = await ragRuntime.audioInputPreprocessor.probeF
 if (transcriptionCapabilities.ffmpeg.configured && !transcriptionCapabilities.ffmpeg.available) {
   console.warn('FFmpeg preprocessing is unavailable; DashScope audio transcription is disabled.');
 }
+if (transcriptionCapabilities.ffmpeg.available && !transcriptionCapabilities.sileroVad.available) {
+  console.warn('Silero VAD is unavailable; whole-file audio transcription remains available.');
+}
 const app = createApp(config, {
   knowledgeService: ragRuntime.service,
   workspaceService: ragRuntime.workspaceService,

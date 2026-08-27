@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { EntityIdSchema } from './common.ts';
 import {
   AudioTranscriptionResponseGranularitySchema,
+  AudioTranscriptionPreprocessingSchema,
   AudioTranscriptionSegmentationModeSchema,
   AudioTranscriptionSpeakerIdentityScopeSchema,
 } from './audio.ts';
@@ -33,6 +34,7 @@ export const AudioTranscriptionMetadataSchema = z.object({
   responseGranularity: AudioTranscriptionResponseGranularitySchema.nullable(),
   segmentationMode: AudioTranscriptionSegmentationModeSchema.default('readable'),
   speakerIdentityScope: AudioTranscriptionSpeakerIdentityScopeSchema.default('none'),
+  preprocessingMode: AudioTranscriptionPreprocessingSchema.default('whole_file'),
 });
 
 export const SegmentAiTagSchema = z.object({

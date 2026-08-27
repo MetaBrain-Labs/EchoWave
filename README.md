@@ -73,7 +73,7 @@ Copy-Item apps/mobile/.env.example apps/mobile/.env
 
 `apps/api/.env` 中的 `AUDIO_STORAGE_DIR` 是手动上传音频的持久化目录。该目录应位于具备持久化磁盘的服务端路径，API 只把随机生成的相对 `storage_key` 写入数据库。生产或容器环境必须显式挂载并备份该目录；不要把它指向临时目录或纳入 Git。
 
-FFmpeg 是整文件转写的必需能力。配置 `FFMPEG_PATH` 后，API 启动时会非致命探测可执行文件；缺失或检查失败不会阻止知识库嵌入和 API 启动，但会禁用音频转写。临时单声道 MP3 写入 `AUDIO_TRANSCRIPTION_TEMP_DIR`，转写模型固定为 `qwen-audio-3.0-asr-flash-filetrans`，失败时不会自动切换模型。
+FFmpeg 是整文件转写的必需能力。配置 `FFMPEG_PATH` 后，API 启动时会非致命探测可执行文件；缺失或检查失败不会阻止知识库嵌入和 API 启动，但会禁用音频转写。临时单声道 MP3 写入 `AUDIO_TRANSCRIPTION_TEMP_DIR`，转写模型固定为 `qwen-audio-3.0-asr-flash-filetrans`，失败时不会自动切换模型。API 还会校验仓库内固定的 Silero VAD v6.2.1 ONNX 模型；VAD 不可用时仍可由用户明确选择整文件模式，服务端不会静默回退。
 
 按说话轮次分段使用北京地域 `qwen-audio-3.0-asr-flash-filetrans`。`DASHSCOPE_API_KEY` 和 `DASHSCOPE_BASE_URL` 始终必填，供知识库嵌入和转写复用；四项 `ALIYUN_OSS_*` 配置必须全部为空或全部配置，缺失时只禁用转写。服务端把本地权威音频转成单声道整文件后，临时上传到 `echowave/asr-staging/<tenant>/<revision>/`，使用 24 小时签名 GET URL 提交任务，并在成功或失败后尽力删除。OSS Bucket 必须另外配置该前缀的一天生命周期规则作为清理兜底。
 
@@ -111,7 +111,7 @@ AI_EXECUTION_REPORT_STT_RAW_RESPONSE_ENABLED="false"
 
 FFmpeg 模式将录音转为 16kHz 单声道 64kbps MP3，并按固定 45 秒无重叠区间生成 Chunk；约 14.5 分钟录音初始形成 20 个 Chunk。明显文本退化或连续超时会把当前 Chunk 依次细分为约 22 秒和 11 秒，十秒为硬下限。direct 模式只允许不超过 45 秒的完整原音频，长音频必须使用 FFmpeg。
 
-转写只使用 DashScope Filetrans：FFmpeg 先生成 16kHz 单声道整文件 MP3，经短期 OSS 对象和签名 URL 异步提交，并开启 `diarization_enabled=true`。结果严格要求每句包含 `speaker_id` 和有序有效毫秒时间戳：Speaker 变化或同一 Speaker 停顿达到 1500ms 时开始新段，相邻同 Speaker 在不足 1500ms 且合并后不超过 240 字时合并，供应商单句不会被硬拆。业务角色和情绪始终为 `unknown`。
+转写只使用 DashScope Filetrans：默认先以 Silero VAD 检测人声，仅压缩连续超过 30 秒的非人声区间，再由 FFmpeg 生成 16kHz 单声道整文件 MP3；用户也可明确选择保留完整音频。两种模式都经短期 OSS 对象和签名 URL 异步提交，并开启 `diarization_enabled=true`。VAD 清单随 revision 持久化，供应商时间戳发布前恢复到原录音时间轴，被删除区间写入无效片段表。结果严格要求每句包含 `speaker_id` 和有序有效毫秒时间戳：Speaker 变化或同一 Speaker 停顿达到 1500ms 时开始新段，相邻同 Speaker 在不足 1500ms 且合并后不超过 240 字时合并，供应商单句不会被硬拆。业务角色和情绪始终为 `unknown`。
 
 数据源详情页沿用 2 秒列表轮询显示 `排队 → 预处理 → Chunk 转写/校验/细分 → 合并 → 发布`。音频卡片展示当前 Chunk、动态总数、网络尝试和按已完成音频区间计算的单调百分比；点击进行中状态可查看 Chunk 列表、音频时间范围和阶段时间线。模型正文始终不会进入进度接口或弹窗。
 

@@ -241,6 +241,7 @@ export const analysisFixture: AudioAnalysisDetail = {
     responseGranularity: 'word',
     segmentationMode: 'speaker_turn',
     speakerIdentityScope: 'recording',
+    preprocessingMode: 'whole_file',
   },
   postAnalysis: {
     emotion: { state: 'idle' },

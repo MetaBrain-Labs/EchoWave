@@ -117,6 +117,7 @@ describe('workspace routes', () => {
       defaultModel: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
       models: AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
       ffmpeg: { configured: true, available: true },
+      sileroVad: { model: 'silero-vad-v6.2.1', available: true, unavailableReason: null },
       transcriptionConfigured: true,
     }),
     startAudioTranscription: async (id, input) => {

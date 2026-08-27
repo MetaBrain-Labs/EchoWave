@@ -33,6 +33,7 @@
     "mammoth": "^1.12.1",
     "mdast-util-to-string": "^4.0.0",
     "music-metadata": "^11.15.0",
+    "onnxruntime-node": "1.29.0",
     "pg": "^8.23.0",
     "pgvector": "^0.3.0",
     "remark-gfm": "^4.0.1",

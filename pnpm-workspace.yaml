@@ -4,6 +4,7 @@ packages:
 
 allowBuilds:
   esbuild: false
+  onnxruntime-node: true
   unrs-resolver: false
 
 minimumReleaseAgeExclude:

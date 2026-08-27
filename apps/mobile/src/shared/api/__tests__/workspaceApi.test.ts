@@ -270,6 +270,11 @@ describe('workspace API client', () => {
       defaultModel: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
       models: AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
       ffmpeg: { configured: false, available: false },
+      sileroVad: {
+        model: 'silero-vad-v6.2.1' as const,
+        available: false,
+        unavailableReason: 'Silero VAD unavailable.',
+      },
       transcriptionConfigured: false,
     };
     jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(

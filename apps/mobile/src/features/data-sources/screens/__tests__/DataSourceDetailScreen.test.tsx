@@ -68,6 +68,7 @@ describe('DataSourceDetailScreen', () => {
           : model,
       ),
       ffmpeg: { configured: true, available: true },
+      sileroVad: { model: 'silero-vad-v6.2.1', available: true, unavailableReason: null },
       transcriptionConfigured: true,
     });
     jest.mocked(workspaceApi.listDataSourceAudioFiles).mockResolvedValue({ items: audioFixtures });
@@ -271,7 +272,7 @@ describe('DataSourceDetailScreen', () => {
     await waitFor(() =>
       expect(workspaceApi.startAudioTranscription).toHaveBeenCalledWith(failed.id, {
         model: 'qwen-audio-3.0-asr-flash-filetrans',
-        preprocessing: 'whole_file',
+        preprocessing: 'silero_vad',
         segmentationMode: 'speaker_turn',
       }),
     );
@@ -438,6 +439,9 @@ describe('DataSourceDetailScreen', () => {
     expect(screen.getByText('ASR转写')).toBeTruthy();
     expect(screen.getByText('ASR结果分析')).toBeTruthy();
     fireEvent.press(screen.getByText('ASR转写'));
+    expect(
+      screen.getByRole('radio', { name: '空闲音频过滤（Silero VAD）' }).props.accessibilityState,
+    ).toEqual({ checked: true, disabled: false });
     expect(screen.getByLabelText(/Qwen Audio 3.0 ASR Flash Filetrans/)).toBeTruthy();
     expect(screen.queryByText(/普通分段|直接发送/)).toBeNull();
     expect(screen.getByText(/¥0.00022\/秒/)).toBeTruthy();
@@ -446,7 +450,7 @@ describe('DataSourceDetailScreen', () => {
     await waitFor(() =>
       expect(workspaceApi.startAudioTranscription).toHaveBeenCalledWith(audioFixtures[0].id, {
         model: 'qwen-audio-3.0-asr-flash-filetrans',
-        preprocessing: 'whole_file',
+        preprocessing: 'silero_vad',
         segmentationMode: 'speaker_turn',
       }),
     );
@@ -461,6 +465,11 @@ describe('DataSourceDetailScreen', () => {
       defaultModel: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
       models: [...AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES],
       ffmpeg: { configured: true, available: true },
+      sileroVad: {
+        model: 'silero-vad-v6.2.1',
+        available: false,
+        unavailableReason: 'Silero VAD unavailable.',
+      },
       transcriptionConfigured: false,
     });
     const screen = await renderDetail();
@@ -475,6 +484,40 @@ describe('DataSourceDetailScreen', () => {
     });
     fireEvent.press(screen.getByText('确认转写'));
     expect(workspaceApi.startAudioTranscription).not.toHaveBeenCalled();
+  });
+
+  it('requires an explicit whole-file selection when Silero VAD is unavailable', async () => {
+    jest.mocked(workspaceApi.getAudioTranscriptionCapabilities).mockResolvedValueOnce({
+      defaultModel: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+      models: AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES.map((model) => ({
+        ...model,
+        available: true,
+        unavailableReason: null,
+      })),
+      ffmpeg: { configured: true, available: true },
+      sileroVad: {
+        model: 'silero-vad-v6.2.1',
+        available: false,
+        unavailableReason: 'Silero VAD unavailable.',
+      },
+      transcriptionConfigured: true,
+    });
+    const screen = await renderDetail();
+    fireEvent.press(screen.getAllByLabelText(`${audioFixtures[0].title}更多操作`)[0]!);
+    fireEvent.press(screen.getByText('ASR转写'));
+
+    expect(screen.getByRole('button', { name: '确认转写' }).props.accessibilityState).toEqual({
+      disabled: true,
+    });
+    fireEvent.press(screen.getByLabelText('保留完整音频'));
+    fireEvent.press(screen.getByText('确认转写'));
+    await waitFor(() =>
+      expect(workspaceApi.startAudioTranscription).toHaveBeenCalledWith(audioFixtures[0].id, {
+        model: 'qwen-audio-3.0-asr-flash-filetrans',
+        preprocessing: 'whole_file',
+        segmentationMode: 'speaker_turn',
+      }),
+    );
   });
 
   it('blocks transcription when the capability and model catalog fails to load', async () => {

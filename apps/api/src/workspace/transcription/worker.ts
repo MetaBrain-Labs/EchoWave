@@ -28,6 +28,7 @@ import { AudioInputPreprocessor, AudioPreprocessingError } from './audioPreproce
 import type { DashScopeFileTranscription } from './dashScopeFileTranscription.ts';
 import { AudioTranscriptionProviderError } from './errors.ts';
 import type { OssStagingStore } from './ossStagingStore.ts';
+import { restoreOriginalTimeline, VoiceActivityError } from './voiceActivity.ts';
 
 const AUDIO_TRANSCRIPTION_LANGUAGE = 'zh' as const;
 
@@ -65,6 +66,17 @@ async function reportedStep<T>(
 function failureDetails(error: unknown): AudioFailureDetails {
   if (error instanceof AudioTranscriptionProviderError && error.details) return error.details;
   if (error instanceof AudioPreprocessingError) {
+    return {
+      category: 'preprocessing',
+      chunkIndex: null,
+      chunkCount: null,
+      structureAttempts: 0,
+      issues: [{ path: '$', code: error.code, message: error.message.slice(0, 500) }],
+      outputLength: null,
+      outputSha256: null,
+    };
+  }
+  if (error instanceof VoiceActivityError) {
     return {
       category: 'preprocessing',
       chunkIndex: null,
@@ -152,6 +164,19 @@ export class AudioTranscriptionWorker {
           revisionId: job.revisionId,
           revisionNo: job.revisionNo,
           preprocessingMode: job.preprocessingMode,
+          ...(job.preprocessingManifest
+            ? {
+                preprocessing: {
+                  model: job.preprocessingManifest.model,
+                  detectionDurationMs: job.preprocessingManifest.detectionDurationMs,
+                  originalDurationMs: job.preprocessingManifest.originalDurationMs,
+                  processedDurationMs: job.preprocessingManifest.processedDurationMs,
+                  skippedDurationMs: job.preprocessingManifest.skippedDurationMs,
+                  skippedIntervalCount: job.preprocessingManifest.skippedIntervals.length,
+                  policy: job.preprocessingManifest.policy,
+                },
+              }
+            : {}),
           model: job.model,
           provider: job.provider,
           language: AUDIO_TRANSCRIPTION_LANGUAGE,
@@ -174,6 +199,19 @@ export class AudioTranscriptionWorker {
           speakerIdentityScope: 'recording',
           displaySegmentCount: segments.length,
           speakerCount: new Set(segments.map((segment) => segment.speakerKey)).size,
+          ...(job.preprocessingManifest
+            ? {
+                preprocessing: {
+                  model: job.preprocessingManifest.model,
+                  detectionDurationMs: job.preprocessingManifest.detectionDurationMs,
+                  originalDurationMs: job.preprocessingManifest.originalDurationMs,
+                  processedDurationMs: job.preprocessingManifest.processedDurationMs,
+                  skippedDurationMs: job.preprocessingManifest.skippedDurationMs,
+                  skippedIntervalCount: job.preprocessingManifest.skippedIntervals.length,
+                  policy: job.preprocessingManifest.policy,
+                },
+              }
+            : {}),
         },
       });
       console.info('Audio transcription completed', {
@@ -203,6 +241,13 @@ export class AudioTranscriptionWorker {
     let objectKey = job.providerArtifactKey;
     let taskId = job.providerTaskId;
     let submittedAt = job.providerSubmittedAt;
+    if (job.preprocessingMode === 'silero_vad' && objectKey && !job.preprocessingManifest) {
+      throw new VoiceActivityError(
+        'INVALID_VAD_TIMELINE',
+        '已保存的过滤音频缺少时间轴清单，请重新转写。',
+        true,
+      );
+    }
     if (!taskId) {
       if (!objectKey) {
         const wholeFile = await reportedStep(report, 'preprocess-whole-file', async () => {
@@ -212,14 +257,17 @@ export class AudioTranscriptionWorker {
         objectKey = await reportedStep(report, 'oss-staging-upload', () =>
           ossStaging.upload(job.revisionId, wholeFile.path),
         );
+        job.preprocessingManifest = wholeFile.manifest ?? null;
         job.providerArtifactKey = objectKey;
-        await repository.recordProviderArtifact(job, objectKey);
+        await repository.recordProviderArtifact(job, objectKey, job.preprocessingManifest);
       }
+      const providerDurationMs = job.preprocessingManifest?.processedDurationMs ?? job.durationMs;
       await repository.updateActivity(job, { stage: 'transcribing', progress: 15 });
       taskId = await reportedStep(report, 'dashscope-submit', () =>
         dashScope.submit(ossStaging.signedGetUrl(objectKey!), {
           revisionId: job.revisionId,
-          durationMs: job.durationMs,
+          durationMs: providerDurationMs,
+          preprocessing: job.preprocessingMode,
         }),
       );
       submittedAt = new Date();
@@ -236,15 +284,28 @@ export class AudioTranscriptionWorker {
     }
 
     await repository.updateActivity(job, { stage: 'transcribing', progress: 35 });
+    const providerDurationMs = job.preprocessingManifest?.processedDurationMs ?? job.durationMs;
     const result = await reportedStep(report, 'dashscope-poll', () =>
       dashScope.waitForResult(taskId!, submittedAt!, {
         revisionId: job.revisionId,
-        durationMs: job.durationMs,
+        durationMs: providerDurationMs,
+        preprocessing: job.preprocessingMode,
       }),
     );
+    let segments = result.segments;
+    if (job.preprocessingManifest) {
+      try {
+        segments = restoreOriginalTimeline(result.segments, job.preprocessingManifest);
+      } catch (error) {
+        if (error instanceof VoiceActivityError && error.code === 'INVALID_VAD_TIMELINE') {
+          throw new AudioTranscriptionProviderError('INVALID_MODEL_OUTPUT', error.message, true);
+        }
+        throw error;
+      }
+    }
     await repository.updateActivity(job, { stage: 'publishing', progress: 95 });
     await reportedStep(report, 'publish', () =>
-      repository.publishTranscription(job, result.segments, {
+      repository.publishTranscription(job, segments, {
         language: AUDIO_TRANSCRIPTION_LANGUAGE,
         diarizationRequested: true,
         diarizationObserved: true,
@@ -255,7 +316,7 @@ export class AudioTranscriptionWorker {
     );
     await this.cleanupProviderArtifact(job, report);
     await preprocessor.cleanup(job);
-    return result.segments;
+    return segments;
   }
 
   private async finishFailure(
@@ -265,7 +326,9 @@ export class AudioTranscriptionWorker {
     startedAt: number,
   ): Promise<void> {
     const known =
-      error instanceof AudioPreprocessingError || error instanceof AudioTranscriptionProviderError;
+      error instanceof AudioPreprocessingError ||
+      error instanceof AudioTranscriptionProviderError ||
+      error instanceof VoiceActivityError;
     const code = known ? error.code : 'INTERNAL_ERROR';
     const message = known ? error.message : '音频转写失败，请稍后重试。';
     const retryable = known ? error.retryable : true;

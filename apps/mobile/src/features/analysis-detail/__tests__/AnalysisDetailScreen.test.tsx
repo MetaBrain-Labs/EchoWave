@@ -136,17 +136,29 @@ describe('AnalysisDetailScreen', () => {
   });
 
   it('renders transcript content and toggles invalid segments', async () => {
+    jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValueOnce({
+      ...analysisFixture,
+      invalidSegments: [
+        ...analysisFixture.invalidSegments,
+        {
+          id: 'a0000000-0000-4000-8000-000000000002',
+          startMs: 120_000,
+          endMs: 130_000,
+          reason: 'silero_vad_non_speech',
+        },
+      ],
+    });
     const screen = await renderAnalysis();
 
     expect(screen.getByText('1. 开场与访谈背景')).toBeTruthy();
-    expect(screen.getByText('已跳过 12 秒无效片段')).toBeTruthy();
+    expect(screen.getByText('已跳过 22 秒无效片段')).toBeTruthy();
     expect(StyleSheet.flatten(screen.getByText('转写分析').props.style)).toEqual(
       expect.objectContaining({ paddingBottom: 4 }),
     );
 
     fireEvent.press(screen.getByText('跳过无效音频'));
 
-    expect(screen.queryByText('已跳过 12 秒无效片段')).toBeNull();
+    expect(screen.queryByText('已跳过 22 秒无效片段')).toBeNull();
   });
 
   it('promotes the recognized role and labels its confidence', async () => {
