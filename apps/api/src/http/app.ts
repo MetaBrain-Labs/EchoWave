@@ -14,6 +14,7 @@
  */
 import {
   ApiErrorResponseSchema,
+  AudioTranscriptionStartRequestSchema,
   DataSourceCreateRequestSchema,
   DataSourceGroupLinkRequestSchema,
   DataSourceUpdateRequestSchema,
@@ -261,6 +262,16 @@ export function createApp(
     app.get('/api/audio-files/:audioFileId/analysis', async (context) =>
       context.json(await workspace.getAudioAnalysis(id(context.req.param('audioFileId')))),
     );
+    app.get('/api/audio-transcription/capabilities', (context) =>
+      context.json(workspace.getAudioTranscriptionCapabilities()),
+    );
+    app.post('/api/audio-files/:audioFileId/transcriptions', async (context) => {
+      const input = AudioTranscriptionStartRequestSchema.parse(await context.req.json());
+      return context.json(
+        await workspace.startAudioTranscription(id(context.req.param('audioFileId')), input),
+        202,
+      );
+    });
   }
 
   app.notFound((context) => context.json(errorBody('NOT_FOUND', 'Route not found.'), 404));
@@ -282,7 +293,8 @@ export function createApp(
       code = error.code;
       message = error.message;
     } else if (error instanceof WorkspaceRepositoryError) {
-      status = 404;
+      status =
+        error.code === 'NOT_FOUND' ? 404 : error.code === 'TRANSCODER_UNAVAILABLE' ? 503 : 409;
       code = error.code;
       message = error.message;
     } else if (error instanceof AudioUploadValidationError) {

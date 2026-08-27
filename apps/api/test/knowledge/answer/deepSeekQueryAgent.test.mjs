@@ -104,16 +104,19 @@ function createHarness({
         vectors: [Array(1024).fill(0.1)],
         tokens: 7,
         provider: 'test-provider',
-        model: 'qwen/qwen3-embedding-8b',
-        estimatedCostUsd: 0.00000007,
+        model: 'qwen3.7-text-embedding',
+        estimatedCost: { amount: 0.0000035, currency: 'CNY' },
       };
     },
   };
   const agent = new DeepSeekQueryAgent({
     ragConfig: {
       tenantId: '00000000-0000-4000-8000-000000000001',
-      openRouterApiKey: 'openrouter-test-key',
-      embeddingModel: 'qwen/qwen3-embedding-8b',
+      dashScope: {
+        apiKey: 'dashscope-test-key',
+        baseUrl: 'https://workspace.example.com/api/v1',
+      },
+      embeddingModel: 'qwen3.7-text-embedding',
       embeddingDimensions: 1024,
       deepSeekApiKey: 'deepseek-test-key',
       deepSeekBaseUrl: 'http://deepseek.test',
@@ -132,7 +135,7 @@ function createHarness({
     agent,
     checkpointer,
     ragConfig: {
-      embeddingModel: 'qwen/qwen3-embedding-8b',
+      embeddingModel: 'qwen3.7-text-embedding',
       deepSeekChatModel: 'deepseek-v4-flash',
     },
     scheduleCleanup: () => () => undefined,

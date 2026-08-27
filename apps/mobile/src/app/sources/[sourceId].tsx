@@ -24,6 +24,12 @@ export default function DataSourceDetailRoute() {
     <DataSourceDetailScreen
       onBack={() => router.back()}
       onArchived={() => router.replace('/(tabs)/sources')}
+      onOpenAudio={(id) =>
+        router.push({
+          pathname: '/analysis/[id]',
+          params: { id, returnSourceId: firstRouteParam(params.sourceId) },
+        })
+      }
       onSwitchGroup={(groupId) =>
         router.replace({ pathname: '/', params: { groupId, tab: 'sources' } })
       }

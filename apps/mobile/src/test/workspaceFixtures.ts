@@ -100,13 +100,30 @@ const baseAudio = (index: number, title: string): Omit<AudioFileSummary, 'status
   durationMs: 1_104_000 + index * 1_000,
   createdAt: `2026-08-${21 - Math.ceil(index / 2)}T10:00:00.000Z`,
   sharedFrom: null,
+  hasTranscript: false,
 });
 
 export const audioFixtures: AudioFileSummary[] = [
-  { ...baseAudio(1, '产品访谈分析'), status: { kind: 'ready' } },
-  { ...baseAudio(2, '用户研究周会'), status: { kind: 'ready' } },
+  { ...baseAudio(1, '产品访谈分析'), hasTranscript: true, status: { kind: 'ready' } },
+  { ...baseAudio(2, '用户研究周会'), hasTranscript: true, status: { kind: 'ready' } },
   { ...baseAudio(3, '研究方案复盘'), status: { kind: 'uploading', progress: 40 } },
-  { ...baseAudio(4, '新用户首次使用访谈'), status: { kind: 'transcribing', progress: 62 } },
+  {
+    ...baseAudio(4, '新用户首次使用访谈'),
+    status: {
+      kind: 'transcribing',
+      progress: 62,
+      activity: {
+        stage: 'transcribing',
+        chunkIndex: 2,
+        chunkCount: 4,
+        chunkStartMs: 238_000,
+        chunkEndMs: 480_000,
+        networkAttempt: 1,
+        structureAttempt: 2,
+        updatedAt: '2026-08-24T15:00:00.000Z',
+      },
+    },
+  },
   { ...baseAudio(5, '功能概念验证'), status: { kind: 'waiting' } },
   {
     ...baseAudio(6, '重点客户沟通'),
@@ -116,10 +133,28 @@ export const audioFixtures: AudioFileSummary[] = [
       code: 'UNSUPPORTED_CODEC',
       message: '音频编码暂不支持',
       retryable: false,
+      details: {
+        category: 'semantic_validation',
+        chunkIndex: 2,
+        chunkCount: 3,
+        structureAttempts: 2,
+        issues: [
+          {
+            path: 'segments.0.endMs',
+            code: 'timestamp_out_of_bounds',
+            message: '片段结束时间超出当前分块时长。',
+          },
+        ],
+        outputLength: 128,
+        outputSha256: 'a'.repeat(64),
+      },
     },
   },
   { ...baseAudio(7, '竞品体验讨论'), status: { kind: 'uploading', progress: 25 } },
-  { ...baseAudio(8, '市场活动复盘'), status: { kind: 'transcribing', progress: 34 } },
+  {
+    ...baseAudio(8, '市场活动复盘'),
+    status: { kind: 'transcribing', progress: 34, activity: null },
+  },
   {
     ...baseAudio(9, '渠道访谈录音'),
     status: {
@@ -128,6 +163,7 @@ export const audioFixtures: AudioFileSummary[] = [
       code: 'UPLOAD_FAILED',
       message: '音频上传失败',
       retryable: true,
+      details: null,
     },
   },
 ];
@@ -136,7 +172,7 @@ export const dataSourceDetailFixture: DataSourceDetail = {
   ...sourceFixtures[0],
   metrics: { audioCount: 9, totalDurationMs: 22_680_000, transcribedCount: 2, pendingCount: 7 },
   settings: {
-    transcriptionModel: 'Echo ASR Standard',
+    transcriptionModel: 'qwen-audio-3.0-asr-flash-filetrans',
     autoTranscribe: true,
     emotionAnalysis: true,
     speakerDiarization: true,
@@ -197,6 +233,14 @@ export const analysisFixture: AudioAnalysisDetail = {
   title: '产品访谈分析',
   durationMs: 1_104_000,
   generatedAt: '2026-08-15T10:51:24.000Z',
+  transcription: {
+    model: 'qwen-audio-3.0-asr-flash-filetrans',
+    language: 'zh',
+    diarizationStatus: 'observed',
+    responseGranularity: 'word',
+    segmentationMode: 'speaker_turn',
+    speakerIdentityScope: 'recording',
+  },
   invalidSegments: [
     {
       id: 'a0000000-0000-4000-8000-000000000001',
@@ -217,6 +261,7 @@ export const analysisFixture: AudioAnalysisDetail = {
           index: 1,
           speakerKey: 'host',
           speakerLabel: '主持人',
+          businessRole: '主持人',
           emotion: '专注',
           startMs: 0,
           endMs: 28_000,
@@ -233,6 +278,7 @@ export const analysisFixture: AudioAnalysisDetail = {
           index: 2,
           speakerKey: 'self',
           speakerLabel: '我',
+          businessRole: '客户',
           emotion: '平静',
           startMs: 29_000,
           endMs: 71_000,

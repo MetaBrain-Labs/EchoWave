@@ -40,7 +40,7 @@ describe('knowledge contracts', () => {
       settings: {
         storageLocation: 'local',
         indexingMode: 'rag',
-        embeddingModel: 'qwen/qwen3-embedding-8b',
+        embeddingModel: 'qwen3.7-text-embedding',
         rerankerModel: null,
         parsingMode: 'automatic',
       },

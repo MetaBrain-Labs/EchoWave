@@ -11,7 +11,9 @@
  * - 本文件不包含演示数据或持久化行为。
  */
 import type {
+  AudioFailureDetails,
   AudioFileSummary,
+  AudioTranscriptionActivity,
   DataSourceDetail as DataSourceContract,
   DataSourceIngestionRecord,
   LinkedDataSourceGroup,
@@ -20,16 +22,29 @@ import type {
 export type SourceAudioStatus =
   | { kind: 'complete' }
   | { kind: 'uploading' }
-  | { kind: 'transcribing'; progress: number }
+  | { kind: 'transcribing'; progress: number; activity: AudioTranscriptionActivity | null }
   | { kind: 'waiting' }
-  | { kind: 'upload-failed' }
-  | { kind: 'transcription-failed' };
+  | {
+      kind: 'upload-failed';
+      code: string;
+      message: string;
+      retryable: boolean;
+      details: AudioFailureDetails | null;
+    }
+  | {
+      kind: 'transcription-failed';
+      code: string;
+      message: string;
+      retryable: boolean;
+      details: AudioFailureDetails | null;
+    };
 
 export type SourceAudioItem = {
   id: string;
   title: string;
   duration: string;
   createdAt: string;
+  hasTranscript: boolean;
   status: SourceAudioStatus;
 };
 
@@ -81,13 +96,29 @@ function sourceAudioStatus(audio: AudioFileSummary): SourceAudioStatus {
     case 'waiting':
       return { kind: 'waiting' };
     case 'transcribing':
-      return { kind: 'transcribing', progress: audio.status.progress };
+      return {
+        kind: 'transcribing',
+        progress: audio.status.progress,
+        activity: audio.status.activity,
+      };
     case 'analyzing':
-      return { kind: 'transcribing', progress: audio.status.progress };
+      return { kind: 'transcribing', progress: audio.status.progress, activity: null };
     case 'failed':
       return audio.status.stage === 'upload'
-        ? { kind: 'upload-failed' }
-        : { kind: 'transcription-failed' };
+        ? {
+            kind: 'upload-failed',
+            code: audio.status.code,
+            message: audio.status.message,
+            retryable: audio.status.retryable,
+            details: audio.status.details,
+          }
+        : {
+            kind: 'transcription-failed',
+            code: audio.status.code,
+            message: audio.status.message,
+            retryable: audio.status.retryable,
+            details: audio.status.details,
+          };
   }
 }
 
@@ -118,6 +149,7 @@ export function toDataSourceDetailView(
       title: audio.title,
       duration: audio.durationMs === null ? '--:--' : formatDuration(audio.durationMs),
       createdAt: new Date(audio.createdAt).toLocaleDateString(),
+      hasTranscript: audio.hasTranscript,
       status: sourceAudioStatus(audio),
     })),
     uploadRecords: records.map((record) => {

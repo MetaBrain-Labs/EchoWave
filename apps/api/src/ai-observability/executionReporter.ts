@@ -38,7 +38,8 @@ const SENSITIVE_KEYS = new Set([
 ]);
 
 /** 已知的首期执行类型，同时允许未来工作流使用稳定的自定义名称。 */
-export type AiExecutionKind = 'rag-answer' | 'knowledge-ingestion' | (string & {});
+export type AiExecutionKind =
+  'audio-transcription' | 'rag-answer' | 'knowledge-ingestion' | (string & {});
 
 /** AI 执行报告的运行时配置。 */
 export type AiExecutionReportConfig = {
@@ -74,7 +75,7 @@ export type AiModelCallEvent = {
   durationMs?: number;
   inputTokens?: number;
   outputTokens?: number;
-  estimatedCostUsd?: number;
+  estimatedCost?: { amount: number; currency: 'CNY' | 'USD' };
   metadata?: Record<string, unknown>;
 };
 
@@ -349,6 +350,8 @@ function isSensitiveKey(key: string): boolean {
 
 function redactString(value: string): string {
   let redacted = value.replace(/(Bearer\s+)[^\s"']+/gi, '$1[REDACTED]');
+  redacted = redacted.replace(/\b[A-Za-z0-9+/]{256,}={0,2}\b/g, '[REDACTED_BASE64]');
+  redacted = redacted.replace(/\b[A-Za-z]:\\(?:[^\s"']+\\)*[^\s"']*/g, '[REDACTED_PATH]');
   if (redacted.includes('://')) {
     redacted = redacted.replace(/([a-z][a-z0-9+.-]*:\/\/[^:\s/]+:)[^@\s/]+@/gi, '$1[REDACTED]@');
   }

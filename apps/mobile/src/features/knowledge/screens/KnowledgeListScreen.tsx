@@ -159,7 +159,7 @@ export function KnowledgeListScreen({
             <View style={styles.settingsSection}>
               <Text style={styles.settingsTitle}>知识解析</Text>
               <ReadonlySetting label="索引方式" value="检索增强（RAG）" />
-              <ReadonlySetting label="嵌入模型" value="qwen/qwen3-embedding-8b" />
+              <ReadonlySetting label="嵌入模型" value="qwen3.7-text-embedding" />
               <ReadonlySetting label="重排序模型" value="未启用" />
             </View>
             <View style={styles.settingsSection}>

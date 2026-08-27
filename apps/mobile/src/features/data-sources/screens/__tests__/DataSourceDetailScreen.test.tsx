@@ -12,6 +12,10 @@
 import { fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { Alert, StyleSheet } from 'react-native';
+import {
+  AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
+  DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+} from '@echowave/contracts';
 
 import { DataSourceDetailScreen } from '../DataSourceDetailScreen';
 import * as workspaceApi from '@/shared/api/workspaceApi';
@@ -26,20 +30,28 @@ import {
 jest.mock('@/shared/api/workspaceApi', () => ({
   archiveDataSource: jest.fn(),
   archiveDataSourceAudioFile: jest.fn(),
+  getAudioTranscriptionCapabilities: jest.fn(),
   getDataSource: jest.fn(),
   linkDataSourceGroups: jest.fn(),
   listDataSourceAudioFiles: jest.fn(),
   listDataSourceIngestionRecords: jest.fn(),
   listDataSourceGroups: jest.fn(),
   listGroups: jest.fn(),
+  startAudioTranscription: jest.fn(),
   unlinkDataSourceGroup: jest.fn(),
   updateDataSource: jest.fn(),
   uploadDataSourceAudioFiles: jest.fn(),
 }));
 jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
 
-async function renderDetail(sourceId = dataSourceDetailFixture.id, onBack = jest.fn()) {
-  const screen = render(<DataSourceDetailScreen onBack={onBack} sourceId={sourceId} />);
+async function renderDetail(
+  sourceId = dataSourceDetailFixture.id,
+  onBack = jest.fn(),
+  onOpenAudio = jest.fn(),
+) {
+  const screen = render(
+    <DataSourceDetailScreen onBack={onBack} onOpenAudio={onOpenAudio} sourceId={sourceId} />,
+  );
   await waitFor(() => expect(screen.queryByLabelText('正在加载数据源详情')).toBeNull());
   return screen;
 }
@@ -48,6 +60,16 @@ describe('DataSourceDetailScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.mocked(workspaceApi.getDataSource).mockResolvedValue(dataSourceDetailFixture);
+    jest.mocked(workspaceApi.getAudioTranscriptionCapabilities).mockResolvedValue({
+      defaultModel: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+      models: AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES.map((model) =>
+        model.id === 'qwen-audio-3.0-asr-flash-filetrans'
+          ? { ...model, available: true, unavailableReason: null }
+          : model,
+      ),
+      ffmpeg: { configured: true, available: true },
+      transcriptionConfigured: true,
+    });
     jest.mocked(workspaceApi.listDataSourceAudioFiles).mockResolvedValue({ items: audioFixtures });
     jest
       .mocked(workspaceApi.listDataSourceIngestionRecords)
@@ -64,6 +86,11 @@ describe('DataSourceDetailScreen', () => {
     });
     jest.mocked(workspaceApi.unlinkDataSourceGroup).mockResolvedValue(undefined);
     jest.mocked(workspaceApi.archiveDataSourceAudioFile).mockResolvedValue(undefined);
+    jest.mocked(workspaceApi.startAudioTranscription).mockResolvedValue({
+      audioFileId: audioFixtures[0].id,
+      revisionId: dataSourceDetailFixture.id,
+      status: 'queued',
+    });
     jest.mocked(workspaceApi.listGroups).mockResolvedValue({
       items: [
         groupFixture,
@@ -120,6 +147,7 @@ describe('DataSourceDetailScreen', () => {
     expect(screen.getAllByText('待转写').length).toBeGreaterThan(0);
     expect(screen.getAllByText('上传失败').length).toBeGreaterThan(0);
     expect(screen.getAllByText('转写失败').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('正在转写').length).toBeGreaterThan(0);
 
     for (const label of ['上传失败', '转写失败']) {
       for (const node of screen.getAllByText(label)) {
@@ -128,6 +156,221 @@ describe('DataSourceDetailScreen', () => {
         );
       }
     }
+  });
+
+  it('shows chunk activity on the card and opens the detailed progress timeline', async () => {
+    const screen = await renderDetail();
+
+    expect(screen.getAllByText('模型转写 · Chunk 2/4').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('网络尝试 1/3').length).toBeGreaterThan(0);
+    fireEvent.press(screen.getAllByLabelText('查看转写进度')[0]!);
+
+    expect(screen.getByRole('header', { name: '转写进度' })).toBeTruthy();
+    expect(screen.getByText('Chunk 2/4 · 3:58–8:00')).toBeTruthy();
+    expect(screen.getByText('Chunk 1')).toBeTruthy();
+    expect(screen.getByText('Chunk 4')).toBeTruthy();
+    expect(screen.getByText('分块转写')).toBeTruthy();
+    expect(screen.queryByText(/base64|storage_key|模型正文/)).toBeNull();
+
+    fireEvent.press(screen.getByLabelText('关闭转写进度'));
+    expect(screen.queryByRole('header', { name: '转写进度' })).toBeNull();
+  });
+
+  it('shows adaptive splitting with the dynamic chunk total', async () => {
+    const items = audioFixtures.map((item) =>
+      item.status.kind === 'transcribing' && item.status.activity?.stage === 'transcribing'
+        ? {
+            ...item,
+            status: {
+              ...item.status,
+              progress: 31,
+              activity: {
+                ...item.status.activity,
+                stage: 'splitting' as const,
+                chunkIndex: 3,
+                chunkCount: 8,
+                networkAttempt: null,
+                structureAttempt: null,
+              },
+            },
+          }
+        : item,
+    );
+    const expandedItems = items.map((item) =>
+      item.status.kind === 'transcribing' && item.status.activity?.stage === 'splitting'
+        ? {
+            ...item,
+            status: {
+              ...item.status,
+              progress: 32,
+              activity: {
+                ...item.status.activity,
+                stage: 'transcribing' as const,
+                chunkCount: 9,
+                updatedAt: '2026-08-24T15:00:02.000Z',
+              },
+            },
+          }
+        : item,
+    );
+    jest
+      .mocked(workspaceApi.listDataSourceAudioFiles)
+      .mockResolvedValueOnce({ items })
+      .mockResolvedValue({ items: expandedItems });
+    const screen = await renderDetail();
+
+    expect(screen.getAllByText('Chunk 输出异常，正在细分 · Chunk 3/8').length).toBeGreaterThan(0);
+    fireEvent.press(screen.getAllByLabelText('查看转写进度')[0]!);
+    expect(screen.getByText('Chunk 输出异常，正在细分')).toBeTruthy();
+    expect(screen.getByText('Chunk 8')).toBeTruthy();
+    expect(screen.getByText('分块转写')).toBeTruthy();
+    await waitFor(
+      () => expect(screen.getAllByText('模型转写 · Chunk 3/9').length).toBeGreaterThan(0),
+      {
+        timeout: 3_500,
+      },
+    );
+    expect(screen.getByText('Chunk 9')).toBeTruthy();
+  });
+
+  it('keeps the last progress when polling fails and supports a manual refresh', async () => {
+    jest
+      .mocked(workspaceApi.listDataSourceAudioFiles)
+      .mockResolvedValueOnce({ items: audioFixtures })
+      .mockRejectedValueOnce(new Error('network offline'));
+    const screen = await renderDetail();
+
+    await waitFor(() => expect(screen.getByText(/进度刷新失败：network offline/)).toBeTruthy(), {
+      timeout: 3_500,
+    });
+    expect(screen.getAllByText('模型转写 · Chunk 2/4').length).toBeGreaterThan(0);
+
+    jest.mocked(workspaceApi.listDataSourceAudioFiles).mockResolvedValue({ items: audioFixtures });
+    fireEvent.press(screen.getByText('立即重试'));
+    await waitFor(() => expect(screen.queryByText(/进度刷新失败/)).toBeNull());
+  });
+
+  it('opens safe transcription diagnostics and retries through the ASR confirmation', async () => {
+    const failed = audioFixtures.find(
+      (item) => item.status.kind === 'failed' && item.status.stage === 'transcription',
+    )!;
+    const screen = await renderDetail();
+
+    fireEvent.press(screen.getAllByLabelText('查看转写失败详情')[0]!);
+    expect(screen.getByRole('header', { name: '音频转写失败' })).toBeTruthy();
+    expect(screen.getByText('UNSUPPORTED_CODEC')).toBeTruthy();
+    expect(screen.getByText('类型：模型输出内容未通过语义校验')).toBeTruthy();
+    expect(screen.getByText('分块：2 / 3')).toBeTruthy();
+    expect(screen.getByText(/timestamp_out_of_bounds/)).toBeTruthy();
+    expect(screen.queryByText(/模型正文|报告路径|storage_key/)).toBeNull();
+
+    fireEvent.press(screen.getByTestId('transcription-error-retry'));
+    expect(screen.queryByRole('header', { name: '音频转写失败' })).toBeNull();
+    expect(screen.getByText('开始 ASR 转写？')).toBeTruthy();
+    fireEvent.press(screen.getByText('确认转写'));
+    await waitFor(() =>
+      expect(workspaceApi.startAudioTranscription).toHaveBeenCalledWith(failed.id, {
+        model: 'qwen-audio-3.0-asr-flash-filetrans',
+        preprocessing: 'whole_file',
+        segmentationMode: 'speaker_turn',
+      }),
+    );
+  });
+
+  it('uses the official whole-file retry guidance for a historical provider failure', async () => {
+    const items = audioFixtures.map((item) =>
+      item.status.kind === 'failed' && item.status.stage === 'transcription'
+        ? {
+            ...item,
+            status: {
+              ...item.status,
+              code: 'MODEL_UNAVAILABLE',
+              message: '原音频的结构化结果超出模型输出限制。',
+              retryable: true,
+              details: {
+                category: 'provider' as const,
+                chunkIndex: 1,
+                chunkCount: 1,
+                structureAttempts: 1,
+                issues: [
+                  {
+                    path: '$',
+                    code: 'native_max_tokens',
+                    message: '模型输出达到 Token 上限。',
+                  },
+                ],
+                outputLength: 20_000,
+                outputSha256: 'b'.repeat(64),
+              },
+            },
+          }
+        : item,
+    );
+    jest.mocked(workspaceApi.listDataSourceAudioFiles).mockResolvedValueOnce({ items });
+    const screen = await renderDetail();
+
+    fireEvent.press(screen.getAllByLabelText('查看转写失败详情')[0]!);
+    expect(screen.getByText(/可以重新发起 DashScope 整文件转写/)).toBeTruthy();
+    expect(screen.getByText(/native_max_tokens/)).toBeTruthy();
+  });
+
+  it('shows historical validation details without restoring Chunk guidance', async () => {
+    const items = audioFixtures.map((item) =>
+      item.status.kind === 'failed' && item.status.stage === 'transcription'
+        ? {
+            ...item,
+            status: {
+              ...item.status,
+              code: 'INVALID_MODEL_OUTPUT',
+              message: '最小音频分块仍出现明显文本退化。',
+              retryable: true,
+              details: {
+                category: 'semantic_validation' as const,
+                chunkIndex: 4,
+                chunkCount: 12,
+                structureAttempts: 3,
+                issues: [
+                  {
+                    path: 'segments.0.text',
+                    code: 'repeated_text_loop',
+                    message: '模型输出出现大范围重复循环。',
+                  },
+                  {
+                    path: 'segments.0.text',
+                    code: 'markdown_artifact',
+                    message: '模型转写正文包含不应出现的 Markdown 标记。',
+                  },
+                ],
+                outputLength: 16_000,
+                outputSha256: 'c'.repeat(64),
+              },
+            },
+          }
+        : item,
+    );
+    jest.mocked(workspaceApi.listDataSourceAudioFiles).mockResolvedValueOnce({ items });
+    const screen = await renderDetail();
+
+    fireEvent.press(screen.getAllByLabelText('查看转写失败详情')[0]!);
+    expect(screen.getByText(/可以重新发起 DashScope 整文件转写/)).toBeTruthy();
+    expect(screen.getByText(/repeated_text_loop/)).toBeTruthy();
+    expect(screen.getByText(/markdown_artifact/)).toBeTruthy();
+    expect(screen.queryByText(/\*一万\*|模型正文|storage_key/)).toBeNull();
+  });
+
+  it('shows a compatible fallback when an old failure has no diagnostics', async () => {
+    const items = audioFixtures.map((item) =>
+      item.status.kind === 'failed' && item.status.stage === 'transcription'
+        ? { ...item, status: { ...item.status, details: null } }
+        : item,
+    );
+    jest.mocked(workspaceApi.listDataSourceAudioFiles).mockResolvedValueOnce({ items });
+    const screen = await renderDetail();
+
+    fireEvent.press(screen.getAllByLabelText('查看转写失败详情')[0]!);
+    expect(screen.getByText(/没有更详细的结构化诊断/)).toBeTruthy();
+    fireEvent.press(screen.getByText('关闭'));
+    expect(screen.queryByRole('header', { name: '音频转写失败' })).toBeNull();
   });
 
   it('reopens the file picker for failed uploads while transcription retry stays deferred', async () => {
@@ -166,6 +409,7 @@ describe('DataSourceDetailScreen', () => {
     );
 
     fireEvent.press(screen.getAllByLabelText(`${audioFixtures[0].title}更多操作`)[0]!);
+    fireEvent.press(screen.getByText('归档'));
     fireEvent.press(screen.getByText('归档音频'));
     await waitFor(() =>
       expect(workspaceApi.archiveDataSourceAudioFile).toHaveBeenCalledWith(
@@ -183,6 +427,77 @@ describe('DataSourceDetailScreen', () => {
         linkedGroupFixtures[0].id,
       ),
     );
+  });
+
+  it('confirms ASR transcription and only opens an available published result', async () => {
+    const onOpenAudio = jest.fn();
+    const screen = await renderDetail(dataSourceDetailFixture.id, jest.fn(), onOpenAudio);
+
+    fireEvent.press(screen.getAllByLabelText(`${audioFixtures[0].title}更多操作`)[0]!);
+    expect(screen.getByText('归档')).toBeTruthy();
+    expect(screen.getByText('ASR转写')).toBeTruthy();
+    expect(screen.getByText('ASR结果分析')).toBeTruthy();
+    fireEvent.press(screen.getByText('ASR转写'));
+    expect(screen.getByLabelText(/Qwen Audio 3.0 ASR Flash Filetrans/)).toBeTruthy();
+    expect(screen.queryByText(/普通分段|直接发送/)).toBeNull();
+    expect(screen.getByText(/¥0.00022\/秒/)).toBeTruthy();
+    expect(screen.getByText(/Speaker：尽力分离/)).toBeTruthy();
+    fireEvent.press(screen.getByText('确认转写'));
+    await waitFor(() =>
+      expect(workspaceApi.startAudioTranscription).toHaveBeenCalledWith(audioFixtures[0].id, {
+        model: 'qwen-audio-3.0-asr-flash-filetrans',
+        preprocessing: 'whole_file',
+        segmentationMode: 'speaker_turn',
+      }),
+    );
+
+    fireEvent.press(screen.getAllByLabelText(`${audioFixtures[0].title}更多操作`)[0]!);
+    fireEvent.press(screen.getByText('ASR结果分析'));
+    expect(onOpenAudio).toHaveBeenCalledWith(audioFixtures[0].id);
+  });
+
+  it('blocks speaker-turn confirmation when DashScope or OSS is unavailable', async () => {
+    jest.mocked(workspaceApi.getAudioTranscriptionCapabilities).mockResolvedValueOnce({
+      defaultModel: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+      models: [...AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES],
+      ffmpeg: { configured: true, available: true },
+      transcriptionConfigured: false,
+    });
+    const screen = await renderDetail();
+    fireEvent.press(screen.getAllByLabelText(`${audioFixtures[0].title}更多操作`)[0]!);
+    fireEvent.press(screen.getByText('ASR转写'));
+
+    expect(
+      screen.getAllByText(/需要完整配置 DashScope、北京地域 OSS 和 FFmpeg/).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: '确认转写' }).props.accessibilityState).toEqual({
+      disabled: true,
+    });
+    fireEvent.press(screen.getByText('确认转写'));
+    expect(workspaceApi.startAudioTranscription).not.toHaveBeenCalled();
+  });
+
+  it('blocks transcription when the capability and model catalog fails to load', async () => {
+    jest
+      .mocked(workspaceApi.getAudioTranscriptionCapabilities)
+      .mockRejectedValueOnce(new Error('offline'));
+    const screen = await renderDetail();
+
+    fireEvent.press(screen.getAllByLabelText(`${audioFixtures[0].title}更多操作`)[0]!);
+    fireEvent.press(screen.getByText('ASR转写'));
+    expect(screen.getByText('转写模型目录加载失败，请关闭后重试。')).toBeTruthy();
+    fireEvent.press(screen.getByText('确认转写'));
+    expect(workspaceApi.startAudioTranscription).not.toHaveBeenCalled();
+  });
+
+  it('disables result analysis before a transcript exists', async () => {
+    const waiting = audioFixtures.find((item) => item.status.kind === 'waiting')!;
+    const screen = await renderDetail();
+
+    fireEvent.press(screen.getAllByLabelText(`${waiting.title}更多操作`)[0]!);
+    expect(screen.getByRole('button', { name: 'ASR结果分析' }).props.accessibilityState).toEqual({
+      disabled: true,
+    });
   });
 
   it('disables linked groups and batch-links a newly selected group', async () => {

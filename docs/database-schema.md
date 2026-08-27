@@ -1,6 +1,6 @@
 # EchoWave 数据库结构
 
-本文说明 EchoWave 应用全部 SQL migration 执行后的目标数据库结构。数据库结构的权威来源始终是 [`001_rag.sql`](../apps/api/migrations/001_rag.sql)、[`002_audio_workspace.sql`](../apps/api/migrations/002_audio_workspace.sql) 与 [`003_knowledge_base_overview.sql`](../apps/api/migrations/003_knowledge_base_overview.sql)；本文用于解释各表的业务职责、关系、约束和生命周期，不记录某一开发环境的临时迁移状态。
+本文说明 EchoWave 应用全部 SQL migration 执行后的目标数据库结构。数据库结构的权威来源始终是 [`apps/api/migrations`](../apps/api/migrations/) 中按文件名排序的 SQL；本文用于解释各表的业务职责、关系、约束和生命周期，不记录某一开发环境的临时迁移状态。
 
 ## 数据库边界
 
@@ -10,7 +10,7 @@ EchoWave 使用 PostgreSQL 作为权威业务存储，并通过 pgvector 支持�
 - LangGraph 独立 schema：4 张 checkpoint 表，由 `PostgresSaver.setup()` 管理。
 - `public` schema：安装 `vector` 扩展，为 `document_chunks.embedding` 提供 `vector(1024)` 类型和 HNSW 索引能力。
 
-音频二进制、第三方连接凭据和页面 UI 偏好不进入这些业务表。手动上传的音频二进制保存在 API 的 `AUDIO_STORAGE_DIR` 持久化目录中，数据库只保存随机相对 `storage_key`。数据库保存权威业务事实；数量、总时长、最近上传时间和关联分组数量由查询聚合生成。
+音频二进制、第三方连接凭据和页面 UI 偏好不进入这些业务表。手动上传的音频二进制保存在 API 的 `AUDIO_STORAGE_DIR` 持久化目录中，数据库只保存随机相对 `storage_key`。DashScope 转写使用的 OSS 对象是短期中转副本，不是权威存储。数据库保存权威业务事实；数量、总时长、最近上传时间和关联分组数量由查询聚合生成。
 
 ## 核心关系
 
@@ -87,7 +87,7 @@ erDiagram
 
 - `storage_location`：内容存储位置，当前默认 `local`，可选 `local` 或 `cloud`。
 - `indexing_mode`：索引方式，当前默认 `rag`，可选 `full_context` 或 `rag`。
-- `embedding_model`：知识库配置的嵌入模型，当前默认 `qwen/qwen3-embedding-8b`。
+- `embedding_model`：知识库配置的嵌入模型，当前固定为 `qwen3.7-text-embedding`。
 - `reranker_model`：可为空的重排序模型；`NULL` 表示未启用。
 - `parsing_mode`：解析方式，当前默认 `automatic`，可选 `automatic` 或 `manual`。
 
@@ -126,7 +126,7 @@ erDiagram
 - `source_sha256`：原文件内容哈希，用于识别重复输入。
 - `parser_version`：解析器版本。
 - `embedding_model`、`embedding_dimensions`、`embedding_provider`：向量配置。
-- `embedding_tokens`、`embedding_cost_usd`：用量和成本。
+- `embedding_tokens`、`embedding_cost_amount`、`embedding_cost_currency`：用量及带币种成本；迁移前的 USD 数值保留不变。
 - `preview_text`、`warnings`：预览和结构化警告。
 - `status`、`published_at`：处理和发布状态。
 
@@ -234,7 +234,7 @@ group_data_sources 所关联数据源下的音频
 
 分析设置：
 
-- `transcription_model`：转写模型。
+- `transcription_model`：数据源后续转写的默认模型；迁移 011 后为 `qwen-audio-3.0-asr-flash-filetrans`。
 - `auto_transcribe`：是否自动转写。
 - `emotion_analysis_enabled`：是否启用情绪分析。
 - `speaker_diarization_enabled`：是否启用说话人分离。
@@ -302,14 +302,29 @@ group_data_sources 所关联数据源下的音频
 主要内容：
 
 - `revision_no`：音频内递增版本号。
-- `transcription_model`、`analysis_model`：本次使用的模型。
-- `settings_snapshot`：对象类型的分析设置快照。
+- `transcription_model`、`analysis_model`：本次请求实际选择并在任务开始时固化的模型，不受后续默认配置变化影响。
+- `settings_snapshot`：对象类型的设置快照，记录预处理方式、固定识别语言、该模型声明的 diarization/时间戳能力，以及发布时实际是否收到 Speaker 和实际响应粒度；角色与情绪能力为 false。历史修订缺少新增实际能力字段时由读取层兼容推导。
 - `status`：`queued`、`transcribing`、`analyzing`、`ready` 或 `failed`。
 - `progress`：0 到 100。
+- `processing_stage`：进行中修订的 `queued`、`preprocessing`、`transcribing`、`validating`、`correcting`、`splitting`、`merging` 或 `publishing` 阶段；新 STT 任务不再产生 `correcting`，该值仅兼容历史修订。`splitting` 表示文本退化或连续超时后正在细分当前 FFmpeg Chunk。
+- `transcription_provider`：本次修订使用的供应商；迁移 011 后新修订固定为 `dashscope`，旧值仅作为历史审计记录保留。
+- `provider_task_id`、`provider_submitted_at`：DashScope 异步任务标识和首次提交时间，用于进程重启后继续轮询及六小时超时判断。
+- `provider_artifact_key`：仍需清理的临时 OSS 对象键；删除成功后清空，任务 ID 保留用于审计。
+- `current_chunk`、`chunk_count`：当前 Chunk 和总数，必须成对满足 `1 <= current_chunk <= chunk_count`。
+- `current_chunk_start_ms`、`current_chunk_end_ms`：当前逻辑分块在完整录音中的毫秒范围。
+- `network_attempt`：当前网络尝试，范围为 1 到 3；`structure_attempt` 仅兼容旧修订，新 STT 任务保持空值。
+- `processing_updated_at`：最近一次可观察活动更新时间。
 - `error_stage`：失败发生在 `transcription`、`analysis` 或 `publish`。
-- 结构化错误、创建、完成和发布时间。
+- `error_details`：可空 JSON 对象，只保存安全失败分类、分块位置、最多 20 条稳定校验问题，以及兼容旧修订的结构尝试/输出指纹字段；新 STT 任务不保存模型正文或输出指纹。
+- 结构化错误摘要、创建、完成和发布时间。
 
-同一音频的 `revision_no` 唯一。新版本只有在场景、转写、摘要和标签完整写入后，才在同一事务中替换 `audio_files.active_analysis_revision_id`；失败版本不会覆盖旧的有效版本。
+同一音频的 `revision_no` 唯一，部分唯一索引同时只允许一个 `queued`、`transcribing` 或 `analyzing` 修订。新版本只有在本次结构化结果完整写入后，才在同一事务中替换 `audio_files.active_analysis_revision_id`；ASR-only 版本允许摘要与标签为空，失败版本不会覆盖旧的有效版本。
+
+音频转写 revision 的 `settings_snapshot.preprocessingMode` 固定记录创建任务时选择的 `ffmpeg`、`direct` 或 `whole_file`，`segmentationMode` 记录 `readable` 或 `speaker_turn`。成功发布补充 `speakerIdentityScope`：整文件 Qwen 为 `recording`，无法保证跨块身份时为 `chunk`，无说话人身份时为 `none`。历史修订缺失字段时按 `readable + none` 读取。
+
+Qwen Filetrans 提交单个 16kHz 单声道整文件；其带 `speaker_id` 的句子按说话人变化、1500ms 停顿和 240 字软上限转换为独立 `transcript_segments`。缺失 Speaker 或时间戳异常的结果不发布。
+
+活动字段只在进行中修订上作为轮询状态存在：queued 初始化阶段但没有 Chunk，worker 领取后进入预处理；Chunk 字段必须全部为空或全部存在，时间范围必须递增，尝试次数必须关联当前 Chunk。中断恢复会清空 Chunk/尝试并重新排队，成功或失败会清空活动字段；失败 Chunk 与最终尝试次数另由安全的 `error_details` 保留。
 
 物理删除音频时，修订版及其结构化结果级联删除。
 
@@ -327,7 +342,8 @@ group_data_sources 所关联数据源下的音频
 
 - `segment_index`：场景内顺序。
 - `speaker_key`、`speaker_label`：说话人内部标识和展示名称。
-- `emotion`：情绪描述。
+- `business_role`：STT 修订固定为 `unknown`，后续文本分析可在独立流程中补充。
+- `emotion`：STT 修订固定为 `unknown`，不根据转写正文猜测。
 - `start_ms`、`end_ms`：音频时间区间。
 - `text`：转写文本。
 

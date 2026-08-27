@@ -21,6 +21,7 @@
     "@langchain/langgraph": "^1.4.10",
     "@langchain/langgraph-checkpoint-postgres": "^1.0.4",
     "@types/mdast": "^4.0.4",
+    "ali-oss": "^6.23.0",
     "deepagents": "^1.12.4",
     "domhandler": "^6.0.1",
     "dotenv": "17.4.2",
@@ -40,6 +41,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@types/ali-oss": "^6.23.3",
     "@types/node": "24.10.0",
     "@types/pg": "^8.23.1",
     "tsx": "^4.23.12"

@@ -5,7 +5,7 @@ import {
   KnowledgeAnswerError,
   createKnowledgeAnswerModule,
 } from '../../../dist/knowledge/answer/knowledgeAnswer.js';
-import { EmbeddingProviderError } from '../../../dist/knowledge/embeddings/openRouterEmbeddings.js';
+import { EmbeddingProviderError } from '../../../dist/knowledge/embeddings/dashScopeEmbeddings.js';
 
 const knowledgeBaseId = '11111111-1111-4111-8111-111111111111';
 const conversationId = '22222222-2222-4222-8222-222222222222';
@@ -60,8 +60,8 @@ function createHarness({
       vectors: [Array(1024).fill(0.1)],
       tokens: 7,
       provider: 'test-provider',
-      model: 'qwen/qwen3-embedding-8b',
-      estimatedCostUsd: 0.00000007,
+      model: 'qwen3.7-text-embedding',
+      estimatedCost: { amount: 0.0000035, currency: 'CNY' },
     }),
     ...embeddingOverrides,
   };
@@ -92,7 +92,7 @@ function createHarness({
     agent,
     checkpointer,
     ragConfig: {
-      embeddingModel: 'qwen/qwen3-embedding-8b',
+      embeddingModel: 'qwen3.7-text-embedding',
       deepSeekChatModel: 'deepseek-v4-flash',
     },
     scheduleCleanup: (task) => {

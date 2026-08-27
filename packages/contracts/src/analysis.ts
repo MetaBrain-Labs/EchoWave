@@ -12,6 +12,28 @@
 import { z } from 'zod';
 
 import { EntityIdSchema } from './common.ts';
+import {
+  AudioTranscriptionResponseGranularitySchema,
+  AudioTranscriptionSegmentationModeSchema,
+  AudioTranscriptionSpeakerIdentityScopeSchema,
+} from './audio.ts';
+
+/** 已发布修订实际观察到的 Speaker 分离状态。 */
+export const AudioTranscriptionDiarizationStatusSchema = z.enum([
+  'observed',
+  'not_returned',
+  'not_supported',
+]);
+
+/** 已发布修订实际使用和观察到的 STT 能力。 */
+export const AudioTranscriptionMetadataSchema = z.object({
+  model: z.string().min(1),
+  language: z.string().min(1),
+  diarizationStatus: AudioTranscriptionDiarizationStatusSchema,
+  responseGranularity: AudioTranscriptionResponseGranularitySchema.nullable(),
+  segmentationMode: AudioTranscriptionSegmentationModeSchema.default('readable'),
+  speakerIdentityScope: AudioTranscriptionSpeakerIdentityScopeSchema.default('none'),
+});
 
 export const SegmentAiTagSchema = z.object({
   id: EntityIdSchema,
@@ -26,6 +48,7 @@ export const TranscriptSegmentSchema = z
     index: z.number().int().positive(),
     speakerKey: z.string(),
     speakerLabel: z.string(),
+    businessRole: z.string(),
     emotion: z.string(),
     startMs: z.number().int().nonnegative(),
     endMs: z.number().int().positive(),
@@ -69,6 +92,7 @@ export const AudioAnalysisDetailSchema = z.object({
   title: z.string(),
   durationMs: z.number().int().nonnegative(),
   generatedAt: z.string().datetime(),
+  transcription: AudioTranscriptionMetadataSchema,
   scenes: z.array(AnalysisSceneSchema),
   invalidSegments: z.array(AnalysisInvalidSegmentSchema),
   summarySections: z.array(AnalysisSummarySectionSchema),
@@ -79,4 +103,8 @@ export type TranscriptSegment = z.infer<typeof TranscriptSegmentSchema>;
 export type AnalysisScene = z.infer<typeof AnalysisSceneSchema>;
 export type AnalysisInvalidSegment = z.infer<typeof AnalysisInvalidSegmentSchema>;
 export type AnalysisSummarySection = z.infer<typeof AnalysisSummarySectionSchema>;
+export type AudioTranscriptionDiarizationStatus = z.infer<
+  typeof AudioTranscriptionDiarizationStatusSchema
+>;
+export type AudioTranscriptionMetadata = z.infer<typeof AudioTranscriptionMetadataSchema>;
 export type AudioAnalysisDetail = z.infer<typeof AudioAnalysisDetailSchema>;

@@ -11,15 +11,21 @@
  */
 import { audioFixtures, dataSourceDetailFixture, groupFixture } from '@/test/workspaceFixtures';
 import {
+  AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
+  DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+} from '@echowave/contracts';
+import {
   archiveDataSource,
   archiveDataSourceAudioFile,
   archiveGroup,
   createDataSource,
   createGroup,
+  getAudioTranscriptionCapabilities,
   linkDataSourceGroups,
   linkKnowledgeBaseGroups,
   listGroups,
   listKnowledgeBaseGroups,
+  startAudioTranscription,
   unlinkDataSourceGroup,
   updateDataSource,
   uploadDataSourceAudioFiles,
@@ -223,5 +229,56 @@ describe('workspace API client', () => {
     expect(uploadInit.method).toBe('POST');
     expect(uploadInit.body).toBeInstanceOf(FormData);
     expect((uploadInit.headers as Record<string, string>)['Content-Type']).toBeUndefined();
+  });
+
+  it('starts one validated audio transcription revision', async () => {
+    const response = {
+      audioFileId: audioFixtures[0].id,
+      revisionId: dataSourceDetailFixture.id,
+      status: 'queued' as const,
+    };
+    const fetch = jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify(response), {
+        status: 202,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    await expect(
+      startAudioTranscription(audioFixtures[0].id, {
+        model: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+        preprocessing: 'whole_file',
+      }),
+    ).resolves.toEqual(response);
+    expect(fetch.mock.calls[0][0]).toContain(
+      `/api/audio-files/${audioFixtures[0].id}/transcriptions`,
+    );
+    expect(fetch.mock.calls[0][1]).toEqual(
+      expect.objectContaining({
+        body: JSON.stringify({
+          model: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+          preprocessing: 'whole_file',
+          segmentationMode: 'speaker_turn',
+        }),
+        method: 'POST',
+      }),
+    );
+  });
+
+  it('parses audio transcription capabilities', async () => {
+    const capabilities = {
+      defaultModel: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+      models: AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
+      ffmpeg: { configured: false, available: false },
+      transcriptionConfigured: false,
+    };
+    jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify(capabilities), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    await expect(getAudioTranscriptionCapabilities()).resolves.toEqual(capabilities);
   });
 });

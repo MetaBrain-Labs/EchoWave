@@ -55,6 +55,36 @@ describe('WorkspaceRepository group audio', () => {
               analysis_error_code: 'UNSUPPORTED_CODEC',
               analysis_error_message: '音频编码不支持。',
               analysis_error_retryable: false,
+              analysis_error_details: {
+                category: 'preprocessing',
+                chunkIndex: null,
+                chunkCount: null,
+                structureAttempts: 0,
+                issues: [{ path: '$', code: 'UNSUPPORTED_CODEC', message: '音频编码不支持。' }],
+                outputLength: null,
+                outputSha256: null,
+              },
+            },
+            {
+              id: '55555555-5555-4555-8555-555555555555',
+              data_source_id: null,
+              title: '处理中访谈',
+              duration_ms: 870_000,
+              created_at: new Date('2026-08-24T15:00:00.000Z'),
+              origin_group_id: null,
+              shared_from: null,
+              upload_status: 'ready',
+              upload_progress: 100,
+              analysis_status: 'transcribing',
+              analysis_progress: 43,
+              analysis_processing_stage: 'correcting',
+              analysis_current_chunk: 2,
+              analysis_chunk_count: 4,
+              analysis_current_chunk_start_ms: 238_000,
+              analysis_current_chunk_end_ms: 482_000,
+              analysis_network_attempt: 1,
+              analysis_structure_attempt: 3,
+              analysis_processing_updated_at: new Date('2026-08-24T15:00:00.000Z'),
             },
           ],
         };
@@ -66,6 +96,13 @@ describe('WorkspaceRepository group audio', () => {
 
     assert.equal(response.items[0].status.kind, 'failed');
     assert.equal(response.items[0].status.stage, 'transcription');
+    assert.equal(response.items[0].status.details.category, 'preprocessing');
+    assert.equal(response.items[0].status.details.issues[0].code, 'UNSUPPORTED_CODEC');
+    assert.equal(response.items[1].status.kind, 'transcribing');
+    assert.equal(response.items[1].status.activity.stage, 'correcting');
+    assert.equal(response.items[1].status.activity.chunkIndex, 2);
+    assert.equal(response.items[1].status.activity.structureAttempt, 3);
+    assert.match(calls[1].sql, /error_details/);
     assert.match(calls[0].sql, /UNION/);
     assert.match(calls[0].sql, /data_sources/);
     assert.match(calls[0].sql, /linked_source\.deleted_at IS NULL/);
@@ -73,6 +110,71 @@ describe('WorkspaceRepository group audio', () => {
     assert.match(calls[1].sql, /group_data_sources/);
     assert.match(calls[1].sql, /ds\.deleted_at IS NULL/);
     assert.deepEqual(calls[1].values, [tenantId, groupId]);
+  });
+});
+
+describe('WorkspaceRepository audio analysis metadata', () => {
+  it('exposes the selected model and actually observed diarization state', async () => {
+    const pool = {
+      query: async (sql) => {
+        if (/JOIN .*audio_analysis_revisions/.test(sql)) {
+          return {
+            rows: [
+              {
+                id: knowledgeId,
+                audio_file_id: audioId,
+                revision_no: 3,
+                published_at: new Date('2026-08-25T01:00:00.000Z'),
+                transcription_model: 'openai/gpt-4o-mini-transcribe',
+                settings_snapshot: {
+                  language: 'zh',
+                  diarizationRequested: true,
+                  diarizationObserved: false,
+                  responseGranularity: 'chunk',
+                },
+                title: '客户通话',
+                duration_ms: 45_000,
+              },
+            ],
+          };
+        }
+        if (/analysis_scenes/.test(sql)) {
+          return {
+            rows: [
+              {
+                scene_id: groupId,
+                scene_index: 1,
+                scene_title: '完整录音',
+                scene_start_ms: 0,
+                segment_id: audioId,
+                segment_index: 1,
+                speaker_key: 'Speaker 0',
+                speaker_label: 'unknown',
+                business_role: 'unknown',
+                emotion: 'unknown',
+                start_ms: 0,
+                end_ms: 45_000,
+                text: '您好。',
+                tag_id: null,
+              },
+            ],
+          };
+        }
+        return { rows: [] };
+      },
+    };
+    const repository = new WorkspaceRepository(pool, 'echowave', tenantId);
+
+    const response = await repository.getAudioAnalysis(audioId);
+
+    assert.deepEqual(response.transcription, {
+      model: 'openai/gpt-4o-mini-transcribe',
+      language: 'zh',
+      diarizationStatus: 'not_returned',
+      responseGranularity: 'chunk',
+      segmentationMode: 'readable',
+      speakerIdentityScope: 'none',
+    });
   });
 });
 
@@ -264,7 +366,12 @@ describe('WorkspaceRepository data-source lifecycle', () => {
     const pool = {
       query: async (sql, values) => {
         calls.push({ sql, values });
-        return { rowCount: calls.length <= 2 ? 1 : 0, rows: [{ id: audioId }] };
+        if (/audio_analysis_revisions/.test(sql)) return { rowCount: 0, rows: [] };
+        return {
+          rowCount:
+            calls.filter((call) => !/audio_analysis_revisions/.test(call.sql)).length <= 2 ? 1 : 0,
+          rows: [{ id: audioId }],
+        };
       },
     };
     const repository = new WorkspaceRepository(pool, 'echowave', tenantId);
@@ -274,8 +381,8 @@ describe('WorkspaceRepository data-source lifecycle', () => {
     await assert.rejects(() => repository.archiveDataSource(audioId), /不存在或已归档/);
 
     assert.match(calls[0].sql, /SET deleted_at = now\(\), updated_at = now\(\)/);
-    assert.match(calls[1].sql, /af\.data_source_id = \$2 AND af\.id = \$3/);
-    assert.deepEqual(calls[1].values, [tenantId, audioId, groupId]);
+    assert.match(calls[2].sql, /af\.data_source_id = \$2 AND af\.id = \$3/);
+    assert.deepEqual(calls[2].values, [tenantId, audioId, groupId]);
   });
 
   it('publishes one successful ingestion run and ordered waiting audio in one transaction', async () => {

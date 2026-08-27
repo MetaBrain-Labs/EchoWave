@@ -146,6 +146,9 @@ function DocumentRow({
   onRetry: () => void;
 }) {
   const enabled = document.status.kind === 'ready';
+  const requiresReupload =
+    document.status.kind === 'failed' &&
+    document.status.code === 'EMBEDDING_MODEL_MIGRATION_REQUIRED';
   const content = (
     <>
       <DocumentFormatIcon format={document.format} size={40} />
@@ -171,7 +174,9 @@ function DocumentRow({
       <Pressable
         accessibilityLabel={
           document.status.kind === 'failed'
-            ? `重试文档：${document.title}`
+            ? requiresReupload
+              ? `重新上传文档：${document.title}`
+              : `重试文档：${document.title}`
             : `${document.title}更多操作`
         }
         accessibilityRole="button"
@@ -340,6 +345,13 @@ export function KnowledgeDetailScreen({
   );
 
   const retry = (document: KnowledgeDocument) => {
+    if (
+      document.status.kind === 'failed' &&
+      document.status.code === 'EMBEDDING_MODEL_MIGRATION_REQUIRED'
+    ) {
+      void pickAndUpload();
+      return;
+    }
     void retryDocument(knowledgeId, document.id)
       .then((current) =>
         setDocuments((items) => items.map((item) => (item.id === current.id ? current : item))),

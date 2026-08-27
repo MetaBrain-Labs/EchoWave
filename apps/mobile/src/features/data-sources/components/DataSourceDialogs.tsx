@@ -11,7 +11,7 @@
  * - 分析与接入配置只读，不进入创建或更新请求。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { GroupSummary } from '@echowave/contracts';
+import type { AudioTranscriptionModelCapability, GroupSummary } from '@echowave/contracts';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -42,8 +42,34 @@ type DataSourceFormSheetProps = {
   onClose: () => void;
   onSubmit: (value: DataSourceFormValue) => void;
   pending: boolean;
+  transcriptionModel?: string;
   visible: boolean;
 };
+
+const priceUnitLabels = {
+  million_tokens: '百万 tokens',
+  minute: '分钟',
+  second: '秒',
+  included: '已包含',
+} as const;
+
+function formatModelPrice(price: AudioTranscriptionModelCapability['pricing']['input']): string {
+  if (price.unit === 'included') return '已包含';
+  const symbol = price.currency === 'CNY' ? '¥' : '$';
+  return `${symbol}${price.amount}/${priceUnitLabels[price.unit]}`;
+}
+
+function timestampCapability(model: AudioTranscriptionModelCapability): string {
+  const granularity =
+    model.timestampGranularity === 'word'
+      ? '词级'
+      : model.timestampGranularity === 'segment'
+        ? '段级'
+        : 'Chunk 范围';
+  return model.timestampAvailability === 'best_effort'
+    ? `${granularity}（尽力返回）`
+    : `${granularity}（回退）`;
+}
 
 function ReadonlyItem({ label, value }: { label: string; value: string }) {
   return (
@@ -61,6 +87,7 @@ function DataSourceFormSheetContent({
   onClose,
   onSubmit,
   pending,
+  transcriptionModel,
   visible,
 }: DataSourceFormSheetProps) {
   const [name, setName] = useState(initialValue.name);
@@ -129,7 +156,7 @@ function DataSourceFormSheetContent({
             <ReadonlyItem label="接入方式" value="手动上传" />
             <ReadonlyItem label="存储位置" value="本地" />
             <Text style={styles.sectionTitle}>音频分析</Text>
-            <ReadonlyItem label="转写模型" value="Echo ASR Standard" />
+            <ReadonlyItem label="转写模型" value={transcriptionModel ?? '由服务端配置'} />
             <ReadonlyItem label="分析设置" value="默认开启" />
             {error ? (
               <Text accessibilityRole="alert" style={styles.errorText}>
@@ -320,6 +347,104 @@ export function DataSourceConfirmDialog({
   );
 }
 
+/** 确认唯一的 DashScope 整文件说话人分离转写。 */
+export function AudioTranscriptionConfirmDialog({
+  audioTitle,
+  models,
+  onCancel,
+  onConfirm,
+  pending,
+  visible,
+}: {
+  audioTitle: string;
+  models: AudioTranscriptionModelCapability[];
+  onCancel: () => void;
+  onConfirm: () => void;
+  pending: boolean;
+  visible: boolean;
+}) {
+  const selectedCapability = models[0];
+  const selectionAvailable = Boolean(selectedCapability?.available);
+  return (
+    <Modal animationType="fade" onRequestClose={onCancel} transparent visible={visible}>
+      <View style={styles.dialogRoot}>
+        <View accessibilityViewIsModal style={styles.dialogCard}>
+          <Text accessibilityRole="header" style={styles.sheetTitle}>
+            开始 ASR 转写？
+          </Text>
+          <Text style={styles.dialogBody}>
+            将通过 DashScope 官方接口整文件转写“{audioTitle}”。结果按说话人变化或明显停顿分段，
+            业务角色和情绪暂标记为未知。
+          </Text>
+          <Text style={styles.transcriptionSectionTitle}>正文分段方式</Text>
+          <View style={[styles.segmentationOption, styles.selectedModelOption]}>
+            <Ionicons color={colors.ink} name="people-outline" size={22} />
+            <View style={styles.transcriptionOptionCopy}>
+              <Text style={styles.transcriptionOptionTitle}>按说话轮次</Text>
+              <Text style={styles.secondaryText}>说话人变化或明显停顿时开始新段</Text>
+            </View>
+          </View>
+          <Text style={styles.transcriptionSectionTitle}>转写模型</Text>
+          {!selectedCapability ? (
+            <Text accessibilityRole="alert" style={styles.directWarning}>
+              转写模型目录加载失败，请关闭后重试。
+            </Text>
+          ) : (
+            <View
+              accessibilityLabel={`${selectedCapability.displayName}，${selectedCapability.description}，输入${formatModelPrice(selectedCapability.pricing.input)}，输出${formatModelPrice(selectedCapability.pricing.output)}`}
+              style={[
+                styles.transcriptionModelOption,
+                styles.selectedModelOption,
+                !selectedCapability.available && styles.disabledButton,
+              ]}
+            >
+              <Ionicons color={colors.ink} name="hardware-chip-outline" size={22} />
+              <View style={styles.transcriptionOptionCopy}>
+                <Text style={styles.transcriptionOptionTitle}>
+                  {selectedCapability.displayName}
+                </Text>
+                <Text style={styles.secondaryText}>{selectedCapability.description}</Text>
+                <Text style={styles.transcriptionModelMeta}>
+                  价格（截至 {selectedCapability.pricing.asOf}）：输入{' '}
+                  {formatModelPrice(selectedCapability.pricing.input)} · 输出{' '}
+                  {formatModelPrice(selectedCapability.pricing.output)}
+                </Text>
+                <Text style={styles.transcriptionModelMeta}>
+                  时间戳：{timestampCapability(selectedCapability)} · Speaker：尽力分离
+                </Text>
+                <Text style={styles.transcriptionModelCapabilities}>
+                  {selectedCapability.notableCapabilities.join(' · ')}
+                </Text>
+                {!selectedCapability.available ? (
+                  <Text accessibilityRole="alert" style={styles.directWarning}>
+                    {selectedCapability.unavailableReason} 当前模式不会静默降级。
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+          )}
+          <View style={styles.dialogActions}>
+            <Pressable disabled={pending} onPress={onCancel} style={styles.dialogButton}>
+              <Text style={styles.dialogButtonText}>取消</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{
+                disabled: pending || models.length === 0 || !selectionAvailable,
+              }}
+              disabled={pending || models.length === 0 || !selectionAvailable}
+              onPress={onConfirm}
+              style={[styles.dialogButton, styles.dialogConfirmButton]}
+            >
+              <Text style={styles.dialogConfirmText}>{pending ? '处理中…' : '确认转写'}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 const styles = StyleSheet.create({
   modalRoot: { flex: 1, justifyContent: 'flex-end' },
   backdrop: { backgroundColor: 'rgba(16, 24, 40, 0.28)' },
@@ -460,6 +585,44 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   dialogBody: { ...typography.body, color: textColors.secondary, fontFamily: fontFamilies.sans },
+  transcriptionSectionTitle: {
+    ...typography.label,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+  },
+  segmentationOptions: { flexDirection: 'row', gap: spacing.sm },
+  segmentationOption: {
+    alignItems: 'flex-start',
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    padding: spacing.sm,
+  },
+  transcriptionModelList: { maxHeight: 260 },
+  transcriptionModelOption: {
+    alignItems: 'flex-start',
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+    padding: spacing.sm,
+  },
+  selectedModelOption: { borderColor: colors.ink, backgroundColor: colors.background },
+  transcriptionModelMeta: {
+    ...typography.label,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+  },
+  transcriptionModelCapabilities: {
+    ...typography.label,
+    color: textColors.tertiary,
+    fontFamily: fontFamilies.sans,
+  },
   dialogActions: { flexDirection: 'row', gap: spacing.sm, justifyContent: 'flex-end' },
   dialogButton: {
     borderColor: colors.divider,
@@ -481,6 +644,29 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontFamily: fontFamilies.sansBold,
     textAlign: 'center',
+  },
+  transcriptionOption: {
+    alignItems: 'center',
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    padding: spacing.base,
+  },
+  transcriptionOptionCopy: { flex: 1, gap: spacing.xs },
+  transcriptionOptionTitle: {
+    ...typography.body,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+  },
+  directWarning: {
+    ...typography.description,
+    backgroundColor: colors.background,
+    borderRadius: radii.default,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    padding: spacing.base,
   },
   pressed: { opacity: 0.72 },
 });

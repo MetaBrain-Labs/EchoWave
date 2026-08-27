@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { HelloResponseSchema } from '@echowave/contracts';
+import {
+  AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
+  DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+  HelloResponseSchema,
+} from '@echowave/contracts';
 
 import { createApp } from '../../dist/http/app.js';
+import { WorkspaceRepositoryError } from '../../dist/workspace/persistence/errors.js';
 import { AudioUploadValidationError } from '../../dist/workspace/service.js';
 
 const app = createApp({ corsOrigins: ['http://localhost:8081'] });
@@ -48,6 +53,7 @@ describe('workspace routes', () => {
   let unlinkedDataSourceInput;
   let archivedAudioInput;
   let uploadedAudioInput;
+  let startedTranscriptionInput;
   const workspaceService = {
     listGroups: async () => ({
       items: [
@@ -105,6 +111,16 @@ describe('workspace routes', () => {
     },
     archiveDataSourceAudioFile: async (id, audioFileId) => {
       archivedAudioInput = { id, audioFileId };
+    },
+    getAudioTranscriptionCapabilities: () => ({
+      defaultModel: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+      models: AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
+      ffmpeg: { configured: true, available: true },
+      transcriptionConfigured: true,
+    }),
+    startAudioTranscription: async (id, input) => {
+      startedTranscriptionInput = { id, input };
+      return { audioFileId: id, revisionId: groupId, status: 'queued' };
     },
     listDataSourceIngestionRecords: async () => ({ items: [] }),
     listDataSourceGroups: async () => ({ items: [] }),
@@ -244,6 +260,73 @@ describe('workspace routes', () => {
     );
     assert.equal(archived.status, 204);
     assert.deepEqual(archivedAudioInput, { id: groupId, audioFileId: groupId });
+  });
+
+  it('queues validated audio transcription requests', async () => {
+    const response = await workspaceApp.request(`/api/audio-files/${groupId}/transcriptions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    assert.equal(response.status, 202);
+    assert.deepEqual(startedTranscriptionInput, {
+      id: groupId,
+      input: {
+        preprocessing: 'whole_file',
+        segmentationMode: 'speaker_turn',
+      },
+    });
+    assert.deepEqual(await response.json(), {
+      audioFileId: groupId,
+      revisionId: groupId,
+      status: 'queued',
+    });
+
+    const capabilities = await workspaceApp.request('/api/audio-transcription/capabilities');
+    assert.equal(capabilities.status, 200);
+    const capabilityBody = await capabilities.json();
+    assert.equal(capabilityBody.ffmpeg.available, true);
+    assert.equal(capabilityBody.defaultModel, 'qwen-audio-3.0-asr-flash-filetrans');
+    assert.equal(capabilityBody.models.length, 1);
+
+    const invalid = await workspaceApp.request(`/api/audio-files/${groupId}/transcriptions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preprocessing: 'automatic' }),
+    });
+    assert.equal(invalid.status, 400);
+
+    const invalidModel = await workspaceApp.request(`/api/audio-files/${groupId}/transcriptions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'unknown/model', preprocessing: 'whole_file' }),
+    });
+    assert.equal(invalidModel.status, 400);
+  });
+
+  it('returns 503 before queuing when selected FFmpeg is unavailable', async () => {
+    const unavailableApp = createApp(
+      { corsOrigins: ['http://localhost:8081'] },
+      {
+        workspaceService: {
+          ...workspaceService,
+          startAudioTranscription: async () => {
+            throw new WorkspaceRepositoryError(
+              'TRANSCODER_UNAVAILABLE',
+              'FFmpeg 当前不可用，请取消预处理后直接转写。',
+            );
+          },
+        },
+      },
+    );
+    const response = await unavailableApp.request(`/api/audio-files/${groupId}/transcriptions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preprocessing: 'whole_file' }),
+    });
+
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).error.code, 'TRANSCODER_UNAVAILABLE');
   });
 
   it('returns stable audio validation errors', async () => {

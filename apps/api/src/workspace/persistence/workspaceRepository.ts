@@ -14,7 +14,10 @@
  * - 本仓储不创建连接、不保存凭据，也不执行音频处理任务。
  */
 import {
+  AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
   AudioAnalysisDetailSchema,
+  AudioFailureDetailsSchema,
+  AudioTranscriptionActivitySchema,
   AudioFileListResponseSchema,
   DataSourceAudioUploadResponseSchema,
   DataSourceDetailSchema,
@@ -54,23 +57,64 @@ function audioStatus(row: Record<string, unknown>): AudioProcessingStatus {
       code: String(row.audio_error_code ?? 'UPLOAD_FAILED'),
       message: String(row.audio_error_message ?? '音频上传失败。'),
       retryable: Boolean(row.audio_error_retryable),
+      details: null,
     };
   }
   switch (row.analysis_status) {
-    case 'transcribing':
-      return { kind: 'transcribing', progress: integer(row.analysis_progress) };
+    case 'queued':
+    case 'transcribing': {
+      const activity = AudioTranscriptionActivitySchema.safeParse({
+        stage: row.analysis_processing_stage,
+        chunkIndex:
+          row.analysis_current_chunk === null || row.analysis_current_chunk === undefined
+            ? null
+            : integer(row.analysis_current_chunk),
+        chunkCount:
+          row.analysis_chunk_count === null || row.analysis_chunk_count === undefined
+            ? null
+            : integer(row.analysis_chunk_count),
+        chunkStartMs:
+          row.analysis_current_chunk_start_ms === null ||
+          row.analysis_current_chunk_start_ms === undefined
+            ? null
+            : integer(row.analysis_current_chunk_start_ms),
+        chunkEndMs:
+          row.analysis_current_chunk_end_ms === null ||
+          row.analysis_current_chunk_end_ms === undefined
+            ? null
+            : integer(row.analysis_current_chunk_end_ms),
+        networkAttempt:
+          row.analysis_network_attempt === null || row.analysis_network_attempt === undefined
+            ? null
+            : integer(row.analysis_network_attempt),
+        structureAttempt:
+          row.analysis_structure_attempt === null || row.analysis_structure_attempt === undefined
+            ? null
+            : integer(row.analysis_structure_attempt),
+        updatedAt: row.analysis_processing_updated_at
+          ? iso(row.analysis_processing_updated_at as Date | string)
+          : undefined,
+      });
+      return {
+        kind: 'transcribing',
+        progress: row.analysis_status === 'queued' ? 0 : integer(row.analysis_progress),
+        activity: activity.success ? activity.data : null,
+      };
+    }
     case 'analyzing':
       return { kind: 'analyzing', progress: integer(row.analysis_progress) };
     case 'ready':
       return { kind: 'ready' };
     case 'failed': {
       const stage = row.analysis_error_stage === 'transcription' ? 'transcription' : 'analysis';
+      const details = AudioFailureDetailsSchema.safeParse(row.analysis_error_details);
       return {
         kind: 'failed',
         stage,
         code: String(row.analysis_error_code ?? 'ANALYSIS_FAILED'),
         message: String(row.analysis_error_message ?? '音频分析失败。'),
         retryable: Boolean(row.analysis_error_retryable),
+        details: details.success ? details.data : null,
       };
     }
     default:
@@ -86,6 +130,7 @@ function audioItem(row: Record<string, any>) {
     durationMs: row.duration_ms === null ? null : integer(row.duration_ms),
     createdAt: iso(row.created_at),
     sharedFrom: row.shared_from ?? null,
+    hasTranscript: Boolean(row.active_analysis_revision_id),
     status: audioStatus(row),
   };
 }
@@ -238,6 +283,15 @@ export class WorkspaceRepository {
               latest.error_code AS analysis_error_code,
               latest.error_message AS analysis_error_message,
               latest.error_retryable AS analysis_error_retryable,
+              latest.error_details AS analysis_error_details,
+              latest.processing_stage AS analysis_processing_stage,
+              latest.current_chunk AS analysis_current_chunk,
+              latest.chunk_count AS analysis_chunk_count,
+              latest.current_chunk_start_ms AS analysis_current_chunk_start_ms,
+              latest.current_chunk_end_ms AS analysis_current_chunk_end_ms,
+              latest.network_attempt AS analysis_network_attempt,
+              latest.structure_attempt AS analysis_structure_attempt,
+              latest.processing_updated_at AS analysis_processing_updated_at,
               af.error_code AS audio_error_code,
               af.error_message AS audio_error_message,
               af.error_retryable AS audio_error_retryable
@@ -245,7 +299,10 @@ export class WorkspaceRepository {
        LEFT JOIN ${this.table('groups')} origin
          ON origin.tenant_id = af.tenant_id AND origin.id = af.origin_group_id
        LEFT JOIN LATERAL (
-         SELECT ar.status, ar.progress, ar.error_stage, ar.error_code, ar.error_message, ar.error_retryable
+         SELECT ar.status, ar.progress, ar.error_stage, ar.error_code, ar.error_message,
+                ar.error_retryable, ar.error_details, ar.processing_stage, ar.current_chunk,
+                ar.chunk_count, ar.current_chunk_start_ms, ar.current_chunk_end_ms,
+                ar.network_attempt, ar.structure_attempt, ar.processing_updated_at
          FROM ${this.table('audio_analysis_revisions')} ar
          WHERE ar.tenant_id = af.tenant_id AND ar.audio_file_id = af.id
          ORDER BY ar.revision_no DESC LIMIT 1
@@ -429,7 +486,7 @@ export class WorkspaceRepository {
          (tenant_id, name, description, source_type, location, connection_label,
           connection_status, transcription_model)
        VALUES ($1, $2, $3, 'manual_upload', 'local', '本地手动上传',
-               'connected', 'Echo ASR Standard')
+                'connected', 'qwen-audio-3.0-asr-flash-filetrans')
        RETURNING id`,
       [this.tenantId, input.name, input.description],
     );
@@ -574,6 +631,7 @@ export class WorkspaceRepository {
           createdAt: iso(audio.rows[0].created_at),
           sharedFrom: null,
           status: { kind: 'waiting' as const },
+          hasTranscript: false,
         });
       }
       await client.query(
@@ -597,6 +655,15 @@ export class WorkspaceRepository {
 
   /** 软归档指定数据源中的活动音频，不物理删除本地文件。 */
   async archiveDataSourceAudioFile(dataSourceId: string, audioFileId: string) {
+    const processing = await this.pool.query(
+      `SELECT 1 FROM ${this.table('audio_analysis_revisions')}
+       WHERE tenant_id = $1 AND audio_file_id = $2
+         AND status IN ('queued', 'transcribing', 'analyzing') LIMIT 1`,
+      [this.tenantId, audioFileId],
+    );
+    if (processing.rowCount) {
+      throw new WorkspaceRepositoryError('CONFLICT', '音频正在转写，完成或失败后才能归档。');
+    }
     const result = await this.pool.query(
       `UPDATE ${this.table('audio_files')} af
        SET deleted_at = now(), updated_at = now()
@@ -671,12 +738,24 @@ export class WorkspaceRepository {
               latest.error_code AS analysis_error_code,
               latest.error_message AS analysis_error_message,
               latest.error_retryable AS analysis_error_retryable,
+              latest.error_details AS analysis_error_details,
+              latest.processing_stage AS analysis_processing_stage,
+              latest.current_chunk AS analysis_current_chunk,
+              latest.chunk_count AS analysis_chunk_count,
+              latest.current_chunk_start_ms AS analysis_current_chunk_start_ms,
+              latest.current_chunk_end_ms AS analysis_current_chunk_end_ms,
+              latest.network_attempt AS analysis_network_attempt,
+              latest.structure_attempt AS analysis_structure_attempt,
+              latest.processing_updated_at AS analysis_processing_updated_at,
               af.error_code AS audio_error_code,
               af.error_message AS audio_error_message,
               af.error_retryable AS audio_error_retryable
        FROM ${this.table('audio_files')} af
        LEFT JOIN LATERAL (
-         SELECT ar.status, ar.progress, ar.error_stage, ar.error_code, ar.error_message, ar.error_retryable
+         SELECT ar.status, ar.progress, ar.error_stage, ar.error_code, ar.error_message,
+                ar.error_retryable, ar.error_details, ar.processing_stage, ar.current_chunk,
+                ar.chunk_count, ar.current_chunk_start_ms, ar.current_chunk_end_ms,
+                ar.network_attempt, ar.structure_attempt, ar.processing_updated_at
          FROM ${this.table('audio_analysis_revisions')} ar
          WHERE ar.tenant_id = af.tenant_id AND ar.audio_file_id = af.id
          ORDER BY ar.revision_no DESC LIMIT 1
@@ -752,6 +831,7 @@ export class WorkspaceRepository {
   async getAudioAnalysis(audioFileId: string) {
     const head = await this.pool.query(
       `SELECT ar.id, ar.audio_file_id, ar.revision_no, ar.published_at,
+              ar.transcription_model, ar.settings_snapshot,
               af.title, coalesce(af.duration_ms, 0)::bigint AS duration_ms
        FROM ${this.table('audio_files')} af
        JOIN ${this.table('audio_analysis_revisions')} ar
@@ -766,7 +846,7 @@ export class WorkspaceRepository {
       this.pool.query(
         `SELECT s.id AS scene_id, s.scene_index, s.title AS scene_title, s.start_ms AS scene_start_ms,
                 ts.id AS segment_id, ts.segment_index, ts.speaker_key, ts.speaker_label,
-                ts.emotion, ts.start_ms, ts.end_ms, ts.text,
+                ts.business_role, ts.emotion, ts.start_ms, ts.end_ms, ts.text,
                 tag.id AS tag_id, tag.title AS tag_title, tag.summary AS tag_summary, tag.details
          FROM ${this.table('analysis_scenes')} s
          LEFT JOIN ${this.table('transcript_segments')} ts
@@ -810,6 +890,7 @@ export class WorkspaceRepository {
           index: item.segment_index,
           speakerKey: item.speaker_key,
           speakerLabel: item.speaker_label,
+          businessRole: item.business_role,
           emotion: item.emotion,
           startMs: integer(item.start_ms),
           endMs: integer(item.end_ms),
@@ -826,6 +907,38 @@ export class WorkspaceRepository {
       }
     }
 
+    const settings: Record<string, unknown> =
+      row.settings_snapshot && typeof row.settings_snapshot === 'object'
+        ? (row.settings_snapshot as Record<string, unknown>)
+        : {};
+    const capability = AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES.find(
+      ({ id }) => id === row.transcription_model,
+    );
+    const speakerKeys = new Set(
+      segments.rows.filter((item) => item.segment_id).map((item) => String(item.speaker_key)),
+    );
+    const observedSetting = settings.diarizationObserved;
+    const diarizationRequested =
+      settings.diarizationRequested === true || settings.speakerDiarization === true;
+    const diarizationSupported = capability?.diarization ?? diarizationRequested;
+    const diarizationStatus =
+      !diarizationSupported || !diarizationRequested
+        ? 'not_supported'
+        : observedSetting === true || (observedSetting === undefined && speakerKeys.size > 1)
+          ? 'observed'
+          : 'not_returned';
+    const responseGranularity =
+      typeof settings.responseGranularity === 'string' &&
+      ['word', 'segment', 'chunk', 'mixed'].includes(settings.responseGranularity)
+        ? settings.responseGranularity
+        : null;
+    const segmentationMode =
+      settings.segmentationMode === 'speaker_turn' ? 'speaker_turn' : 'readable';
+    const speakerIdentityScope =
+      settings.speakerIdentityScope === 'recording' || settings.speakerIdentityScope === 'chunk'
+        ? settings.speakerIdentityScope
+        : 'none';
+
     return AudioAnalysisDetailSchema.parse({
       id: row.id,
       audioFileId: row.audio_file_id,
@@ -833,6 +946,14 @@ export class WorkspaceRepository {
       title: row.title,
       durationMs: integer(row.duration_ms),
       generatedAt: iso(row.published_at),
+      transcription: {
+        model: row.transcription_model,
+        language: typeof settings.language === 'string' ? settings.language : 'undetermined',
+        diarizationStatus,
+        responseGranularity,
+        segmentationMode,
+        speakerIdentityScope,
+      },
       scenes: [...scenes.values()],
       invalidSegments: invalidSegments.rows.map((item) => ({
         id: item.id,
