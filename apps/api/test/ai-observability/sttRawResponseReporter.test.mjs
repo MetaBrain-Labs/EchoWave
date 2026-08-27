@@ -71,9 +71,10 @@ describe('STT raw response reporter', () => {
       writes.every(({ filePath }) => filePath.includes(path.join('stt-raw', '2026-08-25'))),
     );
     const report = JSON.parse(writes[0].content);
-    assert.equal(report.schemaVersion, 1);
+    assert.equal(report.schemaVersion, 2);
     assert.equal(report.revisionId, reportInput.revisionId);
-    assert.equal(report.response.rawResponseText, reportInput.rawResponseText);
+    assert.deepEqual(report.response.rawResponseBody, { text: '测试' });
+    assert.equal(report.response.rawResponseText, undefined);
     assert.equal(report.response.bodyByteLength, Buffer.byteLength(reportInput.rawResponseText));
     assert.equal(report.response.truncated, false);
   });
@@ -104,6 +105,7 @@ describe('STT raw response reporter', () => {
     assert.match(report.response.rawResponseText, /\[REDACTED_BASE64\]/);
     assert.match(report.response.rawResponseText, /\[REDACTED_PATH\]/);
     assert.doesNotMatch(report.response.rawResponseText, /provider-secret/);
+    assert.equal(report.response.rawResponseBody, undefined);
     assert.equal(
       report.response.bodySha256,
       createHash('sha256').update(Buffer.from(rawResponseText)).digest('hex'),
@@ -133,9 +135,31 @@ describe('STT raw response reporter', () => {
     const report = JSON.parse(writes[0].content);
     assert.equal(report.provider, 'dashscope');
     assert.equal(report.responseKind, 'transcription_result');
-    assert.match(report.response.rawResponseText, /OSSAccessKeyId=\[REDACTED\]/);
-    assert.match(report.response.rawResponseText, /Signature=\[REDACTED\]/);
-    assert.doesNotMatch(report.response.rawResponseText, /Signature=secret/);
+    assert.equal(report.response.rawResponseText, undefined);
+    assert.match(report.response.rawResponseBody.transcription_url, /OSSAccessKeyId=\[REDACTED\]/);
+    assert.match(report.response.rawResponseBody.transcription_url, /Signature=\[REDACTED\]/);
+    assert.doesNotMatch(report.response.rawResponseBody.transcription_url, /Signature=secret/);
+  });
+
+  it('keeps the raw text when the body is not valid JSON', async () => {
+    const writes = [];
+    const reporter = createSttRawResponseReporter(
+      { enabled: true, outputDirectory: '.ai-execution-reports' },
+      {
+        now: () => new Date('2026-08-26T02:03:04.000Z'),
+        createId: () => 'html-error',
+        writeReport: async (filePath, content) => writes.push({ filePath, content }),
+      },
+    );
+    await reporter.record({
+      ...reportInput,
+      outcome: 'http_error',
+      rawResponseText: '<html>Gateway Timeout</html>',
+    });
+
+    const report = JSON.parse(writes[0].content);
+    assert.equal(report.response.rawResponseText, '<html>Gateway Timeout</html>');
+    assert.equal(report.response.rawResponseBody, undefined);
   });
 
   it('isolates writer failures', async () => {

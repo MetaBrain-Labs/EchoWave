@@ -5,8 +5,9 @@
  * 供模型逐项测试和响应结构比对使用。
  *
  * Responsibilities:
- * - 记录安全请求元数据、响应状态和经过保护的原始响应文本。
+ * - 记录安全请求元数据、响应状态和经过保护的原始响应正文。
  * - 对正文执行大小限制、哈希和敏感内容脱敏。
+ * - 正文可解析为 JSON 时以结构化 rawResponseBody 写入，否则保留 rawResponseText 字符串。
  * - 隔离目录创建或文件写入失败，避免影响转写业务结果。
  *
  * Notes:
@@ -98,8 +99,9 @@ export function createSttRawResponseReporter(
           ? rawBytes.subarray(0, MAX_STT_RAW_RESPONSE_BYTES).toString('utf8')
           : input.rawResponseText;
         const sanitized = sanitizeRawResponse(boundedText);
+        const structuredBody = parseJsonBody(sanitized.value);
         const report = {
-          schemaVersion: 1,
+          schemaVersion: 2,
           capturedAt: capturedAt.toISOString(),
           revisionId: input.revisionId,
           model: input.model,
@@ -122,7 +124,10 @@ export function createSttRawResponseReporter(
             bodySha256: createHash('sha256').update(rawBytes).digest('hex'),
             truncated,
             redactionCount: sanitized.redactionCount,
-            rawResponseText: sanitized.value,
+            // 合法 JSON 以结构化对象呈现便于逐项比对；非法或截断正文回退为字符串。
+            ...(structuredBody === undefined
+              ? { rawResponseText: sanitized.value }
+              : { rawResponseBody: structuredBody }),
           },
         };
         const dateDirectory = capturedAt.toISOString().slice(0, 10);
@@ -147,6 +152,15 @@ export function createSttRawResponseReporter(
 
 function safeSegment(value: string): string {
   return value.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 80) || 'unknown';
+}
+
+/** 尝试将脱敏后的正文解析为结构化 JSON，失败返回 undefined。 */
+function parseJsonBody(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
 }
 
 function sanitizeRawResponse(value: string): { value: string; redactionCount: number } {
