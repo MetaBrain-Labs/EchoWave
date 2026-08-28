@@ -26,6 +26,7 @@ import {
   ingestionFixtures,
   linkedGroupFixtures,
 } from '@/test/workspaceFixtures';
+import { mockAudioPlayers, resetExpoAudioMock } from '@/test/ExpoAudioMock';
 
 jest.mock('@/shared/api/workspaceApi', () => ({
   archiveDataSource: jest.fn(),
@@ -59,6 +60,7 @@ async function renderDetail(
 describe('DataSourceDetailScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    resetExpoAudioMock();
     jest.mocked(workspaceApi.getDataSource).mockResolvedValue(dataSourceDetailFixture);
     jest.mocked(workspaceApi.getAudioTranscriptionCapabilities).mockResolvedValue({
       defaultModel: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
@@ -119,6 +121,45 @@ describe('DataSourceDetailScreen', () => {
     expect(screen.getAllByRole('tab', { name: '概览' })[0]?.props.accessibilityState).toEqual({
       selected: true,
     });
+  });
+
+  it('plays one uploaded audio at a time and switches the active row', async () => {
+    const screen = await renderDetail();
+    const player = mockAudioPlayers.at(-1)!;
+    const first = audioFixtures[0];
+    const second = audioFixtures[1];
+
+    fireEvent.press(screen.getAllByLabelText(`播放音频：${first.title}`)[0]);
+    await waitFor(() => expect(player.replace).toHaveBeenCalled());
+    expect(player.play).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByLabelText(`暂停音频：${first.title}`).length).toBeGreaterThan(0);
+
+    fireEvent.press(screen.getAllByLabelText(`播放音频：${second.title}`)[0]);
+    expect(player.pause).toHaveBeenCalled();
+    expect(player.replace).toHaveBeenCalledTimes(2);
+    expect(screen.getAllByLabelText(`暂停音频：${second.title}`).length).toBeGreaterThan(0);
+  });
+
+  it('disables playback only for uploading and upload-failed rows', async () => {
+    const screen = await renderDetail();
+    const uploading = audioFixtures.find((item) => item.status.kind === 'uploading')!;
+    const uploadFailed = audioFixtures.find(
+      (item) => item.status.kind === 'failed' && item.status.stage === 'upload',
+    )!;
+    const transcriptionFailed = audioFixtures.find(
+      (item) => item.status.kind === 'failed' && item.status.stage === 'transcription',
+    )!;
+
+    expect(
+      screen.getAllByLabelText(`播放音频：${uploading.title}`)[0].props.accessibilityState,
+    ).toEqual({ disabled: true });
+    expect(
+      screen.getAllByLabelText(`播放音频：${uploadFailed.title}`)[0].props.accessibilityState,
+    ).toEqual({ disabled: true });
+    expect(
+      screen.getAllByLabelText(`播放音频：${transcriptionFailed.title}`)[0].props
+        .accessibilityState,
+    ).toEqual({ disabled: false });
   });
 
   it('switches tabs by press and horizontal swipe and updates fixed actions', async () => {

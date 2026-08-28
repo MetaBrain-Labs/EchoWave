@@ -26,6 +26,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
+import { useAudioPlayback } from '@/shared/audio/useAudioPlayback';
 import {
   confirmAudioTranscript,
   getAudioAnalysis,
@@ -69,9 +70,7 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<AnalysisTab>('transcript');
   const [expandedPlayer, setExpandedPlayer] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [playbackRateIndex, setPlaybackRateIndex] = useState(0);
-  const [positionSeconds, setPositionSeconds] = useState(0);
   const [selectedSegment, setSelectedSegment] = useState<TranscriptSegment>();
   const [emotionSegment, setEmotionSegment] = useState<TranscriptSegment>();
   const [confirmAnalysisType, setConfirmAnalysisType] = useState<AudioPostAnalysisType>();
@@ -82,6 +81,7 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
     useState<TranscriptDisplayMode>('current');
   const [transcriptDrafts, setTranscriptDrafts] = useState<Record<string, string>>({});
   const [hideIrrelevant, setHideIrrelevant] = useState(getHideIrrelevantSegmentsPreference);
+  const playback = useAudioPlayback(detailId || undefined);
   const changeHideIrrelevant = (value: boolean) => {
     setHideIrrelevantSegmentsPreference(value);
     setHideIrrelevant(value);
@@ -301,34 +301,46 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
   }
 
   const playbackRate = playbackRates[playbackRateIndex];
-  const jump = (seconds: number) => {
-    setPositionSeconds((current) =>
-      Math.min(detail.durationSeconds, Math.max(0, current + seconds)),
-    );
+  const playbackDuration = playback.duration > 0 ? playback.duration : detail.durationSeconds;
+  const changePlaybackRate = () => {
+    setPlaybackRateIndex((index) => {
+      const nextIndex = (index + 1) % playbackRates.length;
+      playback.setPlaybackRate(playbackRates[nextIndex]);
+      return nextIndex;
+    });
   };
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
       {expandedPlayer ? (
         <ExpandedPlayer
-          durationSeconds={detail.durationSeconds}
-          isPlaying={isPlaying}
+          durationSeconds={playbackDuration}
+          error={playback.error}
+          isBuffering={playback.isBuffering}
+          isLoaded={playback.isLoaded}
+          isPlaying={playback.isPlaying}
           onBack={requestBack}
           onCollapse={() => setExpandedPlayer(false)}
-          onJump={jump}
-          onPlayPause={() => setIsPlaying((value) => !value)}
-          onRateChange={() => setPlaybackRateIndex((index) => (index + 1) % playbackRates.length)}
+          onJump={(seconds) => void playback.jumpBy(seconds)}
+          onPlayPause={() => void playback.toggleFullPlayback()}
+          onRateChange={changePlaybackRate}
+          onRetry={() => playback.retry()}
+          onSeek={(seconds) => void playback.seekTo(seconds)}
           playbackRate={playbackRate}
-          positionSeconds={positionSeconds}
+          positionSeconds={playback.currentTime}
         />
       ) : (
         <CompactPlayer
-          durationSeconds={detail.durationSeconds}
-          isPlaying={isPlaying}
+          durationSeconds={playbackDuration}
+          error={playback.error}
+          isBuffering={playback.isBuffering}
+          isLoaded={playback.isLoaded}
+          isPlaying={playback.isPlaying}
           onBack={requestBack}
           onExpand={() => setExpandedPlayer(true)}
-          onPlayPause={() => setIsPlaying((value) => !value)}
-          positionSeconds={positionSeconds}
+          onPlayPause={() => void playback.toggleFullPlayback()}
+          onRetry={() => playback.retry()}
+          positionSeconds={playback.currentTime}
         />
       )}
       <DetailTabs activeTab={activeTab} onChange={selectTab} showSummary={hasSummary} />
@@ -366,7 +378,18 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
             }
             onOpenAiTag={setSelectedSegment}
             onOpenEmotion={setEmotionSegment}
+            onPlaySegment={(segment) =>
+              void playback.playRange({
+                endSeconds: segment.endSeconds,
+                key: segment.id,
+                startSeconds: segment.startSeconds,
+              })
+            }
             onStartEditing={startTranscriptEditing}
+            playingSegmentId={playback.activeRangeKey}
+            segmentPlaybackDisabled={!playback.isLoaded || Boolean(playback.error)}
+            segmentPlaybackLoading={playback.isBuffering}
+            segmentPlaybackPlaying={playback.isPlaying}
             selectedSegmentId={selectedSegment?.id}
           />
         </View>

@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, it } from 'node:test';
 
 import {
@@ -155,6 +159,9 @@ describe('workspace routes', () => {
       unlinkedDataSourceInput = { id, groupId: linkedGroupId };
     },
     getAudioAnalysis: async () => ({}),
+    getAudioPlaybackFile: async () => {
+      throw new WorkspaceRepositoryError('NOT_FOUND', '音频不存在。');
+    },
   };
   const workspaceApp = createApp({ corsOrigins: ['http://localhost:8081'] }, { workspaceService });
 
@@ -367,6 +374,73 @@ describe('workspace routes', () => {
       },
     );
     assert.equal(invalid.status, 400);
+  });
+
+  it('streams full, HEAD, and ranged audio responses with media CORS headers', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'echowave-http-audio-'));
+    const absolutePath = path.join(root, 'sample.wav');
+    await writeFile(absolutePath, Buffer.from('0123456789'));
+    const mediaApp = createApp(
+      { corsOrigins: ['http://localhost:8081'] },
+      {
+        workspaceService: {
+          ...workspaceService,
+          getAudioPlaybackFile: async () => ({
+            absolutePath,
+            lastModified: new Date('2026-08-28T00:00:00.000Z'),
+            mimeType: 'audio/wav',
+            originalFilename: '客户访谈.wav',
+            sizeBytes: 10,
+          }),
+        },
+      },
+    );
+    try {
+      const full = await mediaApp.request(`/api/audio-files/${groupId}/content`);
+      assert.equal(full.status, 200);
+      assert.equal(full.headers.get('accept-ranges'), 'bytes');
+      assert.equal(full.headers.get('content-length'), '10');
+      assert.equal(full.headers.get('content-type'), 'audio/wav');
+      assert.equal(Buffer.from(await full.arrayBuffer()).toString(), '0123456789');
+
+      const head = await mediaApp.request(`/api/audio-files/${groupId}/content`, {
+        method: 'HEAD',
+      });
+      assert.equal(head.status, 200);
+      assert.equal(head.headers.get('content-length'), '10');
+      assert.equal((await head.arrayBuffer()).byteLength, 0);
+
+      const partial = await mediaApp.request(`/api/audio-files/${groupId}/content`, {
+        headers: { Range: 'bytes=2-5' },
+      });
+      assert.equal(partial.status, 206);
+      assert.equal(partial.headers.get('content-range'), 'bytes 2-5/10');
+      assert.equal(Buffer.from(await partial.arrayBuffer()).toString(), '2345');
+
+      const suffix = await mediaApp.request(`/api/audio-files/${groupId}/content`, {
+        headers: { Range: 'bytes=-3' },
+      });
+      assert.equal(suffix.status, 206);
+      assert.equal(Buffer.from(await suffix.arrayBuffer()).toString(), '789');
+
+      const invalid = await mediaApp.request(`/api/audio-files/${groupId}/content`, {
+        headers: { Range: 'bytes=20-' },
+      });
+      assert.equal(invalid.status, 416);
+      assert.equal(invalid.headers.get('content-range'), 'bytes */10');
+
+      const preflight = await mediaApp.request(`/api/audio-files/${groupId}/content`, {
+        method: 'OPTIONS',
+        headers: {
+          Origin: 'http://localhost:8081',
+          'Access-Control-Request-Headers': 'Range',
+          'Access-Control-Request-Method': 'GET',
+        },
+      });
+      assert.match(preflight.headers.get('access-control-allow-headers') ?? '', /Range/i);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it('returns a structured conflict for a stale transcript confirmation', async () => {

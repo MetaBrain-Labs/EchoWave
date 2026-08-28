@@ -33,6 +33,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
+import { useAudioPlayback } from '@/shared/audio/useAudioPlayback';
 import {
   colors,
   fontFamilies,
@@ -200,25 +201,48 @@ function AudioStatusView({
 }
 
 function AudioRow({
+  active,
   item,
+  loading,
   onMore,
+  onPlay,
   onShowError,
   onShowProgress,
+  playing,
 }: {
+  active: boolean;
   item: SourceAudioItem;
+  loading: boolean;
   onMore: () => void;
+  onPlay: () => void;
   onShowError: () => void;
   onShowProgress: () => void;
+  playing: boolean;
 }) {
+  const playbackDisabled = item.status.kind === 'uploading' || item.status.kind === 'upload-failed';
   return (
     <View style={styles.audioRow}>
       <Pressable
-        accessibilityLabel={`播放音频：${item.title}`}
+        accessibilityLabel={`${active && playing ? '暂停' : '播放'}音频：${item.title}`}
         accessibilityRole="button"
-        onPress={() => showComingSoon('音频播放')}
-        style={({ pressed }) => [styles.playButton, pressed && styles.pressed]}
+        accessibilityState={{ disabled: playbackDisabled }}
+        disabled={playbackDisabled}
+        onPress={onPlay}
+        style={({ pressed }) => [
+          styles.playButton,
+          playbackDisabled && styles.disabledButton,
+          pressed && styles.pressed,
+        ]}
       >
-        <Ionicons color={colors.secondary} name="play" size={typography.heading1.lineHeight} />
+        {active && loading ? (
+          <ActivityIndicator color={colors.secondary} />
+        ) : (
+          <Ionicons
+            color={colors.secondary}
+            name={active && playing ? 'pause' : 'play'}
+            size={typography.heading1.lineHeight}
+          />
+        )}
       </Pressable>
       <View style={styles.audioMain}>
         <Text numberOfLines={1} style={styles.audioTitle}>
@@ -269,12 +293,20 @@ function InfoRow({
 }
 
 function OverviewContent({
+  activeAudioFileId,
+  audioLoading,
+  audioPlaying,
   onOpenAudioActions,
+  onPlayAudio,
   onShowAudioError,
   onShowAudioProgress,
   source,
 }: {
+  activeAudioFileId?: string;
+  audioLoading: boolean;
+  audioPlaying: boolean;
   onOpenAudioActions: (audio: SourceAudioItem) => void;
+  onPlayAudio: (audio: SourceAudioItem) => void;
   onShowAudioError: (audio: SourceAudioItem) => void;
   onShowAudioProgress: (audio: SourceAudioItem) => void;
   source: DataSourceDetailView;
@@ -345,11 +377,15 @@ function OverviewContent({
             .slice(0, 3)
             .map((item) => (
               <AudioRow
+                active={activeAudioFileId === item.id}
                 item={item}
                 key={item.id}
+                loading={activeAudioFileId === item.id && audioLoading}
                 onMore={() => onOpenAudioActions(item)}
+                onPlay={() => onPlayAudio(item)}
                 onShowError={() => onShowAudioError(item)}
                 onShowProgress={() => onShowAudioProgress(item)}
+                playing={activeAudioFileId === item.id && audioPlaying}
               />
             ))
         )}
@@ -584,6 +620,7 @@ export function DataSourceDetailScreen({
   const [pickerError, setPickerError] = useState('');
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(() => new Set());
   const [linking, setLinking] = useState(false);
+  const audioPlayback = useAudioPlayback();
   const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } = useSwipePager({
     activeTab,
     onTabChange: setActiveTab,
@@ -636,6 +673,11 @@ export function DataSourceDetailScreen({
     }, 2_000);
     return () => clearInterval(timer);
   }, [load, pollingTranscription]);
+
+  const playAudio = (item: SourceAudioItem) => {
+    setOperationError('');
+    audioPlayback.toggleAudio(item.id);
+  };
 
   const transcriptionProgressTarget = source?.audioItems.find(
     (item) => item.id === transcriptionProgressAudioId && item.status.kind === 'transcribing',
@@ -1010,10 +1052,12 @@ export function DataSourceDetailScreen({
         searchLabel="搜索数据源内容"
         title={source.name}
       />
-      {operationError ? (
+      {operationError || audioPlayback.error ? (
         <View style={styles.operationError}>
           <Text accessibilityRole="alert" style={styles.operationErrorText}>
-            {operationError}
+            {audioPlayback.error
+              ? `音频播放失败：${audioPlayback.error} 请再次点击播放按钮重试。`
+              : operationError}
           </Text>
         </View>
       ) : null}
@@ -1060,7 +1104,11 @@ export function DataSourceDetailScreen({
           </View>
           {renderTabs()}
           <OverviewContent
+            activeAudioFileId={audioPlayback.activeAudioFileId}
+            audioLoading={!audioPlayback.isLoaded || audioPlayback.isBuffering}
+            audioPlaying={audioPlayback.isPlaying}
             onOpenAudioActions={setAudioActionTarget}
+            onPlayAudio={playAudio}
             onShowAudioError={setTranscriptionErrorTarget}
             onShowAudioProgress={(item) => setTranscriptionProgressAudioId(item.id)}
             source={source}
@@ -1081,11 +1129,18 @@ export function DataSourceDetailScreen({
             ) : (
               source.audioItems.map((item) => (
                 <AudioRow
+                  active={audioPlayback.activeAudioFileId === item.id}
                   item={item}
                   key={item.id}
+                  loading={
+                    audioPlayback.activeAudioFileId === item.id &&
+                    (!audioPlayback.isLoaded || audioPlayback.isBuffering)
+                  }
                   onMore={() => setAudioActionTarget(item)}
+                  onPlay={() => playAudio(item)}
                   onShowError={() => setTranscriptionErrorTarget(item)}
                   onShowProgress={() => setTranscriptionProgressAudioId(item.id)}
+                  playing={audioPlayback.activeAudioFileId === item.id && audioPlayback.isPlaying}
                 />
               ))
             )}
@@ -1266,6 +1321,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 44,
   },
+  disabledButton: { opacity: 0.4 },
   audioMain: { flex: 1, gap: spacing.xs, marginLeft: spacing.base },
   audioTitle: {
     ...typography.heading3,

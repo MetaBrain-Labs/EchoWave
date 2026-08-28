@@ -8,7 +8,8 @@
  * - 页面级状态和导航仍由 AnalysisDetailScreen 统一协调。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
   colors,
@@ -26,14 +27,24 @@ const waveformHeights = [
   30, 17, 25, 12, 20, 10, 16,
 ] as const;
 
-function Waveform({ expanded = false }: { expanded?: boolean }) {
-  return (
-    <View
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-      style={[styles.waveform, expanded && styles.expandedWaveform]}
-    >
-      <View style={styles.waveformCursor} />
+function Waveform({
+  expanded = false,
+  onSeek,
+  progress,
+}: {
+  expanded?: boolean;
+  onSeek?: (progress: number) => void;
+  progress: number;
+}) {
+  const [waveformWidth, setWaveformWidth] = useState(0);
+  const waveform = (
+    <>
+      <View
+        style={[styles.waveformProgress, { width: `${Math.min(1, Math.max(0, progress)) * 100}%` }]}
+      />
+      <View
+        style={[styles.waveformCursor, { left: `${Math.min(1, Math.max(0, progress)) * 100}%` }]}
+      />
       {waveformHeights.map((height, index) => (
         <View
           // 装饰波形顺序固定，因此索引可作为稳定渲染键。
@@ -45,23 +56,55 @@ function Waveform({ expanded = false }: { expanded?: boolean }) {
           ]}
         />
       ))}
+    </>
+  );
+  if (onSeek) {
+    return (
+      <Pressable
+        accessibilityLabel="播放进度，点击跳转"
+        accessibilityRole="button"
+        onLayout={(event) => setWaveformWidth(event.nativeEvent.layout.width)}
+        onPress={(event) => {
+          if (waveformWidth > 0) onSeek(event.nativeEvent.locationX / waveformWidth);
+        }}
+        style={[styles.waveform, expanded && styles.expandedWaveform]}
+      >
+        {waveform}
+      </Pressable>
+    );
+  }
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={[styles.waveform, expanded && styles.expandedWaveform]}
+    >
+      {waveform}
     </View>
   );
 }
 
 export function CompactPlayer({
   durationSeconds,
+  error,
+  isBuffering,
+  isLoaded,
   isPlaying,
   onBack,
   onExpand,
   onPlayPause,
+  onRetry,
   positionSeconds,
 }: {
   durationSeconds: number;
+  error?: string;
+  isBuffering: boolean;
+  isLoaded: boolean;
   isPlaying: boolean;
   onBack: () => void;
   onExpand: () => void;
   onPlayPause: () => void;
+  onRetry: () => void;
   positionSeconds: number;
 }) {
   return (
@@ -69,12 +112,21 @@ export function CompactPlayer({
       <IconButton icon="chevron-back" label="返回" onPress={onBack} />
       <View style={styles.compactPlayer}>
         <Pressable
-          accessibilityLabel={isPlaying ? '暂停模拟播放' : '开始模拟播放'}
+          accessibilityLabel={isPlaying ? '暂停音频' : '播放音频'}
           accessibilityRole="button"
+          disabled={!isLoaded || Boolean(error)}
           onPress={onPlayPause}
-          style={({ pressed }) => [styles.compactPlayButton, pressed && styles.pressed]}
+          style={({ pressed }) => [
+            styles.compactPlayButton,
+            (!isLoaded || error) && styles.disabled,
+            pressed && styles.pressed,
+          ]}
         >
-          <Ionicons color={colors.ink} name={isPlaying ? 'pause' : 'play'} size={22} />
+          {isBuffering || !isLoaded ? (
+            <ActivityIndicator color={colors.ink} size="small" />
+          ) : (
+            <Ionicons color={colors.ink} name={isPlaying ? 'pause' : 'play'} size={22} />
+          )}
         </Pressable>
         <Pressable
           accessibilityLabel="展开播放器"
@@ -82,11 +134,19 @@ export function CompactPlayer({
           onPress={onExpand}
           style={({ pressed }) => [styles.compactWaveformButton, pressed && styles.pressed]}
         >
-          <Waveform />
+          <Waveform progress={durationSeconds > 0 ? positionSeconds / durationSeconds : 0} />
         </Pressable>
-        <Text style={styles.playerTime}>
-          {formatTime(positionSeconds)} / {formatTime(durationSeconds)}
-        </Text>
+        {error ? (
+          <Pressable accessibilityRole="button" onPress={onRetry}>
+            <Text numberOfLines={1} style={styles.playerError}>
+              加载失败，点击重试
+            </Text>
+          </Pressable>
+        ) : (
+          <Text style={styles.playerTime}>
+            {formatTime(positionSeconds)} / {formatTime(durationSeconds)}
+          </Text>
+        )}
       </View>
       <IconButton
         icon="ellipsis-horizontal"
@@ -99,22 +159,32 @@ export function CompactPlayer({
 
 export function ExpandedPlayer({
   durationSeconds,
+  error,
+  isBuffering,
+  isLoaded,
   isPlaying,
   onBack,
   onCollapse,
   onJump,
   onPlayPause,
   onRateChange,
+  onRetry,
+  onSeek,
   playbackRate,
   positionSeconds,
 }: {
   durationSeconds: number;
+  error?: string;
+  isBuffering: boolean;
+  isLoaded: boolean;
   isPlaying: boolean;
   onBack: () => void;
   onCollapse: () => void;
   onJump: (seconds: number) => void;
   onPlayPause: () => void;
   onRateChange: () => void;
+  onRetry: () => void;
+  onSeek: (seconds: number) => void;
   playbackRate: number;
   positionSeconds: number;
 }) {
@@ -129,7 +199,11 @@ export function ExpandedPlayer({
         />
       </View>
       <View style={styles.largeWaveformArea}>
-        <Waveform expanded />
+        <Waveform
+          expanded
+          onSeek={(progress) => onSeek(progress * durationSeconds)}
+          progress={durationSeconds > 0 ? positionSeconds / durationSeconds : 0}
+        />
       </View>
       <View style={styles.expandedTimeRow}>
         <Text style={styles.playerTime}>{formatTime(positionSeconds)}</Text>
@@ -146,16 +220,30 @@ export function ExpandedPlayer({
         </Pressable>
         <IconButton icon="play-back" label="后退 15 秒" onPress={() => onJump(-15)} />
         <Pressable
-          accessibilityLabel={isPlaying ? '暂停模拟播放' : '开始模拟播放'}
+          accessibilityLabel={isPlaying ? '暂停音频' : '播放音频'}
           accessibilityRole="button"
           onPress={onPlayPause}
-          style={({ pressed }) => [styles.largePlayButton, pressed && styles.pressed]}
+          disabled={!isLoaded || Boolean(error)}
+          style={({ pressed }) => [
+            styles.largePlayButton,
+            (!isLoaded || error) && styles.disabled,
+            pressed && styles.pressed,
+          ]}
         >
-          <Ionicons color={colors.ink} name={isPlaying ? 'pause' : 'play'} size={36} />
+          {isBuffering || !isLoaded ? (
+            <ActivityIndicator color={colors.ink} />
+          ) : (
+            <Ionicons color={colors.ink} name={isPlaying ? 'pause' : 'play'} size={36} />
+          )}
         </Pressable>
         <IconButton icon="play-forward" label="前进 15 秒" onPress={() => onJump(15)} />
         <IconButton icon="contract-outline" label="收起播放器" onPress={onCollapse} />
       </View>
+      {error ? (
+        <Pressable accessibilityRole="button" onPress={onRetry} style={styles.expandedError}>
+          <Text style={styles.playerError}>{error} 点击重试。</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -172,6 +260,7 @@ const styles = StyleSheet.create({
   pressed: {
     backgroundColor: colors.background,
   },
+  disabled: { opacity: 0.45 },
   compactPlayer: {
     alignItems: 'center',
     flex: 1,
@@ -198,6 +287,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     height: 28,
     justifyContent: 'space-between',
+    overflow: 'hidden',
+    position: 'relative',
   },
   expandedWaveform: {
     height: 52,
@@ -205,8 +296,18 @@ const styles = StyleSheet.create({
   waveformCursor: {
     backgroundColor: '#ff5964',
     height: '100%',
-    marginRight: spacing.xs,
+    position: 'absolute',
+    top: 0,
     width: 2,
+    zIndex: 2,
+  },
+  waveformProgress: {
+    backgroundColor: colors.background,
+    bottom: 0,
+    left: 0,
+    opacity: 0.55,
+    position: 'absolute',
+    top: 0,
   },
   waveformBar: {
     backgroundColor: colors.secondary,
@@ -225,6 +326,12 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sans,
     flexShrink: 0,
   },
+  playerError: {
+    ...typography.label,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+  },
+  expandedError: { alignItems: 'center', paddingHorizontal: spacing.md, paddingTop: spacing.sm },
   expandedPlayerContainer: {
     borderBottomColor: colors.divider,
     borderBottomWidth: StyleSheet.hairlineWidth,

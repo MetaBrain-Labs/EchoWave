@@ -79,6 +79,8 @@ FFmpeg 是整文件转写的必需能力。配置 `FFMPEG_PATH` 后，API 启动
 
 转写发布后，供应商正文作为不可变 Raw Transcript 保存，移动端允许用户逐片段修正并确认；每次确认生成完整、不可变的 Confirmed Transcript 版本。只有完成确认后才能独立启动情绪分析和角色识别，任务会固化排队时使用的确认版本。再次修正不会清除或自动重跑既有情绪、角色结果，用户可按需手动重跑。情绪分析固定使用北京地域 `qwen3.5-omni-flash`，通过 `DASHSCOPE_COMPATIBLE_BASE_URL` 的 OpenAI-compatible Chat Completions 接收短期 OSS 音频窗口；角色识别复用官方 DeepSeek `deepseek-v4-flash`。两类任务各自单并发运行并按 ASR revision 发布，情绪窗口使用 `echowave/emotion-staging/` 前缀，同样需要 Bucket 一天生命周期规则兜底。
 
+分析详情和数据源音频列表使用 `expo-audio` 播放原始上传文件。API 通过租户隔离的 `GET/HEAD /api/audio-files/:audioFileId/content` 提供媒体流并支持单段 HTTP Range；客户端不会接收 `storage_key` 或服务器路径。详情页顶部播放器提供真实进度、倍速和跳转，正文片段按钮只播放对应时间范围并在片段结束时自动暂停。播放器仅在当前页面前台运行，离页即停止，不启用后台或锁屏播放。
+
 原音频直传支持 MP3、WAV、M4A、AAC、FLAC、OGG 和 WebM，但仅允许不超过 45 秒且不超过 200 MB 的音频；长音频必须启用 FFmpeg。base64 会使请求体增大约三分之一，供应商拒绝时应重新转写并勾选 FFmpeg，不会自动回退或覆盖旧结果。
 
 `apps/api/.env` 是 API 的唯一配置来源：启动时会直接读取并校验该文件，不合并系统环境变量，也不使用隐式默认值。移动端由 Expo CLI 自动加载 `apps/mobile/.env`，其中客户端可用变量必须以 `EXPO_PUBLIC_` 开头：

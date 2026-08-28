@@ -9,7 +9,15 @@
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import {
   colors,
@@ -61,6 +69,10 @@ function SegmentView({
   onDraftChange,
   onOpenAiTag,
   onOpenEmotion,
+  onPlay,
+  playbackDisabled,
+  playbackLoading,
+  playbackPlaying,
   segment,
   speakerDisplayName,
 }: {
@@ -71,6 +83,10 @@ function SegmentView({
   onDraftChange: (segmentId: string, text: string) => void;
   onOpenAiTag: (segment: TranscriptSegment) => void;
   onOpenEmotion: (segment: TranscriptSegment) => void;
+  onPlay: (segment: TranscriptSegment) => void;
+  playbackDisabled: boolean;
+  playbackLoading: boolean;
+  playbackPlaying: boolean;
   segment: TranscriptSegment;
   speakerDisplayName: string;
 }) {
@@ -110,20 +126,40 @@ function SegmentView({
             <Ionicons color={colors.secondary} name="chevron-forward" size={16} />
           ) : null}
         </Pressable>
-        {editing ? (
-          <TextInput
-            accessibilityLabel={`${speakerDisplayName}的转写正文`}
-            multiline
-            onChangeText={(text) => onDraftChange(segment.id, text)}
-            style={styles.transcriptInput}
-            textAlignVertical="top"
-            value={draftText ?? segment.text}
-          />
-        ) : (
-          <Text style={[styles.transcriptText, dimmed && styles.dimmedText]}>
-            {displayMode === 'raw' ? segment.rawText : segment.text}
-          </Text>
-        )}
+        <View style={styles.transcriptRow}>
+          <Pressable
+            accessibilityLabel={`${playbackPlaying ? '暂停' : '播放'}片段：${formatTime(segment.startSeconds)} 至 ${formatTime(segment.endSeconds)}`}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: playbackDisabled }}
+            disabled={playbackDisabled}
+            onPress={() => onPlay(segment)}
+            style={({ pressed }) => [
+              styles.segmentPlayButton,
+              playbackDisabled && styles.disabled,
+              pressed && styles.pressed,
+            ]}
+          >
+            {playbackLoading ? (
+              <ActivityIndicator color={colors.ink} size="small" />
+            ) : (
+              <Ionicons color={colors.ink} name={playbackPlaying ? 'pause' : 'play'} size={18} />
+            )}
+          </Pressable>
+          {editing ? (
+            <TextInput
+              accessibilityLabel={`${speakerDisplayName}的转写正文`}
+              multiline
+              onChangeText={(text) => onDraftChange(segment.id, text)}
+              style={styles.transcriptInput}
+              textAlignVertical="top"
+              value={draftText ?? segment.text}
+            />
+          ) : (
+            <Text style={[styles.transcriptText, dimmed && styles.dimmedText]}>
+              {displayMode === 'raw' ? segment.rawText : segment.text}
+            </Text>
+          )}
+        </View>
         <Text style={styles.segmentTime}>
           {formatTime(segment.startSeconds)} – {formatTime(segment.endSeconds)}
         </Text>
@@ -185,7 +221,12 @@ export function TranscriptContent({
   onDraftChange,
   onOpenAiTag,
   onOpenEmotion,
+  onPlaySegment,
   onStartEditing,
+  playingSegmentId,
+  segmentPlaybackDisabled,
+  segmentPlaybackLoading,
+  segmentPlaybackPlaying,
   selectedSegmentId,
 }: {
   confirming: boolean;
@@ -200,7 +241,12 @@ export function TranscriptContent({
   onDraftChange: (segmentId: string, text: string) => void;
   onOpenAiTag: (segment: TranscriptSegment) => void;
   onOpenEmotion: (segment: TranscriptSegment) => void;
+  onPlaySegment: (segment: TranscriptSegment) => void;
   onStartEditing: () => void;
+  playingSegmentId?: string;
+  segmentPlaybackDisabled: boolean;
+  segmentPlaybackLoading: boolean;
+  segmentPlaybackPlaying: boolean;
   selectedSegmentId?: string;
 }) {
   const [skipInvalid, setSkipInvalid] = useState(false);
@@ -377,6 +423,10 @@ export function TranscriptContent({
                     onDraftChange={onDraftChange}
                     onOpenAiTag={onOpenAiTag}
                     onOpenEmotion={onOpenEmotion}
+                    onPlay={onPlaySegment}
+                    playbackDisabled={segmentPlaybackDisabled}
+                    playbackLoading={segmentPlaybackLoading && playingSegmentId === item.segment.id}
+                    playbackPlaying={segmentPlaybackPlaying && playingSegmentId === item.segment.id}
                     segment={item.segment}
                     speakerDisplayName={speakerDisplayNames.get(item.segment.speakerKey) ?? '发言'}
                   />
@@ -409,6 +459,7 @@ const styles = StyleSheet.create({
   pressed: {
     backgroundColor: colors.background,
   },
+  disabled: { opacity: 0.45 },
   pageScroll: {
     flex: 1,
   },
@@ -607,6 +658,21 @@ const styles = StyleSheet.create({
     color: textColors.primary,
     fontFamily: fontFamilies.kai,
     marginTop: spacing.sm,
+    flex: 1,
+  },
+  transcriptRow: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  segmentPlayButton: {
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderRadius: radii.round,
+    height: 36,
+    justifyContent: 'center',
+    marginTop: spacing.sm,
+    width: 36,
   },
   transcriptInput: {
     ...typography.body,
@@ -616,6 +682,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     color: textColors.primary,
     fontFamily: fontFamilies.kai,
+    flex: 1,
     marginTop: spacing.sm,
     minHeight: 88,
     padding: spacing.sm,

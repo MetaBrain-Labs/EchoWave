@@ -30,6 +30,8 @@ import {
 } from '@echowave/contracts';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { stream } from 'hono/streaming';
+import { createReadStream } from 'node:fs';
 import { ZodError } from 'zod';
 
 import type { ApiConfig } from '../config/env.ts';
@@ -38,6 +40,7 @@ import { RagRepositoryError } from '../knowledge/persistence/errors.ts';
 import { UploadValidationError, type KnowledgeService } from '../knowledge/service.ts';
 import { WorkspaceRepositoryError } from '../workspace/persistence/errors.ts';
 import { AudioUploadValidationError, type WorkspaceService } from '../workspace/service.ts';
+import { resolveAudioByteRange } from './audioContent.ts';
 
 type ErrorStatus = 400 | 404 | 409 | 413 | 500 | 503 | 504;
 
@@ -60,8 +63,9 @@ export function createApp(
     '*',
     cors({
       origin: config.corsOrigins,
-      allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowHeaders: ['Content-Type'],
+      allowMethods: ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowHeaders: ['Content-Type', 'Range'],
+      exposeHeaders: ['Accept-Ranges', 'Content-Length', 'Content-Range', 'Last-Modified'],
     }),
   );
 
@@ -263,6 +267,45 @@ export function createApp(
     app.get('/api/audio-files/:audioFileId/analysis', async (context) =>
       context.json(await workspace.getAudioAnalysis(id(context.req.param('audioFileId')))),
     );
+    app.on(['GET', 'HEAD'], '/api/audio-files/:audioFileId/content', async (context) => {
+      const file = await workspace.getAudioPlaybackFile(id(context.req.param('audioFileId')));
+      const range = resolveAudioByteRange(context.req.header('range'), file.sizeBytes);
+      context.header('Accept-Ranges', 'bytes');
+      context.header('Cache-Control', 'private, no-store');
+      context.header('Content-Type', file.mimeType);
+      context.header('Last-Modified', file.lastModified.toUTCString());
+      context.header(
+        'Content-Disposition',
+        `inline; filename*=UTF-8''${encodeURIComponent(file.originalFilename)}`,
+      );
+      if (range.kind === 'unsatisfiable') {
+        context.header('Content-Range', `bytes */${file.sizeBytes}`);
+        return context.body(null, 416);
+      }
+
+      const contentLength = range.end - range.start + 1;
+      context.header('Content-Length', String(contentLength));
+      if (range.kind === 'partial') {
+        context.header('Content-Range', `bytes ${range.start}-${range.end}/${file.sizeBytes}`);
+        context.status(206);
+      }
+      if (context.req.method === 'HEAD') return context.body(null);
+
+      return stream(context, async (writer) => {
+        const readable = createReadStream(file.absolutePath, {
+          start: range.start,
+          end: range.end,
+        });
+        writer.onAbort(() => {
+          readable.destroy();
+        });
+        try {
+          for await (const chunk of readable) await writer.write(chunk);
+        } finally {
+          readable.destroy();
+        }
+      });
+    });
     app.post('/api/audio-files/:audioFileId/transcript-confirmations', async (context) => {
       const input = AudioTranscriptConfirmationRequestSchema.parse(await context.req.json());
       return context.json(

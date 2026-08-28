@@ -8,7 +8,7 @@
  */
 import assert from 'node:assert/strict';
 import { Buffer, File } from 'node:buffer';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
@@ -137,6 +137,55 @@ describe('DefaultWorkspaceService audio uploads', () => {
         /database unavailable/,
       );
       assert.deepEqual(await readdir(root), []);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('DefaultWorkspaceService audio playback', () => {
+  it('opens a stored file without exposing a path outside AUDIO_STORAGE_DIR', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'echowave-playback-'));
+    await writeFile(path.join(root, 'stored.wav'), Buffer.from('audio-bytes'));
+    const service = new DefaultWorkspaceService(
+      repository({
+        getAudioPlaybackSource: async () => ({
+          storageKey: 'stored.wav',
+          mimeType: 'audio/wav',
+          originalFilename: '访谈.wav',
+        }),
+      }),
+      root,
+    );
+    try {
+      const file = await service.getAudioPlaybackFile(sourceId);
+      assert.equal(file.absolutePath, path.join(root, 'stored.wav'));
+      assert.equal(file.mimeType, 'audio/wav');
+      assert.equal(file.sizeBytes, 11);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects traversal keys and missing files as not found', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'echowave-playback-'));
+    try {
+      for (const storageKey of ['../escape.wav', 'missing.wav']) {
+        const service = new DefaultWorkspaceService(
+          repository({
+            getAudioPlaybackSource: async () => ({
+              storageKey,
+              mimeType: 'audio/wav',
+              originalFilename: '访谈.wav',
+            }),
+          }),
+          root,
+        );
+        await assert.rejects(
+          () => service.getAudioPlaybackFile(sourceId),
+          (error) => error instanceof WorkspaceRepositoryError && error.code === 'NOT_FOUND',
+        );
+      }
     } finally {
       await rm(root, { recursive: true, force: true });
     }
