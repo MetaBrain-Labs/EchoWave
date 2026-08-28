@@ -24,6 +24,10 @@ import {
   type SegmentEmotionAnalysis,
 } from '@echowave/contracts';
 
+import {
+  noOpAiExecutionRecorder,
+  type AiExecutionRecorder,
+} from '../../ai-observability/executionReporter.ts';
 import type { PostAnalysisTranscriptSegment } from '../persistence/postAnalysisRepository.ts';
 import { chatCompletionText, parseStructuredJson } from './structuredJson.ts';
 
@@ -79,6 +83,8 @@ export class QwenEmotionAnalyzer {
   async analyze(
     audioUrl: string,
     segments: WindowSegment[],
+    recorder: AiExecutionRecorder = noOpAiExecutionRecorder,
+    reportContext: Record<string, unknown> = {},
   ): Promise<(SegmentEmotionAnalysis & { segmentId: string })[]> {
     let previous = '';
     for (let structureAttempt = 1; structureAttempt <= 2; structureAttempt += 1) {
@@ -97,7 +103,7 @@ export class QwenEmotionAnalyzer {
           ? 'Analyze every target now.'
           : `The previous response was invalid. Return corrected JSON only. Previous response: ${previous.slice(0, 12_000)}`,
       ].join('\n');
-      const text = await this.request(audioUrl, prompt);
+      const text = await this.request(audioUrl, prompt, structureAttempt, recorder, reportContext);
       previous = text;
       const parsed = OutputSchema.safeParse(parseStructuredJson(text));
       if (!parsed.success) continue;
@@ -114,12 +120,30 @@ export class QwenEmotionAnalyzer {
     );
   }
 
-  private async request(audioUrl: string, prompt: string): Promise<string> {
+  private async request(
+    audioUrl: string,
+    prompt: string,
+    structureAttempt: number,
+    recorder: AiExecutionRecorder,
+    reportContext: Record<string, unknown>,
+  ): Promise<string> {
     const request = this.options.fetch ?? fetch;
     const sleep =
       this.options.sleep ??
       ((durationMs) => new Promise((resolve) => setTimeout(resolve, durationMs)));
     for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const modelAttempt = (structureAttempt - 1) * 3 + attempt;
+      const startedAt = Date.now();
+      const messages = [
+        { role: 'system', content: SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: [
+            { type: 'input_audio', input_audio: { data: '[OMITTED_AUDIO]', format: 'mp3' } },
+            { type: 'text', text: prompt },
+          ],
+        },
+      ];
       try {
         const response = await request(
           `${this.options.baseUrl.replace(/\/$/, '')}/chat/completions`,
@@ -165,8 +189,34 @@ export class QwenEmotionAnalyzer {
             true,
           );
         }
+        recorder.recordModelCall({
+          name: 'audio-emotion-analysis',
+          provider: 'dashscope',
+          model: this.options.model,
+          status: 'completed',
+          attempt: modelAttempt,
+          durationMs: Date.now() - startedAt,
+          inputTokens: null,
+          outputTokens: null,
+          input: { kind: 'chat', messages },
+          output: { role: 'assistant', content },
+          metadata: { ...reportContext, structureAttempt, networkAttempt: attempt },
+        });
         return content;
       } catch (error) {
+        recorder.recordModelCall({
+          name: 'audio-emotion-analysis',
+          provider: 'dashscope',
+          model: this.options.model,
+          status: 'failed',
+          attempt: modelAttempt,
+          durationMs: Date.now() - startedAt,
+          inputTokens: null,
+          outputTokens: null,
+          input: { kind: 'chat', messages },
+          output: { error },
+          metadata: { ...reportContext, structureAttempt, networkAttempt: attempt },
+        });
         if (error instanceof PostAnalysisProviderError && !error.retryable) throw error;
         if (attempt === 3) {
           if (error instanceof PostAnalysisProviderError) throw error;

@@ -203,6 +203,7 @@ export function createRagRuntime(config: ApiConfig) {
     embeddings,
     embeddingModel: config.rag.embeddingModel,
     agent: new SalesAnalysisAgent({ ragConfig: config.rag }),
+    reporter: executionReporter,
   });
   return {
     service,

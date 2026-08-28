@@ -18,6 +18,14 @@ import { createDeepAgent } from 'deepagents';
 import { modelCallLimitMiddleware, toolCallLimitMiddleware } from 'langchain';
 import { z } from 'zod';
 
+import {
+  noOpAiExecutionRecorder,
+  type AiExecutionRecorder,
+} from '../../ai-observability/executionReporter.ts';
+import {
+  createModelCallReportingMiddleware,
+  modelMessageForReport,
+} from '../../ai-observability/modelCallReporting.ts';
 import type { ApiConfig } from '../../config/env.ts';
 import {
   extractFinalMessageText,
@@ -205,36 +213,64 @@ export class SalesAnalysisAgent {
   }
 
   /** 从确认转写提取产品、术语、需求、异议和销售阶段，生成有界主动检索查询。 */
-  async planRetrievalQueries(job: ClaimedBusinessAnalysisJob): Promise<string[]> {
+  async planRetrievalQueries(
+    job: ClaimedBusinessAnalysisJob,
+    recorder: AiExecutionRecorder = noOpAiExecutionRecorder,
+  ): Promise<string[]> {
     const transcript = job.segments.map((segment) => ({
       id: segment.id,
       speaker: segment.role?.label ?? segment.speakerLabel,
       text: segment.text,
     }));
+    const messages = [
+      {
+        role: 'system' as const,
+        content: [
+          'Extract only terms explicitly present in the confirmed sales transcript.',
+          'Identify product or service names, domain terminology, customer needs, objections, and the apparent sales stage.',
+          'Create one to three concise retrieval queries for a linked internal knowledge base.',
+          'Do not add facts or instructions from outside the transcript.',
+          'Return only JSON: {"queries":["string"]}.',
+        ].join('\n'),
+      },
+      {
+        role: 'user' as const,
+        content: JSON.stringify({ transcript, analysisFocus: job.settings.contentFocus }),
+      },
+    ];
+    const startedAt = Date.now();
     try {
-      const response = await this.model.invoke(
-        [
-          {
-            role: 'system',
-            content: [
-              'Extract only terms explicitly present in the confirmed sales transcript.',
-              'Identify product or service names, domain terminology, customer needs, objections, and the apparent sales stage.',
-              'Create one to three concise retrieval queries for a linked internal knowledge base.',
-              'Do not add facts or instructions from outside the transcript.',
-              'Return only JSON: {"queries":["string"]}.',
-            ].join('\n'),
-          },
-          {
-            role: 'user',
-            content: JSON.stringify({ transcript, analysisFocus: job.settings.contentFocus }),
-          },
-        ],
-        { signal: AbortSignal.timeout(20_000) },
-      );
+      const response = await this.model.invoke(messages, {
+        signal: AbortSignal.timeout(20_000),
+      });
+      recorder.recordModelCall({
+        name: 'business-analysis-retrieval-planning',
+        provider: 'deepseek',
+        model: this.options.ragConfig.deepSeekChatModel,
+        status: 'completed',
+        attempt: 1,
+        durationMs: Date.now() - startedAt,
+        inputTokens: response.usage_metadata?.input_tokens ?? null,
+        outputTokens: response.usage_metadata?.output_tokens ?? null,
+        input: { kind: 'chat', messages },
+        output: modelMessageForReport(response),
+      });
       const parsed = parseJsonObject(extractFinalMessageText([response]).text);
       const plan = RetrievalPlanSchema.safeParse(parsed);
       return plan.success ? plan.data.queries : [];
-    } catch {
+    } catch (error) {
+      recorder.recordModelCall({
+        name: 'business-analysis-retrieval-planning',
+        provider: 'deepseek',
+        model: this.options.ragConfig.deepSeekChatModel,
+        status: 'failed',
+        attempt: 1,
+        durationMs: Date.now() - startedAt,
+        inputTokens: null,
+        outputTokens: null,
+        input: { kind: 'chat', messages },
+        output: { error },
+      });
       return [];
     }
   }
@@ -243,7 +279,9 @@ export class SalesAnalysisAgent {
     job: ClaimedBusinessAnalysisJob;
     preRetrieved: RetrievalChunk[];
     searchKnowledge: (query: string) => Promise<RetrievalChunk[]>;
+    recorder?: AiExecutionRecorder;
   }): Promise<BusinessAnalysisPublication> {
+    const recorder = input.recorder ?? noOpAiExecutionRecorder;
     const searchKnowledge = tool(
       async ({ query }) =>
         JSON.stringify(
@@ -270,6 +308,12 @@ export class SalesAnalysisAgent {
       skills: [],
       memory: [],
       middleware: [
+        createModelCallReportingMiddleware({
+          recorder,
+          name: 'business-analysis-generation',
+          provider: 'deepseek',
+          model: this.options.ragConfig.deepSeekChatModel,
+        }),
         modelCallLimitMiddleware({ runLimit: 4, exitBehavior: 'error' }),
         toolCallLimitMiddleware({
           toolName: 'search_knowledge',
@@ -300,7 +344,7 @@ export class SalesAnalysisAgent {
                 : []),
             ],
           },
-          { recursionLimit: 24, signal: AbortSignal.timeout(50_000) },
+          { recursionLimit: 24, signal: AbortSignal.timeout(100_000) },
         );
       } catch (error) {
         if (error instanceof Error && /abort|timeout/i.test(error.message)) {

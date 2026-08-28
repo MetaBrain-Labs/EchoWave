@@ -268,9 +268,18 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
                   provider: embedded.provider,
                   model: embedded.model,
                   status: 'completed',
+                  attempt: 1,
                   durationMs: now() - embeddingStartedAt,
                   inputTokens: embedded.tokens,
+                  outputTokens: null,
                   estimatedCost: embedded.estimatedCost,
+                  input: { kind: 'embedding', texts: [query] },
+                  output: {
+                    vectorCount: embedded.vectors.length,
+                    dimensions: embedded.vectors[0]?.length ?? 0,
+                    tokens: embedded.tokens,
+                    estimatedCost: embedded.estimatedCost,
+                  },
                   metadata: { dimensions: embedded.vectors[0]?.length ?? 0 },
                 });
               } catch (error) {
@@ -279,7 +288,12 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
                   provider: 'dashscope',
                   model: this.options.ragConfig.embeddingModel,
                   status: 'failed',
+                  attempt: 1,
                   durationMs: now() - embeddingStartedAt,
+                  inputTokens: null,
+                  outputTokens: null,
+                  input: { kind: 'embedding', texts: [query] },
+                  output: { error },
                 });
                 throw error;
               }

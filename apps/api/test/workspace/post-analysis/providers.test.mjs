@@ -52,9 +52,23 @@ function response(content, status = 200) {
   });
 }
 
+function recorder(modelCalls) {
+  return {
+    recordMetadata: () => {},
+    recordStep: () => {},
+    recordModelCall: (event) => modelCalls.push(event),
+    recordToolCall: () => {},
+    recordContext: () => {},
+    recordReasoning: () => {},
+    recordOutput: () => {},
+    finish: async () => {},
+  };
+}
+
 describe('post-analysis providers', () => {
   it('corrects fenced Qwen output and returns every target exactly once', async () => {
     const calls = [];
+    const modelCalls = [];
     const analyzer = new QwenEmotionAnalyzer({
       apiKey: 'test',
       baseUrl: 'https://example.test/v1',
@@ -67,8 +81,20 @@ describe('post-analysis providers', () => {
           : response(JSON.stringify({ segments: segments.map(({ id }) => emotion(id)) }));
       },
     });
-    const result = await analyzer.analyze('https://oss.test/window.mp3', segments);
+    const result = await analyzer.analyze(
+      'https://oss.test/window.mp3?Signature=private',
+      segments,
+      recorder(modelCalls),
+    );
     assert.equal(calls.length, 2);
+    assert.equal(modelCalls.length, 2);
+    assert.deepEqual(
+      modelCalls[0].input.messages.map(({ role }) => role),
+      ['system', 'user'],
+    );
+    assert.equal(modelCalls[0].input.messages[1].content[0].input_audio.data, '[OMITTED_AUDIO]');
+    assert.doesNotMatch(JSON.stringify(modelCalls), /private|oss\.test/);
+    assert.match(modelCalls[1].output.content, /segments/);
     assert.deepEqual(
       result.map(({ segmentId }) => segmentId),
       [firstId, secondId],
@@ -96,6 +122,7 @@ describe('post-analysis providers', () => {
   });
 
   it('recognizes only allowed roles and validates evidence ownership', async () => {
+    const modelCalls = [];
     const recognizer = new DeepSeekRoleRecognizer({
       apiKey: 'test',
       baseUrl: 'https://api.deepseek.test',
@@ -121,7 +148,14 @@ describe('post-analysis providers', () => {
           }),
         ),
     });
-    const result = await recognizer.recognize(segments, ['采购']);
+    const result = await recognizer.recognize(segments, ['采购'], recorder(modelCalls));
+    assert.equal(modelCalls.length, 1);
+    assert.deepEqual(
+      modelCalls[0].input.messages.map(({ role }) => role),
+      ['user'],
+    );
+    assert.match(modelCalls[0].input.messages[0].content, /Transcript:/);
+    assert.match(modelCalls[0].output.content, /speakers/);
     assert.deepEqual(
       result.map(({ kind }) => kind),
       ['sales', 'custom'],

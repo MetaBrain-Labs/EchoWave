@@ -12,6 +12,10 @@
  * - Worker 不修改 ASR、确认转写或后置识别结果。
  */
 import type { DashScopeEmbeddings } from '../../knowledge/embeddings/dashScopeEmbeddings.ts';
+import {
+  noOpAiExecutionReporter,
+  type AiExecutionReporter,
+} from '../../ai-observability/executionReporter.ts';
 import type {
   KnowledgeRepository,
   RetrievalChunk,
@@ -65,6 +69,7 @@ type BusinessAnalysisWorkerOptions = {
   embeddings: Pick<DashScopeEmbeddings, 'embedQuery'>;
   embeddingModel: string;
   agent: SalesAnalysisAgent;
+  reporter?: AiExecutionReporter;
 };
 
 /** 单并发轮询并执行销售复盘任务。 */
@@ -113,6 +118,23 @@ export class BusinessAnalysisWorker {
   }
 
   private async execute(job: ClaimedBusinessAnalysisJob) {
+    const startedAt = Date.now();
+    const report = (this.options.reporter ?? noOpAiExecutionReporter).start({
+      kind: 'audio-business-analysis',
+      name: 'EchoWave sales conversation review',
+      metadata: {
+        audioFileId: job.audioFileId,
+        groupId: job.groupId,
+        jobId: job.id,
+        revisionId: job.revisionId,
+        confirmationId: job.confirmationId,
+        confirmationVersion: job.confirmationVersion,
+        model: job.model,
+        segmentCount: job.segments.length,
+        knowledgeBaseIds: job.knowledgeBaseIds,
+        settingsSnapshot: job.settings,
+      },
+    });
     try {
       if (job.segments.length === 0) {
         throw new BusinessAnalysisProviderError(
@@ -122,30 +144,97 @@ export class BusinessAnalysisWorker {
         );
       }
       const retrieved = new Map<string, RetrievalChunk>();
+      let retrievalSequence = 0;
       const search = async (query: string) => {
         if (job.knowledgeBaseIds.length === 0) return [];
-        const embedding = await this.options.embeddings.embedQuery(query);
-        const chunks = await this.options.knowledgeRepository.searchMany(
-          job.knowledgeBaseIds,
-          embedding,
-          this.options.embeddingModel,
-        );
-        for (const chunk of chunks) retrieved.set(chunk.id, chunk);
-        return chunks;
+        retrievalSequence += 1;
+        const attempt = retrievalSequence;
+        const embeddingStartedAt = Date.now();
+        let embedding: number[];
+        try {
+          embedding = await this.options.embeddings.embedQuery(query);
+          report.recordModelCall({
+            name: 'business-analysis-query-embedding',
+            provider: 'dashscope',
+            model: this.options.embeddingModel,
+            status: 'completed',
+            attempt,
+            durationMs: Date.now() - embeddingStartedAt,
+            inputTokens: null,
+            outputTokens: null,
+            input: { kind: 'embedding', texts: [query] },
+            output: { vectorCount: 1, dimensions: embedding.length },
+          });
+        } catch (error) {
+          report.recordModelCall({
+            name: 'business-analysis-query-embedding',
+            provider: 'dashscope',
+            model: this.options.embeddingModel,
+            status: 'failed',
+            attempt,
+            durationMs: Date.now() - embeddingStartedAt,
+            inputTokens: null,
+            outputTokens: null,
+            input: { kind: 'embedding', texts: [query] },
+            output: { error },
+          });
+          throw error;
+        }
+        const searchStartedAt = Date.now();
+        try {
+          const chunks = await this.options.knowledgeRepository.searchMany(
+            job.knowledgeBaseIds,
+            embedding,
+            this.options.embeddingModel,
+          );
+          report.recordToolCall({
+            name: 'search_knowledge',
+            status: 'completed',
+            durationMs: Date.now() - searchStartedAt,
+            summary: { attempt, hitCount: chunks.length },
+            input: { query, knowledgeBaseIds: job.knowledgeBaseIds },
+            output: chunks,
+          });
+          for (const chunk of chunks) retrieved.set(chunk.id, chunk);
+          return chunks;
+        } catch (error) {
+          report.recordToolCall({
+            name: 'search_knowledge',
+            status: 'failed',
+            durationMs: Date.now() - searchStartedAt,
+            summary: { attempt },
+            input: { query, knowledgeBaseIds: job.knowledgeBaseIds },
+            output: { error },
+          });
+          throw error;
+        }
       };
-      const plannedQueries = await this.options.agent.planRetrievalQueries(job);
+      report.recordStep({ name: 'retrieval-planning', status: 'started' });
+      const plannedQueries = await this.options.agent.planRetrievalQueries(job, report);
       const queries =
         plannedQueries.length > 0
           ? plannedQueries
           : buildBusinessRetrievalQueries(job.settings.contentFocus, job.segments);
+      report.recordStep({
+        name: 'retrieval-planning',
+        status: 'completed',
+        metadata: { queryCount: queries.length, usedFallback: plannedQueries.length === 0 },
+      });
       await this.options.repository.updateProgress(job.id, 15);
       for (const query of queries) await search(query);
       await this.options.repository.updateProgress(job.id, 35);
+      report.recordStep({
+        name: 'analysis-generation',
+        status: 'started',
+        metadata: { preRetrievedChunkCount: retrieved.size },
+      });
       const result = await this.options.agent.analyze({
         job,
         preRetrieved: [...retrieved.values()],
         searchKnowledge: search,
+        recorder: report,
       });
+      report.recordStep({ name: 'analysis-generation', status: 'completed' });
       const segmentIds = new Set(job.segments.map((segment) => segment.id));
       const customTags = new Set(job.settings.customTags);
       for (const tag of result.tags) {
@@ -184,31 +273,59 @@ export class BusinessAnalysisWorker {
         result.limitations = [...new Set([...result.limitations, '本次分析未使用知识库。'])];
       }
       await this.options.repository.updateProgress(job.id, 92);
-      await this.options.repository.publish(
-        job,
-        {
-          ...result,
-          summarySections: result.summarySections.map((section) => ({
-            ...section,
-            title: localizeCoreSummaryTitle(section.title),
-          })),
+      const publishedResult = {
+        ...result,
+        summarySections: result.summarySections.map((section) => ({
+          ...section,
+          title: localizeCoreSummaryTitle(section.title),
+        })),
+      };
+      report.recordStep({ name: 'publish', status: 'started' });
+      await this.options.repository.publish(job, publishedResult, retrieved);
+      report.recordStep({ name: 'publish', status: 'completed' });
+      report.recordOutput(publishedResult);
+      await report.finish({
+        status: 'completed',
+        metadata: {
+          durationMs: Date.now() - startedAt,
+          retrievedChunkCount: retrieved.size,
+          tagCount: publishedResult.tags.length,
         },
-        retrieved,
-      );
+      });
     } catch (error) {
       const known = error instanceof BusinessAnalysisProviderError;
-      await this.options.repository.fail(
-        job.id,
-        known ? error.code : 'INTERNAL_ERROR',
-        known ? error.message : '销售复盘失败，请稍后重试。',
-        known ? error.retryable : true,
-      );
+      const code = known ? error.code : 'INTERNAL_ERROR';
+      const retryable = known ? error.retryable : true;
+      let failurePersistenceError: unknown;
+      try {
+        await this.options.repository.fail(
+          job.id,
+          code,
+          known ? error.message : '销售复盘失败，请稍后重试。',
+          retryable,
+        );
+      } catch (persistenceError) {
+        // 报告是故障诊断旁路；任务失败状态写入异常时仍须尽力落盘原始分析错误。
+        failurePersistenceError = persistenceError;
+      }
+      await report.finish({
+        status: 'failed',
+        error,
+        metadata: {
+          code,
+          retryable,
+          durationMs: Date.now() - startedAt,
+          failurePersistenceError,
+        },
+      });
       console.error('Business analysis failed', {
         audioFileId: job.audioFileId,
         groupId: job.groupId,
         jobId: job.id,
-        code: known ? error.code : 'INTERNAL_ERROR',
+        code,
         message: known ? error.message : 'Unexpected business analysis failure.',
+        failurePersistenceError:
+          failurePersistenceError instanceof Error ? failurePersistenceError.name : undefined,
       });
     }
   }

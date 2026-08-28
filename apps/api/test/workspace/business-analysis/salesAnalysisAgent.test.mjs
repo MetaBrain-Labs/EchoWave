@@ -17,6 +17,38 @@ import {
 
 const segmentId = '11111111-1111-4111-8111-111111111111';
 
+function analysisJob() {
+  return {
+    id: '22222222-2222-4222-8222-222222222222',
+    audioFileId: '33333333-3333-4333-8333-333333333333',
+    groupId: '44444444-4444-4444-8444-444444444444',
+    revisionId: '55555555-5555-4555-8555-555555555555',
+    confirmationId: '66666666-6666-4666-8666-666666666666',
+    confirmationVersion: 1,
+    model: 'deepseek-v4-flash',
+    knowledgeBaseIds: [],
+    settings: {
+      timing: 'manual',
+      contentFocus: '分析销售话术',
+      tone: '正式、专业',
+      customTags: [],
+      settingsUpdatedAt: null,
+    },
+    segments: [
+      {
+        id: segmentId,
+        speakerKey: 'Speaker 0',
+        speakerLabel: '销售',
+        startMs: 0,
+        endMs: 1_000,
+        text: '请问您当前最关注什么？',
+        role: null,
+        emotion: null,
+      },
+    ],
+  };
+}
+
 function validResult() {
   return {
     limitations: [],
@@ -53,6 +85,19 @@ function chatCompletion(content) {
   };
 }
 
+function recorder(modelCalls) {
+  return {
+    recordMetadata: () => {},
+    recordStep: () => {},
+    recordModelCall: (event) => modelCalls.push(event),
+    recordToolCall: () => {},
+    recordContext: () => {},
+    recordReasoning: () => {},
+    recordOutput: () => {},
+    finish: async () => {},
+  };
+}
+
 describe('SalesAnalysisAgent', () => {
   it('normalizes localized core section titles before strict validation', () => {
     const parsed = parseSalesAnalysisResult(validResult());
@@ -66,6 +111,7 @@ describe('SalesAnalysisAgent', () => {
 
   it('enables thinking for sales analysis even when the shared setting is disabled', async () => {
     const requests = [];
+    const modelCalls = [];
     const agent = new SalesAnalysisAgent({
       ragConfig: {
         deepSeekApiKey: 'test-key',
@@ -79,37 +125,58 @@ describe('SalesAnalysisAgent', () => {
       },
     });
 
-    const queries = await agent.planRetrievalQueries({
-      id: '22222222-2222-4222-8222-222222222222',
-      audioFileId: '33333333-3333-4333-8333-333333333333',
-      groupId: '44444444-4444-4444-8444-444444444444',
-      revisionId: '55555555-5555-4555-8555-555555555555',
-      confirmationId: '66666666-6666-4666-8666-666666666666',
-      confirmationVersion: 1,
-      model: 'deepseek-v4-flash',
-      knowledgeBaseIds: [],
-      settings: {
-        timing: 'manual',
-        contentFocus: '分析销售话术',
-        tone: '正式、专业',
-        customTags: [],
-        settingsUpdatedAt: null,
-      },
-      segments: [
-        {
-          id: segmentId,
-          speakerKey: 'Speaker 0',
-          speakerLabel: '销售',
-          startMs: 0,
-          endMs: 1_000,
-          text: '请问您当前最关注什么？',
-          role: null,
-          emotion: null,
-        },
-      ],
-    });
+    const queries = await agent.planRetrievalQueries(analysisJob(), recorder(modelCalls));
 
     assert.deepEqual(queries, ['客户需求']);
     assert.deepEqual(requests[0].thinking, { type: 'enabled' });
+    assert.equal(modelCalls.length, 1);
+    assert.deepEqual(
+      modelCalls[0].input.messages.map(({ role }) => role),
+      ['system', 'user'],
+    );
+    assert.match(modelCalls[0].input.messages[1].content, /analysisFocus/);
+    assert.match(modelCalls[0].output.content, /queries/);
+  });
+
+  it('records both invalid structure attempts with their actual prompts and outputs', async () => {
+    const modelCalls = [];
+    const agent = new SalesAnalysisAgent({
+      ragConfig: {
+        deepSeekApiKey: 'test-key',
+        deepSeekBaseUrl: 'https://deepseek.example.com/v1',
+        deepSeekChatModel: 'deepseek-v4-flash',
+        enableThinking: false,
+      },
+      fetchImplementation: async () => Response.json(chatCompletion('{"summarySections":[]}')),
+    });
+
+    await assert.rejects(
+      () =>
+        agent.analyze({
+          job: analysisJob(),
+          preRetrieved: [],
+          searchKnowledge: async () => [],
+          recorder: recorder(modelCalls),
+        }),
+      (error) => error.code === 'INVALID_MODEL_OUTPUT',
+    );
+
+    assert.equal(modelCalls.length, 2);
+    assert.deepEqual(
+      modelCalls.map(({ attempt }) => attempt),
+      [1, 2],
+    );
+    assert.ok(
+      modelCalls.every(
+        (event) =>
+          event.input.messages[0].role === 'system' &&
+          event.input.messages.some((message) => message.role === 'user') &&
+          event.output.content.includes('summarySections'),
+      ),
+    );
+    assert.equal(
+      modelCalls[1].input.messages.filter((message) => message.role === 'user').length,
+      2,
+    );
   });
 });

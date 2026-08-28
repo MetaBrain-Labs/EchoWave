@@ -62,6 +62,26 @@ async function waitUntil(predicate) {
   }
 }
 
+function reporter(record) {
+  return {
+    start: (input) => {
+      record.start = input;
+      return {
+        recordMetadata: (value) => (record.metadata = value),
+        recordStep: (value) => record.steps.push(value),
+        recordModelCall: (value) => record.models.push(value),
+        recordToolCall: (value) => record.tools.push(value),
+        recordContext: (value) => record.contexts.push(value),
+        recordReasoning: (value) => record.reasoning.push(value),
+        recordOutput: (value) => record.outputs.push(value),
+        finish: async (value) => {
+          record.finish = value;
+        },
+      };
+    },
+  };
+}
+
 describe('BusinessAnalysisWorker', () => {
   it('builds no more than three bounded proactive retrieval queries', () => {
     const queries = buildBusinessRetrievalQueries(
@@ -77,6 +97,14 @@ describe('BusinessAnalysisWorker', () => {
     let claimed = false;
     let published;
     let failure;
+    const report = {
+      steps: [],
+      models: [],
+      tools: [],
+      contexts: [],
+      reasoning: [],
+      outputs: [],
+    };
     const repository = {
       resetInterrupted: async () => {},
       claim: async () => {
@@ -113,8 +141,23 @@ describe('BusinessAnalysisWorker', () => {
       },
       agent: {
         planRetrievalQueries: async () => ['客户异议 处理方法'],
-        analyze: async ({ searchKnowledge }) => {
+        analyze: async ({ searchKnowledge, recorder }) => {
           await searchKnowledge('补充检索');
+          recorder.recordModelCall({
+            name: 'business-analysis-generation',
+            provider: 'deepseek',
+            model: 'deepseek-v4-flash',
+            status: 'completed',
+            attempt: 1,
+            input: {
+              kind: 'chat',
+              messages: [
+                { role: 'system', content: 'system prompt' },
+                { role: 'user', content: 'user prompt' },
+              ],
+            },
+            output: { role: 'assistant', content: 'model output' },
+          });
           return {
             limitations: [],
             summarySections: [{ title: 'overall', body: '证据充分。' }],
@@ -133,6 +176,7 @@ describe('BusinessAnalysisWorker', () => {
           };
         },
       },
+      reporter: reporter(report),
     });
     await worker.start();
     await waitUntil(() => published || failure);
@@ -140,6 +184,11 @@ describe('BusinessAnalysisWorker', () => {
     assert.equal(failure, undefined);
     assert.ok(published);
     assert.equal(published.summarySections[0].title, '总体总结');
+    assert.equal(report.start.kind, 'audio-business-analysis');
+    assert.equal(report.finish.status, 'completed');
+    assert.ok(report.models.some((event) => event.name === 'business-analysis-generation'));
+    assert.ok(report.models.some((event) => event.name === 'business-analysis-query-embedding'));
+    assert.ok(report.outputs.length > 0);
     assert.ok(whitelistCalls.length >= 2);
     assert.ok(
       whitelistCalls.every(
@@ -152,6 +201,14 @@ describe('BusinessAnalysisWorker', () => {
     let claimed = false;
     let published = false;
     let failure;
+    const report = {
+      steps: [],
+      models: [],
+      tools: [],
+      contexts: [],
+      reasoning: [],
+      outputs: [],
+    };
     const repository = {
       resetInterrupted: async () => {},
       claim: async () => {
@@ -193,11 +250,15 @@ describe('BusinessAnalysisWorker', () => {
           ],
         }),
       },
+      reporter: reporter(report),
     });
     await worker.start();
     await waitUntil(() => failure);
     await worker.stop();
     assert.equal(failure, 'INVALID_MODEL_OUTPUT');
     assert.equal(published, false);
+    assert.equal(report.start.kind, 'audio-business-analysis');
+    assert.equal(report.finish.status, 'failed');
+    assert.equal(report.finish.metadata.code, 'INVALID_MODEL_OUTPUT');
   });
 });

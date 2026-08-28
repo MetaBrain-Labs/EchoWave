@@ -168,9 +168,21 @@ export class IngestionWorker {
                 provider: result.provider,
                 model: result.model,
                 status: 'completed',
+                attempt: 1,
                 durationMs: Date.now() - modelStartedAt,
                 inputTokens: result.tokens,
+                outputTokens: null,
                 estimatedCost: result.estimatedCost,
+                input: {
+                  kind: 'embedding',
+                  texts: parsed.chunks.map((chunk) => chunk.embeddingText),
+                },
+                output: {
+                  vectorCount: result.vectors.length,
+                  dimensions: result.vectors[0]?.length ?? 0,
+                  tokens: result.tokens,
+                  estimatedCost: result.estimatedCost,
+                },
                 metadata: {
                   inputCount: parsed.chunks.length,
                   vectorCount: result.vectors.length,
@@ -183,7 +195,15 @@ export class IngestionWorker {
                 provider: 'dashscope',
                 model: options.embeddingModel,
                 status: 'failed',
+                attempt: 1,
                 durationMs: Date.now() - modelStartedAt,
+                inputTokens: null,
+                outputTokens: null,
+                input: {
+                  kind: 'embedding',
+                  texts: parsed.chunks.map((chunk) => chunk.embeddingText),
+                },
+                output: { error },
                 metadata: { inputCount: parsed.chunks.length },
               });
               throw error;

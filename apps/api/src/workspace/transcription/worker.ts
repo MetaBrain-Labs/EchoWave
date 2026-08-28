@@ -241,6 +241,15 @@ export class AudioTranscriptionWorker {
     let objectKey = job.providerArtifactKey;
     let taskId = job.providerTaskId;
     let submittedAt = job.providerSubmittedAt;
+    const createModelInput = () => ({
+      kind: 'file-transcription',
+      audio: '[OMITTED_AUDIO]',
+      language: AUDIO_TRANSCRIPTION_LANGUAGE,
+      durationMs: job.preprocessingManifest?.processedDurationMs ?? job.durationMs,
+      preprocessingMode: job.preprocessingMode,
+      diarizationEnabled: true,
+      timestampGranularity: 'segment',
+    });
     if (job.preprocessingMode === 'silero_vad' && objectKey && !job.preprocessingManifest) {
       throw new VoiceActivityError(
         'INVALID_VAD_TIMELINE',
@@ -263,13 +272,30 @@ export class AudioTranscriptionWorker {
       }
       const providerDurationMs = job.preprocessingManifest?.processedDurationMs ?? job.durationMs;
       await repository.updateActivity(job, { stage: 'transcribing', progress: 15 });
-      taskId = await reportedStep(report, 'dashscope-submit', () =>
-        dashScope.submit(ossStaging.signedGetUrl(objectKey!), {
-          revisionId: job.revisionId,
-          durationMs: providerDurationMs,
-          preprocessing: job.preprocessingMode,
-        }),
-      );
+      const submitStartedAt = Date.now();
+      try {
+        taskId = await reportedStep(report, 'dashscope-submit', () =>
+          dashScope.submit(ossStaging.signedGetUrl(objectKey!), {
+            revisionId: job.revisionId,
+            durationMs: providerDurationMs,
+            preprocessing: job.preprocessingMode,
+          }),
+        );
+      } catch (error) {
+        report.recordModelCall({
+          name: 'audio-file-transcription',
+          provider: 'dashscope',
+          model: job.model,
+          status: 'failed',
+          attempt: 1,
+          durationMs: Date.now() - submitStartedAt,
+          inputTokens: null,
+          outputTokens: null,
+          input: createModelInput(),
+          output: { stage: 'submit', error },
+        });
+        throw error;
+      }
       submittedAt = new Date();
       job.providerTaskId = taskId;
       job.providerSubmittedAt = submittedAt;
@@ -285,13 +311,46 @@ export class AudioTranscriptionWorker {
 
     await repository.updateActivity(job, { stage: 'transcribing', progress: 35 });
     const providerDurationMs = job.preprocessingManifest?.processedDurationMs ?? job.durationMs;
-    const result = await reportedStep(report, 'dashscope-poll', () =>
-      dashScope.waitForResult(taskId!, submittedAt!, {
-        revisionId: job.revisionId,
-        durationMs: providerDurationMs,
-        preprocessing: job.preprocessingMode,
-      }),
-    );
+    const transcriptionStartedAt = Date.now();
+    let result;
+    try {
+      result = await reportedStep(report, 'dashscope-poll', () =>
+        dashScope.waitForResult(taskId!, submittedAt!, {
+          revisionId: job.revisionId,
+          durationMs: providerDurationMs,
+          preprocessing: job.preprocessingMode,
+        }),
+      );
+      report.recordModelCall({
+        name: 'audio-file-transcription',
+        provider: 'dashscope',
+        model: job.model,
+        status: 'completed',
+        attempt: 1,
+        durationMs: Date.now() - transcriptionStartedAt,
+        inputTokens: null,
+        outputTokens: null,
+        input: createModelInput(),
+        output: {
+          language: AUDIO_TRANSCRIPTION_LANGUAGE,
+          segments: result.segments,
+        },
+      });
+    } catch (error) {
+      report.recordModelCall({
+        name: 'audio-file-transcription',
+        provider: 'dashscope',
+        model: job.model,
+        status: 'failed',
+        attempt: 1,
+        durationMs: Date.now() - transcriptionStartedAt,
+        inputTokens: null,
+        outputTokens: null,
+        input: createModelInput(),
+        output: { stage: 'poll', error },
+      });
+      throw error;
+    }
     let segments = result.segments;
     if (job.preprocessingManifest) {
       try {
@@ -316,6 +375,7 @@ export class AudioTranscriptionWorker {
     );
     await this.cleanupProviderArtifact(job, report);
     await preprocessor.cleanup(job);
+    report.recordOutput(segments);
     return segments;
   }
 

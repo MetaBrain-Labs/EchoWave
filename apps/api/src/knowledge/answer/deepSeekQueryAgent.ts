@@ -30,7 +30,14 @@ import { z } from 'zod';
 
 import type { SourceLocator } from '@echowave/contracts';
 
-import type { AiExecutionRecorder } from '../../ai-observability/executionReporter.ts';
+import {
+  noOpAiExecutionRecorder,
+  type AiExecutionRecorder,
+} from '../../ai-observability/executionReporter.ts';
+import {
+  createModelCallReportingMiddleware,
+  modelMessageForReport,
+} from '../../ai-observability/modelCallReporting.ts';
 import type { ApiConfig } from '../../config/env.ts';
 import { extractFinalMessageText, parseJsonObject } from './structuredOutput.ts';
 
@@ -246,6 +253,12 @@ export class DeepSeekQueryAgent {
       checkpointer: this.options.checkpointer,
       middleware: [
         shortConversationMiddleware,
+        createModelCallReportingMiddleware({
+          recorder: input.diagnostics ?? noOpAiExecutionRecorder,
+          name: 'knowledge-answer-generation',
+          provider: 'deepseek',
+          model: this.options.ragConfig.deepSeekChatModel,
+        }),
         modelCallLimitMiddleware({ runLimit: input.maxSearchCalls + 2, exitBehavior: 'error' }),
         toolCallLimitMiddleware({
           toolName: 'search_knowledge',
@@ -261,34 +274,21 @@ export class DeepSeekQueryAgent {
       systemPrompt,
       question: input.question,
     });
-    const modelStartedAt = Date.now();
-    const result = await (async () => {
-      try {
-        return await agent.invoke(
-          { messages: [{ role: 'user', content: input.question }] },
-          {
-            configurable: { thread_id: input.threadId },
-            // 中间件钩子会占用多个 graph superstep；真实工作仍由模型与工具调用上限约束。
-            recursionLimit: 32,
-            signal: input.signal ?? AbortSignal.timeout(20_000),
-          },
-        );
-      } catch (error) {
-        input.diagnostics?.recordModelCall({
-          name: 'knowledge-answer-generation',
-          provider: 'deepseek',
-          model: this.options.ragConfig.deepSeekChatModel,
-          status: 'failed',
-          durationMs: Date.now() - modelStartedAt,
-        });
-        throw error;
-      }
-    })();
+    const result = await agent.invoke(
+      { messages: [{ role: 'user', content: input.question }] },
+      {
+        configurable: { thread_id: input.threadId },
+        // 中间件钩子会占用多个 graph superstep；真实工作仍由模型与工具调用上限约束。
+        recursionLimit: 32,
+        signal: input.signal ?? AbortSignal.timeout(20_000),
+      },
+    );
 
     const resultMessages = result.messages as BaseMessage[];
     const { text, reasoning } = extractFinalMessageText(resultMessages);
     const parsed = parseJsonObject(text) ?? parseJsonObject(reasoning);
-    let recovered = recoverAgentCandidate(parsed, input.maxCitations);
+    const initialRecovery = recoverAgentCandidate(parsed, input.maxCitations);
+    let recovered = initialRecovery;
     let usage = usageFromMessages(resultMessages);
     const blockedRetrievalCalls = countBlockedRetrievalCalls(resultMessages);
     if (blockedRetrievalCalls > 0) {
@@ -302,22 +302,6 @@ export class DeepSeekQueryAgent {
         },
       });
     }
-    input.diagnostics?.recordModelCall({
-      name: 'knowledge-answer-generation',
-      provider: 'deepseek',
-      model: this.options.ragConfig.deepSeekChatModel,
-      status: 'completed',
-      durationMs: Date.now() - modelStartedAt,
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens,
-      metadata: {
-        structuredOutputRecovered: recovered.candidate !== null,
-        citationLimitExceeded: recovered.citationLimitExceeded,
-        validationIssues: recovered.validationIssues,
-        retrievalLimited: blockedRetrievalCalls > 0,
-        blockedRetrievalCalls,
-      },
-    });
     input.diagnostics?.recordReasoning(reasoning);
     input.diagnostics?.recordOutput({ rawText: text });
 
@@ -351,6 +335,13 @@ export class DeepSeekQueryAgent {
         reason: recoveryReason,
       });
       const finalizationStartedAt = Date.now();
+      const finalizationInput = {
+        kind: 'chat',
+        messages: [
+          { role: 'system', content: finalizationPrompt },
+          ...currentRunMessages.map(modelMessageForReport),
+        ],
+      };
       const finalization = await (async () => {
         try {
           return await this.model
@@ -367,7 +358,12 @@ export class DeepSeekQueryAgent {
             provider: 'deepseek',
             model: this.options.ragConfig.deepSeekChatModel,
             status: 'failed',
+            attempt: 1,
             durationMs: Date.now() - finalizationStartedAt,
+            inputTokens: null,
+            outputTokens: null,
+            input: finalizationInput,
+            output: { error },
           });
           throw error;
         }
@@ -388,10 +384,16 @@ export class DeepSeekQueryAgent {
         provider: 'deepseek',
         model: this.options.ragConfig.deepSeekChatModel,
         status: 'completed',
+        attempt: 1,
         durationMs: Date.now() - finalizationStartedAt,
         inputTokens: finalizationUsage.inputTokens,
         outputTokens: finalizationUsage.outputTokens,
+        input: finalizationInput,
+        output: modelMessageForReport(finalization.raw),
         metadata: {
+          recoveryReason,
+          initialCitationLimitExceeded: initialRecovery.citationLimitExceeded,
+          initialValidationIssues: initialRecovery.validationIssues,
           parsed: recovered.candidate !== null,
           citationLimitExceeded: recovered.citationLimitExceeded,
           validationIssues: recovered.validationIssues,
@@ -424,6 +426,14 @@ export class DeepSeekQueryAgent {
     const systemPrompt = `Correct and compact citations only. Do not add facts. Keep at most ${maxCitations} of the strongest allowed citation IDs, update citation markers to match their order, and return only the required valid JSON object with no markdown or extra text. Escape ASCII double quotes inside the answer string, or use Chinese quotation marks instead.`;
     diagnostics?.recordContext({ systemPrompt, candidate, allowedIds });
     const modelStartedAt = Date.now();
+    const correctionUserPrompt = `Previous output: ${JSON.stringify(candidate)}\nAllowed IDs: ${JSON.stringify(allowedIds)}`;
+    const correctionInput = {
+      kind: 'chat',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: correctionUserPrompt },
+      ],
+    };
     const correction = await (async () => {
       try {
         return await this.model
@@ -434,10 +444,7 @@ export class DeepSeekQueryAgent {
           .invoke(
             [
               ['system', systemPrompt],
-              [
-                'user',
-                `Previous output: ${JSON.stringify(candidate)}\nAllowed IDs: ${JSON.stringify(allowedIds)}`,
-              ],
+              ['user', correctionUserPrompt],
             ],
             { signal: signal ?? AbortSignal.timeout(18_000) },
           );
@@ -447,7 +454,12 @@ export class DeepSeekQueryAgent {
           provider: 'deepseek',
           model: this.options.ragConfig.deepSeekChatModel,
           status: 'failed',
+          attempt: 1,
           durationMs: Date.now() - modelStartedAt,
+          inputTokens: null,
+          outputTokens: null,
+          input: correctionInput,
+          output: { error },
         });
         throw error;
       }
@@ -462,10 +474,14 @@ export class DeepSeekQueryAgent {
       provider: 'deepseek',
       model: this.options.ragConfig.deepSeekChatModel,
       status: 'completed',
+      attempt: 1,
       durationMs: Date.now() - modelStartedAt,
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
+      input: correctionInput,
+      output: modelMessageForReport(correction.raw),
       metadata: {
+        sourceCitationLimitExceeded: candidate.citedChunkIds.length > maxCitations,
         parsed: recovered.candidate !== null,
         citationLimitExceeded: recovered.citationLimitExceeded,
         validationIssues: recovered.validationIssues,

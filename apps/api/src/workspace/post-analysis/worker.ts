@@ -15,6 +15,7 @@ import type { AudioPostAnalysisType } from '@echowave/contracts';
 
 import {
   noOpAiExecutionReporter,
+  type AiExecutionRecorder,
   type AiExecutionReporter,
 } from '../../ai-observability/executionReporter.ts';
 import {
@@ -141,8 +142,8 @@ export class AudioPostAnalysisWorker {
           false,
         );
       }
-      if (job.type === 'emotion') await this.executeEmotion(job);
-      else await this.executeRole(job);
+      if (job.type === 'emotion') await this.executeEmotion(job, report);
+      else await this.executeRole(job, report);
       await report.finish({
         status: 'completed',
         metadata: { durationMs: Date.now() - startedAt },
@@ -154,11 +155,22 @@ export class AudioPostAnalysisWorker {
       const code = known ? error.code : 'INTERNAL_ERROR';
       const message = known ? error.message : '音频分析失败，请稍后重试。';
       const retryable = known ? error.retryable : true;
-      await this.options.repository.fail(job.id, code, message, retryable);
+      let failurePersistenceError: unknown;
+      try {
+        await this.options.repository.fail(job.id, code, message, retryable);
+      } catch (persistenceError) {
+        // 数据库故障不得阻止模型失败报告落盘，二者各自保留诊断信号。
+        failurePersistenceError = persistenceError;
+      }
       await report.finish({
         status: 'failed',
         error,
-        metadata: { code, retryable, durationMs: Date.now() - startedAt },
+        metadata: {
+          code,
+          retryable,
+          durationMs: Date.now() - startedAt,
+          failurePersistenceError,
+        },
       });
       console.error('Audio post-analysis failed', {
         audioFileId: job.audioFileId,
@@ -173,19 +185,27 @@ export class AudioPostAnalysisWorker {
     }
   }
 
-  private async executeRole(job: ClaimedPostAnalysisJob): Promise<void> {
+  private async executeRole(
+    job: ClaimedPostAnalysisJob,
+    report: AiExecutionRecorder,
+  ): Promise<void> {
     if (!this.options.roleRecognizer) {
       throw new PostAnalysisProviderError('MODEL_UNAVAILABLE', '角色识别模型尚未配置。', false);
     }
     const results = await this.options.roleRecognizer.recognize(
       job.segments,
       job.customBusinessRoles,
+      report,
     );
     await this.options.repository.updateProgress(job.id, 95);
     await this.options.repository.publishRoles(job, results);
+    report.recordOutput(results);
   }
 
-  private async executeEmotion(job: ClaimedPostAnalysisJob): Promise<void> {
+  private async executeEmotion(
+    job: ClaimedPostAnalysisJob,
+    report: AiExecutionRecorder,
+  ): Promise<void> {
     if (!this.options.emotionAnalyzer || !this.options.preprocessor || !this.options.ossStaging) {
       throw new PostAnalysisProviderError(
         'MODEL_UNAVAILABLE',
@@ -197,7 +217,7 @@ export class AudioPostAnalysisWorker {
     const initialWindows = buildEmotionWindows(job.segments);
     const results: EmotionPublication[] = [];
     for (const window of initialWindows) {
-      results.push(...(await this.analyzeEmotionWindow(job, window)));
+      results.push(...(await this.analyzeEmotionWindow(job, window, report)));
       await this.options.repository.updateProgress(
         job.id,
         5 + (results.length / job.segments.length) * 88,
@@ -213,11 +233,13 @@ export class AudioPostAnalysisWorker {
     }
     await this.options.repository.updateProgress(job.id, 95);
     await this.options.repository.publishEmotion(job, [...unique.values()]);
+    report.recordOutput([...unique.values()]);
   }
 
   private async analyzeEmotionWindow(
     job: ClaimedPostAnalysisJob,
     segments: PostAnalysisTranscriptSegment[],
+    report: AiExecutionRecorder,
   ): Promise<EmotionPublication[]> {
     const startMs = Math.max(0, segments[0]!.startMs - WINDOW_CONTEXT_MS);
     const endMs = Math.min(job.durationMs, segments.at(-1)!.endMs + WINDOW_CONTEXT_MS);
@@ -238,6 +260,13 @@ export class AudioPostAnalysisWorker {
           relativeStartMs: segment.startMs - startMs,
           relativeEndMs: segment.endMs - startMs,
         })),
+        report,
+        {
+          windowIndex: this.windowSequence,
+          startMs,
+          endMs,
+          segmentIds: segments.map((segment) => segment.id),
+        },
       );
     } catch (error) {
       if (
@@ -247,8 +276,8 @@ export class AudioPostAnalysisWorker {
       ) {
         const middle = Math.ceil(segments.length / 2);
         return [
-          ...(await this.analyzeEmotionWindow(job, segments.slice(0, middle))),
-          ...(await this.analyzeEmotionWindow(job, segments.slice(middle))),
+          ...(await this.analyzeEmotionWindow(job, segments.slice(0, middle), report)),
+          ...(await this.analyzeEmotionWindow(job, segments.slice(middle), report)),
         ];
       }
       throw error;

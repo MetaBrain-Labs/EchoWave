@@ -17,6 +17,10 @@ import {
   type SegmentRoleAnalysis,
 } from '@echowave/contracts';
 
+import {
+  noOpAiExecutionRecorder,
+  type AiExecutionRecorder,
+} from '../../ai-observability/executionReporter.ts';
 import type { PostAnalysisTranscriptSegment } from '../persistence/postAnalysisRepository.ts';
 import { PostAnalysisProviderError } from './qwenEmotionAnalyzer.ts';
 import { chatCompletionText, parseStructuredJson } from './structuredJson.ts';
@@ -56,6 +60,7 @@ export class DeepSeekRoleRecognizer {
   async recognize(
     segments: PostAnalysisTranscriptSegment[],
     customRoles: string[],
+    recorder: AiExecutionRecorder = noOpAiExecutionRecorder,
   ): Promise<(SegmentRoleAnalysis & { speakerKey: string })[]> {
     const allowedRoles = [...CORE_BUSINESS_ROLES, ...customRoles];
     const speakerSegments = new Map<string, Set<string>>();
@@ -77,7 +82,7 @@ export class DeepSeekRoleRecognizer {
           ? ''
           : `The previous response was invalid. Correct it without adding roles or speakers: ${previous.slice(0, 12_000)}`,
       ].join('\n');
-      const text = await this.request(prompt);
+      const text = await this.request(prompt, structureAttempt, recorder);
       previous = text;
       const parsed = OutputSchema.safeParse(parseStructuredJson(text));
       if (!parsed.success) continue;
@@ -113,12 +118,19 @@ export class DeepSeekRoleRecognizer {
     );
   }
 
-  private async request(prompt: string): Promise<string> {
+  private async request(
+    prompt: string,
+    structureAttempt: number,
+    recorder: AiExecutionRecorder,
+  ): Promise<string> {
     const request = this.options.fetch ?? fetch;
     const sleep =
       this.options.sleep ??
       ((durationMs) => new Promise((resolve) => setTimeout(resolve, durationMs)));
     for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const modelAttempt = (structureAttempt - 1) * 3 + attempt;
+      const startedAt = Date.now();
+      const messages = [{ role: 'user', content: prompt }];
       try {
         const response = await request(
           `${this.options.baseUrl.replace(/\/$/, '')}/chat/completions`,
@@ -150,8 +162,34 @@ export class DeepSeekRoleRecognizer {
         }
         const content = chatCompletionText(await response.json());
         if (!content) throw new Error('empty-model-response');
+        recorder.recordModelCall({
+          name: 'audio-role-recognition',
+          provider: 'deepseek',
+          model: this.options.model,
+          status: 'completed',
+          attempt: modelAttempt,
+          durationMs: Date.now() - startedAt,
+          inputTokens: null,
+          outputTokens: null,
+          input: { kind: 'chat', messages },
+          output: { role: 'assistant', content },
+          metadata: { structureAttempt, networkAttempt: attempt },
+        });
         return content;
       } catch (error) {
+        recorder.recordModelCall({
+          name: 'audio-role-recognition',
+          provider: 'deepseek',
+          model: this.options.model,
+          status: 'failed',
+          attempt: modelAttempt,
+          durationMs: Date.now() - startedAt,
+          inputTokens: null,
+          outputTokens: null,
+          input: { kind: 'chat', messages },
+          output: { error },
+          metadata: { structureAttempt, networkAttempt: attempt },
+        });
         if (error instanceof PostAnalysisProviderError && !error.retryable) throw error;
         if (attempt === 3) {
           throw new PostAnalysisProviderError(

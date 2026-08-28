@@ -15,7 +15,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 const MAX_SECTION_CHARACTERS = 120_000;
 const DEFAULT_REPOSITORY_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
@@ -27,6 +27,11 @@ const SENSITIVE_KEYS = new Set([
   'set_cookie',
   'password',
   'secret',
+  'token',
+  'clientsecret',
+  'client_secret',
+  'privatekey',
+  'private_key',
   'accesstoken',
   'access_token',
   'refreshtoken',
@@ -39,7 +44,13 @@ const SENSITIVE_KEYS = new Set([
 
 /** 已知的首期执行类型，同时允许未来工作流使用稳定的自定义名称。 */
 export type AiExecutionKind =
-  'audio-transcription' | 'rag-answer' | 'knowledge-ingestion' | (string & {});
+  | 'audio-transcription'
+  | 'audio-business-analysis'
+  | 'audio-role-recognition'
+  | 'audio-emotion-analysis'
+  | 'rag-answer'
+  | 'knowledge-ingestion'
+  | (string & {});
 
 /** AI 执行报告的运行时配置。 */
 export type AiExecutionReportConfig = {
@@ -66,15 +77,18 @@ export type AiStepEvent = {
   metadata?: Record<string, unknown>;
 };
 
-/** 一次模型调用的安全统计与可选诊断信息。 */
+/** 一次模型调用的安全统计，以及必须记录的真实输入与可见输出。 */
 export type AiModelCallEvent = {
   name: string;
   provider: string;
   model: string;
   status: 'completed' | 'failed';
-  durationMs?: number;
-  inputTokens?: number;
-  outputTokens?: number;
+  attempt: number;
+  input: unknown;
+  output: unknown;
+  durationMs: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
   estimatedCost?: { amount: number; currency: 'CNY' | 'USD' };
   metadata?: Record<string, unknown>;
 };
@@ -123,7 +137,8 @@ type ReporterDependencies = {
 
 type RecordedEvent<T> = T & { at: string };
 
-const noOpRecorder: AiExecutionRecorder = {
+/** 未启用报告时供工作流和模型中间件共享的无操作记录器。 */
+export const noOpAiExecutionRecorder: AiExecutionRecorder = {
   recordMetadata: () => undefined,
   recordStep: () => undefined,
   recordModelCall: () => undefined,
@@ -136,7 +151,7 @@ const noOpRecorder: AiExecutionRecorder = {
 
 /** 未注入报告器的测试或局部组合可复用的无操作实现。 */
 export const noOpAiExecutionReporter: AiExecutionReporter = {
-  start: () => noOpRecorder,
+  start: () => noOpAiExecutionRecorder,
 };
 
 /** 根据显式配置创建文件报告器；关闭时所有运行共享无操作实现。 */
@@ -208,7 +223,12 @@ class MarkdownExecutionRecorder implements AiExecutionRecorder {
   }
 
   recordModelCall(event: AiModelCallEvent): void {
-    this.modelCalls.push({ ...event, at: this.now().toISOString() });
+    this.modelCalls.push({
+      ...event,
+      input: protectModelPayload(event.input),
+      output: protectModelPayload(event.output),
+      at: this.now().toISOString(),
+    });
   }
 
   recordToolCall(event: AiToolCallEvent): void {
@@ -264,7 +284,7 @@ class MarkdownExecutionRecorder implements AiExecutionRecorder {
       '',
       renderJsonSection('Metadata', this.metadata),
       renderJsonSection('Step Timeline', this.steps),
-      renderJsonSection('Model Calls', this.modelCalls),
+      renderJsonSection('Model Calls', this.modelCalls, false),
       renderJsonSection('Tool Calls', this.toolCalls),
     ];
 
@@ -286,10 +306,10 @@ function inline(value: unknown): string {
   return redactString(String(value)).replace(/[\r\n]+/g, ' ');
 }
 
-function renderJsonSection(title: string, value: unknown): string {
+function renderJsonSection(title: string, value: unknown, truncateSection = true): string {
   const serialized = safeSerialize(value);
   const truncated =
-    serialized.length > MAX_SECTION_CHARACTERS
+    truncateSection && serialized.length > MAX_SECTION_CHARACTERS
       ? `${serialized.slice(0, MAX_SECTION_CHARACTERS)}\n... [truncated]`
       : serialized;
   const fence = '`'.repeat(Math.max(3, longestBacktickRun(truncated) + 1));
@@ -334,6 +354,51 @@ function normalizeValue(value: unknown, ancestors: Set<object>): unknown {
   return value;
 }
 
+function protectModelPayload(value: unknown): unknown {
+  try {
+    return normalizeModelPayload(value, new Set());
+  } catch {
+    // 不可信 Provider 对象即使含抛错 getter，也不能反向影响模型调用与业务发布。
+    return '[Unserializable model payload]';
+  }
+}
+
+function normalizeModelPayload(value: unknown, ancestors: Set<object>): unknown {
+  if (typeof value === 'string') return truncateModelString(redactString(value));
+  if (typeof value === 'bigint') return `${value}n`;
+  if (value instanceof Error) return normalizeError(value);
+  if (Array.isArray(value)) {
+    if (ancestors.has(value)) return '[Circular]';
+    ancestors.add(value);
+    const normalized = value.map((item) => normalizeModelPayload(item, ancestors));
+    ancestors.delete(value);
+    return normalized;
+  }
+  if (value && typeof value === 'object') {
+    if (ancestors.has(value)) return '[Circular]';
+    ancestors.add(value);
+    const normalized: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value)) {
+      normalized[key] = isSensitiveKey(key) ? '[REDACTED]' : normalizeModelPayload(item, ancestors);
+    }
+    ancestors.delete(value);
+    return normalized;
+  }
+  if (typeof value === 'function') return `[Function ${value.name || 'anonymous'}]`;
+  if (typeof value === 'symbol') return String(value);
+  return value;
+}
+
+function truncateModelString(value: string): string | Record<string, unknown> {
+  if (value.length <= MAX_SECTION_CHARACTERS) return value;
+  return {
+    truncated: true,
+    originalCharacters: value.length,
+    sha256: createHash('sha256').update(value).digest('hex'),
+    content: `${value.slice(0, MAX_SECTION_CHARACTERS)}\n... [truncated]`,
+  };
+}
+
 function normalizeError(error: unknown): unknown {
   if (!(error instanceof Error)) return error;
   const code = 'code' in error ? error.code : undefined;
@@ -352,6 +417,14 @@ function redactString(value: string): string {
   let redacted = value.replace(/(Bearer\s+)[^\s"']+/gi, '$1[REDACTED]');
   redacted = redacted.replace(/\b[A-Za-z0-9+/]{256,}={0,2}\b/g, '[REDACTED_BASE64]');
   redacted = redacted.replace(/\b[A-Za-z]:\\(?:[^\s"']+\\)*[^\s"']*/g, '[REDACTED_PATH]');
+  redacted = redacted.replace(
+    /\/(?:Users|home|tmp|private\/tmp|var\/tmp|workspace)\/(?:[^\s"']+\/)*[^\s"']*/g,
+    '[REDACTED_PATH]',
+  );
+  redacted = redacted.replace(
+    /([?&](?:signature|ossaccesskeyid|accesskeyid|security-token|x-oss-signature|x-oss-credential|x-oss-security-token|x-amz-signature|x-amz-credential|x-amz-security-token|expires)=)[^&#\s"']+/gi,
+    '$1[REDACTED]',
+  );
   if (redacted.includes('://')) {
     redacted = redacted.replace(/([a-z][a-z0-9+.-]*:\/\/[^:\s/]+:)[^@\s/]+@/gi, '$1[REDACTED]@');
   }

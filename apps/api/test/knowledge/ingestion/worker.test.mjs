@@ -94,6 +94,15 @@ describe('knowledge ingestion execution diagnostics', () => {
     );
     assert.equal(records[0].models[0].inputTokens, 9);
     assert.equal(records[0].models[0].metadata.vectorCount, 1);
+    assert.deepEqual(records[0].models[0].input.kind, 'embedding');
+    assert.match(records[0].models[0].input.texts[0], /答案为 A/);
+    assert.deepEqual(records[0].models[0].output, {
+      vectorCount: 1,
+      dimensions: 1024,
+      tokens: 9,
+      estimatedCost: { amount: 0.0000045, currency: 'CNY' },
+    });
+    assert.equal(JSON.stringify(records[0].models[0]).includes('0.1,0.1'), false);
     assert.equal(
       records[0].steps.find((event) => event.name === 'cleanup' && event.status === 'completed')
         .metadata.removed,
