@@ -145,6 +145,13 @@ export type StoredAudioUpload = {
   storageKey: string;
 };
 
+/** 文件系统播放服务需要的租户内音频存储元数据。 */
+export type AudioPlaybackSource = {
+  mimeType: string;
+  originalFilename: string;
+  storageKey: string;
+};
+
 const visibleAudioCte = `
   visible_audio AS (
     SELECT gal.tenant_id, gal.group_id, gal.audio_file_id
@@ -184,6 +191,26 @@ export class WorkspaceRepository {
       .replaceAll('group_data_sources', this.table('group_data_sources'))
       .replaceAll('__active_data_sources__', this.table('data_sources'))
       .replaceAll('audio_files', this.table('audio_files'));
+  }
+
+  /** 返回可播放音频的受控存储元数据，不向网络层暴露存储键。 */
+  async getAudioPlaybackSource(audioFileId: string): Promise<AudioPlaybackSource> {
+    const result = await this.pool.query(
+      `SELECT storage_key, mime_type, original_filename, upload_status
+       FROM ${this.table('audio_files')}
+       WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+      [this.tenantId, audioFileId],
+    );
+    const row = result.rows[0];
+    if (!row) throw new WorkspaceRepositoryError('NOT_FOUND', '音频不存在或已归档。');
+    if (row.upload_status !== 'ready' || !row.storage_key) {
+      throw new WorkspaceRepositoryError('CONFLICT', '音频尚未完成上传，当前无法播放。');
+    }
+    return {
+      storageKey: String(row.storage_key),
+      mimeType: String(row.mime_type ?? 'application/octet-stream'),
+      originalFilename: String(row.original_filename ?? 'audio'),
+    };
   }
 
   async listGroups() {

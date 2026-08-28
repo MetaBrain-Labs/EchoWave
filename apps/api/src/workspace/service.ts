@@ -10,7 +10,7 @@
  * - 本地上传文件由本服务可靠保存；ASR 只在此协调能力检查和任务创建。
  */
 import { randomUUID } from 'node:crypto';
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseBuffer } from 'music-metadata';
@@ -34,6 +34,15 @@ import type { PostAnalysisRepository } from './persistence/postAnalysisRepositor
 import type { TranscriptConfirmationRepository } from './persistence/transcriptConfirmationRepository.ts';
 import { WorkspaceRepositoryError } from './persistence/errors.ts';
 import type { AudioInputPreprocessor } from './transcription/audioPreprocessor.ts';
+
+/** HTTP 音频流接口可读取的本地文件描述。 */
+export type AudioPlaybackFile = {
+  absolutePath: string;
+  lastModified: Date;
+  mimeType: string;
+  originalFilename: string;
+  sizeBytes: number;
+};
 
 const MAX_AUDIO_FILES = 20;
 const MAX_AUDIO_BYTES = 200 * 1024 * 1024;
@@ -180,6 +189,7 @@ export interface WorkspaceService {
     id: string,
     audioFileId: string,
   ): ReturnType<WorkspaceRepository['archiveDataSourceAudioFile']>;
+  getAudioPlaybackFile(id: string): Promise<AudioPlaybackFile>;
   getAudioTranscriptionCapabilities(): ReturnType<AudioInputPreprocessor['capabilities']>;
   startAudioTranscription(
     id: string,
@@ -298,6 +308,32 @@ export class DefaultWorkspaceService implements WorkspaceService {
 
   archiveDataSourceAudioFile(id: string, audioFileId: string) {
     return this.repository.archiveDataSourceAudioFile(id, audioFileId);
+  }
+
+  /** 将租户内存储键解析为受控的实际音频文件，拒绝越界路径和缺失文件。 */
+  async getAudioPlaybackFile(id: string): Promise<AudioPlaybackFile> {
+    const source = await this.repository.getAudioPlaybackSource(id);
+    const root = path.resolve(this.audioStorageDirectory);
+    const absolutePath = path.resolve(root, source.storageKey);
+    if (!absolutePath.startsWith(`${root}${path.sep}`)) {
+      throw new WorkspaceRepositoryError('NOT_FOUND', '音频文件不存在。');
+    }
+    try {
+      const details = await stat(absolutePath);
+      if (!details.isFile() || details.size <= 0) {
+        throw new WorkspaceRepositoryError('NOT_FOUND', '音频文件不存在。');
+      }
+      return {
+        absolutePath,
+        lastModified: details.mtime,
+        mimeType: source.mimeType,
+        originalFilename: source.originalFilename,
+        sizeBytes: details.size,
+      };
+    } catch (error) {
+      if (error instanceof WorkspaceRepositoryError) throw error;
+      throw new WorkspaceRepositoryError('NOT_FOUND', '音频文件不存在。');
+    }
   }
   getAudioTranscriptionCapabilities() {
     return this.audioInputPreprocessor.capabilities();

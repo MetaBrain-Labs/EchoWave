@@ -42,6 +42,7 @@ apps/api/src/http ───────> @echowave/contracts <──── apps/
 - PostgreSQL 是知识库、文档、revision、chunk、任务、会话和运行记录的权威来源。
 - PostgreSQL 同时保存租户级分组、数据源、音频元数据和已发布音频分析修订版；音频二进制与第三方凭据不进入业务表。
 - 手动上传音频先经扩展名、MIME 和媒体结构校验，再以随机文件名写入 `AUDIO_STORAGE_DIR`；数据库只保存相对 `storage_key`。文件写入或数据库事务失败时会补偿清理本批新文件。
+- 音频播放通过租户隔离的内容路由读取本地权威文件。仓储只返回未归档、已上传音频的存储元数据，服务层验证路径仍位于 `AUDIO_STORAGE_DIR`，HTTP 层提供 `GET`、`HEAD` 与单段字节 Range；客户端始终以音频 ID 构造 URL，不接触存储键。移动端使用一个页面级 `expo-audio` 实例同步完整录音与正文片段播放，片段边界只来自已发布时间戳。
 - 音频转写使用 `audio_analysis_revisions` 作为 PostgreSQL 队列，并把供应商、实际模型、分段模式、固定语言、声明能力、实际响应能力与预处理模式写入 revision 设置快照。`silero_vad` 路径以本地 ONNX 模型流式检测人声并压缩超过 30 秒的非人声区间，`whole_file` 路径保留完整音频；两者都通过 FFmpeg 生成单个 16kHz 单声道 MP3，经短期 OSS 对象和 24 小时签名 URL 提交北京地域 DashScope Qwen 文件转写，不在修订内自动切换模型或预处理模式。
 - `transcript_segments.text` 永久保存供应商 Raw Transcript；人工确认通过 `transcript_confirmations` 与 `transcript_confirmation_segments` 保存完整不可变快照，并由 ASR revision 上的 active 指针选择当前 Confirmed Transcript。确认只替换正文快照，不重建片段或修改 Speaker、时间戳和既有分析指针。
 - 情绪分析和角色识别使用 `audio_post_analysis_jobs` 作为两个独立队列。任务只能从已确认的 ASR revision 创建，并固化当前确认版本、模型和数据源自定义角色字典；worker 始终从该确认快照读取正文。两类 worker 各自单并发并通过 `FOR UPDATE SKIP LOCKED` 领取，因此可以并行运行但不会让同类型任务重入。

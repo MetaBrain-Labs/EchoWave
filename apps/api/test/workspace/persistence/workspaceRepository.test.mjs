@@ -113,6 +113,59 @@ describe('WorkspaceRepository group audio', () => {
   });
 });
 
+describe('WorkspaceRepository audio playback', () => {
+  it('returns only tenant-scoped ready audio storage metadata', async () => {
+    const calls = [];
+    const repository = new WorkspaceRepository(
+      {
+        query: async (sql, values) => {
+          calls.push({ sql, values });
+          return {
+            rows: [
+              {
+                storage_key: 'stored.wav',
+                mime_type: 'audio/wav',
+                original_filename: '客户访谈.wav',
+                upload_status: 'ready',
+              },
+            ],
+          };
+        },
+      },
+      'echowave',
+      tenantId,
+    );
+
+    assert.deepEqual(await repository.getAudioPlaybackSource(audioId), {
+      storageKey: 'stored.wav',
+      mimeType: 'audio/wav',
+      originalFilename: '客户访谈.wav',
+    });
+    assert.deepEqual(calls[0].values, [tenantId, audioId]);
+    assert.match(calls[0].sql, /deleted_at IS NULL/);
+  });
+
+  it('rejects archived, cross-tenant, and unfinished audio without exposing storage', async () => {
+    const missing = new WorkspaceRepository(
+      { query: async () => ({ rows: [] }) },
+      'echowave',
+      tenantId,
+    );
+    await assert.rejects(() => missing.getAudioPlaybackSource(audioId), /不存在或已归档/);
+
+    const unfinished = new WorkspaceRepository(
+      {
+        query: async () => ({
+          rows: [{ storage_key: null, upload_status: 'uploading' }],
+        }),
+      },
+      'echowave',
+      tenantId,
+    );
+    await assert.rejects(() => unfinished.getAudioPlaybackSource(audioId), /尚未完成上传/);
+  });
+});
+
 describe('WorkspaceRepository audio analysis metadata', () => {
   it('exposes the selected model and actually observed diarization state', async () => {
     const pool = {

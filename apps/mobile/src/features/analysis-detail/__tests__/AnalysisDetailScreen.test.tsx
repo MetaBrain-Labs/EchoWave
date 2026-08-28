@@ -9,7 +9,7 @@
  * Notes:
  * - 不连接真实分析后端。
  */
-import { fireEvent, render, waitFor, within } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import { Alert, StyleSheet } from 'react-native';
 
 import { fontFamilies, textColors } from '@/shared/theme/tokens';
@@ -20,6 +20,7 @@ import {
 } from '../preferences';
 import * as workspaceApi from '@/shared/api/workspaceApi';
 import { analysisFixture } from '@/test/workspaceFixtures';
+import { mockAudioPlayers, resetExpoAudioMock } from '@/test/ExpoAudioMock';
 
 jest.mock('@/shared/api/workspaceApi', () => {
   const actual = jest.requireActual('@/shared/api/workspaceApi');
@@ -41,6 +42,7 @@ async function renderAnalysis(detailId = analysisFixture.audioFileId, onBack = j
 describe('AnalysisDetailScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    resetExpoAudioMock();
     setHideIrrelevantSegmentsPreference(false);
     setPostAnalysisControlsCollapsedPreference(true);
     jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValue(analysisFixture);
@@ -485,27 +487,60 @@ describe('AnalysisDetailScreen', () => {
     );
   });
 
-  it('operates the mock player and collapses it on summary', async () => {
+  it('operates the real player controls and collapses the expanded UI on summary', async () => {
     const screen = await renderAnalysis();
+    const player = mockAudioPlayers.at(-1)!;
 
     fireEvent.press(screen.getByLabelText('展开播放器'));
     expect(screen.getByLabelText('收起播放器')).toBeTruthy();
 
     fireEvent.press(screen.getByLabelText('前进 15 秒'));
+    await waitFor(() => expect(player.seekTo).toHaveBeenLastCalledWith(15));
     expect(screen.getByText('00:15')).toBeTruthy();
 
     fireEvent.press(screen.getByLabelText('后退 15 秒'));
-    expect(screen.queryByText('00:15')).toBeNull();
+    await waitFor(() => expect(player.seekTo).toHaveBeenLastCalledWith(0));
 
     fireEvent.press(screen.getByLabelText('当前倍速 1.0 倍，点击切换'));
+    expect(player.setPlaybackRate).toHaveBeenCalledWith(1.5, 'medium');
     expect(screen.getByText('x1.5')).toBeTruthy();
 
-    fireEvent.press(screen.getByLabelText('开始模拟播放'));
-    expect(screen.getByLabelText('暂停模拟播放')).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('播放音频'));
+    expect(player.play).toHaveBeenCalled();
+    expect(screen.getByLabelText('暂停音频')).toBeTruthy();
 
     fireEvent.press(screen.getByText('分析总结'));
     expect(screen.queryByLabelText('收起播放器')).toBeNull();
     expect(screen.getByText('产品访谈分析')).toBeTruthy();
+  });
+
+  it('plays one transcript segment and pauses automatically at its end', async () => {
+    const screen = await renderAnalysis();
+    const player = mockAudioPlayers.at(-1)!;
+    const segment = analysisFixture.scenes[0].segments[0];
+    const playButton = screen.getAllByLabelText(/^播放片段/)[0];
+
+    fireEvent.press(playButton);
+    await waitFor(() => expect(player.seekTo).toHaveBeenCalledWith(segment.startMs / 1_000));
+    expect(player.play).toHaveBeenCalled();
+    expect(screen.getAllByLabelText(/^暂停片段/)[0]).toBeTruthy();
+
+    act(() => {
+      player.update({ currentTime: segment.endMs / 1_000, playing: true });
+    });
+    await waitFor(() => expect(player.pause).toHaveBeenCalled());
+    expect(screen.getAllByLabelText(/^播放片段/)[0]).toBeTruthy();
+  });
+
+  it('keeps segment playback available while editing confirmed text', async () => {
+    const screen = await renderAnalysis();
+    const player = mockAudioPlayers.at(-1)!;
+
+    fireEvent.press(screen.getByText('继续修正'));
+    fireEvent.press(screen.getAllByLabelText(/^播放片段/)[0]);
+
+    await waitFor(() => expect(player.play).toHaveBeenCalled());
+    expect(screen.getAllByLabelText(/的转写正文/).length).toBeGreaterThan(0);
   });
 
   it('switches analysis pages with a horizontal swipe', async () => {

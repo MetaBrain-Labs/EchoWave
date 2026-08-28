@@ -14,3 +14,8 @@
 /** 当前移动端请求使用的 EchoWave API 根地址。 */
 export const apiUrl =
   process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '') ?? 'http://localhost:3001';
+
+/** 返回不经过 JSON 适配器的租户内音频媒体地址。 */
+export function audioPlaybackUrl(audioFileId: string): string {
+  return `${apiUrl}/api/audio-files/${encodeURIComponent(audioFileId)}/content`;
+}
