@@ -14,6 +14,14 @@ import { colors, fontFamilies, spacing, textColors, typography } from '@/shared/
 import type { AnalysisDetailView } from '../model';
 
 export function SummaryContent({ detail }: { detail: AnalysisDetailView }) {
+  const businessResult = detail.businessAnalysis.result;
+  const knowledgeStatusLabel = businessResult
+    ? businessResult.knowledgeStatus === 'used'
+      ? `已使用 ${businessResult.knowledgeBaseIds.length} 个关联知识库`
+      : businessResult.knowledgeStatus === 'linked_not_used'
+        ? `已限定 ${businessResult.knowledgeBaseIds.length} 个关联知识库，本次未引用知识块`
+        : '当前分组未关联知识库，仅使用确认转写证据'
+    : null;
   return (
     <ScrollView
       contentContainerStyle={styles.summaryContent}
@@ -26,7 +34,25 @@ export function SummaryContent({ detail }: { detail: AnalysisDetailView }) {
         <Text style={styles.summaryTitle}>{detail.title}</Text>
       </View>
       <Text style={styles.generatedAt}>生成时间：{detail.generatedAt}</Text>
+      {businessResult ? (
+        <Text style={styles.generatedAt}>
+          {businessResult.model} · 确认转写 v{businessResult.confirmationVersion}
+        </Text>
+      ) : null}
+      {knowledgeStatusLabel ? (
+        <Text style={styles.knowledgeStatus}>{knowledgeStatusLabel}</Text>
+      ) : null}
       <View style={styles.summaryDivider} />
+      {detail.businessAnalysis.result?.limitations.length ? (
+        <View accessibilityRole="alert" style={styles.limitations}>
+          <Text style={styles.limitationsTitle}>本次分析限制</Text>
+          {detail.businessAnalysis.result.limitations.map((limitation) => (
+            <Text key={limitation} style={styles.limitationsBody}>
+              • {limitation}
+            </Text>
+          ))}
+        </View>
+      ) : null}
       {detail.summarySections.map((section) => (
         <View key={section.id} style={styles.summarySection}>
           <Text style={styles.summarySectionTitle}>{section.title}</Text>
@@ -71,6 +97,12 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sans,
     marginTop: spacing.xl,
   },
+  knowledgeStatus: {
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    marginTop: spacing.sm,
+  },
   summaryDivider: {
     backgroundColor: colors.divider,
     height: StyleSheet.hairlineWidth,
@@ -79,6 +111,24 @@ const styles = StyleSheet.create({
   },
   summarySection: {
     marginBottom: spacing.xl,
+  },
+  limitations: {
+    backgroundColor: colors.background,
+    borderRadius: 4,
+    marginBottom: spacing.xl,
+    padding: spacing.md,
+  },
+  limitationsTitle: {
+    ...typography.body,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  limitationsBody: {
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    marginTop: spacing.xs,
   },
   summarySectionTitle: {
     ...typography.heading2,

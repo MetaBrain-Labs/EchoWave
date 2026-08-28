@@ -22,7 +22,6 @@ import type {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   Pressable,
@@ -75,10 +74,6 @@ type TabKey = (typeof tabs)[number]['key'];
 const tabKeys = tabs.map((tab) => tab.key);
 const headerCollapseGuardMs = 250;
 
-function showComingSoon(feature: string) {
-  Alert.alert('功能建设中', `${feature}将在后续版本开放。`);
-}
-
 function IconButton({
   disabled = false,
   icon,
@@ -115,12 +110,14 @@ export function GroupScreen({
   onOpenAudio,
   onOpenKnowledge,
   onOpenSource,
+  onOpenSettings,
 }: {
   initialGroupId?: string;
   initialTab?: TabKey;
-  onOpenAudio?: (id: string) => void;
+  onOpenAudio?: (id: string, groupId: string) => void;
   onOpenKnowledge?: (id: string) => void;
-  onOpenSource?: (id: string) => void;
+  onOpenSource?: (id: string, groupId: string) => void;
+  onOpenSettings?: (id: string) => void;
 }) {
   const [activeTab, setActiveTab] = useState<TabKey>(initialTab ?? 'audio');
   const [groups, setGroups] = useState<GroupSummary[]>([]);
@@ -440,9 +437,12 @@ export function GroupScreen({
               onPress={() => setSearchVisible(true)}
             />
             <IconButton
+              disabled={!group}
               icon="options-outline"
               label="设置筛选"
-              onPress={() => showComingSoon('设置筛选')}
+              onPress={() => {
+                if (group) onOpenSettings?.(group.id);
+              }}
             />
           </View>
         ) : null}
@@ -513,7 +513,9 @@ export function GroupScreen({
                   error={audioError}
                   items={visibleAudio}
                   loading={audioLoading}
-                  onOpenAudio={onOpenAudio}
+                  onOpenAudio={(id) => {
+                    if (group) onOpenAudio?.(id, group.id);
+                  }}
                   onOpenFilter={() => setFilterVisible(true)}
                   onRetry={() => {
                     void loadAudio(group.id);
@@ -557,7 +559,9 @@ export function GroupScreen({
                   emptyMessage={searchEmpty || '当前分组还没有连接数据源'}
                   error={sourcesError}
                   loading={sourcesLoading}
-                  onOpenSource={(id) => onOpenSource?.(id)}
+                  onOpenSource={(id) => {
+                    if (group) onOpenSource?.(id, group.id);
+                  }}
                   onRetry={() => {
                     void loadSources(group.id);
                   }}

@@ -332,8 +332,18 @@ describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
 
     assert.deepEqual(
       recorded.models.map((event) => event.name),
-      ['query-embedding', 'knowledge-answer-generation'],
+      ['knowledge-answer-generation', 'query-embedding', 'knowledge-answer-generation'],
     );
+    const modelRounds = recorded.models.filter(
+      (event) => event.name === 'knowledge-answer-generation',
+    );
+    assert.deepEqual(
+      modelRounds[0].input.messages.slice(0, 2).map((message) => message.role),
+      ['system', 'user'],
+    );
+    assert.match(modelRounds[0].input.messages[1].content, /答案是什么/);
+    assert.equal(modelRounds[0].output.role, 'assistant');
+    assert.ok(modelRounds[1].input.messages.some((message) => message.role === 'tool'));
     assert.ok(recorded.contexts.some((value) => value.systemPrompt?.includes('search_knowledge')));
     assert.ok(recorded.outputs.some((value) => value.rawText?.includes('citedChunkIds')));
     assert.equal(recorded.finishes[0].status, 'completed');
@@ -424,9 +434,14 @@ describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
     assert.doesNotMatch(result.answer, /没有足够依据/);
     assert.ok(JSON.stringify(requests[0].messages).includes('no more than 8 citedChunkIds'));
     assert.ok(JSON.stringify(requests.at(-1).messages).includes('Keep at most 8'));
-    const generation = modelEvents.find((event) => event.name === 'knowledge-answer-generation');
-    assert.equal(generation.metadata.citationLimitExceeded, true);
-    assert.ok(generation.metadata.validationIssues.some((issue) => issue.code === 'too_big'));
+    const generation = modelEvents.find(
+      (event) => event.metadata?.sourceCitationLimitExceeded === true,
+    );
+    assert.ok(generation);
+    assert.equal(generation.name, 'citation-correction');
+    assert.equal(generation.input.messages[0].role, 'system');
+    assert.equal(generation.input.messages[1].role, 'user');
+    assert.match(generation.output.content, /citedChunkIds/);
   });
 
   it('preserves verified citations when the compaction response still exceeds the soft limit', async () => {

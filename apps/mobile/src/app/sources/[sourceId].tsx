@@ -18,22 +18,31 @@ import { firstRouteParam } from '@/shared/navigation/routeParams';
 /** 渲染路由参数指定的数据源详情。 */
 export default function DataSourceDetailRoute() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ sourceId?: string | string[] }>();
+  const params = useLocalSearchParams<{
+    sourceId?: string | string[];
+    groupId?: string | string[];
+  }>();
+  const groupId = firstRouteParam(params.groupId);
 
   return (
     <DataSourceDetailScreen
       onBack={() => router.back()}
       onArchived={() => router.replace('/(tabs)/sources')}
-      onOpenAudio={(id) =>
+      onOpenAudio={(id, analysisGroupId) =>
         router.push({
           pathname: '/analysis/[id]',
-          params: { id, returnSourceId: firstRouteParam(params.sourceId) },
+          params: {
+            id,
+            groupId: analysisGroupId,
+            returnSourceId: firstRouteParam(params.sourceId),
+          },
         })
       }
       onSwitchGroup={(groupId) =>
         router.replace({ pathname: '/', params: { groupId, tab: 'sources' } })
       }
       sourceId={firstRouteParam(params.sourceId)}
+      preferredGroupId={groupId || undefined}
     />
   );
 }

@@ -16,6 +16,8 @@ import { Platform } from 'react-native';
 import {
   ApiErrorResponseSchema,
   AudioAnalysisDetailSchema,
+  AudioBusinessAnalysisStartRequestSchema,
+  AudioBusinessAnalysisStartResponseSchema,
   AudioPostAnalysisStartResponseSchema,
   AudioTranscriptConfirmationRequestSchema,
   AudioTranscriptConfirmationResponseSchema,
@@ -33,6 +35,9 @@ import {
   GroupCreateRequestSchema,
   GroupDetailSchema,
   GroupListResponseSchema,
+  GroupResourceLinksUpdateRequestSchema,
+  GroupSettingsSchema,
+  GroupSettingsUpdateRequestSchema,
   KnowledgeBaseListResponseSchema,
   KnowledgeBaseGroupLinkRequestSchema,
   LinkedDataSourceGroupListResponseSchema,
@@ -40,9 +45,12 @@ import {
   type DataSourceGroupLinkRequest,
   type DataSourceUpdateRequest,
   type GroupCreateRequest,
+  type GroupResourceLinksUpdateRequest,
+  type GroupSettingsUpdateRequest,
   type KnowledgeBaseGroupLinkRequest,
   type AudioTranscriptionStartRequest,
   type AudioTranscriptConfirmationRequest,
+  type AudioBusinessAnalysisStartRequest,
 } from '@echowave/contracts';
 
 import { apiUrl } from './apiUrl';
@@ -65,7 +73,7 @@ type RuntimeSchema<T> = {
 
 type RequestOptions = {
   body?: unknown | FormData;
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   timeoutMs?: number;
 };
 
@@ -137,6 +145,8 @@ async function request<T>(
 }
 
 export const listGroups = () => request('/api/groups', GroupListResponseSchema);
+export const listKnowledgeBases = () =>
+  request('/api/knowledge-bases', KnowledgeBaseListResponseSchema);
 export const createGroup = (input: GroupCreateRequest) => {
   const body = GroupCreateRequestSchema.parse(input);
   return request('/api/groups', GroupDetailSchema, { body, method: 'POST' });
@@ -144,10 +154,22 @@ export const createGroup = (input: GroupCreateRequest) => {
 export const archiveGroup = (id: string) =>
   request(`/api/groups/${id}`, null, { method: 'DELETE' });
 export const getGroup = (id: string) => request(`/api/groups/${id}`, GroupDetailSchema);
+export const getGroupSettings = (id: string) =>
+  request(`/api/groups/${id}/settings`, GroupSettingsSchema);
+export const updateGroupSettings = (id: string, input: GroupSettingsUpdateRequest) =>
+  request(`/api/groups/${id}/settings`, GroupSettingsSchema, {
+    body: GroupSettingsUpdateRequestSchema.parse(input),
+    method: 'PATCH',
+  });
 export const listGroupAudioFiles = (id: string) =>
   request(`/api/groups/${id}/audio-files`, AudioFileListResponseSchema);
 export const listGroupKnowledgeBases = (id: string) =>
   request(`/api/groups/${id}/knowledge-bases`, KnowledgeBaseListResponseSchema);
+export const replaceGroupKnowledgeBases = (id: string, input: GroupResourceLinksUpdateRequest) =>
+  request(`/api/groups/${id}/knowledge-bases`, KnowledgeBaseListResponseSchema, {
+    body: GroupResourceLinksUpdateRequestSchema.parse(input),
+    method: 'PUT',
+  });
 export const listKnowledgeBaseGroups = (id: string) =>
   request(`/api/knowledge-bases/${id}/groups`, GroupListResponseSchema);
 export const linkKnowledgeBaseGroups = (id: string, input: KnowledgeBaseGroupLinkRequest) => {
@@ -159,6 +181,11 @@ export const linkKnowledgeBaseGroups = (id: string, input: KnowledgeBaseGroupLin
 };
 export const listGroupDataSources = (id: string) =>
   request(`/api/groups/${id}/data-sources`, DataSourceListResponseSchema);
+export const replaceGroupDataSources = (id: string, input: GroupResourceLinksUpdateRequest) =>
+  request(`/api/groups/${id}/data-sources`, DataSourceListResponseSchema, {
+    body: GroupResourceLinksUpdateRequestSchema.parse(input),
+    method: 'PUT',
+  });
 export const listDataSources = () => request('/api/data-sources', DataSourceListResponseSchema);
 export const createDataSource = (input: DataSourceCreateRequest) => {
   const body = DataSourceCreateRequestSchema.parse(input);
@@ -218,8 +245,16 @@ export const startAudioTranscription = (id: string, input: AudioTranscriptionSta
     body: AudioTranscriptionStartRequestSchema.parse(input),
     method: 'POST',
   });
-export const getAudioAnalysis = (id: string) =>
-  request(`/api/audio-files/${id}/analysis`, AudioAnalysisDetailSchema);
+export const getAudioAnalysis = (id: string, groupId?: string) =>
+  request(
+    `/api/audio-files/${id}/analysis${groupId ? `?groupId=${encodeURIComponent(groupId)}` : ''}`,
+    AudioAnalysisDetailSchema,
+  );
+export const startAudioBusinessAnalysis = (id: string, input: AudioBusinessAnalysisStartRequest) =>
+  request(`/api/audio-files/${id}/business-analyses`, AudioBusinessAnalysisStartResponseSchema, {
+    body: AudioBusinessAnalysisStartRequestSchema.parse(input),
+    method: 'POST',
+  });
 export const confirmAudioTranscript = (id: string, input: AudioTranscriptConfirmationRequest) =>
   request(
     `/api/audio-files/${id}/transcript-confirmations`,

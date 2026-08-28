@@ -76,6 +76,67 @@ describe('AI execution reporter', () => {
     assert.doesNotMatch(writes[0].content, /## Context|## Reasoning|## Output/);
   });
 
+  it('always records ordered model prompts and outputs with per-value protection', async () => {
+    const writes = [];
+    const reporter = createAiExecutionReporter(safeConfig, {
+      repositoryRoot: 'C:\\workspace',
+      now: () => new Date('2026-08-20T01:02:03.000Z'),
+      createId: () => 'model-exchange',
+      writeReport: async (filePath, content) => writes.push({ filePath, content }),
+    });
+    const longOutput = 'x '.repeat(60_050);
+    const signedUrl =
+      'https://oss.example.com/audio.mp3?OSSAccessKeyId=secret-id&Signature=secret-signature&Expires=123';
+    const run = reporter.start({ kind: 'audio-business-analysis', name: 'model exchange' });
+    run.recordModelCall({
+      name: 'sales-review',
+      provider: 'deepseek',
+      model: 'deepseek-v4-flash',
+      status: 'completed',
+      attempt: 1,
+      durationMs: 12,
+      inputTokens: 20,
+      outputTokens: 30,
+      input: {
+        kind: 'chat',
+        messages: [
+          { role: 'system', content: 'system instructions' },
+          { role: 'user', content: `user transcript ${signedUrl}` },
+        ],
+      },
+      output: { role: 'assistant', content: longOutput },
+    });
+    run.recordModelCall({
+      name: 'sales-review-follow-up',
+      provider: 'deepseek',
+      model: 'deepseek-v4-flash',
+      status: 'completed',
+      attempt: 2,
+      durationMs: 5,
+      inputTokens: null,
+      outputTokens: null,
+      input: { kind: 'chat', messages: [{ role: 'user', content: 'follow-up prompt' }] },
+      output: { role: 'assistant', content: 'follow-up output' },
+    });
+    await run.finish({ status: 'completed' });
+
+    assert.match(writes[0].content, /"role": "system"[\s\S]*"role": "user"/);
+    assert.match(writes[0].content, /"durationMs": 12/);
+    assert.match(writes[0].content, /"inputTokens": 20/);
+    assert.match(writes[0].content, /"outputTokens": 30/);
+    assert.match(writes[0].content, /system instructions/);
+    assert.match(writes[0].content, /user transcript/);
+    assert.match(writes[0].content, /"originalCharacters": 120100/);
+    assert.match(writes[0].content, /"sha256": "[a-f0-9]{64}"/);
+    assert.match(writes[0].content, /\.\.\. \[truncated\]/);
+    assert.match(writes[0].content, /sales-review-follow-up/);
+    assert.match(writes[0].content, /follow-up prompt/);
+    assert.match(writes[0].content, /follow-up output/);
+    assert.doesNotMatch(writes[0].content, /secret-id|secret-signature/);
+    assert.match(writes[0].content, /OSSAccessKeyId=\[REDACTED\]/);
+    assert.match(writes[0].content, /Signature=\[REDACTED\]/);
+  });
+
   it('safely serializes opt-in sections, truncates them, and finishes once', async () => {
     const writes = [];
     const shared = { value: 2n };
@@ -126,13 +187,16 @@ describe('AI execution reporter', () => {
     );
     const base64 = 'A'.repeat(300);
     const run = reporter.start({ kind: 'audio-transcription', name: 'safe audio report' });
-    run.recordOutput({ content: `failed ${base64} at E:\\private\\audio.mp3` });
+    run.recordOutput({
+      content: `failed ${base64} at E:\\private\\audio.mp3 and /home/test/audio.mp3`,
+    });
     await run.finish({ status: 'failed' });
 
     assert.match(writes[0].content, /\[REDACTED_BASE64\]/);
     assert.match(writes[0].content, /\[REDACTED_PATH\]/);
     assert.doesNotMatch(writes[0].content, new RegExp(base64));
     assert.doesNotMatch(writes[0].content, /private\\\\audio/);
+    assert.doesNotMatch(writes[0].content, /home\/test\/audio/);
   });
 
   it('uses unique names for concurrent reports and honors an absolute output directory', async () => {

@@ -26,6 +26,7 @@ export const colors = {
   secondary: textColors.secondary,
   success: '#18b88b',
   successSurface: '#e1f3ed',
+  danger: '#ff3131',
   white: '#ffffff',
   black: '#171717',
 } as const;

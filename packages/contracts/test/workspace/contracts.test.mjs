@@ -11,6 +11,8 @@ import { describe, it } from 'node:test';
 
 import {
   AudioAnalysisDetailSchema,
+  AudioBusinessAnalysisStartRequestSchema,
+  AudioBusinessAnalysisStateSchema,
   AudioFileSummarySchema,
   AudioTranscriptionCapabilitiesResponseSchema,
   AudioTranscriptionStartRequestSchema,
@@ -23,6 +25,8 @@ import {
   DataSourceGroupLinkRequestSchema,
   DataSourceUpdateRequestSchema,
   GroupCreateRequestSchema,
+  GroupResourceLinksUpdateRequestSchema,
+  GroupSettingsUpdateRequestSchema,
   AudioPostAnalysisStartResponseSchema,
   AudioTranscriptConfirmationRequestSchema,
 } from '../../dist/index.js';
@@ -39,6 +43,92 @@ describe('workspace contracts', () => {
     assert.throws(() => GroupCreateRequestSchema.parse({ name: '   ' }));
     assert.throws(() => GroupCreateRequestSchema.parse({ name: '分'.repeat(121) }));
     assert.throws(() => GroupCreateRequestSchema.parse({ name: 42 }));
+  });
+
+  it('validates analysis settings and atomic resource-link replacements', () => {
+    const settings = GroupSettingsUpdateRequestSchema.parse({
+      name: '  销售复盘组  ',
+      analysis: {
+        timing: 'automatic',
+        contentFocus: '  关注异议处理  ',
+        tone: '  正式、专业  ',
+        customTags: ['需求探索', '促成动作'],
+      },
+    });
+    assert.equal(settings.name, '销售复盘组');
+    assert.equal(settings.analysis.contentFocus, '关注异议处理');
+    assert.throws(() =>
+      GroupSettingsUpdateRequestSchema.parse({
+        ...settings,
+        analysis: { ...settings.analysis, customTags: ['风险', '风险'] },
+      }),
+    );
+    assert.deepEqual(GroupResourceLinksUpdateRequestSchema.parse({ ids: [] }), { ids: [] });
+    assert.throws(() => GroupResourceLinksUpdateRequestSchema.parse({ ids: [firstId, firstId] }));
+  });
+
+  it('validates versioned business analyses with multi-segment evidence', () => {
+    const result = {
+      jobId: firstId,
+      groupId: secondId,
+      confirmationVersion: 2,
+      model: 'deepseek-v4-flash',
+      generatedAt: '2026-08-28T08:00:00.000Z',
+      knowledgeBaseIds: [thirdId],
+      knowledgeStatus: 'used',
+      limitations: [],
+      summarySections: [
+        { id: thirdId, index: 1, title: '总体总结', body: '销售能够回应核心异议。' },
+      ],
+      tags: [
+        {
+          id: thirdId,
+          category: 'strength',
+          customLabel: null,
+          title: '异议回应清晰',
+          summary: '用实际结果回应了客户顾虑。',
+          details: ['先确认顾虑，再给出证据。'],
+          confidence: 88,
+          evidenceSegmentIds: [firstId, secondId],
+          citations: [],
+        },
+      ],
+    };
+    const state = AudioBusinessAnalysisStateSchema.parse({
+      state: 'ready',
+      groupId: secondId,
+      jobId: firstId,
+      model: 'deepseek-v4-flash',
+      progress: 100,
+      confirmationVersion: 2,
+      settingsCurrent: true,
+      knowledgeCurrent: true,
+      error: null,
+      result,
+    });
+    assert.deepEqual(state.result.tags[0].evidenceSegmentIds, [firstId, secondId]);
+    assert.deepEqual(AudioBusinessAnalysisStartRequestSchema.parse({ groupId: secondId }), {
+      groupId: secondId,
+      force: false,
+    });
+    assert.throws(() =>
+      AudioBusinessAnalysisStateSchema.parse({
+        ...state,
+        result: {
+          ...result,
+          tags: [{ ...result.tags[0], category: 'unknown' }],
+        },
+      }),
+    );
+    assert.throws(() =>
+      AudioBusinessAnalysisStateSchema.parse({
+        ...state,
+        result: {
+          ...result,
+          tags: [{ ...result.tags[0], evidenceSegmentIds: [firstId, firstId] }],
+        },
+      }),
+    );
   });
 
   it('validates structured audio failure states and progress bounds', () => {

@@ -36,6 +36,9 @@ import { AudioWindowPreprocessor } from '../workspace/post-analysis/audioWindowP
 import { DeepSeekRoleRecognizer } from '../workspace/post-analysis/deepSeekRoleRecognizer.ts';
 import { QwenEmotionAnalyzer } from '../workspace/post-analysis/qwenEmotionAnalyzer.ts';
 import { AudioPostAnalysisWorker } from '../workspace/post-analysis/worker.ts';
+import { BusinessAnalysisRepository } from '../workspace/persistence/businessAnalysisRepository.ts';
+import { SalesAnalysisAgent } from '../workspace/business-analysis/salesAnalysisAgent.ts';
+import { BusinessAnalysisWorker } from '../workspace/business-analysis/worker.ts';
 
 /** 装配完整 RAG 运行时，并返回服务器所需的应用接口、worker 与关闭函数。 */
 export function createRagRuntime(config: ApiConfig) {
@@ -71,6 +74,11 @@ export function createRagRuntime(config: ApiConfig) {
     config.rag.tenantId,
   );
   const postAnalysisRepository = new PostAnalysisRepository(
+    pool,
+    config.database.schema,
+    config.rag.tenantId,
+  );
+  const businessAnalysisRepository = new BusinessAnalysisRepository(
     pool,
     config.database.schema,
     config.rag.tenantId,
@@ -136,6 +144,7 @@ export function createRagRuntime(config: ApiConfig) {
     config.rag.audioEmotionModel,
     config.rag.deepSeekChatModel,
     Boolean(config.rag.dashScope.oss),
+    businessAnalysisRepository,
   );
   const dashScope = new DashScopeFileTranscription(
     config.rag.dashScope.apiKey,
@@ -188,6 +197,14 @@ export function createRagRuntime(config: ApiConfig) {
       model: config.rag.deepSeekChatModel,
     }),
   });
+  const businessAnalysisWorker = new BusinessAnalysisWorker({
+    repository: businessAnalysisRepository,
+    knowledgeRepository,
+    embeddings,
+    embeddingModel: config.rag.embeddingModel,
+    agent: new SalesAnalysisAgent({ ragConfig: config.rag }),
+    reporter: executionReporter,
+  });
   return {
     service,
     workspaceService,
@@ -195,11 +212,12 @@ export function createRagRuntime(config: ApiConfig) {
     transcriptionWorker,
     emotionWorker,
     roleWorker,
+    businessAnalysisWorker,
     audioInputPreprocessor,
     async close() {
       await answers.dispose();
       await transcriptionWorker.stop();
-      await Promise.all([emotionWorker.stop(), roleWorker.stop()]);
+      await Promise.all([emotionWorker.stop(), roleWorker.stop(), businessAnalysisWorker.stop()]);
       await worker.stop();
       await checkpointer.end();
       await pool.end();

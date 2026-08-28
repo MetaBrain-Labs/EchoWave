@@ -13,6 +13,9 @@
 import type {
   AudioAnalysisDetail,
   AudioPostAnalysisState,
+  AudioBusinessAnalysisState,
+  BusinessAnalysisCitation,
+  BusinessAnalysisTagCategory,
   AudioTranscriptionMetadata,
   AudioTranscriptConfirmationState,
   SegmentEmotionAnalysis,
@@ -20,13 +23,19 @@ import type {
 } from '@echowave/contracts';
 
 export type AiTagAnalysis = {
+  id: string;
+  category: BusinessAnalysisTagCategory;
+  customLabel?: string;
   title: string;
   summary: string;
   details: readonly string[];
+  confidence: number;
+  evidenceSegmentIds: readonly string[];
+  citations: readonly BusinessAnalysisCitation[];
 };
 
 export type TranscriptSegment = {
-  aiTag?: AiTagAnalysis;
+  aiTags: readonly AiTagAnalysis[];
   businessRole: string;
   emotion: string;
   emotionAnalysis?: SegmentEmotionAnalysis;
@@ -78,6 +87,7 @@ export type AnalysisDetailView = {
   transcription: AudioTranscriptionMetadata;
   transcriptConfirmation: AudioTranscriptConfirmationState;
   postAnalysis: { emotion: AudioPostAnalysisState; role: AudioPostAnalysisState };
+  businessAnalysis: AudioBusinessAnalysisState;
 };
 
 type TranscriptSceneDraft = Omit<TranscriptScene, 'timelineItems'>;
@@ -144,6 +154,17 @@ function attachTimelineItems(
 
 /** 将服务端当前分析修订版转换为页面展示模型。 */
 export function toAnalysisDetailView(detail: AudioAnalysisDetail): AnalysisDetailView {
+  const businessTags: AiTagAnalysis[] = (detail.businessAnalysis.result?.tags ?? []).map((tag) => ({
+    id: tag.id,
+    category: tag.category,
+    customLabel: tag.customLabel ?? undefined,
+    title: tag.title,
+    summary: tag.summary,
+    details: tag.details,
+    confidence: tag.confidence,
+    evidenceSegmentIds: tag.evidenceSegmentIds,
+    citations: tag.citations,
+  }));
   const invalidSegments = [...detail.invalidSegments]
     .sort((left, right) => left.startMs - right.startMs)
     .map((interval) => ({
@@ -169,13 +190,24 @@ export function toAnalysisDetailView(detail: AudioAnalysisDetail): AnalysisDetai
       rawText: segment.rawText,
       confirmedText: segment.confirmedText ?? undefined,
       text: segment.confirmedText ?? segment.rawText,
-      aiTag: segment.aiTag
-        ? {
-            title: segment.aiTag.title,
-            summary: segment.aiTag.summary,
-            details: segment.aiTag.details,
-          }
-        : undefined,
+      aiTags: [
+        ...businessTags.filter((tag) => tag.evidenceSegmentIds.includes(segment.id)),
+        ...(businessTags.length === 0 && segment.aiTag
+          ? [
+              {
+                id: segment.aiTag.id,
+                category: 'custom' as const,
+                customLabel: segment.aiTag.title,
+                title: segment.aiTag.title,
+                summary: segment.aiTag.summary,
+                details: segment.aiTag.details,
+                confidence: 100,
+                evidenceSegmentIds: [segment.id],
+                citations: [],
+              },
+            ]
+          : []),
+      ],
     })),
   }));
   return {
@@ -183,13 +215,18 @@ export function toAnalysisDetailView(detail: AudioAnalysisDetail): AnalysisDetai
     revisionId: detail.id,
     title: detail.title,
     durationSeconds: detail.durationMs / 1_000,
-    generatedAt: new Date(detail.generatedAt).toLocaleString(),
+    generatedAt: new Date(
+      detail.businessAnalysis.result?.generatedAt ?? detail.generatedAt,
+    ).toLocaleString(),
     transcription: detail.transcription,
     transcriptConfirmation: detail.transcriptConfirmation,
     postAnalysis: detail.postAnalysis,
+    businessAnalysis: detail.businessAnalysis,
     invalidSegments,
     scenes: attachTimelineItems(scenes, invalidSegments),
-    summarySections: detail.summarySections.map((section) => ({
+    summarySections: (
+      detail.businessAnalysis.result?.summarySections ?? detail.summarySections
+    ).map((section) => ({
       id: section.id,
       title: section.title,
       body: section.body,

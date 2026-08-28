@@ -90,4 +90,57 @@ describe('toAnalysisDetailView invalid audio timeline', () => {
       'a0000000-0000-4000-8000-000000000004',
     ]);
   });
+
+  it('maps one business tag to every non-contiguous evidence segment', () => {
+    const segmentIds = analysisFixture.scenes[0].segments.map((segment) => segment.id);
+    const detail = toAnalysisDetailView({
+      ...analysisFixture,
+      businessAnalysis: {
+        state: 'ready',
+        groupId: 'b2000000-0000-4000-8000-000000000001',
+        jobId: 'b1000000-0000-4000-8000-000000000001',
+        model: 'deepseek-v4-flash',
+        progress: 100,
+        confirmationVersion: 1,
+        settingsCurrent: true,
+        knowledgeCurrent: true,
+        error: null,
+        result: {
+          jobId: 'b1000000-0000-4000-8000-000000000001',
+          groupId: 'b2000000-0000-4000-8000-000000000001',
+          confirmationVersion: 1,
+          model: 'deepseek-v4-flash',
+          generatedAt: '2026-08-28T08:00:00.000Z',
+          knowledgeBaseIds: [],
+          knowledgeStatus: 'not_linked',
+          limitations: ['本次分析未使用知识库。'],
+          summarySections: [
+            {
+              id: 'b3000000-0000-4000-8000-000000000001',
+              index: 1,
+              title: '总体总结',
+              body: '证据跨越两个片段。',
+            },
+          ],
+          tags: [
+            {
+              id: 'b4000000-0000-4000-8000-000000000001',
+              category: 'strength',
+              customLabel: null,
+              title: '持续探索需求',
+              summary: '前后呼应客户需求。',
+              details: [],
+              confidence: 91,
+              evidenceSegmentIds: segmentIds,
+              citations: [],
+            },
+          ],
+        },
+      },
+    });
+
+    expect(detail.scenes[0].segments[0].aiTags[0].evidenceSegmentIds).toEqual(segmentIds);
+    expect(detail.scenes[0].segments[1].aiTags[0].id).toBe('b4000000-0000-4000-8000-000000000001');
+    expect(detail.summarySections[0].body).toBe('证据跨越两个片段。');
+  });
 });

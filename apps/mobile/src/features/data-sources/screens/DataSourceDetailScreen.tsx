@@ -68,6 +68,7 @@ import {
   type DataSourceFormValue,
 } from '../components/DataSourceDialogs';
 import { DataSourceAudioActions } from '../components/DataSourceAudioActions';
+import { AnalysisGroupPicker } from '../components/AnalysisGroupPicker';
 import { AudioTranscriptionErrorDialog } from '../components/AudioTranscriptionErrorDialog';
 import {
   AudioTranscriptionProgressDialog,
@@ -582,12 +583,14 @@ export function DataSourceDetailScreen({
   onArchived,
   onSwitchGroup,
   onOpenAudio,
+  preferredGroupId,
   sourceId,
 }: {
   onBack: () => void;
   onArchived?: () => void;
   onSwitchGroup?: (groupId: string) => void;
-  onOpenAudio?: (audioFileId: string) => void;
+  onOpenAudio?: (audioFileId: string, groupId: string) => void;
+  preferredGroupId?: string;
   sourceId: string;
 }) {
   const [source, setSource] = useState<DataSourceDetailView>();
@@ -602,6 +605,7 @@ export function DataSourceDetailScreen({
   const [archiveSourceVisible, setArchiveSourceVisible] = useState(false);
   const [audioArchiveTarget, setAudioArchiveTarget] = useState<SourceAudioItem>();
   const [audioActionTarget, setAudioActionTarget] = useState<SourceAudioItem>();
+  const [analysisGroupTarget, setAnalysisGroupTarget] = useState<SourceAudioItem>();
   const [transcriptionErrorTarget, setTranscriptionErrorTarget] = useState<SourceAudioItem>();
   const [transcriptionProgressAudioId, setTranscriptionProgressAudioId] = useState<string>();
   const [transcriptionTarget, setTranscriptionTarget] = useState<SourceAudioItem>();
@@ -934,7 +938,13 @@ export function DataSourceDetailScreen({
         onAnalysis={() => {
           const target = audioActionTarget;
           setAudioActionTarget(undefined);
-          if (target?.hasTranscript) onOpenAudio?.(target.id);
+          if (!target?.hasTranscript) return;
+          const preferred = source.linkedGroups.find((item) => item.id === preferredGroupId);
+          if (preferred) onOpenAudio?.(target.id, preferred.id);
+          else if (source.linkedGroups.length === 1)
+            onOpenAudio?.(target.id, source.linkedGroups[0].id);
+          else if (source.linkedGroups.length > 1) setAnalysisGroupTarget(target);
+          else setOperationError('当前数据源尚未关联分组，请先关联分组后再分析。');
         }}
         onArchive={() => {
           const target = audioActionTarget;
@@ -947,6 +957,16 @@ export function DataSourceDetailScreen({
           setAudioActionTarget(undefined);
           if (target) prepareTranscription(target);
         }}
+      />
+      <AnalysisGroupPicker
+        groups={source.linkedGroups}
+        onClose={() => setAnalysisGroupTarget(undefined)}
+        onSelect={(groupId) => {
+          const target = analysisGroupTarget;
+          setAnalysisGroupTarget(undefined);
+          if (target) onOpenAudio?.(target.id, groupId);
+        }}
+        visible={Boolean(analysisGroupTarget)}
       />
       <DataSourceFormSheet
         error={formError}

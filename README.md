@@ -95,7 +95,7 @@ API 的 PostgreSQL 配置使用 `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_US
 
 ### 可选 AI 执行报告
 
-知识问答、文档入库和音频 ASR 支持本地 Markdown 执行摘要。它用于开发与测试诊断，不是单元测试覆盖率或 CI 测试结果。报告默认关闭；需要时在 `apps/api/.env` 设置：
+知识问答、文档入库、音频 ASR、角色/情绪识别和销售复盘支持本地 Markdown 执行报告。它用于开发与测试诊断，不是单元测试覆盖率或 CI 测试结果。报告默认关闭；需要时在 `apps/api/.env` 设置：
 
 ```dotenv
 AI_EXECUTION_REPORT_ENABLED="true"
@@ -107,7 +107,13 @@ AI_EXECUTION_REPORT_REASONING_ENABLED="false"
 AI_EXECUTION_REPORT_STT_RAW_RESPONSE_ENABLED="false"
 ```
 
-每个被 worker 领取的转写修订生成一份 `audio-transcription` 报告，记录所选模型、Generation ID、direct 或 FFmpeg 预处理、分块时间边界、网络尝试、耗时、usage、费用、质量指标、发布和失败持久化。通用报告不会记录连接地址、`storage_key`、文件路径、音频、base64、完整正文、密钥或 Provider 原始错误包。
+启用 `AI_EXECUTION_REPORT_ENABLED=true` 后，每一次真实模型调用都会写入 `Model Calls`：聊天模型按实际发送顺序记录带显式 `role` 的消息（包括 `system` 后面的 `user`），并记录模型可见输出、工具调用、状态、耗时、Token 和尝试次数。Embedding 仅记录输入文本与向量数量、维度、Token、费用摘要，不记录向量；音频输入固定显示为 `[OMITTED_AUDIO]`。销售复盘会单独生成 `audio-business-analysis` 报告，覆盖主动检索规划、Agent 各轮调用、知识工具、结构校验、发布和失败。
+
+每个输入消息和输出分别进行脱敏与最多 120,000 字符截断；截断项会保留原始字符数、SHA-256 和 `[truncated]` 标记，因此一个超长调用不会吞掉后续调用。鉴权信息、签名 URL 查询参数、本地路径、长 Base64、音频正文与 Embedding 向量不会写入报告。报告可能包含完整转写和知识库正文，只能在受控测试环境短期开启，并按敏感业务数据管理。
+
+`AI_EXECUTION_REPORT_CONTEXT_ENABLED`、`AI_EXECUTION_REPORT_TOOL_CONTENT_ENABLED` 和 `AI_EXECUTION_REPORT_OUTPUT_ENABLED` 仅控制额外的 Context、Tool Content 与汇总 Output 章节，不会关闭 `Model Calls` 中的实际 Prompt/Output。隐藏 reasoning 仍只由 `AI_EXECUTION_REPORT_REASONING_ENABLED` 控制。关闭总开关时不创建报告，也不执行额外写盘。
+
+每个被 worker 领取的转写修订生成一份 `audio-transcription` 报告，记录所选模型、Generation ID、direct 或 FFmpeg 预处理、分块时间边界、网络尝试、耗时、usage、费用、质量指标、发布和失败持久化。模型返回的规范化转写片段会作为可见输出记录；连接地址、`storage_key`、文件路径、音频、base64、密钥和 Provider 原始错误包不会进入通用报告。
 
 `AI_EXECUTION_REPORT_STT_RAW_RESPONSE_ENABLED=true` 独立启用逐 HTTP 响应的 JSON 测试报告，即使通用 Markdown 报告关闭也会生效。DashScope 的任务提交、状态轮询和最终 Qwen 转写 JSON 会写入 `.ai-execution-reports/stt-raw/YYYY-MM-DD/`。报告包含供应商、响应阶段、模型、修订、尝试、HTTP 状态和经过保护的原始响应文本；请求正文、音频、鉴权头与完整响应头不会进入文件，OSS 签名查询参数会脱敏。单响应最多保留 2 MiB 文本，超限时记录原始字节数和 SHA-256，报告写入失败不影响转写。
 
@@ -117,7 +123,7 @@ FFmpeg 模式将录音转为 16kHz 单声道 64kbps MP3，并按固定 45 秒无
 
 数据源详情页沿用 2 秒列表轮询显示 `排队 → 预处理 → Chunk 转写/校验/细分 → 合并 → 发布`。音频卡片展示当前 Chunk、动态总数、网络尝试和按已完成音频区间计算的单调百分比；点击进行中状态可查看 Chunk 列表、音频时间范围和阶段时间线。模型正文始终不会进入进度接口或弹窗。
 
-`AI_EXECUTION_REPORT_OUTPUT_ENABLED="false"` 是通用执行报告的安全默认值，并且不控制独立 STT 原始响应报告。两类报告目录都已被 Git 忽略且不会自动清理，避免后台任务误删诊断证据。
+`AI_EXECUTION_REPORT_OUTPUT_ENABLED="false"` 是附加汇总 Output 章节的安全默认值，并且不控制 Model Calls 的 Prompt/Output 或独立 STT 原始响应报告。两类报告目录都已被 Git 忽略且不会自动清理，避免后台任务误删诊断证据；已生成的历史报告不会回填或重新执行。
 
 首次启动前显式执行迁移；普通 API 启动不会修改数据库 schema：
 

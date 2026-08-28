@@ -26,12 +26,16 @@ import {
   AudioTranscriptionModel,
   AudioPostAnalysisType,
   AudioTranscriptConfirmationRequest,
+  AudioBusinessAnalysisStartRequest,
+  GroupResourceLinksUpdateRequest,
+  GroupSettingsUpdateRequest,
 } from '@echowave/contracts';
 
 import type { StoredAudioUpload, WorkspaceRepository } from './persistence/workspaceRepository.ts';
 import type { AudioAnalysisRepository } from './persistence/audioAnalysisRepository.ts';
 import type { PostAnalysisRepository } from './persistence/postAnalysisRepository.ts';
 import type { TranscriptConfirmationRepository } from './persistence/transcriptConfirmationRepository.ts';
+import type { BusinessAnalysisRepository } from './persistence/businessAnalysisRepository.ts';
 import { WorkspaceRepositoryError } from './persistence/errors.ts';
 import type { AudioInputPreprocessor } from './transcription/audioPreprocessor.ts';
 
@@ -151,16 +155,29 @@ async function inspectAudio(file: File): Promise<{ buffer: Buffer; item: StoredA
 export interface WorkspaceService {
   listGroups(): ReturnType<WorkspaceRepository['listGroups']>;
   getGroup(id: string): ReturnType<WorkspaceRepository['getGroup']>;
+  getGroupSettings(id: string): ReturnType<WorkspaceRepository['getGroupSettings']>;
+  updateGroupSettings(
+    id: string,
+    input: GroupSettingsUpdateRequest,
+  ): ReturnType<WorkspaceRepository['updateGroupSettings']>;
   createGroup(input: GroupCreateRequest): ReturnType<WorkspaceRepository['createGroup']>;
   archiveGroup(id: string): ReturnType<WorkspaceRepository['archiveGroup']>;
   listGroupAudioFiles(id: string): ReturnType<WorkspaceRepository['listGroupAudioFiles']>;
   listGroupKnowledgeBases(id: string): ReturnType<WorkspaceRepository['listGroupKnowledgeBases']>;
+  replaceGroupKnowledgeBases(
+    id: string,
+    input: GroupResourceLinksUpdateRequest,
+  ): ReturnType<WorkspaceRepository['replaceGroupKnowledgeBases']>;
   listKnowledgeBaseGroups(id: string): ReturnType<WorkspaceRepository['listKnowledgeBaseGroups']>;
   linkKnowledgeBaseGroups(
     id: string,
     input: KnowledgeBaseGroupLinkRequest,
   ): ReturnType<WorkspaceRepository['linkKnowledgeBaseGroups']>;
   listGroupDataSources(id: string): ReturnType<WorkspaceRepository['listGroupDataSources']>;
+  replaceGroupDataSources(
+    id: string,
+    input: GroupResourceLinksUpdateRequest,
+  ): ReturnType<WorkspaceRepository['replaceGroupDataSources']>;
   listDataSources(): ReturnType<WorkspaceRepository['listDataSources']>;
   createDataSource(
     input: DataSourceCreateRequest,
@@ -195,7 +212,10 @@ export interface WorkspaceService {
     id: string,
     input: AudioTranscriptionStartRequest,
   ): Promise<Awaited<ReturnType<AudioAnalysisRepository['queueTranscription']>>>;
-  getAudioAnalysis(id: string): ReturnType<WorkspaceRepository['getAudioAnalysis']>;
+  getAudioAnalysis(
+    id: string,
+    groupId?: string,
+  ): Promise<Awaited<ReturnType<WorkspaceRepository['getAudioAnalysis']>>>;
   confirmAudioTranscript(
     id: string,
     input: AudioTranscriptConfirmationRequest,
@@ -204,6 +224,10 @@ export interface WorkspaceService {
     id: string,
     type: AudioPostAnalysisType,
   ): Promise<Awaited<ReturnType<PostAnalysisRepository['queue']>>>;
+  startAudioBusinessAnalysis(
+    id: string,
+    input: AudioBusinessAnalysisStartRequest,
+  ): ReturnType<BusinessAnalysisRepository['queue']>;
 }
 
 /** 直接组合窄仓储分组生命周期与读取能力的默认工作区服务。 */
@@ -219,6 +243,7 @@ export class DefaultWorkspaceService implements WorkspaceService {
     private readonly audioEmotionModel: 'qwen3.5-omni-flash',
     private readonly roleModel: 'deepseek-v4-flash',
     private readonly emotionProviderConfigured: boolean,
+    private readonly businessAnalysisRepository?: BusinessAnalysisRepository,
   ) {}
 
   listGroups() {
@@ -226,6 +251,12 @@ export class DefaultWorkspaceService implements WorkspaceService {
   }
   getGroup(id: string) {
     return this.repository.getGroup(id);
+  }
+  getGroupSettings(id: string) {
+    return this.repository.getGroupSettings(id);
+  }
+  updateGroupSettings(id: string, input: GroupSettingsUpdateRequest) {
+    return this.repository.updateGroupSettings(id, input);
   }
   createGroup(input: GroupCreateRequest) {
     return this.repository.createGroup(input);
@@ -239,6 +270,9 @@ export class DefaultWorkspaceService implements WorkspaceService {
   listGroupKnowledgeBases(id: string) {
     return this.repository.listGroupKnowledgeBases(id);
   }
+  replaceGroupKnowledgeBases(id: string, input: GroupResourceLinksUpdateRequest) {
+    return this.repository.replaceGroupKnowledgeBases(id, input);
+  }
   listKnowledgeBaseGroups(id: string) {
     return this.repository.listKnowledgeBaseGroups(id);
   }
@@ -247,6 +281,9 @@ export class DefaultWorkspaceService implements WorkspaceService {
   }
   listGroupDataSources(id: string) {
     return this.repository.listGroupDataSources(id);
+  }
+  replaceGroupDataSources(id: string, input: GroupResourceLinksUpdateRequest) {
+    return this.repository.replaceGroupDataSources(id, input);
   }
   listDataSources() {
     return this.repository.listDataSources();
@@ -366,8 +403,18 @@ export class DefaultWorkspaceService implements WorkspaceService {
       input.segmentationMode ?? 'speaker_turn',
     );
   }
-  getAudioAnalysis(id: string) {
-    return this.repository.getAudioAnalysis(id);
+  async getAudioAnalysis(id: string, groupId?: string) {
+    const detail = await this.repository.getAudioAnalysis(id);
+    if (!groupId) return detail;
+    await this.repository.assertGroupAudioAccess(groupId, id);
+    if (detail.transcriptConfirmation.status !== 'confirmed') return detail;
+    if (!this.businessAnalysisRepository) {
+      throw new WorkspaceRepositoryError('CONFLICT', '业务分析服务尚未配置。');
+    }
+    return {
+      ...detail,
+      businessAnalysis: await this.businessAnalysisRepository.getState(id, groupId),
+    };
   }
 
   confirmAudioTranscript(id: string, input: AudioTranscriptConfirmationRequest) {
@@ -390,5 +437,12 @@ export class DefaultWorkspaceService implements WorkspaceService {
       type,
       type === 'emotion' ? this.audioEmotionModel : this.roleModel,
     );
+  }
+
+  startAudioBusinessAnalysis(id: string, input: AudioBusinessAnalysisStartRequest) {
+    if (!this.businessAnalysisRepository) {
+      throw new WorkspaceRepositoryError('CONFLICT', '业务分析服务尚未配置。');
+    }
+    return this.businessAnalysisRepository.queue(id, input.groupId, this.roleModel, input.force);
   }
 }

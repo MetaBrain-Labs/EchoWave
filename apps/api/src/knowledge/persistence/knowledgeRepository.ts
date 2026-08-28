@@ -32,6 +32,7 @@ import { RagRepositoryError } from './errors.ts';
 /** 向可信回答模块返回的可引用检索结果。 */
 export type RetrievalChunk = {
   id: string;
+  knowledgeBaseId: string;
   documentId: string;
   documentTitle: string;
   content: string;
@@ -327,7 +328,8 @@ export class KnowledgeRepository {
       await client.query('SET LOCAL hnsw.ef_search = 100');
       await client.query("SET LOCAL hnsw.iterative_scan = 'relaxed_order'");
       const result = await client.query(
-        `SELECT c.id, c.document_id, d.title AS document_title, c.content, c.content_sha256,
+        `SELECT c.id, c.knowledge_base_id, c.document_id, d.title AS document_title,
+                c.content, c.content_sha256,
                 c.locator, c.embedding <=> $3::vector AS distance
          FROM ${this.table('document_chunks')} c
          JOIN ${this.table('documents')} d
@@ -352,6 +354,7 @@ export class KnowledgeRepository {
         characters += row.content.length;
         selected.push({
           id: row.id,
+          knowledgeBaseId: row.knowledge_base_id,
           documentId: row.document_id,
           documentTitle: row.document_title,
           content: row.content,
@@ -365,6 +368,62 @@ export class KnowledgeRepository {
         selectedCount: selected.length,
         durationMs: Date.now() - startedAt,
       });
+      return selected;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /** 仅在调用方给定的知识库白名单内执行一次全局去重和限额的向量检索。 */
+  async searchMany(
+    knowledgeBaseIds: string[],
+    embedding: number[],
+    embeddingModel: string,
+  ): Promise<RetrievalChunk[]> {
+    if (knowledgeBaseIds.length === 0) return [];
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SET LOCAL hnsw.ef_search = 100');
+      await client.query("SET LOCAL hnsw.iterative_scan = 'relaxed_order'");
+      const result = await client.query(
+        `SELECT c.id, c.knowledge_base_id, c.document_id, d.title AS document_title,
+                c.content, c.content_sha256, c.locator, c.embedding <=> $3::vector AS distance
+         FROM ${this.table('document_chunks')} c
+         JOIN ${this.table('documents')} d
+           ON d.tenant_id = c.tenant_id AND d.id = c.document_id
+          AND d.active_revision_id = c.revision_id
+         WHERE c.tenant_id = $1 AND c.knowledge_base_id = ANY($2::uuid[])
+           AND d.deleted_at IS NULL AND c.embedding_model = $4
+         ORDER BY c.embedding <=> $3::vector LIMIT 40`,
+        [this.tenantId, knowledgeBaseIds, toSql(embedding), embeddingModel],
+      );
+      await client.query('COMMIT');
+      const hashes = new Set<string>();
+      const perDocument = new Map<string, number>();
+      const selected: RetrievalChunk[] = [];
+      let characters = 0;
+      for (const row of result.rows) {
+        if (hashes.has(row.content_sha256)) continue;
+        const count = perDocument.get(row.document_id) ?? 0;
+        if (count >= 3 || selected.length >= 10 || characters + row.content.length > 14_000)
+          continue;
+        hashes.add(row.content_sha256);
+        perDocument.set(row.document_id, count + 1);
+        characters += row.content.length;
+        selected.push({
+          id: row.id,
+          knowledgeBaseId: row.knowledge_base_id,
+          documentId: row.document_id,
+          documentTitle: row.document_title,
+          content: row.content,
+          locator: SourceLocatorSchema.parse(row.locator),
+          distance: Number(row.distance),
+        });
+      }
       return selected;
     } catch (error) {
       await client.query('ROLLBACK');

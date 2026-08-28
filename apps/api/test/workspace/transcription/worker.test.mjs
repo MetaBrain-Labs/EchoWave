@@ -30,8 +30,12 @@ describe('AudioTranscriptionWorker', () => {
       storageKey: 'meeting.mp3',
       title: '客户访谈',
     };
+    const storageKey = job.storageKey;
+    const providerArtifactKey = job.providerArtifactKey;
     let claimed = false;
     const calls = [];
+    const modelCalls = [];
+    const outputs = [];
     const repository = {
       resetInterruptedTranscriptions: async () => undefined,
       claimTranscription: async () => {
@@ -85,6 +89,18 @@ describe('AudioTranscriptionWorker', () => {
         },
         delete: async (key) => calls.push(['delete', key]),
       },
+      reporter: {
+        start: () => ({
+          recordMetadata: () => undefined,
+          recordStep: () => undefined,
+          recordModelCall: (event) => modelCalls.push(event),
+          recordToolCall: () => undefined,
+          recordContext: () => undefined,
+          recordReasoning: () => undefined,
+          recordOutput: (value) => outputs.push(value),
+          finish: async () => undefined,
+        }),
+      },
     });
 
     await worker.start();
@@ -105,6 +121,13 @@ describe('AudioTranscriptionWorker', () => {
     const publication = calls.find((call) => call[0] === 'publish')[2];
     assert.equal(publication.segmentationMode, 'speaker_turn');
     assert.equal(publication.speakerIdentityScope, 'recording');
+    assert.equal(modelCalls.length, 1);
+    assert.equal(modelCalls[0].input.audio, '[OMITTED_AUDIO]');
+    assert.equal(modelCalls[0].input.durationMs, 45_000);
+    assert.equal(modelCalls[0].output.segments[0].text, '恢复成功');
+    const reportPayload = JSON.stringify({ modelCalls, outputs });
+    assert.equal(reportPayload.includes(storageKey), false);
+    assert.equal(reportPayload.includes(providerArtifactKey), false);
   });
 
   it('restores a persisted Silero timeline when polling a resumed provider task', async () => {

@@ -11,7 +11,7 @@
  */
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { ComponentProps } from 'react';
-import { Alert, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 
 import { GroupScreen } from '../GroupScreen';
 import * as workspaceApi from '@/shared/api/workspaceApi';
@@ -165,7 +165,7 @@ describe('GroupScreen', () => {
 
     fireEvent.press(screen.getByText('连接数据源'));
     fireEvent.press(screen.getByLabelText(`打开数据源：${sourceFixtures[0].name}`));
-    expect(onOpenSource).toHaveBeenCalledWith(sourceFixtures[0].id);
+    expect(onOpenSource).toHaveBeenCalledWith(sourceFixtures[0].id, groupFixture.id);
   });
 
   it('synchronizes the selected group tab after a horizontal swipe', async () => {
@@ -180,14 +180,13 @@ describe('GroupScreen', () => {
     });
   });
 
-  it('keeps feedback for the remaining header filter placeholder', async () => {
-    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
-    const screen = await renderGroup();
+  it('opens the selected group settings from the header action', async () => {
+    const onOpenSettings = jest.fn();
+    const screen = await renderGroup({ onOpenSettings });
 
     fireEvent.press(screen.getByLabelText('设置筛选'));
 
-    expect(alert).toHaveBeenCalledWith('功能建设中', '设置筛选将在后续版本开放。');
-    alert.mockRestore();
+    expect(onOpenSettings).toHaveBeenCalledWith(groupFixture.id);
   });
 
   it('retries a failed group directory request', async () => {
@@ -212,7 +211,7 @@ describe('GroupScreen', () => {
 
     fireEvent.press(screen.getByLabelText('产品访谈分析，分析已完成'));
 
-    expect(onOpenAudio).toHaveBeenCalledWith(audioFixtures[0].id);
+    expect(onOpenAudio).toHaveBeenCalledWith(audioFixtures[0].id, groupFixture.id);
     expect(screen.queryByLabelText('功能概念验证，分析已完成')).toBeNull();
   });
 

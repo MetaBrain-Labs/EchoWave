@@ -30,6 +30,8 @@ import { useAudioPlayback } from '@/shared/audio/useAudioPlayback';
 import {
   confirmAudioTranscript,
   getAudioAnalysis,
+  getGroupSettings,
+  startAudioBusinessAnalysis,
   startAudioEmotionAnalysis,
   startAudioRoleRecognition,
   WorkspaceRequestError,
@@ -42,7 +44,12 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
-import { toAnalysisDetailView, type AnalysisDetailView, type TranscriptSegment } from './model';
+import {
+  toAnalysisDetailView,
+  type AiTagAnalysis,
+  type AnalysisDetailView,
+  type TranscriptSegment,
+} from './model';
 import {
   getHideIrrelevantSegmentsPreference,
   setHideIrrelevantSegmentsPreference,
@@ -55,23 +62,28 @@ import { SummaryContent } from './components/SummaryContent';
 import { TranscriptContent, type TranscriptDisplayMode } from './components/TranscriptContent';
 import { EmotionAnalysisPanel } from './components/EmotionAnalysisPanel';
 import { PostAnalysisConfirmDialog, PostAnalysisControls } from './components/PostAnalysisControls';
+import {
+  BusinessAnalysisControls,
+  BusinessAnalysisPreflightDialog,
+} from './components/BusinessAnalysisControls';
 
 const playbackRates = [1, 1.5, 2] as const;
 
 type AnalysisDetailScreenProps = {
   detailId: string;
+  groupId?: string;
   onBack: () => void;
 };
 
 /** 渲染指定分析记录的转写、摘要和交互式播放展示。 */
-export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenProps) {
+export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDetailScreenProps) {
   const [detail, setDetail] = useState<AnalysisDetailView>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<AnalysisTab>('transcript');
   const [expandedPlayer, setExpandedPlayer] = useState(false);
   const [playbackRateIndex, setPlaybackRateIndex] = useState(0);
-  const [selectedSegment, setSelectedSegment] = useState<TranscriptSegment>();
+  const [selectedTag, setSelectedTag] = useState<AiTagAnalysis>();
   const [emotionSegment, setEmotionSegment] = useState<TranscriptSegment>();
   const [confirmAnalysisType, setConfirmAnalysisType] = useState<AudioPostAnalysisType>();
   const [startingAnalysis, setStartingAnalysis] = useState(false);
@@ -81,6 +93,12 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
     useState<TranscriptDisplayMode>('current');
   const [transcriptDrafts, setTranscriptDrafts] = useState<Record<string, string>>({});
   const [hideIrrelevant, setHideIrrelevant] = useState(getHideIrrelevantSegmentsPreference);
+  const [businessPreflightVisible, setBusinessPreflightVisible] = useState(false);
+  const [businessForce, setBusinessForce] = useState(false);
+  const [startingBusiness, setStartingBusiness] = useState(false);
+  const [supplementingBusiness, setSupplementingBusiness] = useState(false);
+  const [analysisTiming, setAnalysisTiming] = useState<'automatic' | 'manual'>('manual');
+  const [preflightPrompted, setPreflightPrompted] = useState(false);
   const playback = useAudioPlayback(detailId || undefined);
   const changeHideIrrelevant = (value: boolean) => {
     setHideIrrelevantSegmentsPreference(value);
@@ -97,7 +115,7 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
     setActiveTab(tab);
     if (tab === 'summary') {
       setExpandedPlayer(false);
-      setSelectedSegment(undefined);
+      setSelectedTag(undefined);
     }
   };
   const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } = useSwipePager({
@@ -111,7 +129,7 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
       if (showLoading) setLoading(true);
       setError('');
       try {
-        setDetail(toAnalysisDetailView(await getAudioAnalysis(detailId)));
+        setDetail(toAnalysisDetailView(await getAudioAnalysis(detailId, groupId)));
       } catch (reason) {
         if (showLoading) setDetail(undefined);
         setError(reason instanceof Error ? reason.message : '分析详情加载失败。');
@@ -119,23 +137,116 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
         if (showLoading) setLoading(false);
       }
     },
-    [detailId],
+    [detailId, groupId],
   );
   useEffect(() => {
     const task = setTimeout(() => void load(), 0);
     return () => clearTimeout(task);
   }, [load]);
+  useEffect(() => {
+    if (!groupId) return undefined;
+    const task = setTimeout(() => {
+      void getGroupSettings(groupId)
+        .then((settings) => setAnalysisTiming(settings.analysis.timing))
+        .catch(() => setAnalysisTiming('manual'));
+    }, 0);
+    return () => clearTimeout(task);
+  }, [groupId]);
 
   const pollingPostAnalysis =
     detail?.postAnalysis.emotion.state === 'queued' ||
     detail?.postAnalysis.emotion.state === 'running' ||
     detail?.postAnalysis.role.state === 'queued' ||
-    detail?.postAnalysis.role.state === 'running';
+    detail?.postAnalysis.role.state === 'running' ||
+    detail?.businessAnalysis.state === 'queued' ||
+    detail?.businessAnalysis.state === 'running';
   useEffect(() => {
     if (!pollingPostAnalysis) return undefined;
     const timer = setInterval(() => void load(false), 2_000);
     return () => clearInterval(timer);
   }, [load, pollingPostAnalysis]);
+
+  useEffect(() => {
+    if (
+      !groupId ||
+      !detail ||
+      preflightPrompted ||
+      detail.transcriptConfirmation.status !== 'confirmed' ||
+      detail.businessAnalysis.state !== 'idle'
+    ) {
+      return;
+    }
+    const task = setTimeout(() => {
+      setPreflightPrompted(true);
+      setBusinessForce(false);
+      setBusinessPreflightVisible(true);
+    }, 0);
+    return () => clearTimeout(task);
+  }, [detail, groupId, preflightPrompted]);
+
+  const requestBusinessAnalysis = (force: boolean) => {
+    if (!groupId || !detail) {
+      Alert.alert('无法开始分析', '缺少当前分组，请从分组或数据源中重新进入。');
+      return;
+    }
+    if (detail.transcriptConfirmation.status !== 'confirmed') {
+      Alert.alert('请先确认转写', 'ASR 结果分析始终使用用户确认后的正文。');
+      setActiveTab('transcript');
+      return;
+    }
+    setBusinessForce(force);
+    setBusinessPreflightVisible(true);
+  };
+
+  const continueBusinessAnalysis = async () => {
+    if (!groupId || startingBusiness) return;
+    setStartingBusiness(true);
+    try {
+      await startAudioBusinessAnalysis(detailId, { groupId, force: businessForce });
+      setBusinessPreflightVisible(false);
+      await load(false);
+    } catch (reason) {
+      Alert.alert('无法开始分析', reason instanceof Error ? reason.message : '请稍后重试。');
+    } finally {
+      setStartingBusiness(false);
+    }
+  };
+
+  const supplementBusinessAnalysis = async () => {
+    if (!detail || supplementingBusiness) return;
+    const version = detail.transcriptConfirmation.currentVersion;
+    setSupplementingBusiness(true);
+    try {
+      const tasks: Promise<unknown>[] = [];
+      const emotion = detail.postAnalysis.emotion;
+      const role = detail.postAnalysis.role;
+      if (
+        emotion.state === 'idle' ||
+        emotion.state === 'failed' ||
+        emotion.confirmationVersion !== version
+      ) {
+        tasks.push(startAudioEmotionAnalysis(detailId));
+      }
+      if (
+        role.state === 'idle' ||
+        role.state === 'failed' ||
+        role.confirmationVersion !== version
+      ) {
+        tasks.push(startAudioRoleRecognition(detailId));
+      }
+      await Promise.all(tasks);
+      setBusinessPreflightVisible(false);
+      await load(false);
+      Alert.alert(
+        tasks.length > 0 ? '识别任务已启动' : '识别任务进行中',
+        '完成后可再次点击“开始分析”。',
+      );
+    } catch (reason) {
+      Alert.alert('无法补充识别', reason instanceof Error ? reason.message : '请稍后重试。');
+    } finally {
+      setSupplementingBusiness(false);
+    }
+  };
 
   const confirmPostAnalysis = async () => {
     if (!confirmAnalysisType || startingAnalysis) return;
@@ -149,6 +260,10 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
       else await startAudioRoleRecognition(detailId);
       setConfirmAnalysisType(undefined);
       await load(false);
+      if (analysisTiming === 'automatic' && groupId) {
+        setBusinessForce(false);
+        setBusinessPreflightVisible(true);
+      }
     } catch (reason) {
       Alert.alert('无法开始分析', reason instanceof Error ? reason.message : '请稍后重试。');
     } finally {
@@ -240,8 +355,8 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (selectedSegment) {
-        setSelectedSegment(undefined);
+      if (selectedTag) {
+        setSelectedTag(undefined);
         return true;
       }
       if (transcriptDirty) {
@@ -252,7 +367,7 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
     });
 
     return () => subscription.remove();
-  }, [requestBack, selectedSegment, transcriptDirty]);
+  }, [requestBack, selectedTag, transcriptDirty]);
 
   if (loading) {
     return (
@@ -363,6 +478,12 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
             onStart={setConfirmAnalysisType}
             role={detail.postAnalysis.role}
           />
+          {groupId ? (
+            <BusinessAnalysisControls
+              onStart={requestBusinessAnalysis}
+              state={detail.businessAnalysis}
+            />
+          ) : null}
           <TranscriptContent
             confirming={confirmingTranscript}
             detail={detail}
@@ -376,7 +497,7 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
             onDraftChange={(segmentId, text) =>
               setTranscriptDrafts((current) => ({ ...current, [segmentId]: text }))
             }
-            onOpenAiTag={setSelectedSegment}
+            onOpenAiTag={setSelectedTag}
             onOpenEmotion={setEmotionSegment}
             onPlaySegment={(segment) =>
               void playback.playRange({
@@ -390,7 +511,7 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
             segmentPlaybackDisabled={!playback.isLoaded || Boolean(playback.error)}
             segmentPlaybackLoading={playback.isBuffering}
             segmentPlaybackPlaying={playback.isPlaying}
-            selectedSegmentId={selectedSegment?.id}
+            selectedSegmentIds={selectedTag?.evidenceSegmentIds ?? []}
           />
         </View>
         {hasSummary ? (
@@ -400,13 +521,14 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
         ) : null}
       </ScrollView>
       <AiTagPanel
-        analysis={selectedSegment?.aiTag}
+        analysis={selectedTag}
         audioExpanded={expandedPlayer}
-        endSeconds={selectedSegment?.endSeconds ?? 0}
         hideIrrelevant={hideIrrelevant}
-        onClose={() => setSelectedSegment(undefined)}
+        onClose={() => setSelectedTag(undefined)}
         onHideIrrelevantChange={changeHideIrrelevant}
-        startSeconds={selectedSegment?.startSeconds ?? 0}
+        segments={transcriptSegments.filter((segment) =>
+          selectedTag?.evidenceSegmentIds.includes(segment.id),
+        )}
       />
       <EmotionAnalysisPanel onClose={() => setEmotionSegment(undefined)} segment={emotionSegment} />
       <PostAnalysisConfirmDialog
@@ -417,6 +539,20 @@ export function AnalysisDetailScreen({ detailId, onBack }: AnalysisDetailScreenP
         pending={startingAnalysis}
         type={confirmAnalysisType}
       />
+      {detail.transcriptConfirmation.status === 'confirmed' ? (
+        <BusinessAnalysisPreflightDialog
+          confirmationVersion={detail.transcriptConfirmation.currentVersion}
+          emotion={detail.postAnalysis.emotion}
+          onCancel={() => {
+            if (!startingBusiness && !supplementingBusiness) setBusinessPreflightVisible(false);
+          }}
+          onContinue={() => void continueBusinessAnalysis()}
+          onSupplement={() => void supplementBusinessAnalysis()}
+          pending={startingBusiness || supplementingBusiness}
+          role={detail.postAnalysis.role}
+          visible={businessPreflightVisible}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }

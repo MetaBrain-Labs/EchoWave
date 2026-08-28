@@ -14,6 +14,7 @@
  */
 import {
   ApiErrorResponseSchema,
+  AudioBusinessAnalysisStartRequestSchema,
   AudioTranscriptConfirmationRequestSchema,
   AudioTranscriptionStartRequestSchema,
   DataSourceCreateRequestSchema,
@@ -21,6 +22,8 @@ import {
   DataSourceUpdateRequestSchema,
   EntityIdSchema,
   GroupCreateRequestSchema,
+  GroupResourceLinksUpdateRequestSchema,
+  GroupSettingsUpdateRequestSchema,
   HelloResponseSchema,
   KnowledgeBaseCreateRequestSchema,
   KnowledgeBaseGroupLinkRequestSchema,
@@ -63,7 +66,7 @@ export function createApp(
     '*',
     cors({
       origin: config.corsOrigins,
-      allowMethods: ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowMethods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowHeaders: ['Content-Type', 'Range'],
       exposeHeaders: ['Accept-Ranges', 'Content-Length', 'Content-Range', 'Last-Modified'],
     }),
@@ -188,6 +191,15 @@ export function createApp(
     app.get('/api/groups/:groupId', async (context) =>
       context.json(await workspace.getGroup(id(context.req.param('groupId')))),
     );
+    app.get('/api/groups/:groupId/settings', async (context) =>
+      context.json(await workspace.getGroupSettings(id(context.req.param('groupId')))),
+    );
+    app.patch('/api/groups/:groupId/settings', async (context) => {
+      const input = GroupSettingsUpdateRequestSchema.parse(await context.req.json());
+      return context.json(
+        await workspace.updateGroupSettings(id(context.req.param('groupId')), input),
+      );
+    });
     app.delete('/api/groups/:groupId', async (context) => {
       await workspace.archiveGroup(id(context.req.param('groupId')));
       return context.body(null, 204);
@@ -198,9 +210,21 @@ export function createApp(
     app.get('/api/groups/:groupId/knowledge-bases', async (context) =>
       context.json(await workspace.listGroupKnowledgeBases(id(context.req.param('groupId')))),
     );
+    app.put('/api/groups/:groupId/knowledge-bases', async (context) => {
+      const input = GroupResourceLinksUpdateRequestSchema.parse(await context.req.json());
+      return context.json(
+        await workspace.replaceGroupKnowledgeBases(id(context.req.param('groupId')), input),
+      );
+    });
     app.get('/api/groups/:groupId/data-sources', async (context) =>
       context.json(await workspace.listGroupDataSources(id(context.req.param('groupId')))),
     );
+    app.put('/api/groups/:groupId/data-sources', async (context) => {
+      const input = GroupResourceLinksUpdateRequestSchema.parse(await context.req.json());
+      return context.json(
+        await workspace.replaceGroupDataSources(id(context.req.param('groupId')), input),
+      );
+    });
     app.get('/api/data-sources', async (context) =>
       context.json(await workspace.listDataSources()),
     );
@@ -264,9 +288,22 @@ export function createApp(
       );
       return context.body(null, 204);
     });
-    app.get('/api/audio-files/:audioFileId/analysis', async (context) =>
-      context.json(await workspace.getAudioAnalysis(id(context.req.param('audioFileId')))),
-    );
+    app.get('/api/audio-files/:audioFileId/analysis', async (context) => {
+      const requestedGroupId = context.req.query('groupId');
+      return context.json(
+        await workspace.getAudioAnalysis(
+          id(context.req.param('audioFileId')),
+          requestedGroupId ? id(requestedGroupId) : undefined,
+        ),
+      );
+    });
+    app.post('/api/audio-files/:audioFileId/business-analyses', async (context) => {
+      const input = AudioBusinessAnalysisStartRequestSchema.parse(await context.req.json());
+      return context.json(
+        await workspace.startAudioBusinessAnalysis(id(context.req.param('audioFileId')), input),
+        202,
+      );
+    });
     app.on(['GET', 'HEAD'], '/api/audio-files/:audioFileId/content', async (context) => {
       const file = await workspace.getAudioPlaybackFile(id(context.req.param('audioFileId')));
       const range = resolveAudioByteRange(context.req.header('range'), file.sizeBytes);
