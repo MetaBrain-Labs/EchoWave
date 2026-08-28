@@ -66,7 +66,7 @@ function validResult() {
         title: '需求确认',
         summary: '销售先确认了客户需求。',
         details: [],
-        confidence: 90,
+        confidence: 0.9,
         evidenceSegmentIds: [segmentId],
         citedChunkIds: [],
       },
@@ -74,21 +74,25 @@ function validResult() {
   };
 }
 
-function chatCompletion(content) {
+function chatCompletion(content, { finishReason = 'stop', completionTokens = 10 } = {}) {
   return {
     id: 'chatcmpl-sales-test',
     object: 'chat.completion',
     created: 1,
     model: 'deepseek-v4-flash',
-    choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
-    usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 },
+    choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: finishReason }],
+    usage: {
+      prompt_tokens: 10,
+      completion_tokens: completionTokens,
+      total_tokens: 10 + completionTokens,
+    },
   };
 }
 
-function recorder(modelCalls) {
+function recorder(modelCalls, steps = []) {
   return {
     recordMetadata: () => {},
-    recordStep: () => {},
+    recordStep: (event) => steps.push(event),
     recordModelCall: (event) => modelCalls.push(event),
     recordToolCall: () => {},
     recordContext: () => {},
@@ -107,6 +111,7 @@ describe('SalesAnalysisAgent', () => {
       parsed.data.summarySections.map((section) => section.title),
       ['overall', 'strengths', 'improvements', 'risks', 'actions'],
     );
+    assert.equal(parsed.data.tags[0].confidence, 90);
   });
 
   it('enables thinking for sales analysis even when the shared setting is disabled', async () => {
@@ -138,7 +143,7 @@ describe('SalesAnalysisAgent', () => {
     assert.match(modelCalls[0].output.content, /queries/);
   });
 
-  it('records both invalid structure attempts with their actual prompts and outputs', async () => {
+  it('records invalid analysis and repair calls with their actual prompts and outputs', async () => {
     const modelCalls = [];
     const agent = new SalesAnalysisAgent({
       ragConfig: {
@@ -163,8 +168,12 @@ describe('SalesAnalysisAgent', () => {
 
     assert.equal(modelCalls.length, 2);
     assert.deepEqual(
+      modelCalls.map(({ name }) => name),
+      ['business-analysis-generation', 'business-analysis-structure-repair'],
+    );
+    assert.deepEqual(
       modelCalls.map(({ attempt }) => attempt),
-      [1, 2],
+      [1, 1],
     );
     assert.ok(
       modelCalls.every(
@@ -174,9 +183,64 @@ describe('SalesAnalysisAgent', () => {
           event.output.content.includes('summarySections'),
       ),
     );
-    assert.equal(
-      modelCalls[1].input.messages.filter((message) => message.role === 'user').length,
-      2,
+    assert.deepEqual(
+      modelCalls[1].input.messages.map(({ role }) => role),
+      ['system', 'user'],
+    );
+  });
+
+  it('repairs a token-truncated thinking response with one compact non-thinking call', async () => {
+    const requests = [];
+    const modelCalls = [];
+    const steps = [];
+    const agent = new SalesAnalysisAgent({
+      ragConfig: {
+        deepSeekApiKey: 'test-key',
+        deepSeekBaseUrl: 'https://deepseek.example.com/v1',
+        deepSeekChatModel: 'deepseek-v4-flash',
+        enableThinking: false,
+      },
+      fetchImplementation: async (_url, init) => {
+        requests.push(JSON.parse(init.body));
+        return requests.length === 1
+          ? Response.json(
+              chatCompletion('{"summarySections":[{"title":"overall"', {
+                finishReason: 'length',
+                completionTokens: 8_000,
+              }),
+            )
+          : Response.json(chatCompletion(JSON.stringify(validResult())));
+      },
+    });
+
+    const result = await agent.analyze({
+      job: analysisJob(),
+      preRetrieved: [],
+      searchKnowledge: async () => [],
+      recorder: recorder(modelCalls, steps),
+    });
+
+    assert.equal(result.tags[0].confidence, 90);
+    assert.deepEqual(requests[0].thinking, { type: 'enabled' });
+    assert.equal(requests[0].max_tokens, 8_000);
+    assert.deepEqual(requests[1].thinking, { type: 'disabled' });
+    assert.equal(requests[1].max_tokens, 5_000);
+    assert.deepEqual(
+      modelCalls.map(({ name }) => name),
+      ['business-analysis-generation', 'business-analysis-structure-repair'],
+    );
+    assert.equal(modelCalls[0].output.responseMetadata.finish_reason, 'length');
+    assert.ok(
+      steps.some(
+        (step) =>
+          step.name === 'business-analysis-structure-validation' &&
+          step.metadata.outputTruncated === true,
+      ),
+    );
+    assert.ok(
+      steps.some(
+        (step) => step.name === 'business-analysis-structure-repair' && step.status === 'completed',
+      ),
     );
   });
 });

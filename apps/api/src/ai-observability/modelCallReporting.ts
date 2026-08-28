@@ -57,6 +57,7 @@ function modelResponseForReport(response: unknown): unknown {
   return {
     role: 'assistant',
     content: response.content,
+    responseMetadata: response.response_metadata,
     ...(response.tool_calls?.length ? { toolCalls: response.tool_calls } : {}),
     ...(response.invalid_tool_calls?.length
       ? { invalidToolCalls: response.invalid_tool_calls }
