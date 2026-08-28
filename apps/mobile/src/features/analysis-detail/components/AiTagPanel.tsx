@@ -18,26 +18,34 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
-import type { AiTagAnalysis } from '../model';
+import type { AiTagAnalysis, TranscriptSegment } from '../model';
 import { Checkbox } from './AnalysisControls';
 import { formatTime } from './utils';
+
+function locatorLabel(locator: AiTagAnalysis['citations'][number]['locator']): string {
+  if (locator.kind === 'spreadsheet') {
+    return `${locator.sheet} · 第 ${locator.rowStart}-${locator.rowEnd} 行`;
+  }
+  if (locator.kind === 'word') {
+    return `${locator.headingPath.join(' / ') || '正文'} · 第 ${locator.paragraphStart}-${locator.paragraphEnd} 段`;
+  }
+  return `${locator.headingPath.join(' / ') || '正文'} · 第 ${locator.lineStart}-${locator.lineEnd} 行`;
+}
 
 export function AiTagPanel({
   analysis,
   audioExpanded,
-  endSeconds,
   hideIrrelevant,
   onClose,
   onHideIrrelevantChange,
-  startSeconds,
+  segments,
 }: {
   analysis: AiTagAnalysis | undefined;
   audioExpanded: boolean;
-  endSeconds: number;
   hideIrrelevant: boolean;
   onClose: () => void;
   onHideIrrelevantChange: (value: boolean) => void;
-  startSeconds: number;
+  segments: readonly TranscriptSegment[];
 }) {
   if (!analysis) {
     return null;
@@ -61,8 +69,13 @@ export function AiTagPanel({
         <Ionicons color={colors.secondary} name="chevron-down" size={26} />
       </Pressable>
       <View style={styles.sheetFixedHeader} testID="ai-tag-fixed-header">
-        <Text style={styles.sheetMeta}>
-          AI标签 · 涉及片段 · {formatTime(startSeconds)} ～ {formatTime(endSeconds)}
+        <Text style={styles.sheetMeta}>AI标签 · 涉及 {segments.length} 个片段</Text>
+        <Text style={styles.sheetRanges}>
+          {segments
+            .map(
+              (segment) => `${formatTime(segment.startSeconds)}～${formatTime(segment.endSeconds)}`,
+            )
+            .join('、')}
         </Text>
         <View style={styles.sheetCheckbox}>
           <Checkbox
@@ -85,12 +98,23 @@ export function AiTagPanel({
         <Text style={styles.sheetDescription}>AI 智能分析，内容仅供参考</Text>
         <Text style={styles.analysisParagraphTitle}>分析结论</Text>
         <Text style={styles.analysisParagraph}>{analysis.summary}</Text>
+        <Text style={styles.confidence}>置信度 {analysis.confidence}%</Text>
         {analysis.details.map((detail) => (
           <View key={detail} style={styles.analysisDetailRow}>
             <View style={styles.analysisBullet} />
             <Text style={styles.analysisParagraph}>{detail}</Text>
           </View>
         ))}
+        {analysis.citations.length ? (
+          <>
+            <Text style={styles.analysisParagraphTitle}>知识依据</Text>
+            {analysis.citations.map((citation) => (
+              <Text key={citation.chunkId} style={styles.analysisParagraph}>
+                {citation.documentTitle} · {locatorLabel(citation.locator)}
+              </Text>
+            ))}
+          </>
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -140,6 +164,13 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sans,
     textAlign: 'center',
   },
+  sheetRanges: {
+    ...typography.label,
+    color: textColors.tertiary,
+    fontFamily: fontFamilies.sans,
+    marginTop: spacing.xs,
+    textAlign: 'center',
+  },
   sheetCheckbox: {
     alignItems: 'center',
     marginTop: spacing.sm,
@@ -149,6 +180,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.md,
     marginTop: spacing.lg,
+  },
+  confidence: {
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    marginTop: spacing.sm,
   },
   sheetTitle: {
     ...typography.contentDisplay,

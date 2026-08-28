@@ -28,13 +28,21 @@ jest.mock('@/shared/api/workspaceApi', () => {
     ...actual,
     confirmAudioTranscript: jest.fn(),
     getAudioAnalysis: jest.fn(),
+    getGroupSettings: jest.fn(),
+    startAudioBusinessAnalysis: jest.fn(),
     startAudioEmotionAnalysis: jest.fn(),
     startAudioRoleRecognition: jest.fn(),
   };
 });
 
-async function renderAnalysis(detailId = analysisFixture.audioFileId, onBack = jest.fn()) {
-  const screen = render(<AnalysisDetailScreen detailId={detailId} onBack={onBack} />);
+async function renderAnalysis(
+  detailId = analysisFixture.audioFileId,
+  onBack = jest.fn(),
+  groupId?: string,
+) {
+  const screen = render(
+    <AnalysisDetailScreen detailId={detailId} groupId={groupId} onBack={onBack} />,
+  );
   await waitFor(() => expect(screen.queryByLabelText('正在加载分析详情')).toBeNull());
   return screen;
 }
@@ -46,6 +54,25 @@ describe('AnalysisDetailScreen', () => {
     setHideIrrelevantSegmentsPreference(false);
     setPostAnalysisControlsCollapsedPreference(true);
     jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValue(analysisFixture);
+    jest.mocked(workspaceApi.getGroupSettings).mockResolvedValue({
+      groupId: '10000000-0000-4000-8000-000000000001',
+      name: '销售复盘组',
+      analysis: {
+        timing: 'automatic',
+        contentFocus: '分析销售话术',
+        tone: '正式、专业',
+        customTags: [],
+      },
+      updatedAt: '2026-08-28T08:00:00.000Z',
+    });
+    jest.mocked(workspaceApi.startAudioBusinessAnalysis).mockResolvedValue({
+      audioFileId: analysisFixture.audioFileId,
+      groupId: '10000000-0000-4000-8000-000000000001',
+      revisionId: analysisFixture.id,
+      jobId: 'b1000000-0000-4000-8000-000000000001',
+      status: 'queued',
+      reused: false,
+    });
     jest.mocked(workspaceApi.confirmAudioTranscript).mockResolvedValue({
       audioFileId: analysisFixture.audioFileId,
       analysisRevisionId: analysisFixture.id,
@@ -67,6 +94,22 @@ describe('AnalysisDetailScreen', () => {
       type: 'role',
       status: 'queued',
     });
+  });
+
+  it('always shows role and emotion status before starting a group business analysis', async () => {
+    const groupId = '10000000-0000-4000-8000-000000000001';
+    const screen = await renderAnalysis(analysisFixture.audioFileId, jest.fn(), groupId);
+
+    await waitFor(() => expect(screen.getByText('分析前检查')).toBeTruthy());
+    expect(screen.getAllByText('未识别')).toHaveLength(2);
+    fireEvent.press(screen.getByText('仍然分析'));
+
+    await waitFor(() =>
+      expect(workspaceApi.startAudioBusinessAnalysis).toHaveBeenCalledWith(
+        analysisFixture.audioFileId,
+        { groupId, force: false },
+      ),
+    );
   });
 
   it('confirms and starts the two post-analysis tasks independently', async () => {
@@ -562,13 +605,14 @@ describe('AnalysisDetailScreen', () => {
 
     fireEvent.press(screen.getByLabelText('查看 AI 标签：高频访谈记录场景'));
 
-    expect(screen.getByText('高频访谈记录场景')).toBeTruthy();
+    expect(screen.getAllByText('高频访谈记录场景')).toHaveLength(2);
     expect(screen.getByText('隐藏无关片段')).toBeTruthy();
 
     fireEvent.press(screen.getByText('隐藏无关片段'));
     fireEvent.press(screen.getByLabelText('收起 AI 标签面板'));
 
-    expect(screen.queryByText('高频访谈记录场景')).toBeNull();
+    expect(screen.queryByTestId('ai-tag-sheet')).toBeNull();
+    expect(screen.getAllByText('高频访谈记录场景')).toHaveLength(1);
   });
 
   it('embeds the AI tag control in its transcript timeline rail', async () => {
@@ -577,7 +621,11 @@ describe('AnalysisDetailScreen', () => {
     const rail = screen.getByTestId(`timeline-rail-${segmentId}`);
 
     expect(within(rail).getByLabelText('查看 AI 标签：高频访谈记录场景')).toBeTruthy();
-    expect(screen.getByTestId(`ai-tag-timeline-marker-${segmentId}`)).toBeTruthy();
+    expect(
+      screen.getByTestId(
+        `ai-tag-timeline-marker-${segmentId}-${analysisFixture.scenes[0].segments[0].aiTag?.id}`,
+      ),
+    ).toBeTruthy();
   });
 
   it('dims unrelated paragraphs and hides them on request', async () => {

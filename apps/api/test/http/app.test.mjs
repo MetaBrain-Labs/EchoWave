@@ -59,7 +59,12 @@ describe('workspace routes', () => {
   let uploadedAudioInput;
   let startedTranscriptionInput;
   let startedPostAnalysisInput;
+  let startedBusinessAnalysisInput;
   let confirmedTranscriptInput;
+  let updatedGroupSettingsInput;
+  let replacedGroupKnowledgeInput;
+  let replacedGroupSourcesInput;
+  let requestedAnalysisInput;
   const workspaceService = {
     listGroups: async () => ({
       items: [
@@ -89,14 +94,41 @@ describe('workspace routes', () => {
     archiveGroup: async (id) => {
       archivedGroupId = id;
     },
+    getGroupSettings: async (id) => ({
+      groupId: id,
+      name: '产品研究组',
+      analysis: {
+        timing: 'automatic',
+        contentFocus: '分析销售话术',
+        tone: '正式、专业',
+        customTags: [],
+      },
+      updatedAt: '2026-08-28T08:00:00.000Z',
+    }),
+    updateGroupSettings: async (id, input) => {
+      updatedGroupSettingsInput = { id, input };
+      return {
+        groupId: id,
+        ...input,
+        updatedAt: '2026-08-28T08:01:00.000Z',
+      };
+    },
     listGroupAudioFiles: async () => ({ items: [] }),
     listGroupKnowledgeBases: async () => ({ items: [] }),
+    replaceGroupKnowledgeBases: async (id, input) => {
+      replacedGroupKnowledgeInput = { id, input };
+      return { items: [] };
+    },
     listKnowledgeBaseGroups: async () => ({ items: [] }),
     linkKnowledgeBaseGroups: async (id, input) => {
       linkedKnowledgeInput = { id, input };
       return { items: [] };
     },
     listGroupDataSources: async () => ({ items: [] }),
+    replaceGroupDataSources: async (id, input) => {
+      replacedGroupSourcesInput = { id, input };
+      return { items: [] };
+    },
     listDataSources: async () => ({ items: [] }),
     createDataSource: async (input) => {
       createdDataSourceInput = input;
@@ -158,7 +190,21 @@ describe('workspace routes', () => {
     unlinkDataSourceGroup: async (id, linkedGroupId) => {
       unlinkedDataSourceInput = { id, groupId: linkedGroupId };
     },
-    getAudioAnalysis: async () => ({}),
+    getAudioAnalysis: async (id, requestedGroupId) => {
+      requestedAnalysisInput = { id, groupId: requestedGroupId };
+      return {};
+    },
+    startAudioBusinessAnalysis: async (id, input) => {
+      startedBusinessAnalysisInput = { id, input };
+      return {
+        audioFileId: id,
+        groupId: input.groupId,
+        revisionId: groupId,
+        jobId: groupId,
+        status: 'queued',
+        reused: false,
+      };
+    },
     getAudioPlaybackFile: async () => {
       throw new WorkspaceRepositoryError('NOT_FOUND', '音频不存在。');
     },
@@ -197,6 +243,74 @@ describe('workspace routes', () => {
     });
     assert.equal(response.status, 400);
     assert.equal((await response.json()).error.code, 'BAD_REQUEST');
+  });
+
+  it('validates group analysis settings and atomically replaced associations', async () => {
+    const updated = await workspaceApp.request(`/api/groups/${groupId}/settings`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: '  销售复盘组  ',
+        analysis: {
+          timing: 'manual',
+          contentFocus: '  分析异议处理  ',
+          tone: '  正式、专业  ',
+          customTags: ['需求探索'],
+        },
+      }),
+    });
+    assert.equal(updated.status, 200);
+    assert.equal(updatedGroupSettingsInput.input.name, '销售复盘组');
+    assert.equal(updatedGroupSettingsInput.input.analysis.contentFocus, '分析异议处理');
+
+    const knowledge = await workspaceApp.request(`/api/groups/${groupId}/knowledge-bases`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [groupId] }),
+    });
+    assert.equal(knowledge.status, 200);
+    assert.deepEqual(replacedGroupKnowledgeInput, { id: groupId, input: { ids: [groupId] } });
+
+    const sources = await workspaceApp.request(`/api/groups/${groupId}/data-sources`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [] }),
+    });
+    assert.equal(sources.status, 200);
+    assert.deepEqual(replacedGroupSourcesInput, { id: groupId, input: { ids: [] } });
+
+    const duplicate = await workspaceApp.request(`/api/groups/${groupId}/knowledge-bases`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [groupId, groupId] }),
+    });
+    assert.equal(duplicate.status, 400);
+  });
+
+  it('requires a valid group context for business analysis reads and starts', async () => {
+    const detail = await workspaceApp.request(
+      `/api/audio-files/${groupId}/analysis?groupId=${groupId}`,
+    );
+    assert.equal(detail.status, 200);
+    assert.deepEqual(requestedAnalysisInput, { id: groupId, groupId });
+
+    const started = await workspaceApp.request(`/api/audio-files/${groupId}/business-analyses`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groupId, force: true }),
+    });
+    assert.equal(started.status, 202);
+    assert.deepEqual(startedBusinessAnalysisInput, {
+      id: groupId,
+      input: { groupId, force: true },
+    });
+
+    const invalid = await workspaceApp.request(`/api/audio-files/${groupId}/business-analyses`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groupId: 'not-a-uuid' }),
+    });
+    assert.equal(invalid.status, 400);
   });
 
   it('routes nested read models to the workspace service', async () => {

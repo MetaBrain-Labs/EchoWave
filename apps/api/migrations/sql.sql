@@ -85,6 +85,48 @@ create index audio_analysis_revisions_audio_created_idx on audio_analysis_revisi
 create unique index audio_analysis_revisions_single_active_job_idx on audio_analysis_revisions using btree (tenant_id, audio_file_id) WHERE (status = ANY (ARRAY['queued'::text, 'transcribing'::text, 'analyzing'::text]));
 create index audio_analysis_revisions_provider_task_idx on audio_analysis_revisions using btree (tenant_id, transcription_provider, provider_task_id) WHERE (provider_task_id IS NOT NULL);
 
+create table public.audio_business_analysis_jobs (
+  id uuid primary key not null default gen_random_uuid(),
+  tenant_id uuid not null,
+  group_id uuid not null,
+  audio_file_id uuid not null,
+  analysis_revision_id uuid not null,
+  transcript_confirmation_id uuid not null,
+  confirmation_version integer not null,
+  model text not null,
+  input_fingerprint text not null,
+  settings_snapshot jsonb not null,
+  knowledge_base_ids uuid[] not null default '{}'::uuid[],
+  emotion_job_id uuid,
+  role_job_id uuid,
+  limitations jsonb not null default '[]'::jsonb,
+  status text not null,
+  progress smallint not null default 0,
+  error_code text,
+  error_message text,
+  error_retryable boolean,
+  created_at timestamp with time zone not null default now(),
+  completed_at timestamp with time zone,
+  published_at timestamp with time zone,
+  foreign key (tenant_id, analysis_revision_id, emotion_job_id) references public.audio_post_analysis_jobs (tenant_id, analysis_revision_id, id)
+  match simple on update no action on delete no action,
+  foreign key (tenant_id, analysis_revision_id, role_job_id) references public.audio_post_analysis_jobs (tenant_id, analysis_revision_id, id)
+  match simple on update no action on delete no action,
+  foreign key (tenant_id, analysis_revision_id, transcript_confirmation_id) references public.transcript_confirmations (tenant_id, analysis_revision_id, id)
+  match simple on update no action on delete no action,
+  foreign key (tenant_id, audio_file_id, analysis_revision_id) references public.audio_analysis_revisions (tenant_id, audio_file_id, id)
+  match simple on update no action on delete cascade,
+  foreign key (tenant_id, audio_file_id) references public.audio_files (tenant_id, id)
+  match simple on update no action on delete cascade,
+  foreign key (tenant_id, group_id) references public.groups (tenant_id, id)
+  match simple on update no action on delete no action
+);
+create unique index audio_business_analysis_jobs_tenant_id_id_key on audio_business_analysis_jobs using btree (tenant_id, id);
+create unique index audio_business_analysis_jobs_tenant_id_group_id_audio_file__key on audio_business_analysis_jobs using btree (tenant_id, group_id, audio_file_id, id);
+create unique index uq_audio_business_analysis_running on audio_business_analysis_jobs using btree (tenant_id, group_id, audio_file_id) WHERE (status = ANY (ARRAY['queued'::text, 'running'::text]));
+create index audio_business_analysis_claim_idx on audio_business_analysis_jobs using btree (tenant_id, status, created_at);
+create index audio_business_analysis_fingerprint_idx on audio_business_analysis_jobs using btree (tenant_id, group_id, audio_file_id, transcript_confirmation_id, input_fingerprint, created_at);
+
 create table public.audio_files (
   id uuid primary key not null default gen_random_uuid(),
   tenant_id uuid not null,
@@ -122,6 +164,17 @@ create unique index audio_files_tenant_id_id_key on audio_files using btree (ten
 create unique index audio_files_source_external_idx on audio_files using btree (tenant_id, data_source_id, source_external_id) WHERE ((data_source_id IS NOT NULL) AND (source_external_id IS NOT NULL));
 create index audio_files_source_timeline_idx on audio_files using btree (tenant_id, data_source_id, created_at) WHERE (deleted_at IS NULL);
 
+create table public.audio_group_business_analysis_heads (
+  tenant_id uuid not null,
+  group_id uuid not null,
+  audio_file_id uuid not null,
+  active_job_id uuid not null,
+  updated_at timestamp with time zone not null default now(),
+  primary key (tenant_id, group_id, audio_file_id),
+  foreign key (tenant_id, group_id, audio_file_id, active_job_id) references public.audio_business_analysis_jobs (tenant_id, group_id, audio_file_id, id)
+  match simple on update no action on delete no action
+);
+
 create table public.audio_post_analysis_jobs (
   id uuid primary key not null default gen_random_uuid(),
   tenant_id uuid not null,
@@ -150,6 +203,64 @@ create unique index audio_post_analysis_jobs_tenant_id_id_key on audio_post_anal
 create unique index audio_post_analysis_jobs_tenant_id_analysis_revision_id_id_key on audio_post_analysis_jobs using btree (tenant_id, analysis_revision_id, id);
 create unique index audio_post_analysis_single_running_idx on audio_post_analysis_jobs using btree (tenant_id, analysis_revision_id, analysis_type) WHERE (status = ANY (ARRAY['queued'::text, 'running'::text]));
 create index audio_post_analysis_claim_idx on audio_post_analysis_jobs using btree (tenant_id, analysis_type, status, created_at);
+
+create table public.business_analysis_citations (
+  tenant_id uuid not null,
+  job_id uuid not null,
+  tag_id uuid not null,
+  chunk_id uuid not null,
+  knowledge_base_id uuid not null,
+  document_id uuid not null,
+  document_title text not null,
+  locator jsonb not null,
+  primary key (tenant_id, job_id, tag_id, chunk_id),
+  foreign key (tenant_id, chunk_id) references public.document_chunks (tenant_id, id)
+  match simple on update no action on delete no action,
+  foreign key (tenant_id, job_id, tag_id) references public.business_analysis_tags (tenant_id, job_id, id)
+  match simple on update no action on delete cascade
+);
+
+create table public.business_analysis_summary_sections (
+  id uuid primary key not null default gen_random_uuid(),
+  tenant_id uuid not null,
+  job_id uuid not null,
+  section_index integer not null,
+  title text not null,
+  body text not null,
+  foreign key (tenant_id, job_id) references public.audio_business_analysis_jobs (tenant_id, id)
+  match simple on update no action on delete cascade
+);
+create unique index business_analysis_summary_sec_tenant_id_job_id_section_inde_key on business_analysis_summary_sections using btree (tenant_id, job_id, section_index);
+
+create table public.business_analysis_tag_segments (
+  tenant_id uuid not null,
+  job_id uuid not null,
+  tag_id uuid not null,
+  analysis_revision_id uuid not null,
+  transcript_segment_id uuid not null,
+  primary key (tenant_id, job_id, tag_id, transcript_segment_id),
+  foreign key (tenant_id, analysis_revision_id, transcript_segment_id) references public.transcript_segments (tenant_id, analysis_revision_id, id)
+  match simple on update no action on delete cascade,
+  foreign key (tenant_id, job_id, tag_id) references public.business_analysis_tags (tenant_id, job_id, id)
+  match simple on update no action on delete cascade
+);
+
+create table public.business_analysis_tags (
+  id uuid primary key not null default gen_random_uuid(),
+  tenant_id uuid not null,
+  job_id uuid not null,
+  tag_index integer not null,
+  category text not null,
+  custom_label text,
+  title text not null,
+  summary text not null,
+  details jsonb not null default '[]'::jsonb,
+  confidence smallint not null,
+  foreign key (tenant_id, job_id) references public.audio_business_analysis_jobs (tenant_id, id)
+  match simple on update no action on delete cascade
+);
+create unique index business_analysis_tags_tenant_id_job_id_tag_index_key on business_analysis_tags using btree (tenant_id, job_id, tag_index);
+create unique index business_analysis_tags_tenant_id_job_id_id_key on business_analysis_tags using btree (tenant_id, job_id, id);
 
 create table public.data_source_ingestion_runs (
   id uuid primary key not null default gen_random_uuid(),
@@ -222,6 +333,7 @@ create table public.document_chunks (
 create unique index document_chunks_revision_id_chunk_index_key on document_chunks using btree (revision_id, chunk_index);
 create index document_chunks_scope_idx on document_chunks using btree (tenant_id, knowledge_base_id, document_id, revision_id);
 create index document_chunks_embedding_hnsw on document_chunks using hnsw (embedding);
+create unique index document_chunks_tenant_id_id_unique on document_chunks using btree (tenant_id, id);
 
 create table public.document_revisions (
   id uuid primary key not null default gen_random_uuid(),
@@ -271,6 +383,19 @@ create table public.documents (
   match simple on update no action on delete no action
 );
 create index documents_library_idx on documents using btree (tenant_id, knowledge_base_id, updated_at) WHERE (deleted_at IS NULL);
+
+create table public.group_analysis_settings (
+  tenant_id uuid not null,
+  group_id uuid not null,
+  analysis_timing text not null default 'automatic'::text,
+  content_focus text not null,
+  tone text not null,
+  custom_tags jsonb not null default '[]'::jsonb,
+  updated_at timestamp with time zone not null default now(),
+  primary key (tenant_id, group_id),
+  foreign key (tenant_id, group_id) references public.groups (tenant_id, id)
+  match simple on update no action on delete cascade
+);
 
 create table public.group_audio_links (
   tenant_id uuid not null,

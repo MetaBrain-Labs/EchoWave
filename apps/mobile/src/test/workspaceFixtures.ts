@@ -252,6 +252,18 @@ export const analysisFixture: AudioAnalysisDetail = {
     emotion: { state: 'idle' },
     role: { state: 'idle' },
   },
+  businessAnalysis: {
+    state: 'idle',
+    groupId: null,
+    jobId: null,
+    model: null,
+    progress: 0,
+    confirmationVersion: null,
+    settingsCurrent: true,
+    knowledgeCurrent: true,
+    error: null,
+    result: null,
+  },
   invalidSegments: [
     {
       id: 'a0000000-0000-4000-8000-000000000001',

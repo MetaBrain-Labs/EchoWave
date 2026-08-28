@@ -27,7 +27,12 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
-import type { AnalysisDetailView, TranscriptInvalidSegment, TranscriptSegment } from '../model';
+import type {
+  AiTagAnalysis,
+  AnalysisDetailView,
+  TranscriptInvalidSegment,
+  TranscriptSegment,
+} from '../model';
 import { Checkbox } from './AnalysisControls';
 import { formatTime, showComingSoon } from './utils';
 
@@ -81,7 +86,7 @@ function SegmentView({
   editing: boolean;
   dimmed: boolean;
   onDraftChange: (segmentId: string, text: string) => void;
-  onOpenAiTag: (segment: TranscriptSegment) => void;
+  onOpenAiTag: (tag: AiTagAnalysis) => void;
   onOpenEmotion: (segment: TranscriptSegment) => void;
   onPlay: (segment: TranscriptSegment) => void;
   playbackDisabled: boolean;
@@ -165,15 +170,18 @@ function SegmentView({
         </Text>
       </View>
       <View style={styles.segmentRail} testID={`timeline-rail-${segment.id}`}>
-        {segment.aiTag ? (
+        {segment.aiTags.map((tag) => (
           <Pressable
-            accessibilityLabel={`查看 AI 标签：${segment.aiTag.title}`}
+            accessibilityLabel={`查看 AI 标签：${tag.title}`}
             accessibilityRole="button"
-            onPress={() => onOpenAiTag(segment)}
+            key={tag.id}
+            onPress={() => onOpenAiTag(tag)}
             style={({ pressed }) => [styles.aiTagButton, pressed && styles.pressed]}
-            testID={`ai-tag-timeline-marker-${segment.id}`}
+            testID={`ai-tag-timeline-marker-${segment.id}-${tag.id}`}
           >
-            <Text style={[styles.aiTagText, dimmed && styles.dimmedText]}>AI标签</Text>
+            <Text numberOfLines={2} style={[styles.aiTagText, dimmed && styles.dimmedText]}>
+              {tag.customLabel ?? tag.title}
+            </Text>
             <View style={styles.aiTagNode}>
               <Ionicons
                 color={dimmed ? colors.muted : colors.success}
@@ -182,7 +190,7 @@ function SegmentView({
               />
             </View>
           </Pressable>
-        ) : null}
+        ))}
       </View>
     </View>
   );
@@ -227,7 +235,7 @@ export function TranscriptContent({
   segmentPlaybackDisabled,
   segmentPlaybackLoading,
   segmentPlaybackPlaying,
-  selectedSegmentId,
+  selectedSegmentIds,
 }: {
   confirming: boolean;
   detail: AnalysisDetailView;
@@ -239,7 +247,7 @@ export function TranscriptContent({
   onConfirmEditing: () => void;
   onDisplayModeChange: (mode: TranscriptDisplayMode) => void;
   onDraftChange: (segmentId: string, text: string) => void;
-  onOpenAiTag: (segment: TranscriptSegment) => void;
+  onOpenAiTag: (tag: AiTagAnalysis) => void;
   onOpenEmotion: (segment: TranscriptSegment) => void;
   onPlaySegment: (segment: TranscriptSegment) => void;
   onStartEditing: () => void;
@@ -247,14 +255,15 @@ export function TranscriptContent({
   segmentPlaybackDisabled: boolean;
   segmentPlaybackLoading: boolean;
   segmentPlaybackPlaying: boolean;
-  selectedSegmentId?: string;
+  selectedSegmentIds: readonly string[];
 }) {
   const [skipInvalid, setSkipInvalid] = useState(false);
-  const hasSelectedSegment = selectedSegmentId !== undefined;
+  const selectedIds = new Set(selectedSegmentIds);
+  const hasSelectedTag = selectedIds.size > 0;
   const visibleScenes =
-    hasSelectedSegment && hideIrrelevant
+    hasSelectedTag && hideIrrelevant
       ? detail.scenes.filter((scene) =>
-          scene.segments.some((segment) => segment.id === selectedSegmentId),
+          scene.segments.some((segment) => selectedIds.has(segment.id)),
         )
       : detail.scenes;
   const speakerDisplayNames = new Map<string, string>();
@@ -379,7 +388,7 @@ export function TranscriptContent({
           <Text style={styles.emptyTranscriptText}>未识别到可转写的语音内容。</Text>
         </View>
       ) : null}
-      {visibleScenes.length === 0 && !skipInvalid && !hasSelectedSegment
+      {visibleScenes.length === 0 && !skipInvalid && !hasSelectedTag
         ? detail.invalidSegments.map((invalidSegment) => (
             <InvalidSegmentView invalidSegment={invalidSegment} key={invalidSegment.id} />
           ))
@@ -387,9 +396,9 @@ export function TranscriptContent({
       {visibleScenes.map((scene) => {
         const sceneIndex = detail.scenes.indexOf(scene);
         const visibleTimelineItems =
-          hasSelectedSegment && hideIrrelevant
+          hasSelectedTag && hideIrrelevant
             ? scene.timelineItems.filter(
-                (item) => item.kind === 'segment' && item.segment.id === selectedSegmentId,
+                (item) => item.kind === 'segment' && selectedIds.has(item.segment.id),
               )
             : skipInvalid
               ? scene.timelineItems.filter((item) => item.kind === 'segment')
@@ -417,7 +426,7 @@ export function TranscriptContent({
                   <SegmentView
                     key={item.id}
                     displayMode={displayMode}
-                    dimmed={hasSelectedSegment && item.segment.id !== selectedSegmentId}
+                    dimmed={hasSelectedTag && !selectedIds.has(item.segment.id)}
                     draftText={draftTexts[item.segment.id]}
                     editing={editing}
                     onDraftChange={onDraftChange}

@@ -498,7 +498,8 @@ describe('DataSourceDetailScreen', () => {
 
     fireEvent.press(screen.getAllByLabelText(`${audioFixtures[0].title}更多操作`)[0]!);
     fireEvent.press(screen.getByText('ASR结果分析'));
-    expect(onOpenAudio).toHaveBeenCalledWith(audioFixtures[0].id);
+    fireEvent.press(screen.getByRole('button', { name: linkedGroupFixtures[0].name }));
+    expect(onOpenAudio).toHaveBeenCalledWith(audioFixtures[0].id, linkedGroupFixtures[0].id);
   });
 
   it('blocks speaker-turn confirmation when DashScope or OSS is unavailable', async () => {

@@ -25,6 +25,9 @@ import {
   DataSourceListResponseSchema,
   GroupDetailSchema,
   GroupListResponseSchema,
+  GroupSettingsSchema,
+  DEFAULT_GROUP_ANALYSIS_FOCUS,
+  DEFAULT_GROUP_ANALYSIS_TONE,
   KnowledgeBaseListResponseSchema,
   LinkedDataSourceGroupListResponseSchema,
   type AudioProcessingStatus,
@@ -32,6 +35,8 @@ import {
   type DataSourceGroupLinkRequest,
   type DataSourceUpdateRequest,
   type GroupCreateRequest,
+  type GroupResourceLinksUpdateRequest,
+  type GroupSettingsUpdateRequest,
   type KnowledgeBaseGroupLinkRequest,
 } from '@echowave/contracts';
 
@@ -270,6 +275,75 @@ export class WorkspaceRepository {
     return GroupDetailSchema.parse(group);
   }
 
+  /** 读取分组名称与分析配置；旧分组尚无设置行时返回产品默认值。 */
+  async getGroupSettings(groupId: string) {
+    const result = await this.pool.query(
+      `SELECT g.id, g.name, g.updated_at, coalesce(s.analysis_timing, 'automatic') AS analysis_timing,
+              coalesce(s.content_focus, $3) AS content_focus,
+              coalesce(s.tone, $4) AS tone, coalesce(s.custom_tags, '[]'::jsonb) AS custom_tags
+       FROM ${this.table('groups')} g
+       LEFT JOIN ${this.table('group_analysis_settings')} s
+         ON s.tenant_id = g.tenant_id AND s.group_id = g.id
+       WHERE g.tenant_id = $1 AND g.id = $2 AND g.deleted_at IS NULL`,
+      [this.tenantId, groupId, DEFAULT_GROUP_ANALYSIS_FOCUS, DEFAULT_GROUP_ANALYSIS_TONE],
+    );
+    const row = result.rows[0];
+    if (!row) throw new WorkspaceRepositoryError('NOT_FOUND', '分组不存在。');
+    return GroupSettingsSchema.parse({
+      groupId: row.id,
+      name: row.name,
+      analysis: {
+        timing: row.analysis_timing,
+        contentFocus: row.content_focus,
+        tone: row.tone,
+        customTags: row.custom_tags,
+      },
+      updatedAt: iso(row.updated_at),
+    });
+  }
+
+  /** 原子保存分组名称与完整分析设置。 */
+  async updateGroupSettings(groupId: string, input: GroupSettingsUpdateRequest) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const group = await client.query(
+        `UPDATE ${this.table('groups')}
+         SET name = $3, updated_at = now()
+         WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+         RETURNING id`,
+        [this.tenantId, groupId, input.name],
+      );
+      if (!group.rowCount) throw new WorkspaceRepositoryError('NOT_FOUND', '分组不存在。');
+      await client.query(
+        `INSERT INTO ${this.table('group_analysis_settings')}
+           (tenant_id, group_id, analysis_timing, content_focus, tone, custom_tags, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, now())
+         ON CONFLICT (tenant_id, group_id) DO UPDATE
+         SET analysis_timing = excluded.analysis_timing,
+             content_focus = excluded.content_focus,
+             tone = excluded.tone,
+             custom_tags = excluded.custom_tags,
+             updated_at = now()`,
+        [
+          this.tenantId,
+          groupId,
+          input.analysis.timing,
+          input.analysis.contentFocus,
+          input.analysis.tone,
+          JSON.stringify(input.analysis.customTags),
+        ],
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    return this.getGroupSettings(groupId);
+  }
+
   /** 在当前租户下创建空分组，并返回与列表一致的零指标投影。 */
   async createGroup(input: GroupCreateRequest) {
     const result = await this.pool.query(
@@ -363,6 +437,35 @@ export class WorkspaceRepository {
     });
   }
 
+  /** 校验活动分组是否能通过显式分享或已关联数据源访问指定音频。 */
+  async assertGroupAudioAccess(groupId: string, audioFileId: string): Promise<void> {
+    const result = await this.pool.query(
+      `SELECT 1
+       FROM ${this.table('groups')} g
+       JOIN ${this.table('audio_files')} af
+         ON af.tenant_id = g.tenant_id AND af.id = $3 AND af.deleted_at IS NULL
+       WHERE g.tenant_id = $1 AND g.id = $2 AND g.deleted_at IS NULL
+         AND (
+           EXISTS (
+             SELECT 1 FROM ${this.table('group_audio_links')} gal
+             WHERE gal.tenant_id = af.tenant_id AND gal.group_id = g.id
+               AND gal.audio_file_id = af.id
+           ) OR EXISTS (
+             SELECT 1 FROM ${this.table('group_data_sources')} gds
+             JOIN ${this.table('data_sources')} ds
+               ON ds.tenant_id = gds.tenant_id AND ds.id = gds.data_source_id
+              AND ds.deleted_at IS NULL
+             WHERE gds.tenant_id = af.tenant_id AND gds.group_id = g.id
+               AND gds.data_source_id = af.data_source_id
+           )
+         )`,
+      [this.tenantId, groupId, audioFileId],
+    );
+    if (!result.rowCount) {
+      throw new WorkspaceRepositoryError('NOT_FOUND', '当前分组无法访问该音频。');
+    }
+  }
+
   async listGroupKnowledgeBases(groupId: string) {
     await this.getGroup(groupId);
     const result = await this.pool.query(
@@ -391,6 +494,49 @@ export class WorkspaceRepository {
         updatedAt: iso(row.updated_at),
       })),
     });
+  }
+
+  /** 校验目标知识库后，原子替换分组的全部知识库关联。 */
+  async replaceGroupKnowledgeBases(groupId: string, input: GroupResourceLinksUpdateRequest) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const group = await client.query(
+        `SELECT id FROM ${this.table('groups')}
+         WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL FOR UPDATE`,
+        [this.tenantId, groupId],
+      );
+      if (!group.rowCount) throw new WorkspaceRepositoryError('NOT_FOUND', '分组不存在。');
+      const resources = await client.query(
+        `SELECT id FROM ${this.table('knowledge_bases')}
+         WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL FOR SHARE`,
+        [this.tenantId, input.ids],
+      );
+      if (resources.rows.length !== input.ids.length) {
+        throw new WorkspaceRepositoryError('NOT_FOUND', '一个或多个知识库不存在。');
+      }
+      await client.query(
+        `DELETE FROM ${this.table('group_knowledge_bases')}
+         WHERE tenant_id = $1 AND group_id = $2`,
+        [this.tenantId, groupId],
+      );
+      await client.query(
+        `INSERT INTO ${this.table('group_knowledge_bases')} (tenant_id, group_id, knowledge_base_id)
+         SELECT $1, $2, requested.id FROM unnest($3::uuid[]) requested(id)`,
+        [this.tenantId, groupId, input.ids],
+      );
+      await client.query(
+        `UPDATE ${this.table('groups')} SET updated_at = now() WHERE tenant_id = $1 AND id = $2`,
+        [this.tenantId, groupId],
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    return this.listGroupKnowledgeBases(groupId);
   }
 
   /** 返回知识库当前关联的全部未归档分组及其实时指标。 */
@@ -592,6 +738,49 @@ export class WorkspaceRepository {
       client.release();
     }
     return this.listDataSourceGroups(dataSourceId);
+  }
+
+  /** 校验目标数据源后，原子替换分组的全部数据源关联。 */
+  async replaceGroupDataSources(groupId: string, input: GroupResourceLinksUpdateRequest) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const group = await client.query(
+        `SELECT id FROM ${this.table('groups')}
+         WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL FOR UPDATE`,
+        [this.tenantId, groupId],
+      );
+      if (!group.rowCount) throw new WorkspaceRepositoryError('NOT_FOUND', '分组不存在。');
+      const resources = await client.query(
+        `SELECT id FROM ${this.table('data_sources')}
+         WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL FOR SHARE`,
+        [this.tenantId, input.ids],
+      );
+      if (resources.rows.length !== input.ids.length) {
+        throw new WorkspaceRepositoryError('NOT_FOUND', '一个或多个数据源不存在。');
+      }
+      await client.query(
+        `DELETE FROM ${this.table('group_data_sources')}
+         WHERE tenant_id = $1 AND group_id = $2`,
+        [this.tenantId, groupId],
+      );
+      await client.query(
+        `INSERT INTO ${this.table('group_data_sources')} (tenant_id, group_id, data_source_id)
+         SELECT $1, $2, requested.id FROM unnest($3::uuid[]) requested(id)`,
+        [this.tenantId, groupId, input.ids],
+      );
+      await client.query(
+        `UPDATE ${this.table('groups')} SET updated_at = now() WHERE tenant_id = $1 AND id = $2`,
+        [this.tenantId, groupId],
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    return this.listGroupDataSources(groupId);
   }
 
   /** 硬删除单条关系，不影响数据源、分组、音频或显式分享事实。 */

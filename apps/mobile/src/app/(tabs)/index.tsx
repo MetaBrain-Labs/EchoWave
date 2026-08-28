@@ -29,8 +29,10 @@ export default function GroupRoute() {
     <GroupScreen
       initialGroupId={initialGroupId}
       initialTab={initialTab}
-      onOpenAudio={(id) => {
-        void runWithLoading(() => router.push({ pathname: '/analysis/[id]', params: { id } }));
+      onOpenAudio={(id, groupId) => {
+        void runWithLoading(() =>
+          router.push({ pathname: '/analysis/[id]', params: { id, groupId } }),
+        );
       }}
       onOpenKnowledge={(knowledgeId) => {
         void runWithLoading(() =>
@@ -40,12 +42,17 @@ export default function GroupRoute() {
           }),
         );
       }}
-      onOpenSource={(sourceId) => {
+      onOpenSource={(sourceId, groupId) => {
         void runWithLoading(() =>
           router.push({
             pathname: '/sources/[sourceId]',
-            params: { sourceId },
+            params: { sourceId, groupId },
           }),
+        );
+      }}
+      onOpenSettings={(groupId) => {
+        void runWithLoading(() =>
+          router.push({ pathname: '/groups/[groupId]/settings', params: { groupId } }),
         );
       }}
     />
