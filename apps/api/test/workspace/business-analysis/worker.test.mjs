@@ -33,6 +33,7 @@ function makeJob(overrides = {}) {
     confirmationVersion: 1,
     model: 'deepseek-v4-flash',
     knowledgeBaseIds: [knowledgeBaseId],
+    knowledgeBases: [{ id: knowledgeBaseId, name: '销售知识库' }],
     settings: {
       timing: 'manual',
       contentFocus: '分析销售话术',

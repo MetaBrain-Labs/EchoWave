@@ -25,6 +25,7 @@ import {
 } from '@echowave/contracts';
 
 import {
+  beginAiModelCall,
   noOpAiExecutionRecorder,
   type AiExecutionRecorder,
 } from '../../ai-observability/executionReporter.ts';
@@ -134,6 +135,14 @@ export class QwenEmotionAnalyzer {
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       const modelAttempt = (structureAttempt - 1) * 3 + attempt;
       const startedAt = Date.now();
+      const modelCall = beginAiModelCall(recorder, {
+        name: 'audio-emotion-analysis',
+        displayName: '判断当前音频片段的情绪与置信度',
+        provider: 'dashscope',
+        model: this.options.model,
+        attempt: modelAttempt,
+        reasoningMode: 'unsupported',
+      });
       const messages = [
         { role: 'system', content: SYSTEM_PROMPT },
         {
@@ -189,12 +198,8 @@ export class QwenEmotionAnalyzer {
             true,
           );
         }
-        recorder.recordModelCall({
-          name: 'audio-emotion-analysis',
-          provider: 'dashscope',
-          model: this.options.model,
+        modelCall.finish({
           status: 'completed',
-          attempt: modelAttempt,
           durationMs: Date.now() - startedAt,
           inputTokens: null,
           outputTokens: null,
@@ -204,12 +209,8 @@ export class QwenEmotionAnalyzer {
         });
         return content;
       } catch (error) {
-        recorder.recordModelCall({
-          name: 'audio-emotion-analysis',
-          provider: 'dashscope',
-          model: this.options.model,
+        modelCall.finish({
           status: 'failed',
-          attempt: modelAttempt,
           durationMs: Date.now() - startedAt,
           inputTokens: null,
           outputTokens: null,

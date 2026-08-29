@@ -11,7 +11,10 @@
  */
 import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
 
-import { createAiExecutionReporter } from '../ai-observability/executionReporter.ts';
+import {
+  createAiExecutionReporter,
+  createCompositeAiExecutionReporter,
+} from '../ai-observability/executionReporter.ts';
 import { createSttRawResponseReporter } from '../ai-observability/sttRawResponseReporter.ts';
 import type { ApiConfig } from '../config/env.ts';
 import { createDatabasePool, createPostgresConnectionString } from '../infrastructure/postgres.ts';
@@ -30,6 +33,8 @@ import { TranscriptConfirmationRepository } from '../workspace/persistence/trans
 import { DefaultWorkspaceService } from '../workspace/service.ts';
 import { AudioInputPreprocessor } from '../workspace/transcription/audioPreprocessor.ts';
 import { DashScopeFileTranscription } from '../workspace/transcription/dashScopeFileTranscription.ts';
+import { DashScopeCallbackService } from '../workspace/transcription/dashScopeCallback.ts';
+import { EventBridgeSignatureVerifier } from '../workspace/transcription/eventBridgeSignature.ts';
 import { OssStagingStore } from '../workspace/transcription/ossStagingStore.ts';
 import { AudioTranscriptionWorker } from '../workspace/transcription/worker.ts';
 import { AudioWindowPreprocessor } from '../workspace/post-analysis/audioWindowPreprocessor.ts';
@@ -37,6 +42,7 @@ import { DeepSeekRoleRecognizer } from '../workspace/post-analysis/deepSeekRoleR
 import { QwenEmotionAnalyzer } from '../workspace/post-analysis/qwenEmotionAnalyzer.ts';
 import { AudioPostAnalysisWorker } from '../workspace/post-analysis/worker.ts';
 import { BusinessAnalysisRepository } from '../workspace/persistence/businessAnalysisRepository.ts';
+import { AudioExecutionRepository } from '../workspace/persistence/audioExecutionRepository.ts';
 import { SalesAnalysisAgent } from '../workspace/business-analysis/salesAnalysisAgent.ts';
 import { BusinessAnalysisWorker } from '../workspace/business-analysis/worker.ts';
 
@@ -48,6 +54,15 @@ export function createRagRuntime(config: ApiConfig) {
     outputDirectory: config.aiExecutionReports.outputDirectory,
   });
   const pool = createDatabasePool(config.database);
+  const audioExecutionRepository = new AudioExecutionRepository(
+    pool,
+    config.database.schema,
+    config.rag.tenantId,
+  );
+  const audioExecutionReporter = createCompositeAiExecutionReporter([
+    executionReporter,
+    audioExecutionRepository.createReporter(),
+  ]);
   const knowledgeRepository = new KnowledgeRepository(
     pool,
     config.database.schema,
@@ -145,13 +160,13 @@ export function createRagRuntime(config: ApiConfig) {
     config.rag.deepSeekChatModel,
     Boolean(config.rag.dashScope.oss),
     businessAnalysisRepository,
+    audioExecutionRepository,
   );
   const dashScope = new DashScopeFileTranscription(
     config.rag.dashScope.apiKey,
     config.rag.dashScope.baseUrl,
     fetch,
     (durationMs) => new Promise((resolve) => setTimeout(resolve, durationMs)),
-    Date.now,
     sttRawResponseReporter,
   );
   const ossStaging = config.rag.dashScope.oss
@@ -166,10 +181,24 @@ export function createRagRuntime(config: ApiConfig) {
   const transcriptionWorker = new AudioTranscriptionWorker({
     repository: audioAnalysisRepository,
     dashScope,
+    maxInFlight: config.rag.audioTranscriptionMaxInFlight,
+    notifyMode: config.rag.dashScope.asyncNotifyMode,
     preprocessor: audioInputPreprocessor,
-    reporter: executionReporter,
+    reporter: audioExecutionReporter,
     ...(ossStaging ? { ossStaging } : {}),
   });
+  const dashScopeCallbackService =
+    config.rag.dashScope.asyncNotifyMode === 'eventbridge' &&
+    config.rag.dashScope.eventBridgeCallback
+      ? new DashScopeCallbackService({
+          repository: audioAnalysisRepository,
+          signatureVerifier: new EventBridgeSignatureVerifier({
+            callbackUrl: config.rag.dashScope.eventBridgeCallback.url,
+            token: config.rag.dashScope.eventBridgeCallback.token,
+          }),
+          rawResponseReporter: sttRawResponseReporter,
+        })
+      : undefined;
   const audioWindowPreprocessor = new AudioWindowPreprocessor({
     audioStorageDirectory: config.rag.audioStorageDir,
     tempDirectory: config.rag.audioTranscriptionTempDir,
@@ -179,7 +208,7 @@ export function createRagRuntime(config: ApiConfig) {
     type: 'emotion',
     repository: postAnalysisRepository,
     preprocessor: audioWindowPreprocessor,
-    reporter: executionReporter,
+    reporter: audioExecutionReporter,
     emotionAnalyzer: new QwenEmotionAnalyzer({
       apiKey: config.rag.dashScope.apiKey,
       baseUrl: config.rag.dashScope.compatibleBaseUrl,
@@ -190,7 +219,7 @@ export function createRagRuntime(config: ApiConfig) {
   const roleWorker = new AudioPostAnalysisWorker({
     type: 'role',
     repository: postAnalysisRepository,
-    reporter: executionReporter,
+    reporter: audioExecutionReporter,
     roleRecognizer: new DeepSeekRoleRecognizer({
       apiKey: config.rag.deepSeekApiKey,
       baseUrl: config.rag.deepSeekBaseUrl,
@@ -203,13 +232,14 @@ export function createRagRuntime(config: ApiConfig) {
     embeddings,
     embeddingModel: config.rag.embeddingModel,
     agent: new SalesAnalysisAgent({ ragConfig: config.rag }),
-    reporter: executionReporter,
+    reporter: audioExecutionReporter,
   });
   return {
     service,
     workspaceService,
     worker,
     transcriptionWorker,
+    dashScopeCallbackService,
     emotionWorker,
     roleWorker,
     businessAnalysisWorker,

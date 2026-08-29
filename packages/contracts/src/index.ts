@@ -228,3 +228,20 @@ export {
   type SegmentRoleAnalysis,
   type TranscriptSegment,
 } from './analysis.ts';
+export {
+  AudioAiExecutionKindSchema,
+  AudioAiExecutionModelCallSchema,
+  AudioAiExecutionRunSchema,
+  AudioAiExecutionStatusSchema,
+  AudioAiExecutionStepSchema,
+  AudioAiExecutionStreamEventSchema,
+  AudioAiExecutionToolCallSchema,
+  AudioAiExecutionTraceResponseSchema,
+  AudioAiKnowledgeBaseSnapshotSchema,
+  AudioAiRetrievalHitSchema,
+  type AudioAiExecutionKind,
+  type AudioAiExecutionRun,
+  type AudioAiExecutionStatus,
+  type AudioAiExecutionStreamEvent,
+  type AudioAiExecutionTraceResponse,
+} from './aiExecution.ts';

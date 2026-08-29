@@ -462,113 +462,119 @@ export function AudioTranscriptionConfirmDialog({
   return (
     <Modal animationType="fade" onRequestClose={onCancel} transparent visible={visible}>
       <View style={styles.dialogRoot}>
-        <View accessibilityViewIsModal style={styles.dialogCard}>
-          <Text accessibilityRole="header" style={styles.sheetTitle}>
-            开始 ASR 转写？
-          </Text>
-          <Text style={styles.dialogBody}>
-            将通过 DashScope 官方接口整文件转写“{audioTitle}”。结果按说话人变化或明显停顿分段，
-            业务角色和情绪暂标记为未知。
-          </Text>
-          <Text style={styles.transcriptionSectionTitle}>音频预处理</Text>
-          <Pressable
-            accessibilityLabel={`空闲音频过滤（Silero VAD）${sileroVad?.available ? '' : '，当前不可用'}`}
-            accessibilityRole="radio"
-            accessibilityState={{
-              checked: preprocessing === 'silero_vad',
-              disabled: pending || !sileroVad?.available,
-            }}
-            disabled={pending || !sileroVad?.available}
-            onPress={() => onPreprocessingChange('silero_vad')}
-            style={[
-              styles.segmentationOption,
-              preprocessing === 'silero_vad' && styles.selectedModelOption,
-              !sileroVad?.available && styles.disabledButton,
-            ]}
+        <View accessibilityViewIsModal style={[styles.dialogCard, styles.transcriptionDialogCard]}>
+          <ScrollView
+            contentContainerStyle={styles.transcriptionDialogContent}
+            showsVerticalScrollIndicator
+            style={styles.transcriptionDialogScroll}
           >
-            <Ionicons
-              color={colors.ink}
-              name={preprocessing === 'silero_vad' ? 'radio-button-on' : 'radio-button-off'}
-              size={22}
-            />
-            <View style={styles.transcriptionOptionCopy}>
-              <Text style={styles.transcriptionOptionTitle}>空闲音频过滤（Silero VAD）</Text>
-              <Text style={styles.secondaryText}>仅压缩连续超过 30 秒的非人声区间</Text>
-              {!sileroVad?.available ? (
-                <Text accessibilityRole="alert" style={styles.directWarning}>
-                  {sileroVad?.unavailableReason ?? 'Silero VAD 能力尚未加载。'}
-                </Text>
-              ) : null}
-            </View>
-          </Pressable>
-          <Pressable
-            accessibilityLabel="保留完整音频"
-            accessibilityRole="radio"
-            accessibilityState={{ checked: preprocessing === 'whole_file', disabled: pending }}
-            disabled={pending}
-            onPress={() => onPreprocessingChange('whole_file')}
-            style={[
-              styles.segmentationOption,
-              preprocessing === 'whole_file' && styles.selectedModelOption,
-            ]}
-          >
-            <Ionicons
-              color={colors.ink}
-              name={preprocessing === 'whole_file' ? 'radio-button-on' : 'radio-button-off'}
-              size={22}
-            />
-            <View style={styles.transcriptionOptionCopy}>
-              <Text style={styles.transcriptionOptionTitle}>保留完整音频</Text>
-              <Text style={styles.secondaryText}>不执行人声检测，完整音频进入 ASR</Text>
-            </View>
-          </Pressable>
-          <Text style={styles.transcriptionSectionTitle}>正文分段方式</Text>
-          <View style={[styles.segmentationOption, styles.selectedModelOption]}>
-            <Ionicons color={colors.ink} name="people-outline" size={22} />
-            <View style={styles.transcriptionOptionCopy}>
-              <Text style={styles.transcriptionOptionTitle}>按说话轮次</Text>
-              <Text style={styles.secondaryText}>说话人变化或明显停顿时开始新段</Text>
-            </View>
-          </View>
-          <Text style={styles.transcriptionSectionTitle}>转写模型</Text>
-          {!selectedCapability ? (
-            <Text accessibilityRole="alert" style={styles.directWarning}>
-              转写模型目录加载失败，请关闭后重试。
+            <Text accessibilityRole="header" style={styles.sheetTitle}>
+              开始 ASR 转写？
             </Text>
-          ) : (
-            <View
-              accessibilityLabel={`${selectedCapability.displayName}，${selectedCapability.description}，输入${formatModelPrice(selectedCapability.pricing.input)}，输出${formatModelPrice(selectedCapability.pricing.output)}`}
+            <Text style={styles.dialogBody}>
+              将通过 DashScope 官方接口整文件转写“{audioTitle}”。
+              结果按说话人变化或明显停顿分段，业务角色和情绪暂标记为未知。
+            </Text>
+            <Text style={styles.transcriptionSectionTitle}>音频预处理</Text>
+            <Pressable
+              accessibilityLabel={`空闲音频过滤（Silero VAD）${sileroVad?.available ? '' : '，当前不可用'}`}
+              accessibilityRole="radio"
+              accessibilityState={{
+                checked: preprocessing === 'silero_vad',
+                disabled: pending || !sileroVad?.available,
+              }}
+              disabled={pending || !sileroVad?.available}
+              onPress={() => onPreprocessingChange('silero_vad')}
               style={[
-                styles.transcriptionModelOption,
-                styles.selectedModelOption,
-                !selectedCapability.available && styles.disabledButton,
+                styles.segmentationOption,
+                preprocessing === 'silero_vad' && styles.selectedModelOption,
+                !sileroVad?.available && styles.disabledButton,
               ]}
             >
-              <Ionicons color={colors.ink} name="hardware-chip-outline" size={22} />
+              <Ionicons
+                color={colors.ink}
+                name={preprocessing === 'silero_vad' ? 'radio-button-on' : 'radio-button-off'}
+                size={22}
+              />
               <View style={styles.transcriptionOptionCopy}>
-                <Text style={styles.transcriptionOptionTitle}>
-                  {selectedCapability.displayName}
-                </Text>
-                <Text style={styles.secondaryText}>{selectedCapability.description}</Text>
-                <Text style={styles.transcriptionModelMeta}>
-                  价格（截至 {selectedCapability.pricing.asOf}）：输入{' '}
-                  {formatModelPrice(selectedCapability.pricing.input)} · 输出{' '}
-                  {formatModelPrice(selectedCapability.pricing.output)}
-                </Text>
-                <Text style={styles.transcriptionModelMeta}>
-                  时间戳：{timestampCapability(selectedCapability)} · Speaker：尽力分离
-                </Text>
-                <Text style={styles.transcriptionModelCapabilities}>
-                  {selectedCapability.notableCapabilities.join(' · ')}
-                </Text>
-                {!selectedCapability.available ? (
+                <Text style={styles.transcriptionOptionTitle}>空闲音频过滤（Silero VAD）</Text>
+                <Text style={styles.secondaryText}>仅压缩连续超过 30 秒的非人声区间</Text>
+                {!sileroVad?.available ? (
                   <Text accessibilityRole="alert" style={styles.directWarning}>
-                    {selectedCapability.unavailableReason} 当前模式不会静默降级。
+                    {sileroVad?.unavailableReason ?? 'Silero VAD 能力尚未加载。'}
                   </Text>
                 ) : null}
               </View>
+            </Pressable>
+            <Pressable
+              accessibilityLabel="保留完整音频"
+              accessibilityRole="radio"
+              accessibilityState={{ checked: preprocessing === 'whole_file', disabled: pending }}
+              disabled={pending}
+              onPress={() => onPreprocessingChange('whole_file')}
+              style={[
+                styles.segmentationOption,
+                preprocessing === 'whole_file' && styles.selectedModelOption,
+              ]}
+            >
+              <Ionicons
+                color={colors.ink}
+                name={preprocessing === 'whole_file' ? 'radio-button-on' : 'radio-button-off'}
+                size={22}
+              />
+              <View style={styles.transcriptionOptionCopy}>
+                <Text style={styles.transcriptionOptionTitle}>保留完整音频</Text>
+                <Text style={styles.secondaryText}>不执行人声检测，完整音频进入 ASR</Text>
+              </View>
+            </Pressable>
+            <Text style={styles.transcriptionSectionTitle}>正文分段方式</Text>
+            <View style={[styles.segmentationOption, styles.selectedModelOption]}>
+              <Ionicons color={colors.ink} name="people-outline" size={22} />
+              <View style={styles.transcriptionOptionCopy}>
+                <Text style={styles.transcriptionOptionTitle}>按说话轮次</Text>
+                <Text style={styles.secondaryText}>说话人变化或明显停顿时开始新段</Text>
+              </View>
             </View>
-          )}
+            <Text style={styles.transcriptionSectionTitle}>转写模型</Text>
+            {!selectedCapability ? (
+              <Text accessibilityRole="alert" style={styles.directWarning}>
+                转写模型目录加载失败，请关闭后重试。
+              </Text>
+            ) : (
+              <View
+                accessibilityLabel={`${selectedCapability.displayName}，${selectedCapability.description}，输入${formatModelPrice(selectedCapability.pricing.input)}，输出${formatModelPrice(selectedCapability.pricing.output)}`}
+                style={[
+                  styles.transcriptionModelOption,
+                  styles.selectedModelOption,
+                  !selectedCapability.available && styles.disabledButton,
+                ]}
+              >
+                <Ionicons color={colors.ink} name="hardware-chip-outline" size={22} />
+                <View style={styles.transcriptionOptionCopy}>
+                  <Text style={styles.transcriptionOptionTitle}>
+                    {selectedCapability.displayName}
+                  </Text>
+                  <Text style={styles.secondaryText}>{selectedCapability.description}</Text>
+                  <Text style={styles.transcriptionModelMeta}>
+                    价格（截至 {selectedCapability.pricing.asOf}）：输入{' '}
+                    {formatModelPrice(selectedCapability.pricing.input)} · 输出{' '}
+                    {formatModelPrice(selectedCapability.pricing.output)}
+                  </Text>
+                  <Text style={styles.transcriptionModelMeta}>
+                    时间戳：{timestampCapability(selectedCapability)} · Speaker：尽力分离
+                  </Text>
+                  <Text style={styles.transcriptionModelCapabilities}>
+                    {selectedCapability.notableCapabilities.join(' · ')}
+                  </Text>
+                  {!selectedCapability.available ? (
+                    <Text accessibilityRole="alert" style={styles.directWarning}>
+                      {selectedCapability.unavailableReason} 当前模式不会静默降级。
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+            )}
+          </ScrollView>
           <View style={styles.dialogActions}>
             <Pressable disabled={pending} onPress={onCancel} style={styles.dialogButton}>
               <Text style={styles.dialogButtonText}>取消</Text>
@@ -772,6 +778,9 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     width: '100%',
   },
+  transcriptionDialogCard: { maxHeight: '92%' },
+  transcriptionDialogContent: { gap: spacing.md },
+  transcriptionDialogScroll: { flexShrink: 1 },
   dialogBody: { ...typography.body, color: textColors.secondary, fontFamily: fontFamilies.sans },
   transcriptionSectionTitle: {
     ...typography.label,
@@ -784,9 +793,9 @@ const styles = StyleSheet.create({
     borderColor: colors.divider,
     borderRadius: radii.default,
     borderWidth: 1,
-    flex: 1,
     flexDirection: 'row',
     gap: spacing.sm,
+    minHeight: 68,
     padding: spacing.sm,
   },
   transcriptionModelList: { maxHeight: 260 },

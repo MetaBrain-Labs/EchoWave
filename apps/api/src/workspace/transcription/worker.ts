@@ -1,20 +1,21 @@
 /**
  * DashScope 音频转写后台 worker。
  *
- * 周期领取 PostgreSQL 中的转写修订，顺序完成整文件转码、OSS 暂存、DashScope 异步
- * 任务恢复与轮询、严格结果发布和临时资源清理。
+ * 周期领取 PostgreSQL 中的 revision，将供应商任务拆为提交、终态发现和统一完成阶段；
+ * Polling 与 EventBridge 只负责发现终态，结果处理始终走同一后台路径。
  *
  * Responsibilities:
- * - 保证供应商任务提交可恢复且不会因进程重启重复提交。
- * - 原子发布录音级 Speaker 段落并保留旧 active revision。
- * - 将失败安全收敛到当前修订，不暴露音频或供应商原始正文。
+ * - 在可配置在途上限内完成预处理、OSS 暂存和供应商任务提交。
+ * - 在 Polling 模式执行可恢复的单次状态查询，避免长时间占用 worker。
+ * - 优先消费已持久化终态，下载结果并完成时间轴恢复、发布和清理。
  *
  * Notes:
- * - 当前本地文件存储只支持单 API 实例，worker 保持单并发。
+ * - 当前本地文件存储只支持单 API 实例；提交与完成阶段均保持单 worker 执行。
  */
 import type { AudioFailureDetails } from '@echowave/contracts';
 
 import {
+  noOpAiExecutionRecorder,
   noOpAiExecutionReporter,
   type AiExecutionRecorder,
   type AiExecutionReporter,
@@ -26,19 +27,29 @@ import {
 } from '../persistence/audioAnalysisRepository.ts';
 import { AudioInputPreprocessor, AudioPreprocessingError } from './audioPreprocessor.ts';
 import type { DashScopeFileTranscription } from './dashScopeFileTranscription.ts';
+import { handleDashScopeTaskResult as persistDashScopeTaskResult } from './dashScopeTaskResult.ts';
 import { AudioTranscriptionProviderError } from './errors.ts';
 import type { OssStagingStore } from './ossStagingStore.ts';
 import { restoreOriginalTimeline, VoiceActivityError } from './voiceActivity.ts';
 
 const AUDIO_TRANSCRIPTION_LANGUAGE = 'zh' as const;
+const POLL_DELAYS_MS = [2_000, 5_000, 10_000, 15_000] as const;
 
 type WorkerOptions = {
   dashScope: DashScopeFileTranscription;
+  maxInFlight: number;
+  notifyMode: 'polling' | 'eventbridge';
   ossStaging?: OssStagingStore;
   preprocessor: AudioInputPreprocessor;
   repository: AudioAnalysisRepository;
   reporter?: AiExecutionReporter;
 };
+
+type WorkItem =
+  | { kind: 'submit'; job: ClaimedAudioTranscription }
+  | { kind: 'poll'; job: ClaimedAudioTranscription }
+  | { kind: 'complete'; job: ClaimedAudioTranscription }
+  | { kind: 'timeout'; job: ClaimedAudioTranscription };
 
 async function reportedStep<T>(
   report: AiExecutionRecorder,
@@ -65,18 +76,7 @@ async function reportedStep<T>(
 
 function failureDetails(error: unknown): AudioFailureDetails {
   if (error instanceof AudioTranscriptionProviderError && error.details) return error.details;
-  if (error instanceof AudioPreprocessingError) {
-    return {
-      category: 'preprocessing',
-      chunkIndex: null,
-      chunkCount: null,
-      structureAttempts: 0,
-      issues: [{ path: '$', code: error.code, message: error.message.slice(0, 500) }],
-      outputLength: null,
-      outputSha256: null,
-    };
-  }
-  if (error instanceof VoiceActivityError) {
+  if (error instanceof AudioPreprocessingError || error instanceof VoiceActivityError) {
     return {
       category: 'preprocessing',
       chunkIndex: null,
@@ -98,7 +98,7 @@ function failureDetails(error: unknown): AudioFailureDetails {
   };
 }
 
-/** 管理单并发 DashScope 整文件转写任务的领取、恢复和收敛。 */
+/** 管理单执行器、可配置供应商在途量的双模式异步转写任务。 */
 export class AudioTranscriptionWorker {
   private active?: Promise<void>;
   private pumping = false;
@@ -107,17 +107,17 @@ export class AudioTranscriptionWorker {
 
   constructor(private readonly options: WorkerOptions) {}
 
-  /** 重新排队中断的 DashScope 任务后启动周期领取。 */
+  /** 恢复中断阶段并启动终态完成、Polling、超时和新提交的周期领取。 */
   async start(): Promise<void> {
     if (this.timer) return;
     this.stopping = false;
-    await this.options.repository.resetInterruptedTranscriptions();
+    await this.options.repository.resetInterruptedTranscriptions(this.options.notifyMode);
     this.timer = setInterval(() => void this.pump(), 750);
     this.timer.unref();
     void this.pump();
   }
 
-  /** 停止领取新任务并等待当前供应商调用安全收敛。 */
+  /** 停止领取新阶段并等待当前阶段安全收敛。 */
   async stop(): Promise<void> {
     this.stopping = true;
     if (this.timer) clearInterval(this.timer);
@@ -129,15 +129,15 @@ export class AudioTranscriptionWorker {
     if (this.pumping || this.stopping || this.active) return;
     this.pumping = true;
     try {
-      const job = await this.options.repository.claimTranscription();
-      if (!job) return;
-      const execution = this.execute(job).finally(() => {
+      const work = await this.claimWork();
+      if (!work) return;
+      const execution = this.execute(work).finally(() => {
         if (this.active === execution) this.active = undefined;
         if (!this.stopping) void this.pump();
       });
       this.active = execution;
     } catch (error) {
-      console.error('Failed to claim audio transcription job', {
+      console.error('Failed to claim audio transcription work', {
         error: error instanceof Error ? error.name : 'UnknownError',
       });
     } finally {
@@ -145,12 +145,70 @@ export class AudioTranscriptionWorker {
     }
   }
 
-  private async execute(job: ClaimedAudioTranscription): Promise<void> {
+  private async claimWork(): Promise<WorkItem | undefined> {
+    const terminal = await this.options.repository.claimTerminalCompletion();
+    if (terminal) return { kind: 'complete', job: terminal };
+    const timeout = await this.options.repository.claimExpiredTranscription();
+    if (timeout) return { kind: 'timeout', job: timeout };
+    if (this.options.notifyMode === 'polling') {
+      const poll = await this.options.repository.claimPollingDiscovery();
+      if (poll) return { kind: 'poll', job: poll };
+    }
+    const submission = await this.options.repository.claimTranscription(this.options.maxInFlight);
+    return submission ? { kind: 'submit', job: submission } : undefined;
+  }
+
+  private async execute(work: WorkItem): Promise<void> {
+    if (work.kind === 'poll') {
+      await this.discoverByPolling(work.job);
+      return;
+    }
+    const report = this.startReport(work.job, work.kind);
     const startedAt = Date.now();
-    const report = (this.options.reporter ?? noOpAiExecutionReporter).start({
+    try {
+      if (work.kind === 'submit') {
+        await this.submit(work.job, report);
+        await report.finish({
+          status: 'completed',
+          metadata: { phase: 'submit', durationMs: Date.now() - startedAt },
+        });
+        return;
+      }
+      if (work.kind === 'timeout') {
+        throw new AudioTranscriptionProviderError(
+          'MODEL_TIMEOUT',
+          'DashScope 文件转写任务在六小时内未发现完成终态。',
+          true,
+        );
+      }
+      const segments = await this.handleDashScopeTaskResult(work.job, report);
+      await report.finish({
+        status: 'completed',
+        metadata: {
+          phase: 'complete',
+          durationMs: Date.now() - startedAt,
+          displaySegmentCount: segments.length,
+          speakerCount: new Set(segments.map((segment) => segment.speakerKey)).size,
+        },
+      });
+      console.info('Audio transcription completed from provider terminal result', {
+        audioFileId: work.job.audioFileId,
+        revisionId: work.job.revisionId,
+      });
+    } catch (error) {
+      await this.finishFailure(work.job, report, error, startedAt);
+    }
+  }
+
+  private startReport(
+    job: ClaimedAudioTranscription,
+    phase: WorkItem['kind'],
+  ): AiExecutionRecorder {
+    return (this.options.reporter ?? noOpAiExecutionReporter).start({
       kind: 'audio-transcription',
-      name: 'EchoWave audio transcription',
+      name: `EchoWave audio transcription ${phase}`,
       metadata: {
+        phase,
         source: { dataSource: job.dataSource, ingestionRunId: job.ingestionRunId },
         audio: {
           audioFileId: job.audioFileId,
@@ -164,71 +222,16 @@ export class AudioTranscriptionWorker {
           revisionId: job.revisionId,
           revisionNo: job.revisionNo,
           preprocessingMode: job.preprocessingMode,
-          ...(job.preprocessingManifest
-            ? {
-                preprocessing: {
-                  model: job.preprocessingManifest.model,
-                  detectionDurationMs: job.preprocessingManifest.detectionDurationMs,
-                  originalDurationMs: job.preprocessingManifest.originalDurationMs,
-                  processedDurationMs: job.preprocessingManifest.processedDurationMs,
-                  skippedDurationMs: job.preprocessingManifest.skippedDurationMs,
-                  skippedIntervalCount: job.preprocessingManifest.skippedIntervals.length,
-                  policy: job.preprocessingManifest.policy,
-                },
-              }
-            : {}),
           model: job.model,
           provider: job.provider,
           language: AUDIO_TRANSCRIPTION_LANGUAGE,
         },
       },
     });
-    try {
-      const segments = await this.executeDashScope(job, report);
-      const durationMs = Date.now() - startedAt;
-      await report.finish({
-        status: 'completed',
-        metadata: {
-          durationMs,
-          networkChunkCount: 1,
-          diarizationObserved: true,
-          diarizationRequested: true,
-          language: AUDIO_TRANSCRIPTION_LANGUAGE,
-          responseGranularity: 'segment',
-          segmentationMode: 'speaker_turn',
-          speakerIdentityScope: 'recording',
-          displaySegmentCount: segments.length,
-          speakerCount: new Set(segments.map((segment) => segment.speakerKey)).size,
-          ...(job.preprocessingManifest
-            ? {
-                preprocessing: {
-                  model: job.preprocessingManifest.model,
-                  detectionDurationMs: job.preprocessingManifest.detectionDurationMs,
-                  originalDurationMs: job.preprocessingManifest.originalDurationMs,
-                  processedDurationMs: job.preprocessingManifest.processedDurationMs,
-                  skippedDurationMs: job.preprocessingManifest.skippedDurationMs,
-                  skippedIntervalCount: job.preprocessingManifest.skippedIntervals.length,
-                  policy: job.preprocessingManifest.policy,
-                },
-              }
-            : {}),
-        },
-      });
-      console.info('Audio transcription completed', {
-        audioFileId: job.audioFileId,
-        durationMs,
-        revisionId: job.revisionId,
-      });
-    } catch (error) {
-      await this.finishFailure(job, report, error, startedAt);
-    }
   }
 
-  /** 恢复或提交 DashScope 整文件任务并原子发布录音级 Speaker 段落。 */
-  private async executeDashScope(
-    job: ClaimedAudioTranscription,
-    report: AiExecutionRecorder,
-  ): Promise<TranscriptDraft[]> {
+  /** 完成音频准备和任务提交，持久化 task ID 后立即释放 worker。 */
+  private async submit(job: ClaimedAudioTranscription, report: AiExecutionRecorder): Promise<void> {
     const { dashScope, ossStaging, repository, preprocessor } = this.options;
     if (!ossStaging) {
       throw new AudioTranscriptionProviderError(
@@ -239,118 +242,143 @@ export class AudioTranscriptionWorker {
     }
 
     let objectKey = job.providerArtifactKey;
-    let taskId = job.providerTaskId;
-    let submittedAt = job.providerSubmittedAt;
-    const createModelInput = () => ({
-      kind: 'file-transcription',
-      audio: '[OMITTED_AUDIO]',
-      language: AUDIO_TRANSCRIPTION_LANGUAGE,
-      durationMs: job.preprocessingManifest?.processedDurationMs ?? job.durationMs,
-      preprocessingMode: job.preprocessingMode,
-      diarizationEnabled: true,
-      timestampGranularity: 'segment',
-    });
-    if (job.preprocessingMode === 'silero_vad' && objectKey && !job.preprocessingManifest) {
-      throw new VoiceActivityError(
-        'INVALID_VAD_TIMELINE',
-        '已保存的过滤音频缺少时间轴清单，请重新转写。',
+    if (!objectKey) {
+      const wholeFile = await reportedStep(report, 'preprocess-whole-file', async () => {
+        await repository.updateActivity(job, { stage: 'preprocessing', progress: 5 });
+        return preprocessor.createWholeFile(job);
+      });
+      objectKey = await reportedStep(report, 'oss-staging-upload', () =>
+        ossStaging.upload(job.revisionId, wholeFile.path),
+      );
+      job.preprocessingManifest = wholeFile.manifest ?? null;
+      job.providerArtifactKey = objectKey;
+      await repository.recordProviderArtifact(job, objectKey, job.preprocessingManifest);
+    }
+
+    const providerDurationMs = job.preprocessingManifest?.processedDurationMs ?? job.durationMs;
+    await repository.updateActivity(job, { stage: 'transcribing', progress: 15 });
+    const taskId = await reportedStep(report, 'dashscope-submit', () =>
+      dashScope.submit(ossStaging.signedGetUrl(objectKey!), {
+        revisionId: job.revisionId,
+        durationMs: providerDurationMs,
+        preprocessing: job.preprocessingMode,
+      }),
+    );
+    const submittedAt = new Date();
+    await repository.recordProviderTask(job, taskId, submittedAt, this.options.notifyMode);
+    job.providerTaskId = taskId;
+    job.providerSubmittedAt = submittedAt;
+    await repository.updateActivity(job, { stage: 'awaiting_result', progress: 35 });
+  }
+
+  /** 执行一次供应商状态查询；未完成或瞬时失败只安排下一次查询。 */
+  private async discoverByPolling(job: ClaimedAudioTranscription): Promise<void> {
+    const startedAt = Date.now();
+    const taskId = job.providerTaskId;
+    if (!taskId) {
+      await this.finishFailure(
+        job,
+        noOpAiExecutionRecorder,
+        new AudioTranscriptionProviderError(
+          'INVALID_MODEL_OUTPUT',
+          'Polling 任务缺少 DashScope task ID。',
+          true,
+        ),
+        startedAt,
+      );
+      return;
+    }
+
+    const attempt = job.providerPollAttempt + 1;
+    const delayMs = POLL_DELAYS_MS[Math.min(attempt - 1, POLL_DELAYS_MS.length - 1)]!;
+    try {
+      const status = await this.options.dashScope.queryTask(taskId, attempt, {
+        revisionId: job.revisionId,
+        durationMs: job.preprocessingManifest?.processedDurationMs ?? job.durationMs,
+        preprocessing: job.preprocessingMode,
+      });
+      if (status.status === 'PENDING' || status.status === 'RUNNING') {
+        await this.options.repository.scheduleNextPoll(job, attempt, delayMs);
+        return;
+      }
+      await persistDashScopeTaskResult(this.options.repository, {
+        source: 'polling',
+        eventId: null,
+        taskId,
+        status: status.status,
+        receivedAt: new Date(),
+        resultUrl: status.resultUrl,
+        errorCode: status.errorCode,
+        errorMessage: status.errorMessage,
+      });
+    } catch (error) {
+      if (
+        error instanceof AudioTranscriptionProviderError &&
+        error.retryable &&
+        error.code !== 'INVALID_MODEL_OUTPUT'
+      ) {
+        await this.options.repository.scheduleNextPoll(job, attempt, delayMs);
+        return;
+      }
+      await this.finishFailure(job, noOpAiExecutionRecorder, error, startedAt);
+    }
+  }
+
+  /** 消费已持久化终态，下载结果并发布录音级 Speaker 段落。 */
+  private async handleDashScopeTaskResult(
+    job: ClaimedAudioTranscription,
+    report: AiExecutionRecorder,
+  ): Promise<TranscriptDraft[]> {
+    if (job.providerTerminalStatus !== 'SUCCEEDED') {
+      throw new AudioTranscriptionProviderError(
+        'MODEL_UNAVAILABLE',
+        'DashScope 文件转写未成功完成。',
         true,
       );
     }
-    if (!taskId) {
-      if (!objectKey) {
-        const wholeFile = await reportedStep(report, 'preprocess-whole-file', async () => {
-          await repository.updateActivity(job, { stage: 'preprocessing', progress: 5 });
-          return preprocessor.createWholeFile(job);
-        });
-        objectKey = await reportedStep(report, 'oss-staging-upload', () =>
-          ossStaging.upload(job.revisionId, wholeFile.path),
-        );
-        job.preprocessingManifest = wholeFile.manifest ?? null;
-        job.providerArtifactKey = objectKey;
-        await repository.recordProviderArtifact(job, objectKey, job.preprocessingManifest);
-      }
-      const providerDurationMs = job.preprocessingManifest?.processedDurationMs ?? job.durationMs;
-      await repository.updateActivity(job, { stage: 'transcribing', progress: 15 });
-      const submitStartedAt = Date.now();
-      try {
-        taskId = await reportedStep(report, 'dashscope-submit', () =>
-          dashScope.submit(ossStaging.signedGetUrl(objectKey!), {
-            revisionId: job.revisionId,
-            durationMs: providerDurationMs,
-            preprocessing: job.preprocessingMode,
-          }),
-        );
-      } catch (error) {
-        report.recordModelCall({
-          name: 'audio-file-transcription',
-          provider: 'dashscope',
-          model: job.model,
-          status: 'failed',
-          attempt: 1,
-          durationMs: Date.now() - submitStartedAt,
-          inputTokens: null,
-          outputTokens: null,
-          input: createModelInput(),
-          output: { stage: 'submit', error },
-        });
-        throw error;
-      }
-      submittedAt = new Date();
-      job.providerTaskId = taskId;
-      job.providerSubmittedAt = submittedAt;
-      await repository.recordProviderTask(job, taskId, submittedAt);
-    }
-    if (!submittedAt) {
+    if (!job.providerTaskId || !job.providerTerminalResultUrl) {
       throw new AudioTranscriptionProviderError(
         'INVALID_MODEL_OUTPUT',
-        '已保存的 DashScope 任务缺少提交时间。',
+        'DashScope 成功终态缺少有效的转写结果地址。',
         true,
       );
     }
 
-    await repository.updateActivity(job, { stage: 'transcribing', progress: 35 });
     const providerDurationMs = job.preprocessingManifest?.processedDurationMs ?? job.durationMs;
-    const transcriptionStartedAt = Date.now();
-    let result;
-    try {
-      result = await reportedStep(report, 'dashscope-poll', () =>
-        dashScope.waitForResult(taskId!, submittedAt!, {
-          revisionId: job.revisionId,
-          durationMs: providerDurationMs,
-          preprocessing: job.preprocessingMode,
-        }),
-      );
-      report.recordModelCall({
-        name: 'audio-file-transcription',
-        provider: 'dashscope',
-        model: job.model,
-        status: 'completed',
-        attempt: 1,
-        durationMs: Date.now() - transcriptionStartedAt,
-        inputTokens: null,
-        outputTokens: null,
-        input: createModelInput(),
-        output: {
-          language: AUDIO_TRANSCRIPTION_LANGUAGE,
-          segments: result.segments,
-        },
-      });
-    } catch (error) {
-      report.recordModelCall({
-        name: 'audio-file-transcription',
-        provider: 'dashscope',
-        model: job.model,
-        status: 'failed',
-        attempt: 1,
-        durationMs: Date.now() - transcriptionStartedAt,
-        inputTokens: null,
-        outputTokens: null,
-        input: createModelInput(),
-        output: { stage: 'poll', error },
-      });
-      throw error;
-    }
+    const result = await reportedStep(report, 'dashscope-terminal-result', () =>
+      this.options.dashScope.fetchResult(job.providerTaskId!, job.providerTerminalResultUrl!, {
+        revisionId: job.revisionId,
+        durationMs: providerDurationMs,
+        preprocessing: job.preprocessingMode,
+      }),
+    );
+    report.recordModelCall({
+      name: 'audio-file-transcription',
+      displayName: '识别整段音频并生成带时间戳的说话人转写',
+      provider: 'dashscope',
+      model: job.model,
+      status: 'completed',
+      attempt: 1,
+      durationMs: Math.max(
+        0,
+        (job.providerTerminalReceivedAt?.getTime() ?? Date.now()) -
+          (job.providerSubmittedAt?.getTime() ?? Date.now()),
+      ),
+      inputTokens: null,
+      outputTokens: null,
+      reasoningMode: 'unsupported',
+      input: {
+        kind: 'file-transcription',
+        audio: '[OMITTED_AUDIO]',
+        language: AUDIO_TRANSCRIPTION_LANGUAGE,
+        durationMs: providerDurationMs,
+        preprocessingMode: job.preprocessingMode,
+        diarizationEnabled: true,
+        timestampGranularity: 'segment',
+      },
+      output: { language: AUDIO_TRANSCRIPTION_LANGUAGE, segments: result.segments },
+    });
+
     let segments = result.segments;
     if (job.preprocessingManifest) {
       try {
@@ -362,9 +390,9 @@ export class AudioTranscriptionWorker {
         throw error;
       }
     }
-    await repository.updateActivity(job, { stage: 'publishing', progress: 95 });
+    await this.options.repository.updateActivity(job, { stage: 'publishing', progress: 95 });
     await reportedStep(report, 'publish', () =>
-      repository.publishTranscription(job, segments, {
+      this.options.repository.publishTranscription(job, segments, {
         language: AUDIO_TRANSCRIPTION_LANGUAGE,
         diarizationRequested: true,
         diarizationObserved: true,
@@ -374,7 +402,7 @@ export class AudioTranscriptionWorker {
       }),
     );
     await this.cleanupProviderArtifact(job, report);
-    await preprocessor.cleanup(job);
+    await this.options.preprocessor.cleanup(job);
     report.recordOutput(segments);
     return segments;
   }
@@ -427,7 +455,7 @@ export class AudioTranscriptionWorker {
           : {}),
       },
     });
-    console.error('Audio transcription failed', {
+    console.error('Audio transcription phase failed', {
       audioFileId: job.audioFileId,
       code,
       revisionId: job.revisionId,
@@ -436,7 +464,7 @@ export class AudioTranscriptionWorker {
     if (persistenceError) throw persistenceError;
   }
 
-  /** 供应商任务终止后尽力清理 OSS；失败时保留对象键交给生命周期规则兜底。 */
+  /** 终态后尽力删除 OSS；失败时保留对象键交给生命周期规则兜底。 */
   private async cleanupProviderArtifact(
     job: ClaimedAudioTranscription,
     report: AiExecutionRecorder,

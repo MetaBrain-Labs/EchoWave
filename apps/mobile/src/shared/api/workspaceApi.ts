@@ -16,6 +16,7 @@ import { Platform } from 'react-native';
 import {
   ApiErrorResponseSchema,
   AudioAnalysisDetailSchema,
+  AudioAiExecutionTraceResponseSchema,
   AudioBusinessAnalysisStartRequestSchema,
   AudioBusinessAnalysisStartResponseSchema,
   AudioPostAnalysisStartResponseSchema,
@@ -249,6 +250,11 @@ export const getAudioAnalysis = (id: string, groupId?: string) =>
   request(
     `/api/audio-files/${id}/analysis${groupId ? `?groupId=${encodeURIComponent(groupId)}` : ''}`,
     AudioAnalysisDetailSchema,
+  );
+export const getAudioExecutionTrace = (id: string, groupId?: string) =>
+  request(
+    `/api/audio-files/${id}/analysis/executions${groupId ? `?groupId=${encodeURIComponent(groupId)}` : ''}`,
+    AudioAiExecutionTraceResponseSchema,
   );
 export const startAudioBusinessAnalysis = (id: string, input: AudioBusinessAnalysisStartRequest) =>
   request(`/api/audio-files/${id}/business-analyses`, AudioBusinessAnalysisStartResponseSchema, {

@@ -200,6 +200,23 @@ describe('workspace contracts', () => {
       },
     });
     assert.equal(processing.status.activity.stage, 'correcting');
+    const awaitingCallback = AudioFileSummarySchema.parse({
+      ...processing,
+      status: {
+        ...processing.status,
+        activity: {
+          ...processing.status.activity,
+          stage: 'awaiting_result',
+          chunkIndex: null,
+          chunkCount: null,
+          chunkStartMs: null,
+          chunkEndMs: null,
+          networkAttempt: null,
+          structureAttempt: null,
+        },
+      },
+    });
+    assert.equal(awaitingCallback.status.activity.stage, 'awaiting_result');
     const splitting = AudioFileSummarySchema.parse({
       ...processing,
       status: {

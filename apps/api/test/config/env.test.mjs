@@ -23,6 +23,10 @@ const completeValues = {
   DASHSCOPE_API_KEY: 'dashscope-test-key',
   DASHSCOPE_BASE_URL: 'https://workspace.example.com/api/v1/',
   DASHSCOPE_COMPATIBLE_BASE_URL: 'https://workspace.example.com/compatible-mode/v1/',
+  DASHSCOPE_ASYNC_NOTIFY_MODE: 'eventbridge',
+  DASHSCOPE_EVENTBRIDGE_CALLBACK_URL:
+    'https://api.example.com/api/webhooks/dashscope/async-task-finished',
+  DASHSCOPE_EVENTBRIDGE_CALLBACK_TOKEN: 'eventbridge-secret',
   RAG_EMBEDDING_MODEL: 'qwen3.7-text-embedding',
   RAG_EMBEDDING_DIMENSIONS: '1024',
   DEEPSEEK_API_KEY: 'deepseek-test-key',
@@ -35,6 +39,7 @@ const completeValues = {
   AUDIO_TRANSCRIPTION_MODEL: 'qwen-audio-3.0-asr-flash-filetrans',
   AUDIO_EMOTION_MODEL: 'qwen3.5-omni-flash',
   AUDIO_TRANSCRIPTION_TEMP_DIR: '.tmp/audio-transcription',
+  AUDIO_TRANSCRIPTION_MAX_IN_FLIGHT: '1',
   FFMPEG_PATH: 'C:\\ffmpeg\\ffmpeg.exe',
   AI_EXECUTION_REPORT_ENABLED: 'false',
   AI_EXECUTION_REPORT_OUTPUT_DIR: '.ai-execution-reports',
@@ -52,11 +57,17 @@ describe('API environment', () => {
       apiKey: 'dashscope-test-key',
       baseUrl: 'https://workspace.example.com/api/v1',
       compatibleBaseUrl: 'https://workspace.example.com/compatible-mode/v1',
+      asyncNotifyMode: 'eventbridge',
+      eventBridgeCallback: {
+        url: 'https://api.example.com/api/webhooks/dashscope/async-task-finished',
+        token: 'eventbridge-secret',
+      },
     });
     assert.equal(config.rag.embeddingModel, 'qwen3.7-text-embedding');
     assert.equal(config.rag.embeddingDimensions, 1024);
     assert.equal(config.rag.audioTranscriptionModel, 'qwen-audio-3.0-asr-flash-filetrans');
     assert.equal(config.rag.audioEmotionModel, 'qwen3.5-omni-flash');
+    assert.equal(config.rag.audioTranscriptionMaxInFlight, 1);
     assert.equal(config.rag.ffmpegPath, 'C:\\ffmpeg\\ffmpeg.exe');
     assert.deepEqual(config.corsOrigins, ['http://localhost:8081', 'http://localhost:19006']);
   });
@@ -83,6 +94,34 @@ describe('API environment', () => {
       accessKeyId: 'oss-id',
       accessKeySecret: 'oss-secret',
     });
+  });
+
+  it('requires mode-specific EventBridge callback configuration', () => {
+    const { DASHSCOPE_EVENTBRIDGE_CALLBACK_TOKEN: _token, ...withoutToken } = completeValues;
+    assert.throws(() => readApiConfig(withoutToken));
+    const {
+      DASHSCOPE_EVENTBRIDGE_CALLBACK_URL: _url,
+      DASHSCOPE_EVENTBRIDGE_CALLBACK_TOKEN: _callbackToken,
+      ...withoutCallback
+    } = completeValues;
+    const polling = readApiConfig({
+      ...withoutCallback,
+      DASHSCOPE_ASYNC_NOTIFY_MODE: 'polling',
+    });
+    assert.equal(polling.rag.dashScope.asyncNotifyMode, 'polling');
+    assert.equal(polling.rag.dashScope.eventBridgeCallback, undefined);
+    assert.throws(() =>
+      readApiConfig({ ...completeValues, DASHSCOPE_ASYNC_NOTIFY_MODE: 'polling' }),
+    );
+    assert.throws(() =>
+      readApiConfig({ ...withoutCallback, DASHSCOPE_ASYNC_NOTIFY_MODE: 'local' }),
+    );
+    assert.throws(() =>
+      readApiConfig({
+        ...completeValues,
+        DASHSCOPE_EVENTBRIDGE_CALLBACK_URL: 'https://api.example.com/api/webhooks/dashscope',
+      }),
+    );
   });
 
   it('rejects removed providers, models, and invalid booleans', () => {

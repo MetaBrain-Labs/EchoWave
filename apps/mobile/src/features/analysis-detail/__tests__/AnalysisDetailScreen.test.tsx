@@ -19,6 +19,7 @@ import {
   setPostAnalysisControlsCollapsedPreference,
 } from '../preferences';
 import * as workspaceApi from '@/shared/api/workspaceApi';
+import * as executionStreamApi from '@/shared/api/audioExecutionStream';
 import { analysisFixture } from '@/test/workspaceFixtures';
 import { mockAudioPlayers, resetExpoAudioMock } from '@/test/ExpoAudioMock';
 
@@ -28,12 +29,20 @@ jest.mock('@/shared/api/workspaceApi', () => {
     ...actual,
     confirmAudioTranscript: jest.fn(),
     getAudioAnalysis: jest.fn(),
+    getAudioExecutionTrace: jest.fn(),
     getGroupSettings: jest.fn(),
     startAudioBusinessAnalysis: jest.fn(),
     startAudioEmotionAnalysis: jest.fn(),
     startAudioRoleRecognition: jest.fn(),
   };
 });
+
+jest.mock('@/shared/api/audioExecutionStream', () => ({
+  streamAudioExecutionTrace: jest.fn(
+    ({ signal }: { signal: AbortSignal }) =>
+      new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve())),
+  ),
+}));
 
 async function renderAnalysis(
   detailId = analysisFixture.audioFileId,
@@ -54,6 +63,12 @@ describe('AnalysisDetailScreen', () => {
     setHideIrrelevantSegmentsPreference(false);
     setPostAnalysisControlsCollapsedPreference(true);
     jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValue(analysisFixture);
+    jest.mocked(workspaceApi.getAudioExecutionTrace).mockResolvedValue({
+      audioFileId: analysisFixture.audioFileId,
+      analysisRevisionId: analysisFixture.id,
+      runs: [],
+    });
+    jest.mocked(executionStreamApi.streamAudioExecutionTrace).mockClear();
     jest.mocked(workspaceApi.getGroupSettings).mockResolvedValue({
       groupId: '10000000-0000-4000-8000-000000000001',
       name: '销售复盘组',
@@ -695,6 +710,262 @@ describe('AnalysisDetailScreen', () => {
     expect(StyleSheet.flatten(screen.getByTestId('ai-tag-sheet').props.style)).toEqual(
       expect.objectContaining({ maxHeight: '33%' }),
     );
+  });
+
+  it('lazy-loads safe model, tool and knowledge retrieval details', async () => {
+    const groupId = '10000000-0000-4000-8000-000000000001';
+    jest.mocked(workspaceApi.getAudioExecutionTrace).mockResolvedValueOnce({
+      audioFileId: analysisFixture.audioFileId,
+      analysisRevisionId: analysisFixture.id,
+      runs: [
+        {
+          id: 'e1000000-0000-4000-8000-000000000001',
+          kind: 'audio-business-analysis',
+          name: 'EchoWave sales conversation review',
+          phase: null,
+          status: 'completed',
+          groupId,
+          sourceJobId: 'b1000000-0000-4000-8000-000000000001',
+          startedAt: '2026-08-29T01:00:00.000Z',
+          completedAt: '2026-08-29T01:00:02.000Z',
+          durationMs: 2_000,
+          error: null,
+          steps: [
+            {
+              id: 'f1000000-0000-4000-8000-000000000001',
+              sequence: 1,
+              name: 'retrieval-planning',
+              status: 'completed',
+              occurredAt: '2026-08-29T01:00:00.500Z',
+              durationMs: 120,
+              summary: { queryCount: 1 },
+            },
+          ],
+          modelCalls: [
+            {
+              id: 'f2000000-0000-4000-8000-000000000002',
+              sequence: 2,
+              operation: 'business-analysis-generation',
+              name: '结合转写与知识证据生成业务分析',
+              provider: 'deepseek',
+              model: 'deepseek-v4-flash',
+              status: 'completed',
+              attempt: 1,
+              startedAt: '2026-08-29T01:00:01.000Z',
+              completedAt: '2026-08-29T01:00:01.800Z',
+              durationMs: 800,
+              inputTokens: 1200,
+              outputTokens: 300,
+              reasoningMode: 'streaming',
+              reasoningContent: '先核对客户异议，再结合知识证据。',
+              reasoningTruncated: false,
+              estimatedCost: null,
+            },
+          ],
+          toolCalls: [
+            {
+              id: 'f3000000-0000-4000-8000-000000000003',
+              sequence: 3,
+              operation: 'search_knowledge',
+              name: '检索分组关联知识库',
+              status: 'completed',
+              startedAt: '2026-08-29T01:00:01.500Z',
+              completedAt: '2026-08-29T01:00:01.560Z',
+              durationMs: 60,
+              query: '客户价格异议处理',
+              knowledgeBases: [{ id: 'b0000000-0000-4000-8000-000000000001', name: '销售知识库' }],
+              hitCount: 1,
+              hits: [
+                {
+                  chunkId: 'c0000000-0000-4000-8000-000000000001',
+                  knowledgeBaseId: 'b0000000-0000-4000-8000-000000000001',
+                  documentId: 'd0000000-0000-4000-8000-000000000001',
+                  documentTitle: '销售异议处理手册',
+                  locator: {
+                    kind: 'markdown',
+                    headingPath: ['价格异议'],
+                    lineStart: 10,
+                    lineEnd: 18,
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const screen = await renderAnalysis(analysisFixture.audioFileId, jest.fn(), groupId);
+
+    expect(workspaceApi.getAudioExecutionTrace).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByRole('tab', { name: '模型详情' }));
+
+    await waitFor(() =>
+      expect(workspaceApi.getAudioExecutionTrace).toHaveBeenCalledWith(
+        analysisFixture.audioFileId,
+        groupId,
+      ),
+    );
+    expect(screen.getByText(/原始推理属于模型未验证的中间过程/)).toBeTruthy();
+    fireEvent.press(await screen.findByText('业务分析'));
+    expect(screen.getByText('结合转写与知识证据生成业务分析')).toBeTruthy();
+    expect(await screen.findByText('deepseek · deepseek-v4-flash')).toBeTruthy();
+    expect(screen.getByText('查询：客户价格异议处理')).toBeTruthy();
+    expect(screen.getByText('知识库：销售知识库')).toBeTruthy();
+    expect(screen.getByText('销售异议处理手册')).toBeTruthy();
+  });
+
+  it('adds a running named model call and appends reasoning in place from SSE', async () => {
+    const groupId = '10000000-0000-4000-8000-000000000001';
+    const runId = 'e1000000-0000-4000-8000-000000000001';
+    const operationId = 'f2000000-0000-4000-8000-000000000002';
+    let streamOptions:
+      Parameters<typeof executionStreamApi.streamAudioExecutionTrace>[0] | undefined;
+    jest.mocked(executionStreamApi.streamAudioExecutionTrace).mockImplementationOnce((options) => {
+      streamOptions = options;
+      return new Promise<void>((resolve) =>
+        options.signal.addEventListener('abort', () => resolve()),
+      );
+    });
+    const screen = await renderAnalysis(analysisFixture.audioFileId, jest.fn(), groupId);
+    fireEvent.press(screen.getByRole('tab', { name: '模型详情' }));
+    await waitFor(() => expect(streamOptions).toBeDefined());
+    await waitFor(() => expect(workspaceApi.getAudioExecutionTrace).toHaveBeenCalledTimes(1));
+
+    const runningCall = {
+      id: operationId,
+      sequence: 2,
+      operation: 'business-analysis-generation',
+      name: '结合转写与知识证据生成业务分析',
+      provider: 'deepseek',
+      model: 'deepseek-v4-flash',
+      status: 'running' as const,
+      attempt: 1,
+      startedAt: '2026-08-29T01:00:01.000Z',
+      completedAt: null,
+      durationMs: null,
+      inputTokens: null,
+      outputTokens: null,
+      reasoningMode: 'streaming' as const,
+      reasoningContent: '',
+      reasoningTruncated: false,
+      estimatedCost: null,
+    };
+    await act(async () => {
+      streamOptions?.onEvent({
+        type: 'snapshot',
+        cursor: '1',
+        audioFileId: analysisFixture.audioFileId,
+        analysisRevisionId: analysisFixture.id,
+        trace: {
+          audioFileId: analysisFixture.audioFileId,
+          analysisRevisionId: analysisFixture.id,
+          runs: [
+            {
+              id: runId,
+              kind: 'audio-business-analysis',
+              name: 'EchoWave sales conversation review',
+              phase: null,
+              status: 'running',
+              groupId,
+              sourceJobId: 'b1000000-0000-4000-8000-000000000001',
+              startedAt: '2026-08-29T01:00:00.000Z',
+              completedAt: null,
+              durationMs: null,
+              error: null,
+              steps: [],
+              modelCalls: [],
+              toolCalls: [],
+            },
+          ],
+        },
+      });
+      streamOptions?.onEvent({
+        type: 'model-start',
+        cursor: '2',
+        audioFileId: analysisFixture.audioFileId,
+        analysisRevisionId: analysisFixture.id,
+        runId,
+        operationId,
+        modelCall: runningCall,
+      });
+      streamOptions?.onEvent({
+        type: 'reasoning-delta',
+        cursor: '3',
+        audioFileId: analysisFixture.audioFileId,
+        analysisRevisionId: analysisFixture.id,
+        runId,
+        operationId,
+        delta: '先核对转写，再检查知识证据。',
+        truncated: false,
+      });
+    });
+
+    fireEvent.press(await screen.findByText(runningCall.name));
+    expect(screen.getByText(`当前关注事项：${runningCall.name}`)).toBeTruthy();
+    fireEvent.press(screen.getByText('原始推理'));
+    expect(screen.getByText('先核对转写，再检查知识证据。')).toBeTruthy();
+    const reasoningScroll = screen.getByTestId(`reasoning-scroll-${operationId}`);
+    expect(reasoningScroll).toHaveStyle({ maxHeight: 240 });
+    fireEvent(reasoningScroll, 'scrollBeginDrag');
+    fireEvent.scroll(reasoningScroll, {
+      nativeEvent: {
+        contentOffset: { x: 0, y: 120 },
+        contentSize: { height: 800, width: 320 },
+        layoutMeasurement: { height: 240, width: 320 },
+      },
+    });
+    fireEvent(reasoningScroll, 'scrollEndDrag', {
+      nativeEvent: {
+        contentOffset: { x: 0, y: 120 },
+        contentSize: { height: 800, width: 320 },
+        layoutMeasurement: { height: 240, width: 320 },
+      },
+    });
+    expect(screen.getByRole('button', { name: '回到最新' })).toBeTruthy();
+
+    await act(async () => {
+      streamOptions?.onEvent({
+        type: 'reasoning-delta',
+        cursor: '4',
+        audioFileId: analysisFixture.audioFileId,
+        analysisRevisionId: analysisFixture.id,
+        runId,
+        operationId,
+        delta: '继续检查成交风险。',
+        truncated: false,
+      });
+    });
+    expect(screen.getByText('先核对转写，再检查知识证据。继续检查成交风险。')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '回到最新' })).toBeTruthy();
+
+    fireEvent(reasoningScroll, 'scrollBeginDrag');
+    fireEvent.scroll(reasoningScroll, {
+      nativeEvent: {
+        contentOffset: { x: 0, y: 560 },
+        contentSize: { height: 800, width: 320 },
+        layoutMeasurement: { height: 240, width: 320 },
+      },
+    });
+    fireEvent(reasoningScroll, 'scrollEndDrag', {
+      nativeEvent: {
+        contentOffset: { x: 0, y: 560 },
+        contentSize: { height: 800, width: 320 },
+        layoutMeasurement: { height: 240, width: 320 },
+      },
+    });
+    expect(screen.queryByRole('button', { name: '回到最新' })).toBeNull();
+
+    fireEvent(reasoningScroll, 'scrollBeginDrag');
+    fireEvent(reasoningScroll, 'scrollEndDrag', {
+      nativeEvent: {
+        contentOffset: { x: 0, y: 100 },
+        contentSize: { height: 800, width: 320 },
+        layoutMeasurement: { height: 240, width: 320 },
+      },
+    });
+    fireEvent.press(screen.getByRole('button', { name: '回到最新' }));
+    expect(screen.queryByRole('button', { name: '回到最新' })).toBeNull();
+    expect(workspaceApi.getAudioExecutionTrace).toHaveBeenCalledTimes(1);
   });
 
   it('renders an actionable state for unknown detail ids', async () => {

@@ -33,7 +33,7 @@ import {
 } from '@echowave/contracts';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { stream } from 'hono/streaming';
+import { stream, streamSSE } from 'hono/streaming';
 import { createReadStream } from 'node:fs';
 import { ZodError } from 'zod';
 
@@ -43,6 +43,10 @@ import { RagRepositoryError } from '../knowledge/persistence/errors.ts';
 import { UploadValidationError, type KnowledgeService } from '../knowledge/service.ts';
 import { WorkspaceRepositoryError } from '../workspace/persistence/errors.ts';
 import { AudioUploadValidationError, type WorkspaceService } from '../workspace/service.ts';
+import {
+  DashScopeCallbackError,
+  type DashScopeCallbackService,
+} from '../workspace/transcription/dashScopeCallback.ts';
 import { resolveAudioByteRange } from './audioContent.ts';
 
 type ErrorStatus = 400 | 404 | 409 | 413 | 500 | 503 | 504;
@@ -58,7 +62,11 @@ function id(value: string): string {
 /** 创建不启动监听器的 Hono 应用，使生产服务器和测试通过同一传输接口调用业务模块。 */
 export function createApp(
   config: Pick<ApiConfig, 'corsOrigins'>,
-  dependencies: { knowledgeService?: KnowledgeService; workspaceService?: WorkspaceService } = {},
+  dependencies: {
+    dashScopeCallbackService?: DashScopeCallbackService;
+    knowledgeService?: KnowledgeService;
+    workspaceService?: WorkspaceService;
+  } = {},
 ) {
   const app = new Hono();
 
@@ -77,6 +85,36 @@ export function createApp(
       HelloResponseSchema.parse({ ok: true, service: 'echowave-api', message: 'HelloWorld' }),
     ),
   );
+
+  if (dependencies.dashScopeCallbackService) {
+    app.post('/api/webhooks/dashscope/async-task-finished', async (context) => {
+      const rawBody = await context.req.text();
+      try {
+        await dependencies.dashScopeCallbackService!.receive(rawBody, context.req.raw.headers);
+        return context.body(null, 204);
+      } catch (error) {
+        if (error instanceof DashScopeCallbackError) {
+          const status =
+            error.kind === 'bad_request' ? 400 : error.kind === 'unauthorized' ? 401 : 503;
+          return context.json(
+            errorBody(
+              status === 400 ? 'BAD_REQUEST' : 'INTERNAL_ERROR',
+              status === 400 ? 'Invalid DashScope callback.' : 'DashScope callback rejected.',
+              status === 503,
+            ),
+            status,
+          );
+        }
+        console.error('Failed to persist DashScope callback', {
+          error: error instanceof Error ? error.name : 'UnknownError',
+        });
+        return context.json(
+          errorBody('INTERNAL_ERROR', 'DashScope callback is temporarily unavailable.', true),
+          503,
+        );
+      }
+    });
+  }
 
   const service = dependencies.knowledgeService;
   if (service) {
@@ -296,6 +334,95 @@ export function createApp(
           requestedGroupId ? id(requestedGroupId) : undefined,
         ),
       );
+    });
+    app.get('/api/audio-files/:audioFileId/analysis/executions', async (context) => {
+      const requestedGroupId = context.req.query('groupId');
+      return context.json(
+        await workspace.getAudioExecutionTrace(
+          id(context.req.param('audioFileId')),
+          requestedGroupId ? id(requestedGroupId) : undefined,
+        ),
+      );
+    });
+    app.get('/api/audio-files/:audioFileId/analysis/executions/stream', async (context) => {
+      const audioFileId = id(context.req.param('audioFileId'));
+      const requestedGroupId = context.req.query('groupId');
+      const groupId = requestedGroupId ? id(requestedGroupId) : undefined;
+      const requestedCursor = context.req.query('cursor');
+      if (
+        requestedCursor &&
+        (!/^(0|[1-9]\d{0,18})$/.test(requestedCursor) ||
+          BigInt(requestedCursor) > 9_223_372_036_854_775_807n)
+      ) {
+        return context.json(errorBody('BAD_REQUEST', '请求参数无效。'), 400);
+      }
+      const snapshot = await workspace.getAudioExecutionStreamSnapshot(audioFileId, groupId);
+      context.header('Cache-Control', 'private, no-cache, no-transform');
+      context.header('Content-Encoding', 'Identity');
+      context.header('X-Accel-Buffering', 'no');
+      return streamSSE(context, async (eventStream) => {
+        const canResume =
+          requestedCursor !== undefined && BigInt(requestedCursor) <= BigInt(snapshot.cursor);
+        let cursor = canResume ? requestedCursor : snapshot.cursor;
+        let lastHeartbeatAt = Date.now();
+        if (!canResume) {
+          await eventStream.writeSSE({
+            id: snapshot.cursor,
+            event: 'snapshot',
+            data: JSON.stringify(snapshot),
+          });
+        }
+        while (!eventStream.aborted) {
+          try {
+            const events = await workspace.getAudioExecutionStreamEvents(
+              audioFileId,
+              snapshot.analysisRevisionId,
+              groupId,
+              cursor,
+            );
+            for (const event of events) {
+              cursor = event.cursor;
+              await eventStream.writeSSE({
+                id: event.cursor,
+                event: event.type,
+                data: JSON.stringify(event),
+              });
+            }
+            if (Date.now() - lastHeartbeatAt >= 15_000) {
+              lastHeartbeatAt = Date.now();
+              await eventStream.writeSSE({
+                id: cursor,
+                event: 'heartbeat',
+                data: JSON.stringify({
+                  type: 'heartbeat',
+                  cursor,
+                  audioFileId,
+                  analysisRevisionId: snapshot.analysisRevisionId,
+                  occurredAt: new Date().toISOString(),
+                }),
+              });
+            }
+          } catch {
+            await eventStream.writeSSE({
+              id: cursor,
+              event: 'error',
+              data: JSON.stringify({
+                type: 'error',
+                cursor,
+                audioFileId,
+                analysisRevisionId: snapshot.analysisRevisionId,
+                error: {
+                  code: 'STREAM_UNAVAILABLE',
+                  message: '模型执行实时流暂时不可用。',
+                  retryable: true,
+                },
+              }),
+            });
+            break;
+          }
+          await eventStream.sleep(500);
+        }
+      });
     });
     app.post('/api/audio-files/:audioFileId/business-analyses', async (context) => {
       const input = AudioBusinessAnalysisStartRequestSchema.parse(await context.req.json());

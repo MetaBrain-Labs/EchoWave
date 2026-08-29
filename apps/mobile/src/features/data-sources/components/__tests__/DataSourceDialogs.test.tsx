@@ -1,17 +1,20 @@
 /**
- * 数据源表单后置角色字典测试。
+ * 数据源弹层交互与布局测试。
  *
- * 验证核心角色只读、自定义角色规范化、去重、删除与保存行为。
+ * 验证核心角色字典行为，以及转写选项在窄屏弹层中保持可读高度和滚动边界。
  *
  * Responsibilities:
  * - 覆盖角色识别字典的移动端编辑边界。
+ * - 防止纵向转写选项被弹性布局压缩为空白边框。
  *
  * Notes:
  * - 服务端共享契约仍是最终可信校验边界。
  */
 import { fireEvent, render } from '@testing-library/react-native';
+import { AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES } from '@echowave/contracts';
+import { StyleSheet } from 'react-native';
 
-import { DataSourceFormSheet } from '../DataSourceDialogs';
+import { AudioTranscriptionConfirmDialog, DataSourceFormSheet } from '../DataSourceDialogs';
 
 describe('DataSourceFormSheet custom business roles', () => {
   it('extends immutable core roles with normalized custom roles', () => {
@@ -49,5 +52,35 @@ describe('DataSourceFormSheet custom business roles', () => {
       description: '',
       customBusinessRoles: ['技术顾问'],
     });
+  });
+});
+
+describe('AudioTranscriptionConfirmDialog layout', () => {
+  it('keeps preprocessing and segmentation rows readable inside a scrollable dialog', () => {
+    const screen = render(
+      <AudioTranscriptionConfirmDialog
+        audioTitle="测试录音"
+        models={AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES.map((model) => ({
+          ...model,
+          available: true,
+          unavailableReason: null,
+        }))}
+        onCancel={jest.fn()}
+        onConfirm={jest.fn()}
+        onPreprocessingChange={jest.fn()}
+        pending={false}
+        preprocessing="silero_vad"
+        sileroVad={{ model: 'silero-vad-v6.2.1', available: true, unavailableReason: null }}
+        visible
+      />,
+    );
+
+    const vadOption = screen.getByRole('radio', { name: '空闲音频过滤（Silero VAD）' });
+    const vadStyle = StyleSheet.flatten(vadOption.props.style);
+    expect(vadStyle.flex).toBeUndefined();
+    expect(vadStyle.minHeight).toBe(68);
+    expect(screen.getByText('仅压缩连续超过 30 秒的非人声区间')).toBeTruthy();
+    expect(screen.getByText('按说话轮次')).toBeTruthy();
+    expect(screen.getByText('说话人变化或明显停顿时开始新段')).toBeTruthy();
   });
 });

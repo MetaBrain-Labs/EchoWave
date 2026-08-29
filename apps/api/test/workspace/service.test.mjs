@@ -334,3 +334,78 @@ describe('DefaultWorkspaceService audio post-analysis', () => {
     assert.deepEqual(queued, [[sourceId, 'role', 'deepseek-v4-flash']]);
   });
 });
+
+describe('DefaultWorkspaceService audio execution stream', () => {
+  it('validates audio and group access before returning the SSE snapshot', async () => {
+    const revisionId = '22222222-2222-4222-8222-222222222222';
+    const calls = [];
+    const executionRepository = {
+      getStreamSnapshot: async (...args) => {
+        calls.push(['snapshot', ...args]);
+        return { cursor: '0' };
+      },
+    };
+    const service = new DefaultWorkspaceService(
+      repository({
+        getAudioAnalysis: async (id) => {
+          calls.push(['analysis', id]);
+          return { id: revisionId };
+        },
+        assertGroupAudioAccess: async (...args) => calls.push(['access', ...args]),
+      }),
+      '.data/audio',
+      {},
+      'qwen-audio-3.0-asr-flash-filetrans',
+      {},
+      {},
+      {},
+      'qwen3.5-omni-flash',
+      'deepseek-v4-flash',
+      true,
+      undefined,
+      executionRepository,
+    );
+
+    assert.deepEqual(await service.getAudioExecutionStreamSnapshot(sourceId, sourceId), {
+      cursor: '0',
+    });
+    assert.deepEqual(calls, [
+      ['analysis', sourceId],
+      ['access', sourceId, sourceId],
+      ['snapshot', sourceId, revisionId, sourceId],
+    ]);
+  });
+
+  it('does not query execution events when group access is denied', async () => {
+    let queried = false;
+    const service = new DefaultWorkspaceService(
+      repository({
+        getAudioAnalysis: async () => ({ id: sourceId }),
+        assertGroupAudioAccess: async () => {
+          throw new WorkspaceRepositoryError('NOT_FOUND', 'not linked');
+        },
+      }),
+      '.data/audio',
+      {},
+      'qwen-audio-3.0-asr-flash-filetrans',
+      {},
+      {},
+      {},
+      'qwen3.5-omni-flash',
+      'deepseek-v4-flash',
+      true,
+      undefined,
+      {
+        getStreamSnapshot: async () => {
+          queried = true;
+        },
+      },
+    );
+
+    await assert.rejects(
+      () => service.getAudioExecutionStreamSnapshot(sourceId, sourceId),
+      (error) => error instanceof WorkspaceRepositoryError && error.code === 'NOT_FOUND',
+    );
+    assert.equal(queried, false);
+  });
+});

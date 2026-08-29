@@ -47,6 +47,14 @@ const transcriptConfirmationMigration = await readFile(
   new URL('../../migrations/013_transcript_confirmations.sql', import.meta.url),
   'utf8',
 );
+const eventBridgeCallbackMigration = await readFile(
+  new URL('../../migrations/015_dashscope_eventbridge_callbacks.sql', import.meta.url),
+  'utf8',
+);
+const asyncNotifyModesMigration = await readFile(
+  new URL('../../migrations/016_dashscope_async_notify_modes.sql', import.meta.url),
+  'utf8',
+);
 
 describe('audio transcription migration', () => {
   it('adds business roles and prevents concurrent active revisions', () => {
@@ -142,5 +150,25 @@ describe('audio transcription migration', () => {
       transcriptConfirmationMigration,
       /UPDATE transcript_segments[\s\S]*SET text/,
     );
+  });
+
+  it('persists terminal EventBridge callbacks and adds the original wait stage', () => {
+    assert.match(eventBridgeCallbackMigration, /provider_callback_event_id text/);
+    assert.match(eventBridgeCallbackMigration, /provider_callback_result_url text/);
+    assert.match(eventBridgeCallbackMigration, /provider_callback_status IS NULL OR/);
+    assert.match(eventBridgeCallbackMigration, /'awaiting_callback'/);
+    assert.match(
+      eventBridgeCallbackMigration,
+      /DROP CONSTRAINT audio_analysis_revisions_processing_stage_check/,
+    );
+  });
+
+  it('migrates deployed callbacks into generic terminal and polling state', () => {
+    assert.match(asyncNotifyModesMigration, /RENAME COLUMN provider_callback_event_id/);
+    assert.match(asyncNotifyModesMigration, /provider_terminal_source text/);
+    assert.match(asyncNotifyModesMigration, /provider_next_poll_at timestamptz/);
+    assert.match(asyncNotifyModesMigration, /SET provider_terminal_source = 'eventbridge'/);
+    assert.match(asyncNotifyModesMigration, /SET processing_stage = 'awaiting_result'/);
+    assert.match(asyncNotifyModesMigration, /provider_terminal_status IS NULL OR/);
   });
 });

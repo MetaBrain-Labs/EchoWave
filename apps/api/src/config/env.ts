@@ -44,6 +44,9 @@ const EnvironmentSchema = z.object({
   DASHSCOPE_API_KEY: z.string().min(1),
   DASHSCOPE_BASE_URL: z.string().url(),
   DASHSCOPE_COMPATIBLE_BASE_URL: z.string().url(),
+  DASHSCOPE_ASYNC_NOTIFY_MODE: z.enum(['polling', 'eventbridge']),
+  DASHSCOPE_EVENTBRIDGE_CALLBACK_URL: OptionalPathSchema,
+  DASHSCOPE_EVENTBRIDGE_CALLBACK_TOKEN: OptionalPathSchema,
   ALIYUN_OSS_REGION: OptionalPathSchema,
   ALIYUN_OSS_BUCKET: OptionalPathSchema,
   ALIYUN_OSS_ACCESS_KEY_ID: OptionalPathSchema,
@@ -63,6 +66,7 @@ const EnvironmentSchema = z.object({
   AUDIO_TRANSCRIPTION_MODEL: AudioTranscriptionModelSchema,
   AUDIO_EMOTION_MODEL: z.literal('qwen3.5-omni-flash'),
   AUDIO_TRANSCRIPTION_TEMP_DIR: z.string().min(1),
+  AUDIO_TRANSCRIPTION_MAX_IN_FLIGHT: z.coerce.number().int().min(1).max(100),
   FFMPEG_PATH: OptionalPathSchema,
   AI_EXECUTION_REPORT_ENABLED: BooleanStringSchema,
   AI_EXECUTION_REPORT_OUTPUT_DIR: z.string().min(1),
@@ -100,6 +104,11 @@ export type ApiConfig = {
       apiKey: string;
       baseUrl: string;
       compatibleBaseUrl: string;
+      asyncNotifyMode: 'polling' | 'eventbridge';
+      eventBridgeCallback?: {
+        url: string;
+        token: string;
+      };
       oss?: {
         region: string;
         bucket: string;
@@ -119,6 +128,7 @@ export type ApiConfig = {
     audioTranscriptionModel: AudioTranscriptionModel;
     audioEmotionModel: 'qwen3.5-omni-flash';
     audioTranscriptionTempDir: string;
+    audioTranscriptionMaxInFlight: number;
     ffmpegPath?: string;
   };
   aiExecutionReports: {
@@ -154,6 +164,37 @@ export function readApiConfig(values: Record<string, string | undefined>): ApiCo
     throw new Error(
       'OSS configuration must include ALIYUN_OSS_REGION, ALIYUN_OSS_BUCKET, ALIYUN_OSS_ACCESS_KEY_ID and ALIYUN_OSS_ACCESS_KEY_SECRET together.',
     );
+  }
+  const callbackValues = [
+    parsed.DASHSCOPE_EVENTBRIDGE_CALLBACK_URL,
+    parsed.DASHSCOPE_EVENTBRIDGE_CALLBACK_TOKEN,
+  ];
+  const configuredCallbackValues = callbackValues.filter(Boolean).length;
+  if (parsed.DASHSCOPE_ASYNC_NOTIFY_MODE === 'polling' && configuredCallbackValues > 0) {
+    throw new Error('Polling mode must not configure EventBridge callback URL or token.');
+  }
+  if (
+    parsed.DASHSCOPE_ASYNC_NOTIFY_MODE === 'eventbridge' &&
+    configuredCallbackValues !== callbackValues.length
+  ) {
+    throw new Error('EventBridge mode requires callback URL and token together.');
+  }
+  let eventBridgeCallback: { url: string; token: string } | undefined;
+  if (parsed.DASHSCOPE_ASYNC_NOTIFY_MODE === 'eventbridge') {
+    const callbackUrl = new URL(parsed.DASHSCOPE_EVENTBRIDGE_CALLBACK_URL!);
+    if (
+      !['http:', 'https:'].includes(callbackUrl.protocol) ||
+      callbackUrl.hash ||
+      callbackUrl.pathname !== '/api/webhooks/dashscope/async-task-finished'
+    ) {
+      throw new Error(
+        'DASHSCOPE_EVENTBRIDGE_CALLBACK_URL must be an absolute HTTP(S) URL for /api/webhooks/dashscope/async-task-finished without a fragment.',
+      );
+    }
+    eventBridgeCallback = {
+      url: parsed.DASHSCOPE_EVENTBRIDGE_CALLBACK_URL!,
+      token: parsed.DASHSCOPE_EVENTBRIDGE_CALLBACK_TOKEN!,
+    };
   }
   const oss =
     configuredOssValues === ossValues.length
@@ -191,6 +232,8 @@ export function readApiConfig(values: Record<string, string | undefined>): ApiCo
         apiKey: parsed.DASHSCOPE_API_KEY,
         baseUrl: parsed.DASHSCOPE_BASE_URL.replace(/\/$/, ''),
         compatibleBaseUrl: parsed.DASHSCOPE_COMPATIBLE_BASE_URL.replace(/\/$/, ''),
+        asyncNotifyMode: parsed.DASHSCOPE_ASYNC_NOTIFY_MODE,
+        ...(eventBridgeCallback ? { eventBridgeCallback } : {}),
         ...(oss ? { oss } : {}),
       },
       embeddingModel: parsed.RAG_EMBEDDING_MODEL,
@@ -205,6 +248,7 @@ export function readApiConfig(values: Record<string, string | undefined>): ApiCo
       audioTranscriptionModel: parsed.AUDIO_TRANSCRIPTION_MODEL,
       audioEmotionModel: parsed.AUDIO_EMOTION_MODEL,
       audioTranscriptionTempDir: parsed.AUDIO_TRANSCRIPTION_TEMP_DIR,
+      audioTranscriptionMaxInFlight: parsed.AUDIO_TRANSCRIPTION_MAX_IN_FLIGHT,
       ffmpegPath: parsed.FFMPEG_PATH,
     },
     aiExecutionReports: {

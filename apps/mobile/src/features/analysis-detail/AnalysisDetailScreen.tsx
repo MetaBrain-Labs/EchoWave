@@ -11,11 +11,12 @@
  * - 只展示服务端已经原子发布的当前分析修订版。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { AudioPostAnalysisType } from '@echowave/contracts';
-import { useCallback, useEffect, useState } from 'react';
+import type { AudioAiExecutionTraceResponse, AudioPostAnalysisType } from '@echowave/contracts';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   BackHandler,
   Pressable,
   ScrollView,
@@ -27,9 +28,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
 import { useAudioPlayback } from '@/shared/audio/useAudioPlayback';
+import { streamAudioExecutionTrace } from '@/shared/api/audioExecutionStream';
 import {
   confirmAudioTranscript,
   getAudioAnalysis,
+  getAudioExecutionTrace,
   getGroupSettings,
   startAudioBusinessAnalysis,
   startAudioEmotionAnalysis,
@@ -61,6 +64,7 @@ import { CompactPlayer, ExpandedPlayer } from './components/Player';
 import { SummaryContent } from './components/SummaryContent';
 import { TranscriptContent, type TranscriptDisplayMode } from './components/TranscriptContent';
 import { EmotionAnalysisPanel } from './components/EmotionAnalysisPanel';
+import { ModelExecutionContent } from './components/ModelExecutionContent';
 import { PostAnalysisConfirmDialog, PostAnalysisControls } from './components/PostAnalysisControls';
 import {
   BusinessAnalysisControls,
@@ -80,6 +84,12 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
   const [detail, setDetail] = useState<AnalysisDetailView>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [executionTrace, setExecutionTrace] = useState<AudioAiExecutionTraceResponse>();
+  const [executionTraceLoading, setExecutionTraceLoading] = useState(false);
+  const [executionTraceScope, setExecutionTraceScope] = useState('');
+  const [executionTraceError, setExecutionTraceError] = useState('');
+  const [appActive, setAppActive] = useState(AppState.currentState !== 'background');
+  const executionCursorRef = useRef('');
   const [activeTab, setActiveTab] = useState<AnalysisTab>('transcript');
   const [expandedPlayer, setExpandedPlayer] = useState(false);
   const [playbackRateIndex, setPlaybackRateIndex] = useState(0);
@@ -105,6 +115,12 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
     setHideIrrelevant(value);
   };
   const hasSummary = Boolean(detail?.summarySections.length);
+  const currentExecutionScope = `${detailId}:${groupId ?? ''}`;
+  const currentExecutionTrace =
+    executionTraceScope === currentExecutionScope ? executionTrace : undefined;
+  useEffect(() => {
+    executionCursorRef.current = '';
+  }, [currentExecutionScope]);
   const transcriptSegments = detail?.scenes.flatMap((scene) => scene.segments) ?? [];
   const transcriptDirty =
     editingTranscript &&
@@ -113,7 +129,7 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
     );
   const applyTabChange = (tab: AnalysisTab) => {
     setActiveTab(tab);
-    if (tab === 'summary') {
+    if (tab !== 'transcript') {
       setExpandedPlayer(false);
       setSelectedTag(undefined);
     }
@@ -121,7 +137,7 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
   const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } = useSwipePager({
     activeTab,
     onTabChange: applyTabChange,
-    tabs: hasSummary ? analysisTabKeys : (['transcript'] as AnalysisTab[]),
+    tabs: hasSummary ? analysisTabKeys : (['transcript', 'model'] as AnalysisTab[]),
   });
 
   const load = useCallback(
@@ -144,6 +160,44 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
     return () => clearTimeout(task);
   }, [load]);
   useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      setAppActive(state === 'active');
+    });
+    return () => subscription.remove();
+  }, []);
+  const loadExecutionTrace = useCallback(
+    async (showLoading = true) => {
+      if (showLoading) setExecutionTraceLoading(true);
+      setExecutionTraceError('');
+      try {
+        setExecutionTrace(await getAudioExecutionTrace(detailId, groupId));
+      } catch (reason) {
+        setExecutionTraceError(reason instanceof Error ? reason.message : '模型详情加载失败。');
+      } finally {
+        setExecutionTraceScope(currentExecutionScope);
+        if (showLoading) setExecutionTraceLoading(false);
+      }
+    },
+    [currentExecutionScope, detailId, groupId],
+  );
+  useEffect(() => {
+    if (
+      activeTab !== 'model' ||
+      executionTraceScope === currentExecutionScope ||
+      executionTraceLoading
+    ) {
+      return undefined;
+    }
+    const task = setTimeout(() => void loadExecutionTrace(), 0);
+    return () => clearTimeout(task);
+  }, [
+    activeTab,
+    currentExecutionScope,
+    executionTraceLoading,
+    executionTraceScope,
+    loadExecutionTrace,
+  ]);
+  useEffect(() => {
     if (!groupId) return undefined;
     const task = setTimeout(() => {
       void getGroupSettings(groupId)
@@ -165,6 +219,194 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
     const timer = setInterval(() => void load(false), 2_000);
     return () => clearInterval(timer);
   }, [load, pollingPostAnalysis]);
+  useEffect(() => {
+    if (activeTab !== 'model' || !appActive) return undefined;
+    let disposed = false;
+    let controller: AbortController | undefined;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let fallbackTimer: ReturnType<typeof setInterval> | undefined;
+    let failures = 0;
+    const retryDelays = [1_000, 2_000, 5_000, 10_000];
+
+    const stopFallback = () => {
+      if (fallbackTimer) clearInterval(fallbackTimer);
+      fallbackTimer = undefined;
+    };
+    const startFallback = () => {
+      if (fallbackTimer) return;
+      void loadExecutionTrace(false);
+      fallbackTimer = setInterval(() => void loadExecutionTrace(false), 2_000);
+    };
+    const connect = async () => {
+      controller = new AbortController();
+      try {
+        await streamAudioExecutionTrace({
+          audioFileId: detailId,
+          groupId,
+          cursor: executionCursorRef.current || undefined,
+          signal: controller.signal,
+          onEvent: (event) => {
+            executionCursorRef.current = event.cursor;
+            if (event.type === 'error') {
+              setExecutionTraceError(event.error.message);
+              return;
+            }
+            failures = 0;
+            stopFallback();
+            if (event.type === 'snapshot') {
+              setExecutionTrace(event.trace);
+              setExecutionTraceScope(currentExecutionScope);
+              setExecutionTraceError('');
+              return;
+            }
+            if (event.type === 'run-status') {
+              setExecutionTrace((current) => {
+                if (
+                  !current ||
+                  current.audioFileId !== event.audioFileId ||
+                  current.analysisRevisionId !== event.analysisRevisionId
+                ) {
+                  return current;
+                }
+                const exists = current.runs.some((run) => run.id === event.runId);
+                return {
+                  ...current,
+                  runs: exists
+                    ? current.runs.map((run) => (run.id === event.runId ? event.run : run))
+                    : [event.run, ...current.runs],
+                };
+              });
+              return;
+            }
+            if (event.type === 'step') {
+              setExecutionTrace((current) => {
+                if (!current || current.analysisRevisionId !== event.analysisRevisionId) {
+                  return current;
+                }
+                return {
+                  ...current,
+                  runs: current.runs.map((run) => {
+                    if (run.id !== event.runId) return run;
+                    const exists = run.steps.some((step) => step.id === event.step.id);
+                    const steps = exists
+                      ? run.steps.map((step) => (step.id === event.step.id ? event.step : step))
+                      : [...run.steps, event.step];
+                    return {
+                      ...run,
+                      steps: steps.sort((left, right) => left.sequence - right.sequence),
+                    };
+                  }),
+                };
+              });
+              return;
+            }
+            if (event.type === 'model-start' || event.type === 'model-finish') {
+              setExecutionTrace((current) => {
+                if (!current || current.analysisRevisionId !== event.analysisRevisionId) {
+                  return current;
+                }
+                return {
+                  ...current,
+                  runs: current.runs.map((run) => {
+                    if (run.id !== event.runId) return run;
+                    const exists = run.modelCalls.some((call) => call.id === event.operationId);
+                    const modelCalls = exists
+                      ? run.modelCalls.map((call) =>
+                          call.id === event.operationId ? event.modelCall : call,
+                        )
+                      : [...run.modelCalls, event.modelCall];
+                    return {
+                      ...run,
+                      modelCalls: modelCalls.sort((left, right) => left.sequence - right.sequence),
+                    };
+                  }),
+                };
+              });
+              return;
+            }
+            if (event.type === 'tool-start' || event.type === 'tool-finish') {
+              setExecutionTrace((current) => {
+                if (!current || current.analysisRevisionId !== event.analysisRevisionId) {
+                  return current;
+                }
+                return {
+                  ...current,
+                  runs: current.runs.map((run) => {
+                    if (run.id !== event.runId) return run;
+                    const exists = run.toolCalls.some((tool) => tool.id === event.operationId);
+                    const toolCalls = exists
+                      ? run.toolCalls.map((tool) =>
+                          tool.id === event.operationId ? event.toolCall : tool,
+                        )
+                      : [...run.toolCalls, event.toolCall];
+                    return {
+                      ...run,
+                      toolCalls: toolCalls.sort((left, right) => left.sequence - right.sequence),
+                    };
+                  }),
+                };
+              });
+              return;
+            }
+            if (event.type === 'reasoning-delta') {
+              setExecutionTrace((current) => {
+                if (
+                  !current ||
+                  current.audioFileId !== event.audioFileId ||
+                  current.analysisRevisionId !== event.analysisRevisionId
+                ) {
+                  return current;
+                }
+                return {
+                  ...current,
+                  runs: current.runs.map((run) =>
+                    run.id !== event.runId
+                      ? run
+                      : {
+                          ...run,
+                          modelCalls: run.modelCalls.map((call) =>
+                            call.id !== event.operationId
+                              ? call
+                              : {
+                                  ...call,
+                                  reasoningContent: `${call.reasoningContent}${event.delta}`.slice(
+                                    0,
+                                    120_000,
+                                  ),
+                                  reasoningTruncated: call.reasoningTruncated || event.truncated,
+                                },
+                          ),
+                        },
+                  ),
+                };
+              });
+              return;
+            }
+          },
+        });
+        if (!disposed) throw new Error('模型执行实时流已关闭。');
+      } catch {
+        if (disposed || controller.signal.aborted) return;
+        failures += 1;
+        if (failures >= 5) {
+          setExecutionTraceError('实时连接暂时不可用，已切换为定时刷新。');
+          startFallback();
+        }
+        retryTimer = setTimeout(
+          () => void connect(),
+          failures >= 5 ? 30_000 : retryDelays[Math.min(failures - 1, retryDelays.length - 1)],
+        );
+      }
+    };
+
+    void connect();
+    return () => {
+      disposed = true;
+      controller?.abort();
+      if (retryTimer) clearTimeout(retryTimer);
+      stopFallback();
+    };
+  }, [activeTab, appActive, currentExecutionScope, detailId, groupId, loadExecutionTrace]);
 
   useEffect(() => {
     if (
@@ -519,6 +761,14 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
             <SummaryContent detail={detail} />
           </View>
         ) : null}
+        <View style={[styles.page, { width: pageWidth }]}>
+          <ModelExecutionContent
+            error={executionTraceError}
+            loading={executionTraceLoading}
+            onRetry={() => void loadExecutionTrace()}
+            trace={currentExecutionTrace}
+          />
+        </View>
       </ScrollView>
       <AiTagPanel
         analysis={selectedTag}

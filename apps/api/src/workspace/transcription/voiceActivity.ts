@@ -121,6 +121,11 @@ function samplesToMs(samples: number): number {
   return Math.round((samples * 1_000) / VOICE_ACTIVITY_POLICY.sampleRate);
 }
 
+function totalSamplesToMs(samples: number): number {
+  // PCM 总长度只能向下取整；向上取整会让最终保留区间比第二次解码流最多长不足 1ms。
+  return Math.floor((samples * 1_000) / VOICE_ACTIVITY_POLICY.sampleRate);
+}
+
 function msToSamples(milliseconds: number): number {
   return Math.round((milliseconds * VOICE_ACTIVITY_POLICY.sampleRate) / 1_000);
 }
@@ -180,7 +185,7 @@ export function buildVoiceActivityManifest(
   totalSamples: number,
   detectionDurationMs = 0,
 ): VoiceActivityManifest {
-  const originalDurationMs = samplesToMs(totalSamples);
+  const originalDurationMs = totalSamplesToMs(totalSamples);
   const minSpeechSamples = msToSamples(VOICE_ACTIVITY_POLICY.minSpeechMs);
   const padded = speechRanges
     .filter((range) => range.endSample - range.startSample >= minSpeechSamples)

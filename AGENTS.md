@@ -42,6 +42,9 @@ Before editing:
 4. Locate existing helpers, types, schemas, components, and patterns before creating new ones.
 5. Identify the authoritative source for each affected datum or contract.
 
+- Inspect `git status --short` before running per-file diffs. If relevant changes are staged, inspect them with one scoped `git diff --cached -- <paths>` call; do not run repeated unstaged diffs that cannot contain the changes.
+- Use targeted searches and bounded source ranges first. Do not dump an entire large file when the relevant symbol, callers, and surrounding control flow can be inspected with `rg` and scoped reads.
+
 Use the repository's pinned toolchain and existing scripts. Do not change dependency versions, lockfiles, generated files, or repository-wide configuration unless the task requires it.
 
 ## Architecture and Boundaries
@@ -163,13 +166,18 @@ pnpm-lock.yaml
 ## Verification
 
 - Leave one focused runnable check for non-trivial new logic when the repository has no suitable existing test.
-- Run the narrowest useful check first, then broaden according to risk and affected package boundaries.
+- Treat verification as a funnel: run the narrowest useful checks needed for fast feedback, then run root `pnpm check` once as the final comprehensive gate when the change warrants it.
 - Build `@echowave/contracts` before validating API or mobile consumers when shared exports changed.
 - Use `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm build`; use `pnpm check` for the complete root verification sequence.
+- After the requested behavior is implemented, focused regressions pass, `git diff --check` passes, and the required root `pnpm check` passes, stop by default. Do not add optional verification unless it resolves a specific acceptance criterion that remains unverified.
+- Do not repeat a successful verification command unless relevant source or configuration changed afterward, or the rerun is required to diagnose a concrete failure.
 - API changes must cover `/api/hello` success and structured 404 behavior when relevant. Contract changes must test valid and rejected payloads. Mobile behavior changes should cover interaction, API failure, timeout, and retry states as applicable.
-- For web UI changes, export or run the app and inspect 360px, 480px, and desktop widths. For Android, perform a launch/API smoke test when the environment allows it.
+- For web UI changes, export or run the app and inspect 360px, 480px, and desktop widths when the environment provides an accessible browser surface. For Android, perform a launch/API smoke test when the environment allows it.
+- Browser automation against `localhost` or `127.0.0.1` is known to be blocked in the current Codex desktop environment. Do not initialize Browser or Chrome, start a local web server, probe ports, or attempt alternate local URLs for this purpose.
+- When local browser verification is unavailable, use focused React Native interaction tests plus Expo Web/Android export as the fallback and report that manual visual verification was not run. Only attempt browser-based local UI verification when the user explicitly requests it and provides an accessible surface, or the environment has already demonstrated that the target is reachable through the browser tool.
 - On Windows, do not claim iOS Simulator verification. Use Expo bundle export, type checking, and configuration validation, and report that native iOS execution requires macOS/Xcode.
 - Test the failure or edge case that motivated a bug fix, not only the happy path.
+- Do not investigate or repair formatting failures caused solely by ignored generated files after a successful source-format check. Report the generated-file blocker and leave the generated file untouched.
 - Review the final diff for accidental edits, secrets, generated output, dependency churn, prompt-language violations, and incomplete contract updates.
 - Report checks that could not run and their blockers. Do not present empty, skipped, or broken checks as successful coverage.
 

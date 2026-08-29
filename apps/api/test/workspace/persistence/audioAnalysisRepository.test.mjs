@@ -81,7 +81,7 @@ describe('AudioAnalysisRepository', () => {
       ),
       { audioFileId, revisionId, status: 'queued' },
     );
-    const claimed = await repository.claimTranscription();
+    const claimed = await repository.claimTranscription(2);
     assert.equal(claimed.revisionId, revisionId);
     assert.equal(claimed.preprocessingMode, 'whole_file');
     assert.equal(claimed.originalFilename, 'meeting.wav');
@@ -101,6 +101,7 @@ describe('AudioAnalysisRepository', () => {
     assert.match(insert.sql, /'queued', 0, 'queued', now\(\)/);
     assert.ok(calls.some((call) => /FOR UPDATE SKIP LOCKED/.test(call.sql)));
     assert.ok(calls.some((call) => /processing_stage = 'preprocessing'/.test(call.sql)));
+    assert.ok(calls.some((call) => call.values?.[1] === 2));
   });
 
   it('updates monotonic chunk activity and clears it when interrupted work is requeued', async () => {
@@ -138,13 +139,17 @@ describe('AudioAnalysisRepository', () => {
       networkAttempt: 1,
       structureAttempt: 3,
     });
-    await repository.resetInterruptedTranscriptions();
+    await repository.resetInterruptedTranscriptions('polling');
 
     assert.match(calls[0].sql, /progress = greatest\(progress, \$3\)/);
     assert.deepEqual(calls[0].values.slice(2), [43, 'correcting', 2, 4, 238_000, 482_000, 1, 3]);
     assert.match(calls[1].sql, /processing_stage = 'queued'/);
     assert.match(calls[1].sql, /current_chunk = NULL/);
     assert.match(calls[1].sql, /network_attempt = NULL/);
+    assert.match(calls[2].sql, /processing_stage = 'awaiting_result'/);
+    assert.match(calls[2].sql, /provider_task_id IS NOT NULL/);
+    assert.match(calls[2].sql, /provider_next_poll_at = CASE/);
+    assert.deepEqual(calls[2].values, [tenantId, 'polling']);
   });
 
   it('rejects a removed model before creating a revision', async () => {
@@ -328,7 +333,7 @@ describe('AudioAnalysisRepository', () => {
 
     const manifest = { version: 1, mode: 'silero_vad', sourceSpans: [] };
     await repository.recordProviderArtifact(providerJob, 'temporary/object.mp3', manifest);
-    await repository.recordProviderTask(providerJob, 'task-1', submittedAt);
+    await repository.recordProviderTask(providerJob, 'task-1', submittedAt, 'polling');
     await repository.clearProviderArtifact(providerJob);
 
     assert.match(calls[0].sql, /SET provider_artifact_key = \$3/);
@@ -340,8 +345,93 @@ describe('AudioAnalysisRepository', () => {
       JSON.stringify(manifest),
     ]);
     assert.match(calls[1].sql, /provider_task_id = \$3, provider_submitted_at = \$4/);
-    assert.deepEqual(calls[1].values, [tenantId, revisionId, 'task-1', submittedAt]);
+    assert.match(calls[1].sql, /provider_next_poll_at = CASE/);
+    assert.deepEqual(calls[1].values, [tenantId, revisionId, 'task-1', submittedAt, 'polling']);
     assert.match(calls[2].sql, /SET provider_artifact_key = NULL/);
     assert.doesNotMatch(calls[2].sql, /provider_task_id = NULL/);
+  });
+
+  it('claims only due Polling tasks and persists the next backoff deadline', async () => {
+    const calls = [];
+    const repository = new AudioAnalysisRepository(
+      { query: async (sql, values) => (calls.push({ sql, values }), { rows: [] }) },
+      'echowave',
+      tenantId,
+    );
+
+    await repository.claimPollingDiscovery();
+    await repository.scheduleNextPoll({ revisionId }, 4, 15_000);
+
+    assert.match(calls[0].sql, /provider_next_poll_at <= now\(\)/);
+    assert.match(calls[0].sql, /provider_terminal_received_at IS NULL/);
+    assert.match(calls[0].sql, /provider_submitted_at > now\(\) - interval '6 hours'/);
+    assert.match(calls[0].sql, /FOR UPDATE SKIP LOCKED/);
+    assert.match(calls[1].sql, /provider_poll_attempt = \$3/);
+    assert.match(calls[1].sql, /interval '1 millisecond'/);
+    assert.deepEqual(calls[1].values, [tenantId, revisionId, 4, 15_000]);
+  });
+
+  it('persists only the first generic terminal result and returns safe report context', async () => {
+    const calls = [];
+    let accepted = false;
+    const repository = new AudioAnalysisRepository(
+      {
+        query: async (sql, values) => {
+          calls.push({ sql, values });
+          if (accepted) return { rows: [] };
+          accepted = true;
+          return {
+            rows: [
+              {
+                revision_id: revisionId,
+                duration_ms: 2_000,
+                preprocessing_mode: 'whole_file',
+              },
+            ],
+          };
+        },
+      },
+      'echowave',
+      tenantId,
+    );
+    const terminal = {
+      source: 'eventbridge',
+      eventId: 'event-1',
+      taskId: 'task-1',
+      status: 'SUCCEEDED',
+      receivedAt: new Date('2026-08-29T00:00:00.000Z'),
+      resultUrl: 'https://result.example.com/transcription.json',
+      errorCode: null,
+      errorMessage: null,
+    };
+
+    assert.deepEqual(await repository.recordProviderTerminal(terminal), {
+      revisionId,
+      durationMs: 2_000,
+      preprocessing: 'whole_file',
+    });
+    assert.equal(
+      await repository.recordProviderTerminal({
+        ...terminal,
+        eventId: 'event-2',
+        status: 'FAILED',
+        resultUrl: null,
+        errorCode: 'conflict',
+        errorMessage: 'must not overwrite the first terminal event',
+      }),
+      undefined,
+    );
+    assert.match(calls[0].sql, /provider_terminal_source IS NULL/);
+    assert.match(calls[0].sql, /processing_stage = 'awaiting_result'/);
+    assert.deepEqual(calls[0].values.slice(1), [
+      'task-1',
+      'eventbridge',
+      'event-1',
+      'SUCCEEDED',
+      terminal.receivedAt,
+      'https://result.example.com/transcription.json',
+      null,
+      null,
+    ]);
   });
 });

@@ -51,6 +51,7 @@ export const AudioTranscriptionStageSchema = z.enum([
   'queued',
   'preprocessing',
   'transcribing',
+  'awaiting_result',
   'validating',
   'correcting',
   'splitting',

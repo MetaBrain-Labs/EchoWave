@@ -40,6 +40,7 @@ apps/api/src/http ───────> @echowave/contracts <──── apps/
 ## 数据与发布边界
 
 - PostgreSQL 是知识库、文档、revision、chunk、任务、会话和运行记录的权威来源。
+- 当前音频修订的用户可见 AI 执行轨迹同样由 PostgreSQL 承载。四类音频 worker 通过组合报告器同时写入可选本地诊断和始终启用的安全审计；安全审计只保存步骤、模型统计、工具名称、检索查询、知识库名称和命中文档定位，不保存提示词、模型原文、知识块正文或隐藏 reasoning。
 - PostgreSQL 同时保存租户级分组、数据源、音频元数据和已发布音频分析修订版；音频二进制与第三方凭据不进入业务表。
 - 手动上传音频先经扩展名、MIME 和媒体结构校验，再以随机文件名写入 `AUDIO_STORAGE_DIR`；数据库只保存相对 `storage_key`。文件写入或数据库事务失败时会补偿清理本批新文件。
 - 音频播放通过租户隔离的内容路由读取本地权威文件。仓储只返回未归档、已上传音频的存储元数据，服务层验证路径仍位于 `AUDIO_STORAGE_DIR`，HTTP 层提供 `GET`、`HEAD` 与单段字节 Range；客户端始终以音频 ID 构造 URL，不接触存储键。移动端使用一个页面级 `expo-audio` 实例同步完整录音与正文片段播放，片段边界只来自已发布时间戳。
@@ -53,11 +54,11 @@ apps/api/src/http ───────> @echowave/contracts <──── apps/
 - 新音频修订版只有完整写入本次产生的场景和 Raw Transcript 后才替换当前版本指针，并以待确认状态展示；情绪与角色结果分别写入版本化结果表，并在各自事务的最后切换 revision 上的 active 指针。再次确认正文、后处理失败或重跑都不会覆盖旧分析结果，新 ASR revision 也不会读取旧 revision 的确认或后处理指针。
 - 所有仓储 SQL 都包含 `tenant_id`，检索还同时约束知识库和文档当前生效 revision。
 - `ingestion_jobs` 通过 `FOR UPDATE SKIP LOCKED`、租约和幂等 chunk 唯一键恢复执行。
-- 音频转写通过部分唯一索引阻止同一音频并发任务，并用 `FOR UPDATE SKIP LOCKED` 领取；单实例重启时会重新排队中断修订。DashScope 的任务 ID、临时 OSS 对象键和提交时间随修订持久化，恢复时继续轮询已有任务，不重复创建修订或提交供应商任务。
+- 音频转写通过部分唯一索引阻止同一音频并发任务，并用 `FOR UPDATE SKIP LOCKED` 领取。DashScope 的任务 ID、临时 OSS 对象键和提交时间随修订持久化；提交后进入 `awaiting_result` 并释放 worker。Polling 模式只领取已到数据库截止时间的任务并单次查询状态；EventBridge 模式不查询状态，只等待验签回调。单实例重启时只重新排队未完成提交的修订，已有 task ID 的修订恢复对应发现机制，已持久化终态的修订直接重新领取完成阶段。
 - Qwen Filetrans 适配器要求每个非空句子都有 `speaker_id` 与有序有效毫秒时间戳；Speaker 变化、同 Speaker 间隔达到 1500ms 或合并后超过 240 字软上限时创建新段。缺失 Speaker、时间戳异常或乱序直接以 `INVALID_MODEL_OUTPUT` 失败，不进行模型或分段回退。原始 ASR 只产生正文、Speaker 与时间戳，角色和情绪由后处理结果覆盖兼容字段。
 - 情绪 worker 按说话轮次生成最多 5 分钟或 50 个目标片段的窗口，并加入前后各 1 秒上下文。窗口经 FFmpeg 转为音频后暂存到独立 OSS 前缀并交给 Qwen；网络最多重试三次，结构纠正一次，仍无效时递归二分，单片段失败则整项任务失败。
 - 角色 worker 把完整有序转写、每个 `speakerKey`、核心角色和本次数据源角色快照发送给 DeepSeek。输出必须完整覆盖已观察说话人，角色必须在白名单内，证据片段必须属于对应说话人。
-- 转写 worker 将阶段、当前 Chunk/动态总数、音频时间范围、网络尝试和更新时间持久化到当前修订。移动端按 2 秒轮询展示，进度按已完成音频区间保持单调；旧修订的结构尝试字段仅作兼容读取。
+- 转写 worker 将阶段、当前 Chunk/动态总数、音频时间范围、网络尝试和更新时间持久化到当前修订。Polling 和 EventBridge 只负责发现并持久化首个供应商终态，结果下载、结构校验、时间轴恢复、发布与清理由同一完成路径处理；移动端仍按 2 秒轮询 EchoWave API 展示业务进度。旧修订的结构尝试字段仅作兼容读取。
 - 新 revision 仅在全部向量写入成功后才在单事务中成为 active revision；失败不会使旧内容离线。
 - 原文件使用随机临时路径，发布成功或不可重试失败后删除；超过 24 小时的孤立文件由 worker 清理。
 - 首期只允许单 API 实例。DashScope 路径的 OSS 仅是带一天生命周期兜底的临时中转，不是权威音频存储；权威对象存储和独立 worker 仍是多实例部署的前置条件。
@@ -71,7 +72,7 @@ apps/api/src/http ───────> @echowave/contracts <──── apps/
 ## 模型与 Agent 边界
 
 - DashScope 原生 TextEmbedding 接口使用 `qwen3.7-text-embedding`，固定输出 1024 维密集向量，文档批次最多 20；文档发送 `text_type=document`，查询发送 `text_type=query` 并添加英文检索指令。
-- `qwen-audio-3.0-asr-flash-filetrans` 固定使用 `speaker_turn`，预处理可明确选择 `silero_vad` 或 `whole_file`。Silero 清单与临时 OSS 对象键原子保存，重启恢复轮询后仍用压缩时长校验供应商结果并把时间戳映射回原录音；跨折叠边界的模糊结果拒绝发布。OSS 配置或 FFmpeg 缺失时模型保持可见但禁用；VAD 缺失时整文件模式仍可显式选择，绝不静默降级。
+- `qwen-audio-3.0-asr-flash-filetrans` 固定使用 `speaker_turn`，预处理可明确选择 `silero_vad` 或 `whole_file`。Silero 清单与临时 OSS 对象键原子保存，重启恢复终态完成阶段后仍用压缩时长校验供应商结果并把时间戳映射回原录音；跨折叠边界的模糊结果拒绝发布。OSS 或 FFmpeg 缺失时模型保持可见但禁用；EventBridge 配置只在 `eventbridge` 模式要求，Polling 不依赖公网回调。VAD 缺失时整文件模式仍可显式选择，绝不静默降级。
 - `qwen3.5-omni-flash` 仅负责逐片段声学情绪，通过北京地域 OpenAI-compatible Chat Completions 接收签名 OSS URL；Prompt 与 Schema 描述为英文，用户正文保持原文。结果必须逐一覆盖目标片段，并保存固定枚举、置信度及声音线索。
 - `deepseek-v4-flash` 以非思考模式和 JSON Output 识别录音级业务角色。核心角色为“销售、客户、其他、未知”，数据源可在此基础上增加最多 16 个自定义角色。
 - 检索使用 cosine HNSW、`ef_search=100` 和 pgvector iterative scan，初召回 30，去重和文档配额后最多向 Agent 提供 8 块/12000 字符。
@@ -94,13 +95,17 @@ apps/api/src/http ───────> @echowave/contracts <──── apps/
 
 ## AI 执行诊断边界
 
-可选执行报告以一次 `rag-answer`、`knowledge-ingestion` 或 `audio-transcription` 为边界，在运行结束后生成一份本地 Markdown。问答报告关联知识库、会话和 `rag_run`；入库报告关联 job、文档和 revision；ASR 报告一一对应被 worker 领取的音频修订，关联安全的数据源/导入批次/音频快照，并记录 `preprocess → transcribe → validate-merge → publish → cleanup` 时间线。失败时继续记录 `persist-failure` 和失败清理，报告关闭或落盘失败都不能改变转写结果。
+分析详情的“模型详情”从 `ai_execution_runs` 与 `ai_execution_events` 读取当前已发布修订的产品审计轨迹。ASR、情绪、角色运行不依赖分组；业务分析轨迹只在请求分组通过音频访问校验后返回。旧修订和功能启用前的运行不回填，也不会从模型结果反推不存在的执行过程。进程重启时遗留的 `running` 记录收敛为 `interrupted`，重新排队后的工作生成新的运行记录。
+
+产品审计与下面的本地诊断报告是两个明确边界：产品审计始终启用但字段严格受限，本地报告默认关闭且可在受控环境记录更完整的开发诊断。移动端展示的“分析过程”是阶段和决策事实摘要，不是模型隐藏链路推理。
+
+可选执行报告以一次 `rag-answer`、`knowledge-ingestion` 或 worker 阶段为边界，在运行结束后生成一份本地 Markdown。问答报告关联知识库、会话和 `rag_run`；入库报告关联 job、文档和 revision；ASR 按提交与终态完成生成阶段报告，均关联同一 revision 及安全的数据源/导入批次/音频快照。失败时继续记录 `persist-failure` 和失败清理，报告关闭或落盘失败都不能改变转写结果。
 
 该报告不是 PostgreSQL 权威审计的替代品，也不作为客户端进度、HTTP 响应或恢复机制的数据源。客户端实时状态来自修订上的结构化活动字段；报告在执行结束时一次性写入，用于事后诊断。功能关闭时使用 no-op recorder，不创建目录或序列化上下文；写文件失败只产生脱敏 warning，不能改变原始业务结果。
 
-STT 的 DashScope 任务提交、轮询与结果获取均记录安全的执行阶段元数据。修订结束还记录供应商、分段模式、身份作用域和最终展示段数。输出经过响应结构、Speaker 与时间边界校验；音频与完整正文不进入通用报告、错误详情或客户端进度接口。
+STT 的 DashScope 任务提交、Polling 状态查询或 EventBridge 回调，以及结果获取均记录安全的执行阶段元数据。提交和终态完成分别生成同一 revision 下的阶段报告；修订结束还记录供应商、分段模式、终态来源、身份作用域和最终展示段数。输出经过响应结构、Speaker 与时间边界校验；音频与完整正文不进入错误详情或客户端进度接口。
 
-默认 Markdown 报告只包含安全元数据。独立的 `AI_EXECUTION_REPORT_STT_RAW_RESPONSE_ENABLED=true` 会把 DashScope 的提交响应、每次任务状态和最终 Qwen 转写 JSON 写入 `stt-raw`，不依赖通用报告开关。成功、非 2xx、无效 JSON 和校验失败响应都保留；正文最多保留 2 MiB，记录原始字节数和 SHA-256，并清除疑似密钥、Bearer、OSS 签名参数、长 base64 与本地路径。请求音频、鉴权头和完整响应头在任何模式下都不得写入。报告目录由 Git 忽略且不自动清理。
+默认 Markdown 报告只包含安全元数据。独立的 `AI_EXECUTION_REPORT_STT_RAW_RESPONSE_ENABLED=true` 会把 DashScope 的提交响应、Polling `task_status` 响应或 EventBridge 完成回调，以及最终 Qwen 转写 JSON 写入 `stt-raw`，不依赖通用报告开关。成功、非 2xx、无效 JSON 和校验失败响应都保留；正文最多保留 2 MiB，记录原始字节数和 SHA-256，并清除疑似密钥、Bearer、OSS 签名参数、长 base64 与本地路径。请求音频、鉴权头和完整响应头在任何模式下都不得写入。报告目录由 Git 忽略且不自动清理。
 
 ## 配置与安全
 

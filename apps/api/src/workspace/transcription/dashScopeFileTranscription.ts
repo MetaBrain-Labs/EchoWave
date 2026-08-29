@@ -1,10 +1,11 @@
 /**
  * DashScope Qwen Audio 整文件转写适配器。
  *
- * 提交北京地域异步文件转写任务，轮询任务状态并把句级 Speaker 结果归一为正文段落。
+ * 提交北京地域异步文件转写任务、单次查询任务状态，并把最终 Speaker 输出归一为正文段落。
  *
  * Responsibilities:
- * - 以固定退避节奏轮询可恢复的供应商任务。
+ * - 为 Polling 模式执行一次状态查询，调用方负责持久化下一次调度时间。
+ * - 下载终态发现机制提供的短期结果地址。
  * - 严格校验 Speaker、时间戳和顺序，不对无效结果静默降级。
  * - 按说话人变化、停顿和软字符上限生成独立正文段落。
  *
@@ -22,23 +23,43 @@ import {
 } from '../../ai-observability/sttRawResponseReporter.ts';
 import { AudioTranscriptionProviderError } from './errors.ts';
 
-const POLL_DELAYS_MS = [2_000, 5_000, 10_000, 15_000] as const;
-const TASK_TIMEOUT_MS = 6 * 60 * 60 * 1_000;
+const RESULT_RETRY_DELAYS_MS = [1_000, 2_000] as const;
 const SPEAKER_BREAK_MS = 1_500;
 const SEGMENT_SOFT_LIMIT = 240;
 
 const SubmitResponseSchema = z.object({
   output: z.object({ task_id: z.string().min(1) }),
 });
-
+const TaskStatusSchema = z.enum([
+  'PENDING',
+  'RUNNING',
+  'SUCCEEDED',
+  'FAILED',
+  'CANCELED',
+  'UNKNOWN',
+]);
+const HttpsUrlSchema = z
+  .string()
+  .url()
+  .refine((value) => new URL(value).protocol === 'https:');
 const TaskResponseSchema = z.object({
-  output: z.object({
-    task_status: z.string().min(1),
-    results: z
-      .array(z.object({ transcription_url: z.string().url().optional() }).passthrough())
-      .optional(),
-    message: z.string().optional(),
-  }),
+  output: z
+    .object({
+      task_id: z.string().min(1).optional(),
+      task_status: TaskStatusSchema,
+      results: z
+        .array(
+          z
+            .object({
+              transcription_url: HttpsUrlSchema.optional(),
+            })
+            .passthrough(),
+        )
+        .optional(),
+      code: z.string().optional(),
+      message: z.string().optional(),
+    })
+    .passthrough(),
 });
 
 const SentenceSchema = z
@@ -65,6 +86,15 @@ export type DashScopeRawResponseContext = {
 export type DashScopeTranscriptionResult = {
   segments: TranscriptDraft[];
   taskId: string;
+};
+
+/** 单次供应商查询返回的安全任务状态。 */
+export type DashScopeTaskStatusResult = {
+  taskId: string;
+  status: z.infer<typeof TaskStatusSchema>;
+  resultUrl: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
 };
 
 function invalidOutput(message: string): AudioTranscriptionProviderError {
@@ -148,7 +178,7 @@ export function normalizeSpeakerTurnSegments(
   return segments;
 }
 
-/** 提交并恢复轮询 Qwen Audio 3.0 文件转写任务。 */
+/** 提交、单次查询并下载 Qwen Audio 3.0 文件转写任务结果。 */
 export class DashScopeFileTranscription {
   constructor(
     private readonly apiKey: string,
@@ -156,7 +186,6 @@ export class DashScopeFileTranscription {
     private readonly fetchImpl: FetchLike = fetch,
     private readonly sleep: Sleep = (durationMs) =>
       new Promise((resolve) => setTimeout(resolve, durationMs)),
-    private readonly now: () => number = Date.now,
     private readonly rawResponseReporter: SttRawResponseReporter = noOpSttRawResponseReporter,
   ) {}
 
@@ -192,36 +221,64 @@ export class DashScopeFileTranscription {
     ).data.output.task_id;
   }
 
-  /** 从提交时间继续轮询，六小时后以可重试超时失败。 */
-  async waitForResult(
+  /** 为 Polling 模式执行一次任务状态查询，不在适配器内部等待或循环。 */
+  async queryTask(
     taskId: string,
-    submittedAt: Date,
+    networkAttempt: number,
+    context?: DashScopeRawResponseContext,
+  ): Promise<DashScopeTaskStatusResult> {
+    const response = await this.request(`${this.baseUrl}/tasks/${encodeURIComponent(taskId)}`, {
+      headers: { Authorization: `Bearer ${this.apiKey}` },
+    });
+    const parsed = await this.parseResponse(
+      response,
+      TaskResponseSchema,
+      context,
+      'task_status',
+      networkAttempt,
+      'DashScope 任务状态结构无效。',
+    );
+    const output = parsed.data.output;
+    if (output.task_id && output.task_id !== taskId) {
+      throw invalidOutput('DashScope 任务状态中的 task ID 不匹配。');
+    }
+    return {
+      taskId,
+      status: output.task_status,
+      resultUrl:
+        output.task_status === 'SUCCEEDED'
+          ? (output.results?.find((result) => result.transcription_url)?.transcription_url ?? null)
+          : null,
+      errorCode:
+        output.task_status === 'FAILED' ||
+        output.task_status === 'CANCELED' ||
+        output.task_status === 'UNKNOWN'
+          ? (output.code ?? output.task_status).slice(0, 100)
+          : null,
+      errorMessage:
+        output.task_status === 'FAILED' ||
+        output.task_status === 'CANCELED' ||
+        output.task_status === 'UNKNOWN'
+          ? (output.message ?? 'DashScope 文件转写未成功完成。').slice(0, 500)
+          : null,
+    };
+  }
+
+  /** 下载终态携带的结果地址；仅网络或临时 HTTP 错误最多重试三次。 */
+  async fetchResult(
+    taskId: string,
+    resultUrl: string,
     context?: DashScopeRawResponseContext,
   ): Promise<DashScopeTranscriptionResult> {
-    let attempt = 0;
-    while (this.now() - submittedAt.getTime() < TASK_TIMEOUT_MS) {
-      const response = await this.request(`${this.baseUrl}/tasks/${encodeURIComponent(taskId)}`, {
-        headers: { Authorization: `Bearer ${this.apiKey}` },
-      });
-      const parsed = await this.parseResponse(
-        response,
-        TaskResponseSchema,
-        context,
-        'task_status',
-        attempt + 1,
-        'DashScope 任务状态响应结构无效。',
-      );
-      const { task_status: status, results, message } = parsed.data.output;
-      if (status === 'SUCCEEDED') {
-        const resultUrl = results?.find((result) => result.transcription_url)?.transcription_url;
-        if (!resultUrl) throw invalidOutput('DashScope 成功任务缺少转写结果地址。');
-        const resultResponse = await this.request(resultUrl);
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        const response = await this.request(resultUrl);
         const parsedResult = await this.parseResponse(
-          resultResponse,
+          response,
           TranscriptionResultSchema,
           context,
           'transcription_result',
-          attempt + 1,
+          attempt,
           'DashScope 最终转写结果结构无效。',
           false,
         );
@@ -229,38 +286,36 @@ export class DashScopeFileTranscription {
           const segments = normalizeSpeakerTurnSegments(parsedResult.data, context?.durationMs);
           await this.recordRaw(
             context,
-            resultResponse,
+            response,
             parsedResult.rawResponseText,
             'transcription_result',
-            attempt + 1,
+            attempt,
             'completed',
           );
           return { segments, taskId };
         } catch (error) {
           await this.recordRaw(
             context,
-            resultResponse,
+            response,
             parsedResult.rawResponseText,
             'transcription_result',
-            attempt + 1,
+            attempt,
             'validation_error',
           );
           throw error;
         }
+      } catch (error) {
+        const retryable =
+          error instanceof AudioTranscriptionProviderError &&
+          error.retryable &&
+          error.code !== 'INVALID_MODEL_OUTPUT';
+        if (!retryable || attempt === 3) throw error;
+        await this.sleep(RESULT_RETRY_DELAYS_MS[attempt - 1]!);
       }
-      if (status === 'FAILED' || status === 'UNKNOWN') {
-        throw new AudioTranscriptionProviderError(
-          'MODEL_UNAVAILABLE',
-          message ? `DashScope 文件转写失败：${message}` : 'DashScope 文件转写失败。',
-          true,
-        );
-      }
-      await this.sleep(POLL_DELAYS_MS[Math.min(attempt, POLL_DELAYS_MS.length - 1)]!);
-      attempt += 1;
     }
     throw new AudioTranscriptionProviderError(
-      'MODEL_TIMEOUT',
-      'DashScope 文件转写任务在六小时内未完成。',
+      'MODEL_UNAVAILABLE',
+      'DashScope 转写结果下载失败。',
       true,
     );
   }

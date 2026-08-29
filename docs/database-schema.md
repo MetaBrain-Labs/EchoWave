@@ -6,7 +6,7 @@
 
 EchoWave 使用 PostgreSQL 作为权威业务存储，并通过 pgvector 支持知识库向量检索。完整结构分为三部分：
 
-- 应用业务 schema：21 张业务表，以及迁移入口创建的 `schema_migrations`。
+- 应用业务 schema：35 张业务表，以及迁移入口创建的 `schema_migrations`。
 - LangGraph 独立 schema：4 张 checkpoint 表，由 `PostgresSaver.setup()` 管理。
 - `public` schema：安装 `vector` 扩展，为 `document_chunks.embedding` 提供 `vector(1024)` 类型和 HNSW 索引能力。
 
@@ -50,6 +50,8 @@ erDiagram
     TRANSCRIPT_SEGMENTS ||--o| SEGMENT_AI_TAGS : tagged_by
     AUDIO_ANALYSIS_REVISIONS ||--o{ ANALYSIS_SUMMARY_SECTIONS : summarizes
     AUDIO_ANALYSIS_REVISIONS ||--o{ ANALYSIS_INVALID_SEGMENTS : excludes
+    AUDIO_ANALYSIS_REVISIONS ||--o{ AI_EXECUTION_RUNS : audits
+    AI_EXECUTION_RUNS ||--o{ AI_EXECUTION_EVENTS : records
 ```
 
 ## 租户与迁移管理
@@ -309,9 +311,12 @@ group_data_sources 所关联数据源下的音频
 - `settings_snapshot`：对象类型的设置快照，记录预处理方式、固定识别语言、该模型声明的 diarization/时间戳能力，以及发布时实际是否收到 Speaker 和实际响应粒度；角色与情绪能力为 false。历史修订缺少新增实际能力字段时由读取层兼容推导。
 - `status`：`queued`、`transcribing`、`analyzing`、`ready` 或 `failed`。
 - `progress`：0 到 100。
-- `processing_stage`：进行中修订的 `queued`、`preprocessing`、`transcribing`、`validating`、`correcting`、`splitting`、`merging` 或 `publishing` 阶段；新 STT 任务不再产生 `correcting`，该值仅兼容历史修订。`splitting` 表示文本退化或连续超时后正在细分当前 FFmpeg Chunk。
+- `processing_stage`：进行中修订的 `queued`、`preprocessing`、`transcribing`、`awaiting_result`、`validating`、`correcting`、`splitting`、`merging` 或 `publishing` 阶段；新 STT 任务不再产生 `correcting`，该值仅兼容历史修订。`awaiting_result` 表示异步任务已提交，正在由 Polling 或 EventBridge 发现终态；`splitting` 表示文本退化或连续超时后正在细分当前 FFmpeg Chunk。
 - `transcription_provider`：本次修订使用的供应商；迁移 011 后新修订固定为 `dashscope`，旧值仅作为历史审计记录保留。`settings_snapshot.preprocessingManifest` 在 `silero_vad` 模式下保存固定模型校验值、策略、原始/压缩时长、保留区间、跳过区间和时间轴映射，并与临时 OSS 对象键一同写入以支持重启恢复。
-- `provider_task_id`、`provider_submitted_at`：DashScope 异步任务标识和首次提交时间，用于进程重启后继续轮询及六小时超时判断。
+- `provider_task_id`、`provider_submitted_at`：DashScope 异步任务标识和首次提交时间，用于进程重启后恢复终态发现及六小时超时判断。
+- `provider_terminal_source`、`provider_terminal_event_id`、`provider_terminal_status`、`provider_terminal_received_at`：Polling 或 EventBridge 首次接受的供应商终态事实。EventBridge 保存事件 ID；同一任务后续重复或冲突事件不覆盖首个事实。
+- `provider_terminal_result_url`：成功终态携带的 HTTPS 短期结果地址，仅保留到结果发布或失败收敛，之后清空。`provider_terminal_error_code`、`provider_terminal_error_message` 保存受限长度的失败摘要。
+- `provider_poll_attempt`、`provider_last_polled_at`、`provider_next_poll_at`：Polling 的持久化调度状态；每次只查询一次，按 2/5/10/15 秒递增间隔设置下一次截止时间。EventBridge 模式不设置或领取该时间。
 - `provider_artifact_key`：仍需清理的临时 OSS 对象键；删除成功后清空，任务 ID 保留用于审计。
 - `current_chunk`、`chunk_count`：当前 Chunk 和总数，必须成对满足 `1 <= current_chunk <= chunk_count`。
 - `current_chunk_start_ms`、`current_chunk_end_ms`：当前逻辑分块在完整录音中的毫秒范围。
@@ -328,7 +333,7 @@ group_data_sources 所关联数据源下的音频
 
 Qwen Filetrans 提交单个 16kHz 单声道整文件；其带 `speaker_id` 的句子按说话人变化、1500ms 停顿和 240 字软上限转换为独立 `transcript_segments`。缺失 Speaker 或时间戳异常的结果不发布。
 
-活动字段只在进行中修订上作为轮询状态存在：queued 初始化阶段但没有 Chunk，worker 领取后进入预处理；Chunk 字段必须全部为空或全部存在，时间范围必须递增，尝试次数必须关联当前 Chunk。中断恢复会清空 Chunk/尝试并重新排队，成功或失败会清空活动字段；失败 Chunk 与最终尝试次数另由安全的 `error_details` 保留。
+活动字段只在进行中修订上作为客户端可观察状态存在：queued 初始化阶段但没有 Chunk，worker 领取后进入预处理，供应商任务提交后进入 `awaiting_result`；Chunk 字段必须全部为空或全部存在，时间范围必须递增，尝试次数必须关联当前 Chunk。中断恢复只重新排队未提交任务，已有 task ID 的任务按当前通知模式继续发现终态，已持久化终态的任务直接进入统一完成阶段；成功或失败会清空活动字段和短期结果 URL。
 
 物理删除音频时，修订版及其结构化结果级联删除。
 
@@ -400,6 +405,22 @@ ASR 确认后的情绪分析和角色识别任务。每条任务固化 `analysis
 - `details`：JSON 字符串数组形式的详细要点。
 
 `details` 必须是数组且数组元素全部为字符串。复合外键保证标签、转写片段和分析修订版属于同一租户与同一版本。
+
+### `ai_execution_runs`
+
+当前音频分析修订关联的一次安全 AI 运行。运行类型只允许 ASR 转写、情绪分析、角色识别和分组业务分析；业务分析额外保存 `group_id`，后处理和业务任务可通过 `source_job_id` 关联原任务。ASR 的提交与终态完成阶段分别形成运行记录，并通过 `phase` 区分。
+
+运行保存 `running`、`completed`、`failed` 或 `interrupted` 状态、起止时间、耗时和紧凑错误摘要。进程启动时会把遗留的 `running` 记录收敛为可重试的中断终态；重新执行产生新记录，不覆盖历史。运行通过复合外键绑定音频与分析修订，物理删除修订时级联清理。
+
+### `ai_execution_events`
+
+一次运行内按 `sequence_no` 排序的安全事件，只允许 `step`、`model_call` 和 `tool_call`：
+
+- 步骤保存稳定名称、状态、耗时和原始值类型受限的摘要字段。
+- 模型调用保存 provider、model、尝试次数、Token、耗时和可选费用。
+- 知识工具保存查询、执行时知识库名称快照、命中数、文档标题和块定位。
+
+`details` 必须是 JSON 对象。产品审计明确不保存模型输入、模型输出、隐藏 reasoning、知识块正文、音频、OSS 地址、签名或凭据；本地 Markdown 诊断报告也不会通过这些表或客户端 API 暴露。
 
 ## LangGraph checkpoint 表
 
