@@ -77,6 +77,20 @@ describe('Silero voice activity policy', () => {
     );
   });
 
+  it('never rounds a fully retained PCM tail beyond the decoded byte stream', () => {
+    const totalSamples = samples(1_000) + 8;
+    const manifest = buildVoiceActivityManifest(
+      [{ startSample: 0, endSample: totalSamples }],
+      totalSamples,
+    );
+
+    assert.equal(manifest.skippedIntervals.length, 0);
+    assert.equal(manifest.originalDurationMs, 1_000);
+    assert.equal(manifest.processedDurationMs, 1_000);
+    assert.equal(manifest.sourceSpans[0].originalEndMs * 16, 16_000);
+    assert.ok(manifest.sourceSpans[0].originalEndMs * 16 <= totalSamples);
+  });
+
   it('records leading and trailing invalid audio and restores one source span', () => {
     const manifest = buildVoiceActivityManifest(
       [{ startSample: samples(40_000), endSample: samples(41_000) }],
