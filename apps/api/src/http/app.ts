@@ -335,6 +335,15 @@ export function createApp(
         ),
       );
     });
+    app.get('/api/audio-files/:audioFileId/analysis/executions', async (context) => {
+      const requestedGroupId = context.req.query('groupId');
+      return context.json(
+        await workspace.getAudioExecutionTrace(
+          id(context.req.param('audioFileId')),
+          requestedGroupId ? id(requestedGroupId) : undefined,
+        ),
+      );
+    });
     app.post('/api/audio-files/:audioFileId/business-analyses', async (context) => {
       const input = AudioBusinessAnalysisStartRequestSchema.parse(await context.req.json());
       return context.json(

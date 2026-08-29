@@ -11,7 +11,7 @@
  * - 只展示服务端已经原子发布的当前分析修订版。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { AudioPostAnalysisType } from '@echowave/contracts';
+import type { AudioAiExecutionTraceResponse, AudioPostAnalysisType } from '@echowave/contracts';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -30,6 +30,7 @@ import { useAudioPlayback } from '@/shared/audio/useAudioPlayback';
 import {
   confirmAudioTranscript,
   getAudioAnalysis,
+  getAudioExecutionTrace,
   getGroupSettings,
   startAudioBusinessAnalysis,
   startAudioEmotionAnalysis,
@@ -61,6 +62,7 @@ import { CompactPlayer, ExpandedPlayer } from './components/Player';
 import { SummaryContent } from './components/SummaryContent';
 import { TranscriptContent, type TranscriptDisplayMode } from './components/TranscriptContent';
 import { EmotionAnalysisPanel } from './components/EmotionAnalysisPanel';
+import { ModelExecutionContent } from './components/ModelExecutionContent';
 import { PostAnalysisConfirmDialog, PostAnalysisControls } from './components/PostAnalysisControls';
 import {
   BusinessAnalysisControls,
@@ -80,6 +82,10 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
   const [detail, setDetail] = useState<AnalysisDetailView>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [executionTrace, setExecutionTrace] = useState<AudioAiExecutionTraceResponse>();
+  const [executionTraceLoading, setExecutionTraceLoading] = useState(false);
+  const [executionTraceScope, setExecutionTraceScope] = useState('');
+  const [executionTraceError, setExecutionTraceError] = useState('');
   const [activeTab, setActiveTab] = useState<AnalysisTab>('transcript');
   const [expandedPlayer, setExpandedPlayer] = useState(false);
   const [playbackRateIndex, setPlaybackRateIndex] = useState(0);
@@ -105,6 +111,9 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
     setHideIrrelevant(value);
   };
   const hasSummary = Boolean(detail?.summarySections.length);
+  const currentExecutionScope = `${detailId}:${groupId ?? ''}`;
+  const currentExecutionTrace =
+    executionTraceScope === currentExecutionScope ? executionTrace : undefined;
   const transcriptSegments = detail?.scenes.flatMap((scene) => scene.segments) ?? [];
   const transcriptDirty =
     editingTranscript &&
@@ -113,7 +122,7 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
     );
   const applyTabChange = (tab: AnalysisTab) => {
     setActiveTab(tab);
-    if (tab === 'summary') {
+    if (tab !== 'transcript') {
       setExpandedPlayer(false);
       setSelectedTag(undefined);
     }
@@ -121,7 +130,7 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
   const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } = useSwipePager({
     activeTab,
     onTabChange: applyTabChange,
-    tabs: hasSummary ? analysisTabKeys : (['transcript'] as AnalysisTab[]),
+    tabs: hasSummary ? analysisTabKeys : (['transcript', 'model'] as AnalysisTab[]),
   });
 
   const load = useCallback(
@@ -143,6 +152,38 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
     const task = setTimeout(() => void load(), 0);
     return () => clearTimeout(task);
   }, [load]);
+  const loadExecutionTrace = useCallback(
+    async (showLoading = true) => {
+      if (showLoading) setExecutionTraceLoading(true);
+      setExecutionTraceError('');
+      try {
+        setExecutionTrace(await getAudioExecutionTrace(detailId, groupId));
+      } catch (reason) {
+        setExecutionTraceError(reason instanceof Error ? reason.message : '模型详情加载失败。');
+      } finally {
+        setExecutionTraceScope(currentExecutionScope);
+        if (showLoading) setExecutionTraceLoading(false);
+      }
+    },
+    [currentExecutionScope, detailId, groupId],
+  );
+  useEffect(() => {
+    if (
+      activeTab !== 'model' ||
+      executionTraceScope === currentExecutionScope ||
+      executionTraceLoading
+    ) {
+      return undefined;
+    }
+    const task = setTimeout(() => void loadExecutionTrace(), 0);
+    return () => clearTimeout(task);
+  }, [
+    activeTab,
+    currentExecutionScope,
+    executionTraceLoading,
+    executionTraceScope,
+    loadExecutionTrace,
+  ]);
   useEffect(() => {
     if (!groupId) return undefined;
     const task = setTimeout(() => {
@@ -165,6 +206,13 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
     const timer = setInterval(() => void load(false), 2_000);
     return () => clearInterval(timer);
   }, [load, pollingPostAnalysis]);
+  const pollingExecutionTrace =
+    pollingPostAnalysis || currentExecutionTrace?.runs.some((run) => run.status === 'running');
+  useEffect(() => {
+    if (activeTab !== 'model' || !pollingExecutionTrace) return undefined;
+    const timer = setInterval(() => void loadExecutionTrace(false), 2_000);
+    return () => clearInterval(timer);
+  }, [activeTab, loadExecutionTrace, pollingExecutionTrace]);
 
   useEffect(() => {
     if (
@@ -519,6 +567,14 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
             <SummaryContent detail={detail} />
           </View>
         ) : null}
+        <View style={[styles.page, { width: pageWidth }]}>
+          <ModelExecutionContent
+            error={executionTraceError}
+            loading={executionTraceLoading}
+            onRetry={() => void loadExecutionTrace()}
+            trace={currentExecutionTrace}
+          />
+        </View>
       </ScrollView>
       <AiTagPanel
         analysis={selectedTag}

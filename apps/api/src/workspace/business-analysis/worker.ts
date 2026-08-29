@@ -191,7 +191,22 @@ export class BusinessAnalysisWorker {
             name: 'search_knowledge',
             status: 'completed',
             durationMs: Date.now() - searchStartedAt,
-            summary: { attempt, hitCount: chunks.length },
+            summary: {
+              attempt,
+              hitCount: chunks.length,
+              audit: {
+                query,
+                knowledgeBases: job.knowledgeBases,
+                hitCount: chunks.length,
+                hits: chunks.map((chunk) => ({
+                  chunkId: chunk.id,
+                  knowledgeBaseId: chunk.knowledgeBaseId,
+                  documentId: chunk.documentId,
+                  documentTitle: chunk.documentTitle,
+                  locator: chunk.locator,
+                })),
+              },
+            },
             input: { query, knowledgeBaseIds: job.knowledgeBaseIds },
             output: chunks,
           });
@@ -202,7 +217,15 @@ export class BusinessAnalysisWorker {
             name: 'search_knowledge',
             status: 'failed',
             durationMs: Date.now() - searchStartedAt,
-            summary: { attempt },
+            summary: {
+              attempt,
+              audit: {
+                query,
+                knowledgeBases: job.knowledgeBases,
+                hitCount: 0,
+                hits: [],
+              },
+            },
             input: { query, knowledgeBaseIds: job.knowledgeBaseIds },
             output: { error },
           });

@@ -11,10 +11,11 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, fontFamilies, spacing, textColors, typography } from '@/shared/theme/tokens';
 
-export type AnalysisTab = 'transcript' | 'summary';
+export type AnalysisTab = 'transcript' | 'summary' | 'model';
 const analysisTabs: readonly { key: AnalysisTab; label: string }[] = [
   { key: 'transcript', label: '转写分析' },
   { key: 'summary', label: '分析总结' },
+  { key: 'model', label: '模型详情' },
 ];
 export const analysisTabKeys = analysisTabs.map((tab) => tab.key);
 
@@ -30,7 +31,7 @@ export function DetailTabs({
   return (
     <View accessibilityRole="tablist" style={styles.detailTabs}>
       {analysisTabs
-        .filter((tab) => showSummary || tab.key === 'transcript')
+        .filter((tab) => showSummary || tab.key !== 'summary')
         .map((tab) => {
           const selected = tab.key === activeTab;
           return (

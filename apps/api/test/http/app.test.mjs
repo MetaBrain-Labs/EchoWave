@@ -126,6 +126,7 @@ describe('workspace routes', () => {
   let replacedGroupKnowledgeInput;
   let replacedGroupSourcesInput;
   let requestedAnalysisInput;
+  let requestedExecutionTraceInput;
   const workspaceService = {
     listGroups: async () => ({
       items: [
@@ -255,6 +256,10 @@ describe('workspace routes', () => {
       requestedAnalysisInput = { id, groupId: requestedGroupId };
       return {};
     },
+    getAudioExecutionTrace: async (id, requestedGroupId) => {
+      requestedExecutionTraceInput = { id, groupId: requestedGroupId };
+      return { audioFileId: id, analysisRevisionId: groupId, runs: [] };
+    },
     startAudioBusinessAnalysis: async (id, input) => {
       startedBusinessAnalysisInput = { id, input };
       return {
@@ -354,6 +359,12 @@ describe('workspace routes', () => {
     );
     assert.equal(detail.status, 200);
     assert.deepEqual(requestedAnalysisInput, { id: groupId, groupId });
+
+    const trace = await workspaceApp.request(
+      `/api/audio-files/${groupId}/analysis/executions?groupId=${groupId}`,
+    );
+    assert.equal(trace.status, 200);
+    assert.deepEqual(requestedExecutionTraceInput, { id: groupId, groupId });
 
     const started = await workspaceApp.request(`/api/audio-files/${groupId}/business-analyses`, {
       method: 'POST',

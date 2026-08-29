@@ -36,6 +36,7 @@ import type { AudioAnalysisRepository } from './persistence/audioAnalysisReposit
 import type { PostAnalysisRepository } from './persistence/postAnalysisRepository.ts';
 import type { TranscriptConfirmationRepository } from './persistence/transcriptConfirmationRepository.ts';
 import type { BusinessAnalysisRepository } from './persistence/businessAnalysisRepository.ts';
+import type { AudioExecutionRepository } from './persistence/audioExecutionRepository.ts';
 import { WorkspaceRepositoryError } from './persistence/errors.ts';
 import type { AudioInputPreprocessor } from './transcription/audioPreprocessor.ts';
 
@@ -216,6 +217,10 @@ export interface WorkspaceService {
     id: string,
     groupId?: string,
   ): Promise<Awaited<ReturnType<WorkspaceRepository['getAudioAnalysis']>>>;
+  getAudioExecutionTrace(
+    id: string,
+    groupId?: string,
+  ): Promise<Awaited<ReturnType<AudioExecutionRepository['getTrace']>>>;
   confirmAudioTranscript(
     id: string,
     input: AudioTranscriptConfirmationRequest,
@@ -244,6 +249,7 @@ export class DefaultWorkspaceService implements WorkspaceService {
     private readonly roleModel: 'deepseek-v4-flash',
     private readonly emotionProviderConfigured: boolean,
     private readonly businessAnalysisRepository?: BusinessAnalysisRepository,
+    private readonly audioExecutionRepository?: AudioExecutionRepository,
   ) {}
 
   listGroups() {
@@ -415,6 +421,16 @@ export class DefaultWorkspaceService implements WorkspaceService {
       ...detail,
       businessAnalysis: await this.businessAnalysisRepository.getState(id, groupId),
     };
+  }
+
+  /** 读取当前已发布修订的安全执行轨迹，并复用分组音频访问边界。 */
+  async getAudioExecutionTrace(id: string, groupId?: string) {
+    const detail = await this.repository.getAudioAnalysis(id);
+    if (groupId) await this.repository.assertGroupAudioAccess(groupId, id);
+    if (!this.audioExecutionRepository) {
+      throw new WorkspaceRepositoryError('CONFLICT', '模型执行轨迹服务尚未配置。');
+    }
+    return this.audioExecutionRepository.getTrace(id, detail.id, groupId);
   }
 
   confirmAudioTranscript(id: string, input: AudioTranscriptConfirmationRequest) {

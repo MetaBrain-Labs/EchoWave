@@ -6,7 +6,7 @@
 
 EchoWave 使用 PostgreSQL 作为权威业务存储，并通过 pgvector 支持知识库向量检索。完整结构分为三部分：
 
-- 应用业务 schema：21 张业务表，以及迁移入口创建的 `schema_migrations`。
+- 应用业务 schema：35 张业务表，以及迁移入口创建的 `schema_migrations`。
 - LangGraph 独立 schema：4 张 checkpoint 表，由 `PostgresSaver.setup()` 管理。
 - `public` schema：安装 `vector` 扩展，为 `document_chunks.embedding` 提供 `vector(1024)` 类型和 HNSW 索引能力。
 
@@ -50,6 +50,8 @@ erDiagram
     TRANSCRIPT_SEGMENTS ||--o| SEGMENT_AI_TAGS : tagged_by
     AUDIO_ANALYSIS_REVISIONS ||--o{ ANALYSIS_SUMMARY_SECTIONS : summarizes
     AUDIO_ANALYSIS_REVISIONS ||--o{ ANALYSIS_INVALID_SEGMENTS : excludes
+    AUDIO_ANALYSIS_REVISIONS ||--o{ AI_EXECUTION_RUNS : audits
+    AI_EXECUTION_RUNS ||--o{ AI_EXECUTION_EVENTS : records
 ```
 
 ## 租户与迁移管理
@@ -403,6 +405,22 @@ ASR 确认后的情绪分析和角色识别任务。每条任务固化 `analysis
 - `details`：JSON 字符串数组形式的详细要点。
 
 `details` 必须是数组且数组元素全部为字符串。复合外键保证标签、转写片段和分析修订版属于同一租户与同一版本。
+
+### `ai_execution_runs`
+
+当前音频分析修订关联的一次安全 AI 运行。运行类型只允许 ASR 转写、情绪分析、角色识别和分组业务分析；业务分析额外保存 `group_id`，后处理和业务任务可通过 `source_job_id` 关联原任务。ASR 的提交与终态完成阶段分别形成运行记录，并通过 `phase` 区分。
+
+运行保存 `running`、`completed`、`failed` 或 `interrupted` 状态、起止时间、耗时和紧凑错误摘要。进程启动时会把遗留的 `running` 记录收敛为可重试的中断终态；重新执行产生新记录，不覆盖历史。运行通过复合外键绑定音频与分析修订，物理删除修订时级联清理。
+
+### `ai_execution_events`
+
+一次运行内按 `sequence_no` 排序的安全事件，只允许 `step`、`model_call` 和 `tool_call`：
+
+- 步骤保存稳定名称、状态、耗时和原始值类型受限的摘要字段。
+- 模型调用保存 provider、model、尝试次数、Token、耗时和可选费用。
+- 知识工具保存查询、执行时知识库名称快照、命中数、文档标题和块定位。
+
+`details` 必须是 JSON 对象。产品审计明确不保存模型输入、模型输出、隐藏 reasoning、知识块正文、音频、OSS 地址、签名或凭据；本地 Markdown 诊断报告也不会通过这些表或客户端 API 暴露。
 
 ## LangGraph checkpoint 表
 

@@ -154,6 +154,29 @@ export const noOpAiExecutionReporter: AiExecutionReporter = {
   start: () => noOpAiExecutionRecorder,
 };
 
+/** 将多个旁路报告器组合为一个接口，单个报告器失败不阻断其他报告器。 */
+export function createCompositeAiExecutionReporter(
+  reporters: readonly AiExecutionReporter[],
+): AiExecutionReporter {
+  return {
+    start(input) {
+      const recorders = reporters.map((reporter) => reporter.start(input));
+      return {
+        recordMetadata: (metadata) => recorders.forEach((item) => item.recordMetadata(metadata)),
+        recordStep: (event) => recorders.forEach((item) => item.recordStep(event)),
+        recordModelCall: (event) => recorders.forEach((item) => item.recordModelCall(event)),
+        recordToolCall: (event) => recorders.forEach((item) => item.recordToolCall(event)),
+        recordContext: (value) => recorders.forEach((item) => item.recordContext(value)),
+        recordReasoning: (value) => recorders.forEach((item) => item.recordReasoning(value)),
+        recordOutput: (value) => recorders.forEach((item) => item.recordOutput(value)),
+        finish: async (result) => {
+          await Promise.allSettled(recorders.map((item) => item.finish(result)));
+        },
+      };
+    },
+  };
+}
+
 /** 根据显式配置创建文件报告器；关闭时所有运行共享无操作实现。 */
 export function createAiExecutionReporter(
   config: AiExecutionReportConfig,

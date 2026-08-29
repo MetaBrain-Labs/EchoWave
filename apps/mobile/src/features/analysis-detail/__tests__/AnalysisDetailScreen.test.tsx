@@ -28,6 +28,7 @@ jest.mock('@/shared/api/workspaceApi', () => {
     ...actual,
     confirmAudioTranscript: jest.fn(),
     getAudioAnalysis: jest.fn(),
+    getAudioExecutionTrace: jest.fn(),
     getGroupSettings: jest.fn(),
     startAudioBusinessAnalysis: jest.fn(),
     startAudioEmotionAnalysis: jest.fn(),
@@ -54,6 +55,11 @@ describe('AnalysisDetailScreen', () => {
     setHideIrrelevantSegmentsPreference(false);
     setPostAnalysisControlsCollapsedPreference(true);
     jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValue(analysisFixture);
+    jest.mocked(workspaceApi.getAudioExecutionTrace).mockResolvedValue({
+      audioFileId: analysisFixture.audioFileId,
+      analysisRevisionId: analysisFixture.id,
+      runs: [],
+    });
     jest.mocked(workspaceApi.getGroupSettings).mockResolvedValue({
       groupId: '10000000-0000-4000-8000-000000000001',
       name: '销售复盘组',
@@ -695,6 +701,97 @@ describe('AnalysisDetailScreen', () => {
     expect(StyleSheet.flatten(screen.getByTestId('ai-tag-sheet').props.style)).toEqual(
       expect.objectContaining({ maxHeight: '33%' }),
     );
+  });
+
+  it('lazy-loads safe model, tool and knowledge retrieval details', async () => {
+    const groupId = '10000000-0000-4000-8000-000000000001';
+    jest.mocked(workspaceApi.getAudioExecutionTrace).mockResolvedValueOnce({
+      audioFileId: analysisFixture.audioFileId,
+      analysisRevisionId: analysisFixture.id,
+      runs: [
+        {
+          id: 'e1000000-0000-4000-8000-000000000001',
+          kind: 'audio-business-analysis',
+          name: 'EchoWave sales conversation review',
+          phase: null,
+          status: 'completed',
+          groupId,
+          sourceJobId: 'b1000000-0000-4000-8000-000000000001',
+          startedAt: '2026-08-29T01:00:00.000Z',
+          completedAt: '2026-08-29T01:00:02.000Z',
+          durationMs: 2_000,
+          error: null,
+          steps: [
+            {
+              sequence: 1,
+              name: 'retrieval-planning',
+              status: 'completed',
+              occurredAt: '2026-08-29T01:00:00.500Z',
+              durationMs: 120,
+              summary: { queryCount: 1 },
+            },
+          ],
+          modelCalls: [
+            {
+              sequence: 2,
+              name: 'sales-analysis',
+              provider: 'deepseek',
+              model: 'deepseek-v4-flash',
+              status: 'completed',
+              attempt: 1,
+              occurredAt: '2026-08-29T01:00:01.000Z',
+              durationMs: 800,
+              inputTokens: 1200,
+              outputTokens: 300,
+              estimatedCost: null,
+            },
+          ],
+          toolCalls: [
+            {
+              sequence: 3,
+              name: 'search_knowledge',
+              status: 'completed',
+              occurredAt: '2026-08-29T01:00:01.500Z',
+              durationMs: 60,
+              query: '客户价格异议处理',
+              knowledgeBases: [{ id: 'b0000000-0000-4000-8000-000000000001', name: '销售知识库' }],
+              hitCount: 1,
+              hits: [
+                {
+                  chunkId: 'c0000000-0000-4000-8000-000000000001',
+                  knowledgeBaseId: 'b0000000-0000-4000-8000-000000000001',
+                  documentId: 'd0000000-0000-4000-8000-000000000001',
+                  documentTitle: '销售异议处理手册',
+                  locator: {
+                    kind: 'markdown',
+                    headingPath: ['价格异议'],
+                    lineStart: 10,
+                    lineEnd: 18,
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const screen = await renderAnalysis(analysisFixture.audioFileId, jest.fn(), groupId);
+
+    expect(workspaceApi.getAudioExecutionTrace).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByRole('tab', { name: '模型详情' }));
+
+    await waitFor(() =>
+      expect(workspaceApi.getAudioExecutionTrace).toHaveBeenCalledWith(
+        analysisFixture.audioFileId,
+        groupId,
+      ),
+    );
+    expect(screen.getByText(/不包含模型隐藏推理/)).toBeTruthy();
+    fireEvent.press(await screen.findByText('业务分析'));
+    expect(await screen.findByText('deepseek · deepseek-v4-flash')).toBeTruthy();
+    expect(screen.getByText('查询：客户价格异议处理')).toBeTruthy();
+    expect(screen.getByText('知识库：销售知识库')).toBeTruthy();
+    expect(screen.getByText('销售异议处理手册')).toBeTruthy();
   });
 
   it('renders an actionable state for unknown detail ids', async () => {

@@ -55,6 +55,7 @@ export type ClaimedBusinessAnalysisJob = {
   confirmationVersion: number;
   model: string;
   knowledgeBaseIds: string[];
+  knowledgeBases: { id: string; name: string }[];
   settings: BusinessAnalysisSettingsSnapshot;
   segments: BusinessAnalysisSegment[];
 };
@@ -355,6 +356,16 @@ export class BusinessAnalysisRepository {
        ORDER BY ts.start_ms, ts.segment_index`,
       [this.tenantId, row.transcript_confirmation_id, row.role_job_id, row.emotion_job_id],
     );
+    const knowledgeBaseIds = safeArray(row.knowledge_base_ids);
+    const knowledgeBases =
+      knowledgeBaseIds.length === 0
+        ? { rows: [] }
+        : await this.pool.query(
+            `SELECT id, name FROM ${this.table('knowledge_bases')}
+             WHERE tenant_id = $1 AND id = ANY($2::uuid[])
+             ORDER BY id`,
+            [this.tenantId, knowledgeBaseIds],
+          );
     const settings = row.settings_snapshot as BusinessAnalysisSettingsSnapshot;
     return {
       id: row.id,
@@ -364,7 +375,11 @@ export class BusinessAnalysisRepository {
       confirmationId: row.transcript_confirmation_id,
       confirmationVersion: Number(row.confirmation_version),
       model: row.model,
-      knowledgeBaseIds: safeArray(row.knowledge_base_ids),
+      knowledgeBaseIds,
+      knowledgeBases: knowledgeBases.rows.map((item) => ({
+        id: String(item.id),
+        name: String(item.name),
+      })),
       settings,
       segments: segments.rows.map((segment) => ({
         id: segment.id,

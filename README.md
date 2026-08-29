@@ -83,6 +83,8 @@ FFmpeg 是整文件转写的必需能力。配置 `FFMPEG_PATH` 后，API 启动
 
 分析详情和数据源音频列表使用 `expo-audio` 播放原始上传文件。API 通过租户隔离的 `GET/HEAD /api/audio-files/:audioFileId/content` 提供媒体流并支持单段 HTTP Range；客户端不会接收 `storage_key` 或服务器路径。详情页顶部播放器提供真实进度、倍速和跳转，正文片段按钮只播放对应时间范围并在片段结束时自动暂停。播放器仅在当前页面前台运行，离页即停止，不启用后台或锁屏播放。
 
+分析详情的“模型详情”标签页按当前 ASR 修订展示转写、情绪、角色和当前分组业务分析的运行记录。它从 PostgreSQL 安全审计表读取模型、状态、耗时、Token、执行步骤、工具调用、检索查询、知识库名称和命中文档定位；不展示模型隐藏推理、完整提示词、原始模型输出或知识块正文。功能上线前的历史运行不会回填或伪造轨迹。
+
 原音频直传支持 MP3、WAV、M4A、AAC、FLAC、OGG 和 WebM，但仅允许不超过 45 秒且不超过 200 MB 的音频；长音频必须启用 FFmpeg。base64 会使请求体增大约三分之一，供应商拒绝时应重新转写并勾选 FFmpeg，不会自动回退或覆盖旧结果。
 
 `apps/api/.env` 是 API 的唯一配置来源：启动时会直接读取并校验该文件，不合并系统环境变量，也不使用隐式默认值。移动端由 Expo CLI 自动加载 `apps/mobile/.env`，其中客户端可用变量必须以 `EXPO_PUBLIC_` 开头：
@@ -98,6 +100,8 @@ API 的 PostgreSQL 配置使用 `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_US
 ### 可选 AI 执行报告
 
 知识问答、文档入库、音频 ASR、角色/情绪识别和销售复盘支持本地 Markdown 执行报告。它用于开发与测试诊断，不是单元测试覆盖率或 CI 测试结果。报告默认关闭；需要时在 `apps/api/.env` 设置：
+
+这里的本地文件报告与移动端“模型详情”相互独立：关闭下列开关不会关闭 PostgreSQL 中字段受限的产品审计；本地报告也不会通过模型详情 API 暴露。
 
 ```dotenv
 AI_EXECUTION_REPORT_ENABLED="true"

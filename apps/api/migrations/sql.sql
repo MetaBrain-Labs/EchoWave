@@ -1,3 +1,49 @@
+create table public.ai_execution_events (
+  id uuid primary key not null default gen_random_uuid(),
+  tenant_id uuid not null,
+  execution_run_id uuid not null,
+  sequence_no integer not null,
+  event_type text not null,
+  name text not null,
+  status text not null,
+  occurred_at timestamp with time zone not null,
+  duration_ms bigint,
+  details jsonb not null default '{}'::jsonb,
+  foreign key (tenant_id, execution_run_id) references public.ai_execution_runs (tenant_id, id)
+  match simple on update no action on delete cascade
+);
+create unique index ai_execution_events_tenant_id_execution_run_id_sequence_no_key on ai_execution_events using btree (tenant_id, execution_run_id, sequence_no);
+create index ai_execution_events_run_sequence_idx on ai_execution_events using btree (tenant_id, execution_run_id, sequence_no);
+
+create table public.ai_execution_runs (
+  id uuid primary key not null default gen_random_uuid(),
+  tenant_id uuid not null,
+  audio_file_id uuid not null,
+  analysis_revision_id uuid not null,
+  group_id uuid,
+  source_job_id uuid,
+  kind text not null,
+  name text not null,
+  phase text,
+  status text not null,
+  error_code text,
+  error_message text,
+  error_retryable boolean,
+  started_at timestamp with time zone not null,
+  completed_at timestamp with time zone,
+  duration_ms bigint,
+  created_at timestamp with time zone not null default now(),
+  foreign key (tenant_id, audio_file_id, analysis_revision_id) references public.audio_analysis_revisions (tenant_id, audio_file_id, id)
+  match simple on update no action on delete cascade,
+  foreign key (tenant_id, audio_file_id) references public.audio_files (tenant_id, id)
+  match simple on update no action on delete cascade,
+  foreign key (tenant_id, group_id) references public.groups (tenant_id, id)
+  match simple on update no action on delete cascade
+);
+create unique index ai_execution_runs_tenant_id_id_key on ai_execution_runs using btree (tenant_id, id);
+create index ai_execution_runs_revision_timeline_idx on ai_execution_runs using btree (tenant_id, analysis_revision_id, started_at);
+create index ai_execution_runs_group_timeline_idx on ai_execution_runs using btree (tenant_id, group_id, analysis_revision_id, started_at) WHERE (group_id IS NOT NULL);
+
 create table public.analysis_invalid_segments (
   id uuid primary key not null default gen_random_uuid(),
   tenant_id uuid not null,
@@ -69,6 +115,16 @@ create table public.audio_analysis_revisions (
   active_emotion_job_id uuid,
   active_role_job_id uuid,
   active_transcript_confirmation_id uuid,
+  provider_terminal_event_id text,
+  provider_terminal_status text,
+  provider_terminal_received_at timestamp with time zone,
+  provider_terminal_result_url text,
+  provider_terminal_error_code text,
+  provider_terminal_error_message text,
+  provider_terminal_source text,
+  provider_poll_attempt integer not null default 0,
+  provider_last_polled_at timestamp with time zone,
+  provider_next_poll_at timestamp with time zone,
   foreign key (tenant_id, id, active_emotion_job_id) references public.audio_post_analysis_jobs (tenant_id, analysis_revision_id, id)
   match simple on update no action on delete no action,
   foreign key (tenant_id, id, active_role_job_id) references public.audio_post_analysis_jobs (tenant_id, analysis_revision_id, id)
