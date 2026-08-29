@@ -75,7 +75,9 @@ Copy-Item apps/mobile/.env.example apps/mobile/.env
 
 FFmpeg 是整文件转写的必需能力。配置 `FFMPEG_PATH` 后，API 启动时会非致命探测可执行文件；缺失或检查失败不会阻止知识库嵌入和 API 启动，但会禁用音频转写。临时单声道 MP3 写入 `AUDIO_TRANSCRIPTION_TEMP_DIR`，转写模型固定为 `qwen-audio-3.0-asr-flash-filetrans`，失败时不会自动切换模型。API 还会校验仓库内固定的 Silero VAD v6.2.1 ONNX 模型；VAD 不可用时仍可由用户明确选择整文件模式，服务端不会静默回退。
 
-按说话轮次分段使用北京地域 `qwen-audio-3.0-asr-flash-filetrans`。`DASHSCOPE_API_KEY` 和 `DASHSCOPE_BASE_URL` 始终必填，供知识库嵌入和转写复用；四项 `ALIYUN_OSS_*` 配置必须全部为空或全部配置，缺失时只禁用转写。服务端把本地权威音频转成单声道整文件后，临时上传到 `echowave/asr-staging/<tenant>/<revision>/`，使用 24 小时签名 GET URL 提交任务，并在成功或失败后尽力删除。OSS Bucket 必须另外配置该前缀的一天生命周期规则作为清理兜底。
+按说话轮次分段使用北京地域 `qwen-audio-3.0-asr-flash-filetrans`。`DASHSCOPE_API_KEY` 和 `DASHSCOPE_BASE_URL` 始终必填，供知识库嵌入和转写复用；四项 `ALIYUN_OSS_*` 配置必须全部为空或全部配置。`DASHSCOPE_ASYNC_NOTIFY_MODE` 必须显式选择 `polling` 或 `eventbridge`：本地与测试建议使用 `polling`，并保持两个回调变量为空；生产可使用 `eventbridge`，此时必须成对配置 `DASHSCOPE_EVENTBRIDGE_CALLBACK_URL` 与 `DASHSCOPE_EVENTBRIDGE_CALLBACK_TOKEN`。服务端把本地权威音频转成单声道整文件后，临时上传到 `echowave/asr-staging/<tenant>/<revision>/`，使用 24 小时签名 GET URL 提交任务，并在成功或失败后尽力删除。OSS Bucket 必须另外配置该前缀的一天生命周期规则作为清理兜底。
+
+`polling` 模式每次只查询一次 DashScope 任务状态，按 2/5/10/15 秒递增间隔把下次查询时间写入数据库并释放 worker，六小时后停止查询。`eventbridge` 模式的回调地址固定指向 `POST /api/webhooks/dashscope/async-task-finished`；在华北 2（北京）地域 default 事件总线创建规则，筛选 `source=acs.dashscope`、`type=dashscope:System:AsyncTaskFinish` 和模型后缀 `:qwen-audio-3.0-asr-flash-filetrans`，HTTP 目标选择“完整事件”并填写相同 Token。回调 URL 必须可由 EventBridge 通过公网或已配置 VPC 访问；反向代理后的外部完整 URL 必须与环境变量和 EventBridge 目标完全一致。`AUDIO_TRANSCRIPTION_MAX_IN_FLIGHT` 同时约束两种模式中等待供应商终态的任务数，首次部署建议保持 `1`。
 
 转写发布后，供应商正文作为不可变 Raw Transcript 保存，移动端允许用户逐片段修正并确认；每次确认生成完整、不可变的 Confirmed Transcript 版本。只有完成确认后才能独立启动情绪分析和角色识别，任务会固化排队时使用的确认版本。再次修正不会清除或自动重跑既有情绪、角色结果，用户可按需手动重跑。情绪分析固定使用北京地域 `qwen3.5-omni-flash`，通过 `DASHSCOPE_COMPATIBLE_BASE_URL` 的 OpenAI-compatible Chat Completions 接收短期 OSS 音频窗口；角色识别复用官方 DeepSeek `deepseek-v4-flash`。两类任务各自单并发运行并按 ASR revision 发布，情绪窗口使用 `echowave/emotion-staging/` 前缀，同样需要 Bucket 一天生命周期规则兜底。
 
@@ -91,7 +93,7 @@ EXPO_PUBLIC_API_URL=http://localhost:3001
 
 `EXPO_PUBLIC_*` 会被写入客户端 bundle，不得放置密码、令牌或其他秘密。修改该文件后，需要在 Expo Go 中执行完整 Reload 才能确认新值已生效。详见 [Expo 环境变量文档](https://docs.expo.dev/guides/environment-variables/)。
 
-API 的 PostgreSQL 配置使用 `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_USER` 等分字段变量。RAG 嵌入要求 `DASHSCOPE_API_KEY`、北京地域业务空间 `DASHSCOPE_BASE_URL`、DeepSeek、固定开发租户与临时上传目录配置；音频转写和情绪分析额外要求完整 OSS 配置与 FFmpeg，情绪分析还要求 `DASHSCOPE_COMPATIBLE_BASE_URL` 和固定的 `AUDIO_EMOTION_MODEL=qwen3.5-omni-flash`，字段清单见 `apps/api/.env.example`。Redis 字段仍仅作未来边界预留。
+API 的 PostgreSQL 配置使用 `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_USER` 等分字段变量。RAG 嵌入要求 `DASHSCOPE_API_KEY`、北京地域业务空间 `DASHSCOPE_BASE_URL`、DeepSeek、固定开发租户与临时上传目录配置；音频转写额外要求完整 OSS、显式通知模式、在途上限与 FFmpeg 配置，只有 `eventbridge` 模式要求回调 URL 和 Token。情绪分析还要求 `DASHSCOPE_COMPATIBLE_BASE_URL` 和固定的 `AUDIO_EMOTION_MODEL=qwen3.5-omni-flash`，字段清单见 `apps/api/.env.example`。Redis 字段仍仅作未来边界预留。
 
 ### 可选 AI 执行报告
 
@@ -113,15 +115,15 @@ AI_EXECUTION_REPORT_STT_RAW_RESPONSE_ENABLED="false"
 
 `AI_EXECUTION_REPORT_CONTEXT_ENABLED`、`AI_EXECUTION_REPORT_TOOL_CONTENT_ENABLED` 和 `AI_EXECUTION_REPORT_OUTPUT_ENABLED` 仅控制额外的 Context、Tool Content 与汇总 Output 章节，不会关闭 `Model Calls` 中的实际 Prompt/Output。隐藏 reasoning 仍只由 `AI_EXECUTION_REPORT_REASONING_ENABLED` 控制。关闭总开关时不创建报告，也不执行额外写盘。
 
-每个被 worker 领取的转写修订生成一份 `audio-transcription` 报告，记录所选模型、Generation ID、direct 或 FFmpeg 预处理、分块时间边界、网络尝试、耗时、usage、费用、质量指标、发布和失败持久化。模型返回的规范化转写片段会作为可见输出记录；连接地址、`storage_key`、文件路径、音频、base64、密钥和 Provider 原始错误包不会进入通用报告。
+每个转写修订按“任务提交”和“终态完成”生成独立的 `audio-transcription` 阶段报告，记录所选模型、预处理、供应商等待耗时、结果下载、发布和失败持久化。模型返回的规范化转写片段会作为可见输出记录；连接地址、`storage_key`、文件路径、音频、base64、密钥和 Provider 原始错误包不会进入通用报告。
 
-`AI_EXECUTION_REPORT_STT_RAW_RESPONSE_ENABLED=true` 独立启用逐 HTTP 响应的 JSON 测试报告，即使通用 Markdown 报告关闭也会生效。DashScope 的任务提交、状态轮询和最终 Qwen 转写 JSON 会写入 `.ai-execution-reports/stt-raw/YYYY-MM-DD/`。报告包含供应商、响应阶段、模型、修订、尝试、HTTP 状态和经过保护的原始响应文本；请求正文、音频、鉴权头与完整响应头不会进入文件，OSS 签名查询参数会脱敏。单响应最多保留 2 MiB 文本，超限时记录原始字节数和 SHA-256，报告写入失败不影响转写。
+`AI_EXECUTION_REPORT_STT_RAW_RESPONSE_ENABLED=true` 独立启用逐 HTTP 响应的 JSON 测试报告，即使通用 Markdown 报告关闭也会生效。DashScope 的任务提交、Polling 的 `task_status` 响应或 EventBridge 完成回调，以及最终 Qwen 转写 JSON 会写入 `.ai-execution-reports/stt-raw/YYYY-MM-DD/`。报告包含供应商、响应阶段、模型、修订、尝试、HTTP 状态和经过保护的原始响应文本；请求音频、鉴权头与完整响应头不会进入文件，OSS 签名查询参数会脱敏。单响应最多保留 2 MiB 文本，超限时记录原始字节数和 SHA-256，报告写入失败不影响转写。
 
 FFmpeg 模式将录音转为 16kHz 单声道 64kbps MP3，并按固定 45 秒无重叠区间生成 Chunk；约 14.5 分钟录音初始形成 20 个 Chunk。明显文本退化或连续超时会把当前 Chunk 依次细分为约 22 秒和 11 秒，十秒为硬下限。direct 模式只允许不超过 45 秒的完整原音频，长音频必须使用 FFmpeg。
 
-转写只使用 DashScope Filetrans：默认先以 Silero VAD 检测人声，仅压缩连续超过 30 秒的非人声区间，再由 FFmpeg 生成 16kHz 单声道整文件 MP3；用户也可明确选择保留完整音频。两种模式都经短期 OSS 对象和签名 URL 异步提交，并开启 `diarization_enabled=true`。VAD 清单随 revision 持久化，供应商时间戳发布前恢复到原录音时间轴，被删除区间写入无效片段表。结果严格要求每句包含 `speaker_id` 和有序有效毫秒时间戳：Speaker 变化或同一 Speaker 停顿达到 1500ms 时开始新段，相邻同 Speaker 在不足 1500ms 且合并后不超过 240 字时合并，供应商单句不会被硬拆。业务角色和情绪始终为 `unknown`。
+转写只使用 DashScope Filetrans：默认先以 Silero VAD 检测人声，仅压缩连续超过 30 秒的非人声区间，再由 FFmpeg 生成 16kHz 单声道整文件 MP3；用户也可明确选择保留完整音频。两种通知模式都经短期 OSS 对象和签名 URL 异步提交，并开启 `diarization_enabled=true`。Polling 通过到期任务的单次 `/tasks/{task_id}` 查询发现终态；EventBridge 通过原始 Body、Token、时间窗和 RSA 签名校验后快速落库，且该模式绝不查询任务状态。两种来源最终都由同一后台完成路径下载结果、校验并发布。VAD 清单随 revision 持久化，供应商时间戳发布前恢复到原录音时间轴，被删除区间写入无效片段表。结果严格要求每句包含 `speaker_id` 和有序有效毫秒时间戳：Speaker 变化或同一 Speaker 停顿达到 1500ms 时开始新段，相邻同 Speaker 在不足 1500ms 且合并后不超过 240 字时合并，供应商单句不会被硬拆。业务角色和情绪始终为 `unknown`。
 
-数据源详情页沿用 2 秒列表轮询显示 `排队 → 预处理 → Chunk 转写/校验/细分 → 合并 → 发布`。音频卡片展示当前 Chunk、动态总数、网络尝试和按已完成音频区间计算的单调百分比；点击进行中状态可查看 Chunk 列表、音频时间范围和阶段时间线。模型正文始终不会进入进度接口或弹窗。
+数据源详情页沿用 2 秒列表轮询 EchoWave API，显示 `排队 → 预处理 → 模型转写 → 等待模型完成 → 校验 → 发布`。音频卡片展示持久化阶段和单调百分比；点击进行中状态可查看阶段时间线。该客户端轮询不访问 DashScope，模型正文始终不会进入进度接口或弹窗。
 
 `AI_EXECUTION_REPORT_OUTPUT_ENABLED="false"` 是附加汇总 Output 章节的安全默认值，并且不控制 Model Calls 的 Prompt/Output 或独立 STT 原始响应报告。两类报告目录都已被 Git 忽略且不会自动清理，避免后台任务误删诊断证据；已生成的历史报告不会回填或重新执行。
 

@@ -43,6 +43,10 @@ import { RagRepositoryError } from '../knowledge/persistence/errors.ts';
 import { UploadValidationError, type KnowledgeService } from '../knowledge/service.ts';
 import { WorkspaceRepositoryError } from '../workspace/persistence/errors.ts';
 import { AudioUploadValidationError, type WorkspaceService } from '../workspace/service.ts';
+import {
+  DashScopeCallbackError,
+  type DashScopeCallbackService,
+} from '../workspace/transcription/dashScopeCallback.ts';
 import { resolveAudioByteRange } from './audioContent.ts';
 
 type ErrorStatus = 400 | 404 | 409 | 413 | 500 | 503 | 504;
@@ -58,7 +62,11 @@ function id(value: string): string {
 /** 创建不启动监听器的 Hono 应用，使生产服务器和测试通过同一传输接口调用业务模块。 */
 export function createApp(
   config: Pick<ApiConfig, 'corsOrigins'>,
-  dependencies: { knowledgeService?: KnowledgeService; workspaceService?: WorkspaceService } = {},
+  dependencies: {
+    dashScopeCallbackService?: DashScopeCallbackService;
+    knowledgeService?: KnowledgeService;
+    workspaceService?: WorkspaceService;
+  } = {},
 ) {
   const app = new Hono();
 
@@ -77,6 +85,36 @@ export function createApp(
       HelloResponseSchema.parse({ ok: true, service: 'echowave-api', message: 'HelloWorld' }),
     ),
   );
+
+  if (dependencies.dashScopeCallbackService) {
+    app.post('/api/webhooks/dashscope/async-task-finished', async (context) => {
+      const rawBody = await context.req.text();
+      try {
+        await dependencies.dashScopeCallbackService!.receive(rawBody, context.req.raw.headers);
+        return context.body(null, 204);
+      } catch (error) {
+        if (error instanceof DashScopeCallbackError) {
+          const status =
+            error.kind === 'bad_request' ? 400 : error.kind === 'unauthorized' ? 401 : 503;
+          return context.json(
+            errorBody(
+              status === 400 ? 'BAD_REQUEST' : 'INTERNAL_ERROR',
+              status === 400 ? 'Invalid DashScope callback.' : 'DashScope callback rejected.',
+              status === 503,
+            ),
+            status,
+          );
+        }
+        console.error('Failed to persist DashScope callback', {
+          error: error instanceof Error ? error.name : 'UnknownError',
+        });
+        return context.json(
+          errorBody('INTERNAL_ERROR', 'DashScope callback is temporarily unavailable.', true),
+          503,
+        );
+      }
+    });
+  }
 
   const service = dependencies.knowledgeService;
   if (service) {

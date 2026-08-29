@@ -29,6 +29,7 @@ const stageLabels: Record<AudioTranscriptionStage, string> = {
   queued: '排队等待',
   preprocessing: '音频预处理',
   transcribing: '模型转写',
+  awaiting_result: '等待模型完成',
   validating: '校验模型输出',
   correcting: '兼容旧修订阶段',
   splitting: 'Chunk 输出异常，正在细分',
@@ -39,7 +40,7 @@ const stageLabels: Record<AudioTranscriptionStage, string> = {
 const timeline = [
   { key: 'queued', label: '排队' },
   { key: 'preprocessing', label: '预处理' },
-  { key: 'transcribing', label: '分块转写' },
+  { key: 'transcribing', label: '模型转写' },
   { key: 'merging', label: '校验合并' },
   { key: 'publishing', label: '发布' },
 ] as const;
@@ -50,7 +51,13 @@ export function audioTranscriptionStageLabel(stage: AudioTranscriptionStage): st
 }
 
 function timelineIndex(stage: AudioTranscriptionStage): number {
-  if (stage === 'validating' || stage === 'correcting' || stage === 'splitting') return 2;
+  if (
+    stage === 'awaiting_result' ||
+    stage === 'validating' ||
+    stage === 'correcting' ||
+    stage === 'splitting'
+  )
+    return 2;
   return timeline.findIndex((item) => item.key === stage);
 }
 

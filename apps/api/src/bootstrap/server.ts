@@ -32,6 +32,9 @@ if (transcriptionCapabilities.ffmpeg.available && !transcriptionCapabilities.sil
 const app = createApp(config, {
   knowledgeService: ragRuntime.service,
   workspaceService: ragRuntime.workspaceService,
+  ...(ragRuntime.dashScopeCallbackService
+    ? { dashScopeCallbackService: ragRuntime.dashScopeCallbackService }
+    : {}),
 });
 const server = serve({
   fetch: app.fetch,

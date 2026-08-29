@@ -54,14 +54,43 @@ export type ClaimedAudioTranscription = {
   preprocessingMode: AudioTranscriptionPreprocessing;
   provider: AudioTranscriptionProvider;
   providerArtifactKey: string | null;
+  providerLastPolledAt: Date | null;
+  providerNextPollAt: Date | null;
+  providerPollAttempt: number;
   providerSubmittedAt: Date | null;
   providerTaskId: string | null;
+  providerTerminalErrorCode: string | null;
+  providerTerminalErrorMessage: string | null;
+  providerTerminalEventId: string | null;
+  providerTerminalReceivedAt: Date | null;
+  providerTerminalResultUrl: string | null;
+  providerTerminalSource: 'polling' | 'eventbridge' | null;
+  providerTerminalStatus: 'SUCCEEDED' | 'FAILED' | 'CANCELED' | 'UNKNOWN' | null;
   revisionId: string;
   revisionNo: number;
   sizeBytes: number;
   segmentationMode: AudioTranscriptionSegmentationMode;
   storageKey: string;
   title: string;
+};
+
+/** Polling 或 EventBridge 发现并允许写入 revision 的 DashScope 终态。 */
+export type DashScopeProviderTerminal = {
+  source: 'polling' | 'eventbridge';
+  eventId: string | null;
+  taskId: string;
+  status: 'SUCCEEDED' | 'FAILED' | 'CANCELED' | 'UNKNOWN';
+  receivedAt: Date;
+  resultUrl: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+};
+
+/** 终态发现报告所需的非敏感 revision 上下文。 */
+export type RecordedProviderTerminal = {
+  revisionId: string;
+  durationMs: number;
+  preprocessing: AudioTranscriptionPreprocessing;
 };
 
 /** 通过模型校验、等待原子发布的单条转写片段。 */
@@ -183,8 +212,8 @@ export class AudioAnalysisRepository {
     }
   }
 
-  /** 单实例启动时把进程中断留下的任务重新排队。 */
-  async resetInterruptedTranscriptions(): Promise<void> {
+  /** 启动时按当前通知模式恢复提交、终态发现和完成阶段。 */
+  async resetInterruptedTranscriptions(notifyMode: 'polling' | 'eventbridge'): Promise<void> {
     await this.pool.query(
       `UPDATE ${this.table('audio_analysis_revisions')}
        SET status = 'queued', progress = 0, processing_stage = 'queued',
@@ -193,17 +222,40 @@ export class AudioAnalysisRepository {
            processing_updated_at = now(), error_stage = NULL, error_code = NULL,
            error_message = NULL, error_retryable = NULL, error_details = NULL
        WHERE tenant_id = $1 AND transcription_provider = 'dashscope'
-         AND status IN ('transcribing', 'analyzing')`,
+         AND status IN ('transcribing', 'analyzing') AND provider_task_id IS NULL`,
       [this.tenantId],
+    );
+    await this.pool.query(
+      `UPDATE ${this.table('audio_analysis_revisions')}
+       SET status = 'transcribing', progress = greatest(progress, 35),
+           processing_stage = 'awaiting_result', current_chunk = NULL, chunk_count = NULL,
+           current_chunk_start_ms = NULL, current_chunk_end_ms = NULL,
+           network_attempt = NULL, structure_attempt = NULL, processing_updated_at = now(),
+           error_stage = NULL, error_code = NULL, error_message = NULL,
+           error_retryable = NULL, error_details = NULL,
+           provider_next_poll_at = CASE
+             WHEN $2 = 'polling' AND provider_terminal_received_at IS NULL
+               THEN coalesce(provider_next_poll_at, now())
+             ELSE NULL
+           END
+       WHERE tenant_id = $1 AND transcription_provider = 'dashscope'
+         AND status IN ('queued', 'transcribing', 'analyzing') AND provider_task_id IS NOT NULL`,
+      [this.tenantId, notifyMode],
     );
   }
 
-  /** 通过 `SKIP LOCKED` 领取最早的待转写修订。 */
-  async claimTranscription(): Promise<ClaimedAudioTranscription | undefined> {
+  /** 在供应商在途上限内通过 `SKIP LOCKED` 领取最早的待提交修订。 */
+  async claimTranscription(maxInFlight: number): Promise<ClaimedAudioTranscription | undefined> {
     const result = await this.pool.query(
       `WITH candidate AS (
          SELECT id FROM ${this.table('audio_analysis_revisions')}
          WHERE tenant_id = $1 AND transcription_provider = 'dashscope' AND status = 'queued'
+           AND (
+             SELECT count(*) FROM ${this.table('audio_analysis_revisions')} active
+             WHERE active.tenant_id = $1 AND active.transcription_provider = 'dashscope'
+               AND active.status IN ('transcribing', 'analyzing')
+               AND active.provider_task_id IS NOT NULL
+           ) < $2
          ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1
        )
        UPDATE ${this.table('audio_analysis_revisions')} ar
@@ -226,11 +278,142 @@ export class AudioAnalysisRepository {
                  ar.settings_snapshot->'preprocessingManifest' AS preprocessing_manifest,
                  ar.settings_snapshot->>'segmentationMode' AS segmentation_mode,
                  ar.transcription_provider, ar.provider_task_id, ar.provider_artifact_key,
-                 ar.provider_submitted_at`,
+                 ar.provider_submitted_at, ar.provider_terminal_source,
+                 ar.provider_terminal_event_id, ar.provider_terminal_status,
+                 ar.provider_terminal_received_at, ar.provider_terminal_result_url,
+                 ar.provider_terminal_error_code, ar.provider_terminal_error_message,
+                 ar.provider_poll_attempt, ar.provider_last_polled_at, ar.provider_next_poll_at`,
+      [this.tenantId, maxInFlight],
+    );
+    const row = result.rows[0];
+    if (!row?.storage_key || row.duration_ms === null) return undefined;
+    return this.mapClaimedTranscription(row);
+  }
+
+  /** 优先领取已发现供应商终态但尚未完成发布的 revision。 */
+  async claimTerminalCompletion(): Promise<ClaimedAudioTranscription | undefined> {
+    const result = await this.pool.query(
+      `WITH candidate AS (
+         SELECT id FROM ${this.table('audio_analysis_revisions')}
+         WHERE tenant_id = $1 AND transcription_provider = 'dashscope'
+           AND status = 'transcribing' AND provider_terminal_received_at IS NOT NULL
+           AND processing_stage = 'awaiting_result'
+         ORDER BY provider_terminal_received_at FOR UPDATE SKIP LOCKED LIMIT 1
+       )
+       UPDATE ${this.table('audio_analysis_revisions')} ar
+       SET progress = greatest(progress, 70), processing_stage = 'validating',
+           processing_updated_at = now()
+       FROM candidate, ${this.table('audio_files')} af
+       LEFT JOIN ${this.table('data_sources')} ds
+         ON ds.tenant_id = af.tenant_id AND ds.id = af.data_source_id
+       WHERE ar.id = candidate.id AND af.tenant_id = ar.tenant_id
+         AND af.id = ar.audio_file_id AND af.deleted_at IS NULL
+       RETURNING ar.id AS revision_id, ar.revision_no, af.id AS audio_file_id,
+                 ar.transcription_model, af.title, af.original_filename, af.storage_key,
+                 af.mime_type, af.duration_ms, af.size_bytes, af.ingestion_run_id,
+                 ds.id AS data_source_id, ds.name AS data_source_name,
+                 ds.source_type, ds.location AS data_source_location,
+                 ds.connection_status AS data_source_connection_status,
+                 ar.settings_snapshot->>'preprocessingMode' AS preprocessing_mode,
+                 ar.settings_snapshot->'preprocessingManifest' AS preprocessing_manifest,
+                 ar.settings_snapshot->>'segmentationMode' AS segmentation_mode,
+                 ar.transcription_provider, ar.provider_task_id, ar.provider_artifact_key,
+                 ar.provider_submitted_at, ar.provider_terminal_source,
+                 ar.provider_terminal_event_id, ar.provider_terminal_status,
+                 ar.provider_terminal_received_at, ar.provider_terminal_result_url,
+                 ar.provider_terminal_error_code, ar.provider_terminal_error_message,
+                 ar.provider_poll_attempt, ar.provider_last_polled_at, ar.provider_next_poll_at`,
       [this.tenantId],
     );
     const row = result.rows[0];
     if (!row?.storage_key || row.duration_ms === null) return undefined;
+    return this.mapClaimedTranscription(row);
+  }
+
+  /** 领取一条已到查询时间的 Polling 任务；单次查询完成后必须显式安排下一次时间。 */
+  async claimPollingDiscovery(): Promise<ClaimedAudioTranscription | undefined> {
+    const result = await this.pool.query(
+      `WITH candidate AS (
+         SELECT id FROM ${this.table('audio_analysis_revisions')}
+         WHERE tenant_id = $1 AND transcription_provider = 'dashscope'
+           AND status = 'transcribing' AND provider_task_id IS NOT NULL
+           AND provider_terminal_received_at IS NULL
+           AND provider_next_poll_at IS NOT NULL AND provider_next_poll_at <= now()
+           AND provider_submitted_at > now() - interval '6 hours'
+           AND processing_stage = 'awaiting_result'
+         ORDER BY provider_next_poll_at FOR UPDATE SKIP LOCKED LIMIT 1
+       )
+       UPDATE ${this.table('audio_analysis_revisions')} ar
+       SET provider_last_polled_at = now(), provider_next_poll_at = NULL,
+           processing_updated_at = now()
+       FROM candidate, ${this.table('audio_files')} af
+       LEFT JOIN ${this.table('data_sources')} ds
+         ON ds.tenant_id = af.tenant_id AND ds.id = af.data_source_id
+       WHERE ar.id = candidate.id AND af.tenant_id = ar.tenant_id
+         AND af.id = ar.audio_file_id AND af.deleted_at IS NULL
+       RETURNING ar.id AS revision_id, ar.revision_no, af.id AS audio_file_id,
+                 ar.transcription_model, af.title, af.original_filename, af.storage_key,
+                 af.mime_type, af.duration_ms, af.size_bytes, af.ingestion_run_id,
+                 ds.id AS data_source_id, ds.name AS data_source_name,
+                 ds.source_type, ds.location AS data_source_location,
+                 ds.connection_status AS data_source_connection_status,
+                 ar.settings_snapshot->>'preprocessingMode' AS preprocessing_mode,
+                 ar.settings_snapshot->'preprocessingManifest' AS preprocessing_manifest,
+                 ar.settings_snapshot->>'segmentationMode' AS segmentation_mode,
+                 ar.transcription_provider, ar.provider_task_id, ar.provider_artifact_key,
+                 ar.provider_submitted_at, ar.provider_terminal_source,
+                 ar.provider_terminal_event_id, ar.provider_terminal_status,
+                 ar.provider_terminal_received_at, ar.provider_terminal_result_url,
+                 ar.provider_terminal_error_code, ar.provider_terminal_error_message,
+                 ar.provider_poll_attempt, ar.provider_last_polled_at, ar.provider_next_poll_at`,
+      [this.tenantId],
+    );
+    const row = result.rows[0];
+    if (!row?.storage_key || row.duration_ms === null) return undefined;
+    return this.mapClaimedTranscription(row);
+  }
+
+  /** 领取超过六小时仍未发现终态的任务，由 worker 统一失败并清理资源。 */
+  async claimExpiredTranscription(): Promise<ClaimedAudioTranscription | undefined> {
+    const result = await this.pool.query(
+      `WITH candidate AS (
+         SELECT id FROM ${this.table('audio_analysis_revisions')}
+         WHERE tenant_id = $1 AND transcription_provider = 'dashscope'
+           AND status = 'transcribing' AND provider_task_id IS NOT NULL
+           AND provider_terminal_received_at IS NULL
+           AND provider_submitted_at <= now() - interval '6 hours'
+         ORDER BY provider_submitted_at FOR UPDATE SKIP LOCKED LIMIT 1
+       )
+       UPDATE ${this.table('audio_analysis_revisions')} ar
+       SET processing_stage = 'validating', processing_updated_at = now()
+       FROM candidate, ${this.table('audio_files')} af
+       LEFT JOIN ${this.table('data_sources')} ds
+         ON ds.tenant_id = af.tenant_id AND ds.id = af.data_source_id
+       WHERE ar.id = candidate.id AND af.tenant_id = ar.tenant_id
+         AND af.id = ar.audio_file_id AND af.deleted_at IS NULL
+       RETURNING ar.id AS revision_id, ar.revision_no, af.id AS audio_file_id,
+                 ar.transcription_model, af.title, af.original_filename, af.storage_key,
+                 af.mime_type, af.duration_ms, af.size_bytes, af.ingestion_run_id,
+                 ds.id AS data_source_id, ds.name AS data_source_name,
+                 ds.source_type, ds.location AS data_source_location,
+                 ds.connection_status AS data_source_connection_status,
+                 ar.settings_snapshot->>'preprocessingMode' AS preprocessing_mode,
+                 ar.settings_snapshot->'preprocessingManifest' AS preprocessing_manifest,
+                 ar.settings_snapshot->>'segmentationMode' AS segmentation_mode,
+                 ar.transcription_provider, ar.provider_task_id, ar.provider_artifact_key,
+                 ar.provider_submitted_at, ar.provider_terminal_source,
+                 ar.provider_terminal_event_id, ar.provider_terminal_status,
+                 ar.provider_terminal_received_at, ar.provider_terminal_result_url,
+                 ar.provider_terminal_error_code, ar.provider_terminal_error_message,
+                 ar.provider_poll_attempt, ar.provider_last_polled_at, ar.provider_next_poll_at`,
+      [this.tenantId],
+    );
+    const row = result.rows[0];
+    if (!row?.storage_key || row.duration_ms === null) return undefined;
+    return this.mapClaimedTranscription(row);
+  }
+
+  private mapClaimedTranscription(row: Record<string, any>): ClaimedAudioTranscription {
     return {
       audioFileId: row.audio_file_id,
       dataSource: row.data_source_id
@@ -256,10 +439,30 @@ export class AudioAnalysisRepository {
       ),
       provider: 'dashscope',
       providerArtifactKey: row.provider_artifact_key ?? null,
+      providerLastPolledAt: row.provider_last_polled_at
+        ? new Date(row.provider_last_polled_at as string | Date)
+        : null,
+      providerNextPollAt: row.provider_next_poll_at
+        ? new Date(row.provider_next_poll_at as string | Date)
+        : null,
+      providerPollAttempt: Number(row.provider_poll_attempt ?? 0),
       providerSubmittedAt: row.provider_submitted_at
         ? new Date(row.provider_submitted_at as string | Date)
         : null,
       providerTaskId: row.provider_task_id ?? null,
+      providerTerminalErrorCode: (row.provider_terminal_error_code as string | null) ?? null,
+      providerTerminalErrorMessage: (row.provider_terminal_error_message as string | null) ?? null,
+      providerTerminalEventId: (row.provider_terminal_event_id as string | null) ?? null,
+      providerTerminalReceivedAt: row.provider_terminal_received_at
+        ? new Date(row.provider_terminal_received_at as string | Date)
+        : null,
+      providerTerminalResultUrl: (row.provider_terminal_result_url as string | null) ?? null,
+      providerTerminalSource:
+        (row.provider_terminal_source as ClaimedAudioTranscription['providerTerminalSource']) ??
+        null,
+      providerTerminalStatus:
+        (row.provider_terminal_status as ClaimedAudioTranscription['providerTerminalStatus']) ??
+        null,
       revisionId: row.revision_id,
       revisionNo: Number(row.revision_no),
       sizeBytes: Number(row.size_bytes),
@@ -287,18 +490,81 @@ export class AudioAnalysisRepository {
     );
   }
 
-  /** 原子保存供应商任务 ID 与提交时间，后续重启只恢复轮询。 */
+  /** 原子保存供应商任务与发现模式的初始调度状态。 */
   async recordProviderTask(
     job: ClaimedAudioTranscription,
     taskId: string,
     submittedAt: Date,
+    notifyMode: 'polling' | 'eventbridge',
   ): Promise<void> {
     await this.pool.query(
       `UPDATE ${this.table('audio_analysis_revisions')}
-       SET provider_task_id = $3, provider_submitted_at = $4
+       SET provider_task_id = $3, provider_submitted_at = $4,
+           provider_poll_attempt = 0, provider_last_polled_at = NULL,
+           provider_next_poll_at = CASE WHEN $5 = 'polling' THEN now() ELSE NULL END
        WHERE tenant_id = $1 AND id = $2 AND status = 'transcribing'`,
-      [this.tenantId, job.revisionId, taskId, submittedAt],
+      [this.tenantId, job.revisionId, taskId, submittedAt, notifyMode],
     );
+  }
+
+  /** 为未完成的 Polling 任务持久化下一次查询时间。 */
+  async scheduleNextPoll(
+    job: ClaimedAudioTranscription,
+    attempt: number,
+    delayMs: number,
+  ): Promise<void> {
+    await this.pool.query(
+      `UPDATE ${this.table('audio_analysis_revisions')}
+       SET provider_poll_attempt = $3,
+           provider_next_poll_at = now() + ($4 * interval '1 millisecond'),
+           processing_stage = 'awaiting_result', processing_updated_at = now()
+       WHERE tenant_id = $1 AND id = $2 AND status = 'transcribing'
+         AND provider_terminal_received_at IS NULL`,
+      [this.tenantId, job.revisionId, attempt, delayMs],
+    );
+  }
+
+  /** 幂等保存首个合法终态；重复、冲突或未知任务不会覆盖已接受事实。 */
+  async recordProviderTerminal(
+    terminal: DashScopeProviderTerminal,
+  ): Promise<RecordedProviderTerminal | undefined> {
+    const result = await this.pool.query(
+      `UPDATE ${this.table('audio_analysis_revisions')} ar
+       SET provider_terminal_source = $3, provider_terminal_event_id = $4,
+           provider_terminal_status = $5, provider_terminal_received_at = $6,
+           provider_terminal_result_url = $7, provider_terminal_error_code = $8,
+           provider_terminal_error_message = $9, provider_next_poll_at = NULL,
+           progress = greatest(progress, 60), processing_stage = 'awaiting_result',
+           processing_updated_at = now()
+       FROM ${this.table('audio_files')} af
+       WHERE ar.tenant_id = $1 AND ar.provider_task_id = $2
+         AND ar.transcription_provider = 'dashscope'
+         AND ar.status IN ('queued', 'transcribing', 'analyzing')
+         AND ar.provider_terminal_source IS NULL
+         AND af.tenant_id = ar.tenant_id AND af.id = ar.audio_file_id
+       RETURNING ar.id AS revision_id, af.duration_ms,
+                 ar.settings_snapshot->>'preprocessingMode' AS preprocessing_mode`,
+      [
+        this.tenantId,
+        terminal.taskId,
+        terminal.source,
+        terminal.eventId,
+        terminal.status,
+        terminal.receivedAt,
+        terminal.resultUrl,
+        terminal.errorCode,
+        terminal.errorMessage,
+      ],
+    );
+    const row = result.rows[0];
+    if (!row) return undefined;
+    return {
+      revisionId: row.revision_id,
+      durationMs: Number(row.duration_ms),
+      preprocessing: AudioTranscriptionPreprocessingSchema.parse(
+        row.preprocessing_mode ?? 'whole_file',
+      ),
+    };
   }
 
   /** 临时对象删除成功后清除对象定位信息，供应商任务 ID 保留用于审计。 */
@@ -397,7 +663,7 @@ export class AudioAnalysisRepository {
              error_retryable = NULL, error_details = NULL, processing_stage = NULL,
              current_chunk = NULL, chunk_count = NULL, current_chunk_start_ms = NULL,
              current_chunk_end_ms = NULL, network_attempt = NULL, structure_attempt = NULL,
-             processing_updated_at = NULL
+             processing_updated_at = NULL, provider_terminal_result_url = NULL
          WHERE tenant_id = $1 AND id = $2 AND status = 'transcribing'`,
         [
           this.tenantId,
@@ -442,7 +708,8 @@ export class AudioAnalysisRepository {
            error_code = $3, error_message = $4, error_retryable = $5,
            error_details = $6::jsonb, processing_stage = NULL, current_chunk = NULL,
            chunk_count = NULL, current_chunk_start_ms = NULL, current_chunk_end_ms = NULL,
-           network_attempt = NULL, structure_attempt = NULL, processing_updated_at = NULL
+           network_attempt = NULL, structure_attempt = NULL, processing_updated_at = NULL,
+           provider_terminal_result_url = NULL
        WHERE tenant_id = $1 AND id = $2`,
       [this.tenantId, job.revisionId, code, message, retryable, JSON.stringify(details)],
     );

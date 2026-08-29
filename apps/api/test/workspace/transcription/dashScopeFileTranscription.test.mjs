@@ -95,24 +95,11 @@ describe('normalizeSpeakerTurnSegments', () => {
 });
 
 describe('DashScopeFileTranscription', () => {
-  it('submits diarization and polls with 2/5/10/15 second backoff', async () => {
+  it('submits diarization and downloads the callback result without querying task status', async () => {
     const requests = [];
     const delays = [];
     const rawReports = [];
-    const responses = [
-      { output: { task_id: 'task-1' } },
-      { output: { task_status: 'PENDING' } },
-      { output: { task_status: 'RUNNING' } },
-      { output: { task_status: 'RUNNING' } },
-      { output: { task_status: 'RUNNING' } },
-      {
-        output: {
-          task_status: 'SUCCEEDED',
-          results: [{ transcription_url: 'https://result.example/transcript.json' }],
-        },
-      },
-      result([sentence(0, 500, '你好')]),
-    ];
+    const responses = [{ output: { task_id: 'task-1' } }, result([sentence(0, 500, '你好')])];
     const fetchImpl = async (url, init) => {
       requests.push({ url, init });
       return new Response(JSON.stringify(responses.shift()), {
@@ -125,20 +112,23 @@ describe('DashScopeFileTranscription', () => {
       'https://workspace.example.com/api/v1',
       fetchImpl,
       async (delay) => delays.push(delay),
-      () => Date.parse('2026-08-26T00:00:00.000Z'),
       { record: async (input) => rawReports.push(input) },
     );
     const context = { revisionId: 'revision-1', durationMs: 500 };
     const taskId = await adapter.submit('https://oss.example/audio.mp3', context);
-    const completed = await adapter.waitForResult(
+    const completed = await adapter.fetchResult(
       taskId,
-      new Date('2026-08-26T00:00:00.000Z'),
+      'https://result.example/transcript.json',
       context,
     );
     const submittedBody = JSON.parse(requests[0].init.body);
     assert.equal(submittedBody.parameters.diarization_enabled, true);
     assert.deepEqual(submittedBody.input.file_urls, ['https://oss.example/audio.mp3']);
-    assert.deepEqual(delays, [2_000, 5_000, 10_000, 15_000]);
+    assert.deepEqual(delays, []);
+    assert.equal(
+      requests.some(({ url }) => url.includes('/tasks/')),
+      false,
+    );
     assert.equal(completed.segments[0].speakerKey, 'Speaker 0');
     assert.equal(rawReports[0].provider, 'dashscope');
     assert.equal(rawReports[0].responseKind, 'task_submission');
@@ -146,41 +136,107 @@ describe('DashScopeFileTranscription', () => {
     assert.match(rawReports.at(-1).rawResponseText, /"speaker_id":0/);
   });
 
-  it('maps provider failure to a retryable stable error', async () => {
+  it('performs exactly one task-status request and normalizes non-terminal and terminal states', async () => {
+    const requests = [];
+    const rawReports = [];
+    const responses = [
+      { output: { task_id: 'task-1', task_status: 'RUNNING' } },
+      {
+        output: {
+          task_id: 'task-1',
+          task_status: 'SUCCEEDED',
+          results: [{ transcription_url: 'https://result.example/transcript.json' }],
+        },
+      },
+      {
+        output: {
+          task_id: 'task-1',
+          task_status: 'CANCELED',
+          code: 'CanceledByUser',
+          message: 'canceled',
+        },
+      },
+    ];
     const adapter = new DashScopeFileTranscription(
       'secret',
       'https://workspace.example.com/api/v1',
-      async () =>
-        new Response(
-          JSON.stringify({ output: { task_status: 'FAILED', message: 'quota unavailable' } }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        ),
+      async (url) => {
+        requests.push(url);
+        return new Response(JSON.stringify(responses.shift()), { status: 200 });
+      },
       async () => undefined,
-      () => Date.parse('2026-08-26T00:00:00.000Z'),
+      { record: async (input) => rawReports.push(input) },
     );
-    await assert.rejects(
-      () => adapter.waitForResult('task-1', new Date('2026-08-26T00:00:00.000Z')),
-      { code: 'MODEL_UNAVAILABLE', retryable: true },
+    const context = { revisionId: 'revision-1', durationMs: 500 };
+
+    assert.equal((await adapter.queryTask('task-1', 1, context)).status, 'RUNNING');
+    assert.equal(
+      (await adapter.queryTask('task-1', 2, context)).resultUrl,
+      'https://result.example/transcript.json',
     );
+    const canceled = await adapter.queryTask('task-1', 3, context);
+    assert.equal(canceled.status, 'CANCELED');
+    assert.equal(canceled.errorCode, 'CanceledByUser');
+    assert.equal(requests.length, 3);
+    assert.ok(requests.every((url) => url.endsWith('/tasks/task-1')));
+    assert.ok(rawReports.every((report) => report.responseKind === 'task_status'));
   });
 
-  it('fails a resumed task after the six-hour deadline without polling again', async () => {
-    let requests = 0;
-    const submittedAt = new Date('2026-08-26T00:00:00.000Z');
+  it('marks only 429 and 5xx polling failures as retryable', async () => {
+    for (const [status, retryable] of [
+      [400, false],
+      [429, true],
+      [503, true],
+    ]) {
+      const adapter = new DashScopeFileTranscription(
+        'secret',
+        'https://workspace.example.com/api/v1',
+        async () => new Response('unavailable', { status }),
+        async () => undefined,
+      );
+      await assert.rejects(() => adapter.queryTask('task-1', 1), { retryable });
+    }
+  });
+
+  it('retries temporary result download failures at most three times', async () => {
+    const delays = [];
+    let attempts = 0;
     const adapter = new DashScopeFileTranscription(
       'secret',
       'https://workspace.example.com/api/v1',
       async () => {
-        requests += 1;
+        attempts += 1;
+        return attempts < 3
+          ? new Response('unavailable', { status: 503 })
+          : new Response(JSON.stringify(result([sentence(0, 500, '恢复成功')])), {
+              status: 200,
+            });
+      },
+      async (delay) => delays.push(delay),
+    );
+    const completed = await adapter.fetchResult('task-1', 'https://result.example/result.json');
+    assert.equal(completed.segments[0].text, '恢复成功');
+    assert.equal(attempts, 3);
+    assert.deepEqual(delays, [1_000, 2_000]);
+  });
+
+  it('does not retry invalid result structures', async () => {
+    let attempts = 0;
+    const adapter = new DashScopeFileTranscription(
+      'secret',
+      'https://workspace.example.com/api/v1',
+      async () => {
+        attempts += 1;
         return new Response('{}', { status: 200 });
       },
       async () => undefined,
-      () => submittedAt.getTime() + 6 * 60 * 60 * 1_000,
     );
-    await assert.rejects(() => adapter.waitForResult('task-old', submittedAt), {
-      code: 'MODEL_TIMEOUT',
-      retryable: true,
-    });
-    assert.equal(requests, 0);
+    await assert.rejects(
+      () => adapter.fetchResult('task-1', 'https://result.example/result.json'),
+      {
+        code: 'INVALID_MODEL_OUTPUT',
+      },
+    );
+    assert.equal(attempts, 1);
   });
 });

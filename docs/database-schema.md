@@ -309,9 +309,12 @@ group_data_sources 所关联数据源下的音频
 - `settings_snapshot`：对象类型的设置快照，记录预处理方式、固定识别语言、该模型声明的 diarization/时间戳能力，以及发布时实际是否收到 Speaker 和实际响应粒度；角色与情绪能力为 false。历史修订缺少新增实际能力字段时由读取层兼容推导。
 - `status`：`queued`、`transcribing`、`analyzing`、`ready` 或 `failed`。
 - `progress`：0 到 100。
-- `processing_stage`：进行中修订的 `queued`、`preprocessing`、`transcribing`、`validating`、`correcting`、`splitting`、`merging` 或 `publishing` 阶段；新 STT 任务不再产生 `correcting`，该值仅兼容历史修订。`splitting` 表示文本退化或连续超时后正在细分当前 FFmpeg Chunk。
+- `processing_stage`：进行中修订的 `queued`、`preprocessing`、`transcribing`、`awaiting_result`、`validating`、`correcting`、`splitting`、`merging` 或 `publishing` 阶段；新 STT 任务不再产生 `correcting`，该值仅兼容历史修订。`awaiting_result` 表示异步任务已提交，正在由 Polling 或 EventBridge 发现终态；`splitting` 表示文本退化或连续超时后正在细分当前 FFmpeg Chunk。
 - `transcription_provider`：本次修订使用的供应商；迁移 011 后新修订固定为 `dashscope`，旧值仅作为历史审计记录保留。`settings_snapshot.preprocessingManifest` 在 `silero_vad` 模式下保存固定模型校验值、策略、原始/压缩时长、保留区间、跳过区间和时间轴映射，并与临时 OSS 对象键一同写入以支持重启恢复。
-- `provider_task_id`、`provider_submitted_at`：DashScope 异步任务标识和首次提交时间，用于进程重启后继续轮询及六小时超时判断。
+- `provider_task_id`、`provider_submitted_at`：DashScope 异步任务标识和首次提交时间，用于进程重启后恢复终态发现及六小时超时判断。
+- `provider_terminal_source`、`provider_terminal_event_id`、`provider_terminal_status`、`provider_terminal_received_at`：Polling 或 EventBridge 首次接受的供应商终态事实。EventBridge 保存事件 ID；同一任务后续重复或冲突事件不覆盖首个事实。
+- `provider_terminal_result_url`：成功终态携带的 HTTPS 短期结果地址，仅保留到结果发布或失败收敛，之后清空。`provider_terminal_error_code`、`provider_terminal_error_message` 保存受限长度的失败摘要。
+- `provider_poll_attempt`、`provider_last_polled_at`、`provider_next_poll_at`：Polling 的持久化调度状态；每次只查询一次，按 2/5/10/15 秒递增间隔设置下一次截止时间。EventBridge 模式不设置或领取该时间。
 - `provider_artifact_key`：仍需清理的临时 OSS 对象键；删除成功后清空，任务 ID 保留用于审计。
 - `current_chunk`、`chunk_count`：当前 Chunk 和总数，必须成对满足 `1 <= current_chunk <= chunk_count`。
 - `current_chunk_start_ms`、`current_chunk_end_ms`：当前逻辑分块在完整录音中的毫秒范围。
@@ -328,7 +331,7 @@ group_data_sources 所关联数据源下的音频
 
 Qwen Filetrans 提交单个 16kHz 单声道整文件；其带 `speaker_id` 的句子按说话人变化、1500ms 停顿和 240 字软上限转换为独立 `transcript_segments`。缺失 Speaker 或时间戳异常的结果不发布。
 
-活动字段只在进行中修订上作为轮询状态存在：queued 初始化阶段但没有 Chunk，worker 领取后进入预处理；Chunk 字段必须全部为空或全部存在，时间范围必须递增，尝试次数必须关联当前 Chunk。中断恢复会清空 Chunk/尝试并重新排队，成功或失败会清空活动字段；失败 Chunk 与最终尝试次数另由安全的 `error_details` 保留。
+活动字段只在进行中修订上作为客户端可观察状态存在：queued 初始化阶段但没有 Chunk，worker 领取后进入预处理，供应商任务提交后进入 `awaiting_result`；Chunk 字段必须全部为空或全部存在，时间范围必须递增，尝试次数必须关联当前 Chunk。中断恢复只重新排队未提交任务，已有 task ID 的任务按当前通知模式继续发现终态，已持久化终态的任务直接进入统一完成阶段；成功或失败会清空活动字段和短期结果 URL。
 
 物理删除音频时，修订版及其结构化结果级联删除。
 

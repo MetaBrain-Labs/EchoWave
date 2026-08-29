@@ -211,7 +211,7 @@ describe('DataSourceDetailScreen', () => {
     expect(screen.getByText('Chunk 2/4 · 3:58–8:00')).toBeTruthy();
     expect(screen.getByText('Chunk 1')).toBeTruthy();
     expect(screen.getByText('Chunk 4')).toBeTruthy();
-    expect(screen.getByText('分块转写')).toBeTruthy();
+    expect(screen.getAllByText('模型转写').length).toBeGreaterThan(0);
     expect(screen.queryByText(/base64|storage_key|模型正文/)).toBeNull();
 
     fireEvent.press(screen.getByLabelText('关闭转写进度'));
@@ -265,7 +265,7 @@ describe('DataSourceDetailScreen', () => {
     fireEvent.press(screen.getAllByLabelText('查看转写进度')[0]!);
     expect(screen.getByText('Chunk 输出异常，正在细分')).toBeTruthy();
     expect(screen.getByText('Chunk 8')).toBeTruthy();
-    expect(screen.getByText('分块转写')).toBeTruthy();
+    expect(screen.getAllByText('模型转写').length).toBeGreaterThan(0);
     await waitFor(
       () => expect(screen.getAllByText('模型转写 · Chunk 3/9').length).toBeGreaterThan(0),
       {

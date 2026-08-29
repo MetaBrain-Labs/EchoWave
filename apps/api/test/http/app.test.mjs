@@ -14,6 +14,7 @@ import {
 import { createApp } from '../../dist/http/app.js';
 import { WorkspaceRepositoryError } from '../../dist/workspace/persistence/errors.js';
 import { AudioUploadValidationError } from '../../dist/workspace/service.js';
+import { DashScopeCallbackError } from '../../dist/workspace/transcription/dashScopeCallback.js';
 
 const app = createApp({ corsOrigins: ['http://localhost:8081'] });
 const groupId = '11111111-1111-4111-8111-111111111111';
@@ -43,6 +44,66 @@ describe('EchoWave API', () => {
         retryable: false,
       },
     });
+  });
+});
+
+describe('DashScope callback route', () => {
+  it('is not registered when EventBridge mode does not provide a callback service', async () => {
+    const pollingApp = createApp({ corsOrigins: ['http://localhost:8081'] });
+    const response = await pollingApp.request('/api/webhooks/dashscope/async-task-finished', {
+      method: 'POST',
+      body: '{}',
+    });
+    assert.equal(response.status, 404);
+  });
+
+  it('passes the exact raw body and headers to the callback service', async () => {
+    let received;
+    const callbackApp = createApp(
+      { corsOrigins: ['http://localhost:8081'] },
+      {
+        dashScopeCallbackService: {
+          receive: async (rawBody, headers) => {
+            received = { rawBody, token: headers.get('x-eventbridge-signature-token') };
+            return 'accepted';
+          },
+        },
+      },
+    );
+    const rawBody = '{"id":"event-1", "spacing":"preserved"}';
+    const response = await callbackApp.request('/api/webhooks/dashscope/async-task-finished', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-eventbridge-signature-token': 'secret',
+      },
+      body: rawBody,
+    });
+    assert.equal(response.status, 204);
+    assert.deepEqual(received, { rawBody, token: 'secret' });
+  });
+
+  it('maps invalid signatures and transient persistence failures', async () => {
+    for (const [kind, expectedStatus] of [
+      ['unauthorized', 401],
+      ['temporary_unavailable', 503],
+    ]) {
+      const callbackApp = createApp(
+        { corsOrigins: ['http://localhost:8081'] },
+        {
+          dashScopeCallbackService: {
+            receive: async () => {
+              throw new DashScopeCallbackError(kind, 'rejected');
+            },
+          },
+        },
+      );
+      const response = await callbackApp.request('/api/webhooks/dashscope/async-task-finished', {
+        method: 'POST',
+        body: '{}',
+      });
+      assert.equal(response.status, expectedStatus);
+    }
   });
 });
 

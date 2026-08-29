@@ -30,6 +30,8 @@ import { TranscriptConfirmationRepository } from '../workspace/persistence/trans
 import { DefaultWorkspaceService } from '../workspace/service.ts';
 import { AudioInputPreprocessor } from '../workspace/transcription/audioPreprocessor.ts';
 import { DashScopeFileTranscription } from '../workspace/transcription/dashScopeFileTranscription.ts';
+import { DashScopeCallbackService } from '../workspace/transcription/dashScopeCallback.ts';
+import { EventBridgeSignatureVerifier } from '../workspace/transcription/eventBridgeSignature.ts';
 import { OssStagingStore } from '../workspace/transcription/ossStagingStore.ts';
 import { AudioTranscriptionWorker } from '../workspace/transcription/worker.ts';
 import { AudioWindowPreprocessor } from '../workspace/post-analysis/audioWindowPreprocessor.ts';
@@ -151,7 +153,6 @@ export function createRagRuntime(config: ApiConfig) {
     config.rag.dashScope.baseUrl,
     fetch,
     (durationMs) => new Promise((resolve) => setTimeout(resolve, durationMs)),
-    Date.now,
     sttRawResponseReporter,
   );
   const ossStaging = config.rag.dashScope.oss
@@ -166,10 +167,24 @@ export function createRagRuntime(config: ApiConfig) {
   const transcriptionWorker = new AudioTranscriptionWorker({
     repository: audioAnalysisRepository,
     dashScope,
+    maxInFlight: config.rag.audioTranscriptionMaxInFlight,
+    notifyMode: config.rag.dashScope.asyncNotifyMode,
     preprocessor: audioInputPreprocessor,
     reporter: executionReporter,
     ...(ossStaging ? { ossStaging } : {}),
   });
+  const dashScopeCallbackService =
+    config.rag.dashScope.asyncNotifyMode === 'eventbridge' &&
+    config.rag.dashScope.eventBridgeCallback
+      ? new DashScopeCallbackService({
+          repository: audioAnalysisRepository,
+          signatureVerifier: new EventBridgeSignatureVerifier({
+            callbackUrl: config.rag.dashScope.eventBridgeCallback.url,
+            token: config.rag.dashScope.eventBridgeCallback.token,
+          }),
+          rawResponseReporter: sttRawResponseReporter,
+        })
+      : undefined;
   const audioWindowPreprocessor = new AudioWindowPreprocessor({
     audioStorageDirectory: config.rag.audioStorageDir,
     tempDirectory: config.rag.audioTranscriptionTempDir,
@@ -210,6 +225,7 @@ export function createRagRuntime(config: ApiConfig) {
     workspaceService,
     worker,
     transcriptionWorker,
+    dashScopeCallbackService,
     emotionWorker,
     roleWorker,
     businessAnalysisWorker,

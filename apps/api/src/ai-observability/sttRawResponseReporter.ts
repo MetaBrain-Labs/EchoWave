@@ -30,7 +30,7 @@ const DEFAULT_REPOSITORY_ROOT = fileURLToPath(new URL('../../../../', import.met
 export type SttRawResponseOutcome =
   'completed' | 'http_error' | 'invalid_json' | 'validation_error';
 export type SttRawResponseKind =
-  'transcription' | 'task_submission' | 'task_status' | 'transcription_result';
+  'transcription' | 'task_submission' | 'task_status' | 'task_callback' | 'transcription_result';
 
 /** 单次 STT 供应商响应可进入报告器的白名单字段。 */
 export type SttRawResponseReportInput = {
