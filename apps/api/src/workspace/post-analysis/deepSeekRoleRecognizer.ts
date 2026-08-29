@@ -18,6 +18,7 @@ import {
 } from '@echowave/contracts';
 
 import {
+  beginAiModelCall,
   noOpAiExecutionRecorder,
   type AiExecutionRecorder,
 } from '../../ai-observability/executionReporter.ts';
@@ -130,6 +131,14 @@ export class DeepSeekRoleRecognizer {
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       const modelAttempt = (structureAttempt - 1) * 3 + attempt;
       const startedAt = Date.now();
+      const modelCall = beginAiModelCall(recorder, {
+        name: 'audio-role-recognition',
+        displayName: '根据完整对话识别说话人的业务角色',
+        provider: 'deepseek',
+        model: this.options.model,
+        attempt: modelAttempt,
+        reasoningMode: 'disabled',
+      });
       const messages = [{ role: 'user', content: prompt }];
       try {
         const response = await request(
@@ -162,12 +171,8 @@ export class DeepSeekRoleRecognizer {
         }
         const content = chatCompletionText(await response.json());
         if (!content) throw new Error('empty-model-response');
-        recorder.recordModelCall({
-          name: 'audio-role-recognition',
-          provider: 'deepseek',
-          model: this.options.model,
+        modelCall.finish({
           status: 'completed',
-          attempt: modelAttempt,
           durationMs: Date.now() - startedAt,
           inputTokens: null,
           outputTokens: null,
@@ -177,12 +182,8 @@ export class DeepSeekRoleRecognizer {
         });
         return content;
       } catch (error) {
-        recorder.recordModelCall({
-          name: 'audio-role-recognition',
-          provider: 'deepseek',
-          model: this.options.model,
+        modelCall.finish({
           status: 'failed',
-          attempt: modelAttempt,
           durationMs: Date.now() - startedAt,
           inputTokens: null,
           outputTokens: null,

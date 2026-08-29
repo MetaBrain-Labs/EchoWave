@@ -13,6 +13,8 @@
  */
 import type { DashScopeEmbeddings } from '../../knowledge/embeddings/dashScopeEmbeddings.ts';
 import {
+  beginAiModelCall,
+  beginAiToolCall,
   noOpAiExecutionReporter,
   type AiExecutionReporter,
 } from '../../ai-observability/executionReporter.ts';
@@ -150,15 +152,19 @@ export class BusinessAnalysisWorker {
         retrievalSequence += 1;
         const attempt = retrievalSequence;
         const embeddingStartedAt = Date.now();
+        const embeddingCall = beginAiModelCall(report, {
+          name: 'business-analysis-query-embedding',
+          displayName: '将知识检索问题转换为语义向量',
+          provider: 'dashscope',
+          model: this.options.embeddingModel,
+          attempt,
+          reasoningMode: 'unsupported',
+        });
         let embedding: number[];
         try {
           embedding = await this.options.embeddings.embedQuery(query);
-          report.recordModelCall({
-            name: 'business-analysis-query-embedding',
-            provider: 'dashscope',
-            model: this.options.embeddingModel,
+          embeddingCall.finish({
             status: 'completed',
-            attempt,
             durationMs: Date.now() - embeddingStartedAt,
             inputTokens: null,
             outputTokens: null,
@@ -166,12 +172,8 @@ export class BusinessAnalysisWorker {
             output: { vectorCount: 1, dimensions: embedding.length },
           });
         } catch (error) {
-          report.recordModelCall({
-            name: 'business-analysis-query-embedding',
-            provider: 'dashscope',
-            model: this.options.embeddingModel,
+          embeddingCall.finish({
             status: 'failed',
-            attempt,
             durationMs: Date.now() - embeddingStartedAt,
             inputTokens: null,
             outputTokens: null,
@@ -181,14 +183,25 @@ export class BusinessAnalysisWorker {
           throw error;
         }
         const searchStartedAt = Date.now();
+        const searchCall = beginAiToolCall(report, {
+          name: 'search_knowledge',
+          displayName: '检索分组关联知识库',
+          summary: {
+            audit: {
+              query,
+              knowledgeBases: job.knowledgeBases,
+              hitCount: 0,
+              hits: [],
+            },
+          },
+        });
         try {
           const chunks = await this.options.knowledgeRepository.searchMany(
             job.knowledgeBaseIds,
             embedding,
             this.options.embeddingModel,
           );
-          report.recordToolCall({
-            name: 'search_knowledge',
+          searchCall.finish({
             status: 'completed',
             durationMs: Date.now() - searchStartedAt,
             summary: {
@@ -213,8 +226,7 @@ export class BusinessAnalysisWorker {
           for (const chunk of chunks) retrieved.set(chunk.id, chunk);
           return chunks;
         } catch (error) {
-          report.recordToolCall({
-            name: 'search_knowledge',
+          searchCall.finish({
             status: 'failed',
             durationMs: Date.now() - searchStartedAt,
             summary: {

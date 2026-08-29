@@ -127,6 +127,8 @@ describe('workspace routes', () => {
   let replacedGroupSourcesInput;
   let requestedAnalysisInput;
   let requestedExecutionTraceInput;
+  let requestedExecutionStreamSnapshotInput;
+  const requestedExecutionStreamEventsInputs = [];
   const workspaceService = {
     listGroups: async () => ({
       items: [
@@ -260,6 +262,56 @@ describe('workspace routes', () => {
       requestedExecutionTraceInput = { id, groupId: requestedGroupId };
       return { audioFileId: id, analysisRevisionId: groupId, runs: [] };
     },
+    getAudioExecutionStreamSnapshot: async (id, requestedGroupId) => {
+      requestedExecutionStreamSnapshotInput = { id, groupId: requestedGroupId };
+      return {
+        type: 'snapshot',
+        cursor: '4',
+        audioFileId: id,
+        analysisRevisionId: groupId,
+        trace: { audioFileId: id, analysisRevisionId: groupId, runs: [] },
+      };
+    },
+    getAudioExecutionStreamEvents: async (id, revisionId, requestedGroupId, cursor) => {
+      requestedExecutionStreamEventsInputs.push({
+        id,
+        revisionId,
+        groupId: requestedGroupId,
+        cursor,
+      });
+      if (cursor === '4') {
+        return [
+          {
+            type: 'model-start',
+            cursor: '5',
+            audioFileId: id,
+            analysisRevisionId: revisionId,
+            runId: groupId,
+            operationId: groupId,
+            modelCall: {
+              id: groupId,
+              sequence: 2,
+              operation: 'business-analysis-generation',
+              name: '结合转写与知识证据生成业务分析',
+              provider: 'deepseek',
+              model: 'deepseek-v4-flash',
+              status: 'running',
+              attempt: 1,
+              startedAt: '2026-08-29T01:00:00.000Z',
+              completedAt: null,
+              durationMs: null,
+              inputTokens: null,
+              outputTokens: null,
+              reasoningMode: 'streaming',
+              reasoningContent: '',
+              reasoningTruncated: false,
+              estimatedCost: null,
+            },
+          },
+        ];
+      }
+      throw new Error('close test stream');
+    },
     startAudioBusinessAnalysis: async (id, input) => {
       startedBusinessAnalysisInput = { id, input };
       return {
@@ -382,6 +434,45 @@ describe('workspace routes', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ groupId: 'not-a-uuid' }),
     });
+    assert.equal(invalid.status, 400);
+  });
+
+  it('streams an initial execution snapshot and cursor-ordered lifecycle events', async () => {
+    requestedExecutionStreamEventsInputs.length = 0;
+    const response = await workspaceApp.request(
+      `/api/audio-files/${groupId}/analysis/executions/stream?groupId=${groupId}`,
+    );
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type'), /text\/event-stream/);
+    assert.equal(response.headers.get('x-accel-buffering'), 'no');
+    const body = await response.text();
+
+    assert.match(body, /event: snapshot/);
+    assert.match(body, /event: model-start/);
+    assert.match(body, /event: error/);
+    assert.deepEqual(requestedExecutionStreamSnapshotInput, { id: groupId, groupId });
+    assert.deepEqual(requestedExecutionStreamEventsInputs[0], {
+      id: groupId,
+      revisionId: groupId,
+      groupId,
+      cursor: '4',
+    });
+    assert.equal(requestedExecutionStreamEventsInputs[1].cursor, '5');
+  });
+
+  it('continues execution SSE from a cursor and rejects malformed cursors', async () => {
+    requestedExecutionStreamEventsInputs.length = 0;
+    const continued = await workspaceApp.request(
+      `/api/audio-files/${groupId}/analysis/executions/stream?groupId=${groupId}&cursor=4`,
+    );
+    const body = await continued.text();
+    assert.doesNotMatch(body, /event: snapshot/);
+    assert.match(body, /event: error/);
+    assert.equal(requestedExecutionStreamEventsInputs[0].cursor, '4');
+
+    const invalid = await workspaceApp.request(
+      `/api/audio-files/${groupId}/analysis/executions/stream?groupId=${groupId}&cursor=bad`,
+    );
     assert.equal(invalid.status, 400);
   });
 

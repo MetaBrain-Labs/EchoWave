@@ -80,6 +80,7 @@ export type AiStepEvent = {
 /** 一次模型调用的安全统计，以及必须记录的真实输入与可见输出。 */
 export type AiModelCallEvent = {
   name: string;
+  displayName?: string;
   provider: string;
   model: string;
   status: 'completed' | 'failed';
@@ -90,18 +91,59 @@ export type AiModelCallEvent = {
   inputTokens: number | null;
   outputTokens: number | null;
   estimatedCost?: { amount: number; currency: 'CNY' | 'USD' };
+  reasoningMode?: 'streaming' | 'disabled' | 'unsupported';
   metadata?: Record<string, unknown>;
 };
+
+/** 一次模型调用开始时即可公开的稳定信息。 */
+export type AiModelCallStart = Pick<
+  AiModelCallEvent,
+  'name' | 'displayName' | 'provider' | 'model' | 'attempt' | 'reasoningMode' | 'metadata'
+> & { operationId?: string };
+
+/** 一次模型调用结束后才能获得的状态、计量和诊断正文。 */
+export type AiModelCallFinish = Pick<
+  AiModelCallEvent,
+  | 'status'
+  | 'input'
+  | 'output'
+  | 'durationMs'
+  | 'inputTokens'
+  | 'outputTokens'
+  | 'estimatedCost'
+  | 'metadata'
+>;
+
+/** 跨模型等待期持续接收 reasoning 并最终收口调用状态。 */
+export interface AiModelCallSpan {
+  readonly operationId: string;
+  appendReasoning(delta: string): void;
+  finish(event: AiModelCallFinish): void;
+}
 
 /** 一次工具调用的统计；输入输出正文由独立开关保护。 */
 export type AiToolCallEvent = {
   name: string;
+  displayName?: string;
   status: 'completed' | 'failed';
   durationMs?: number;
   summary?: Record<string, unknown>;
   input?: unknown;
   output?: unknown;
 };
+
+/** 一次工具调用开始时可审计的目标与安全摘要。 */
+export type AiToolCallStart = Pick<AiToolCallEvent, 'name' | 'displayName' | 'summary'> & {
+  operationId?: string;
+};
+
+/** 在工具完成或失败时更新同一条运行中记录。 */
+export interface AiToolCallSpan {
+  readonly operationId: string;
+  finish(
+    event: Pick<AiToolCallEvent, 'status' | 'durationMs' | 'summary' | 'input' | 'output'>,
+  ): void;
+}
 
 /** 一次执行的最终状态。 */
 export type AiExecutionResult = {
@@ -114,13 +156,26 @@ export type AiExecutionResult = {
 export interface AiExecutionRecorder {
   recordMetadata(metadata: Record<string, unknown>): void;
   recordStep(event: AiStepEvent): void;
+  beginModelCall(event: AiModelCallStart): AiModelCallSpan;
   recordModelCall(event: AiModelCallEvent): void;
+  beginToolCall(event: AiToolCallStart): AiToolCallSpan;
   recordToolCall(event: AiToolCallEvent): void;
   recordContext(value: unknown): void;
   recordReasoning(value: unknown): void;
   recordOutput(value: unknown): void;
   finish(result: AiExecutionResult): Promise<void>;
 }
+
+const noOpModelCallSpan: AiModelCallSpan = {
+  operationId: '00000000-0000-4000-8000-000000000000',
+  appendReasoning: () => undefined,
+  finish: () => undefined,
+};
+
+const noOpToolCallSpan: AiToolCallSpan = {
+  operationId: '00000000-0000-4000-8000-000000000000',
+  finish: () => undefined,
+};
 
 /** 创建单次 AI 执行记录的入口。 */
 export interface AiExecutionReporter {
@@ -141,7 +196,9 @@ type RecordedEvent<T> = T & { at: string };
 export const noOpAiExecutionRecorder: AiExecutionRecorder = {
   recordMetadata: () => undefined,
   recordStep: () => undefined,
+  beginModelCall: () => noOpModelCallSpan,
   recordModelCall: () => undefined,
+  beginToolCall: () => noOpToolCallSpan,
   recordToolCall: () => undefined,
   recordContext: () => undefined,
   recordReasoning: () => undefined,
@@ -154,6 +211,43 @@ export const noOpAiExecutionReporter: AiExecutionReporter = {
   start: () => noOpAiExecutionRecorder,
 };
 
+/**
+ * 开始一次可实时更新的模型调用，并兼容只实现旧版终态方法的旁路记录器。
+ *
+ * 旧记录器仍会在结束时收到完整模型事件；reasoning 则沿用其独立推理记录入口。
+ */
+export function beginAiModelCall(
+  recorder: AiExecutionRecorder,
+  event: AiModelCallStart,
+): AiModelCallSpan {
+  const begin = (recorder as Partial<AiExecutionRecorder>).beginModelCall;
+  if (typeof begin === 'function') return begin.call(recorder, event);
+
+  const operationId = event.operationId ?? randomUUID();
+  return {
+    operationId,
+    appendReasoning: (delta) => {
+      if (delta) recorder.recordReasoning(delta);
+    },
+    finish: (result) => recorder.recordModelCall({ ...event, ...result }),
+  };
+}
+
+/** 开始一次可实时更新的工具调用，并兼容只实现旧版终态方法的旁路记录器。 */
+export function beginAiToolCall(
+  recorder: AiExecutionRecorder,
+  event: AiToolCallStart,
+): AiToolCallSpan {
+  const begin = (recorder as Partial<AiExecutionRecorder>).beginToolCall;
+  if (typeof begin === 'function') return begin.call(recorder, event);
+
+  const operationId = event.operationId ?? randomUUID();
+  return {
+    operationId,
+    finish: (result) => recorder.recordToolCall({ ...event, ...result }),
+  };
+}
+
 /** 将多个旁路报告器组合为一个接口，单个报告器失败不阻断其他报告器。 */
 export function createCompositeAiExecutionReporter(
   reporters: readonly AiExecutionReporter[],
@@ -164,7 +258,24 @@ export function createCompositeAiExecutionReporter(
       return {
         recordMetadata: (metadata) => recorders.forEach((item) => item.recordMetadata(metadata)),
         recordStep: (event) => recorders.forEach((item) => item.recordStep(event)),
+        beginModelCall: (event) => {
+          const operationId = event.operationId ?? randomUUID();
+          const spans = recorders.map((item) => beginAiModelCall(item, { ...event, operationId }));
+          return {
+            operationId,
+            appendReasoning: (delta) => spans.forEach((span) => span.appendReasoning(delta)),
+            finish: (result) => spans.forEach((span) => span.finish(result)),
+          };
+        },
         recordModelCall: (event) => recorders.forEach((item) => item.recordModelCall(event)),
+        beginToolCall: (event) => {
+          const operationId = event.operationId ?? randomUUID();
+          const spans = recorders.map((item) => beginAiToolCall(item, { ...event, operationId }));
+          return {
+            operationId,
+            finish: (result) => spans.forEach((span) => span.finish(result)),
+          };
+        },
         recordToolCall: (event) => recorders.forEach((item) => item.recordToolCall(event)),
         recordContext: (value) => recorders.forEach((item) => item.recordContext(value)),
         recordReasoning: (value) => recorders.forEach((item) => item.recordReasoning(value)),
@@ -245,6 +356,21 @@ class MarkdownExecutionRecorder implements AiExecutionRecorder {
     this.steps.push({ ...event, at: this.now().toISOString() });
   }
 
+  beginModelCall(event: AiModelCallStart): AiModelCallSpan {
+    const operationId = event.operationId ?? randomUUID();
+    const reasoning: string[] = [];
+    return {
+      operationId,
+      appendReasoning: (delta) => {
+        if (delta) reasoning.push(delta);
+      },
+      finish: (result) => {
+        this.recordModelCall({ ...event, ...result });
+        if (reasoning.length > 0) this.recordReasoning(reasoning.join(''));
+      },
+    };
+  }
+
   recordModelCall(event: AiModelCallEvent): void {
     this.modelCalls.push({
       ...event,
@@ -252,6 +378,14 @@ class MarkdownExecutionRecorder implements AiExecutionRecorder {
       output: protectModelPayload(event.output),
       at: this.now().toISOString(),
     });
+  }
+
+  beginToolCall(event: AiToolCallStart): AiToolCallSpan {
+    const operationId = event.operationId ?? randomUUID();
+    return {
+      operationId,
+      finish: (result) => this.recordToolCall({ ...event, ...result }),
+    };
   }
 
   recordToolCall(event: AiToolCallEvent): void {
@@ -326,7 +460,7 @@ function sanitizeFileSegment(value: string): string {
 }
 
 function inline(value: unknown): string {
-  return redactString(String(value)).replace(/[\r\n]+/g, ' ');
+  return redactAiDiagnosticText(String(value)).replace(/[\r\n]+/g, ' ');
 }
 
 function renderJsonSection(title: string, value: unknown, truncateSection = true): string {
@@ -373,7 +507,7 @@ function normalizeValue(value: unknown, ancestors: Set<object>): unknown {
   }
   if (typeof value === 'function') return `[Function ${value.name || 'anonymous'}]`;
   if (typeof value === 'symbol') return String(value);
-  if (typeof value === 'string') return redactString(value);
+  if (typeof value === 'string') return redactAiDiagnosticText(value);
   return value;
 }
 
@@ -387,7 +521,7 @@ function protectModelPayload(value: unknown): unknown {
 }
 
 function normalizeModelPayload(value: unknown, ancestors: Set<object>): unknown {
-  if (typeof value === 'string') return truncateModelString(redactString(value));
+  if (typeof value === 'string') return truncateModelString(redactAiDiagnosticText(value));
   if (typeof value === 'bigint') return `${value}n`;
   if (value instanceof Error) return normalizeError(value);
   if (Array.isArray(value)) {
@@ -436,10 +570,11 @@ function isSensitiveKey(key: string): boolean {
   return SENSITIVE_KEYS.has(key.toLowerCase().replace(/[-\s]/g, '_'));
 }
 
-function redactString(value: string): string {
+/** 对允许进入诊断或产品审计的自由文本执行基础秘密和本地路径过滤。 */
+export function redactAiDiagnosticText(value: string): string {
   let redacted = value.replace(/(Bearer\s+)[^\s"']+/gi, '$1[REDACTED]');
   redacted = redacted.replace(/\b[A-Za-z0-9+/]{256,}={0,2}\b/g, '[REDACTED_BASE64]');
-  redacted = redacted.replace(/\b[A-Za-z]:\\(?:[^\s"']+\\)*[^\s"']*/g, '[REDACTED_PATH]');
+  redacted = redacted.replace(/\b[A-Za-z]:[\\/](?:[^\s"']+[\\/])*[^\s"']*/g, '[REDACTED_PATH]');
   redacted = redacted.replace(
     /\/(?:Users|home|tmp|private\/tmp|var\/tmp|workspace)\/(?:[^\s"']+\/)*[^\s"']*/g,
     '[REDACTED_PATH]',

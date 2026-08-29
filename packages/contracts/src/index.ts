@@ -234,6 +234,7 @@ export {
   AudioAiExecutionRunSchema,
   AudioAiExecutionStatusSchema,
   AudioAiExecutionStepSchema,
+  AudioAiExecutionStreamEventSchema,
   AudioAiExecutionToolCallSchema,
   AudioAiExecutionTraceResponseSchema,
   AudioAiKnowledgeBaseSnapshotSchema,
@@ -241,5 +242,6 @@ export {
   type AudioAiExecutionKind,
   type AudioAiExecutionRun,
   type AudioAiExecutionStatus,
+  type AudioAiExecutionStreamEvent,
   type AudioAiExecutionTraceResponse,
 } from './aiExecution.ts';

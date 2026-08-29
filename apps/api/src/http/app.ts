@@ -33,7 +33,7 @@ import {
 } from '@echowave/contracts';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { stream } from 'hono/streaming';
+import { stream, streamSSE } from 'hono/streaming';
 import { createReadStream } from 'node:fs';
 import { ZodError } from 'zod';
 
@@ -343,6 +343,86 @@ export function createApp(
           requestedGroupId ? id(requestedGroupId) : undefined,
         ),
       );
+    });
+    app.get('/api/audio-files/:audioFileId/analysis/executions/stream', async (context) => {
+      const audioFileId = id(context.req.param('audioFileId'));
+      const requestedGroupId = context.req.query('groupId');
+      const groupId = requestedGroupId ? id(requestedGroupId) : undefined;
+      const requestedCursor = context.req.query('cursor');
+      if (
+        requestedCursor &&
+        (!/^(0|[1-9]\d{0,18})$/.test(requestedCursor) ||
+          BigInt(requestedCursor) > 9_223_372_036_854_775_807n)
+      ) {
+        return context.json(errorBody('BAD_REQUEST', '请求参数无效。'), 400);
+      }
+      const snapshot = await workspace.getAudioExecutionStreamSnapshot(audioFileId, groupId);
+      context.header('Cache-Control', 'private, no-cache, no-transform');
+      context.header('Content-Encoding', 'Identity');
+      context.header('X-Accel-Buffering', 'no');
+      return streamSSE(context, async (eventStream) => {
+        const canResume =
+          requestedCursor !== undefined && BigInt(requestedCursor) <= BigInt(snapshot.cursor);
+        let cursor = canResume ? requestedCursor : snapshot.cursor;
+        let lastHeartbeatAt = Date.now();
+        if (!canResume) {
+          await eventStream.writeSSE({
+            id: snapshot.cursor,
+            event: 'snapshot',
+            data: JSON.stringify(snapshot),
+          });
+        }
+        while (!eventStream.aborted) {
+          try {
+            const events = await workspace.getAudioExecutionStreamEvents(
+              audioFileId,
+              snapshot.analysisRevisionId,
+              groupId,
+              cursor,
+            );
+            for (const event of events) {
+              cursor = event.cursor;
+              await eventStream.writeSSE({
+                id: event.cursor,
+                event: event.type,
+                data: JSON.stringify(event),
+              });
+            }
+            if (Date.now() - lastHeartbeatAt >= 15_000) {
+              lastHeartbeatAt = Date.now();
+              await eventStream.writeSSE({
+                id: cursor,
+                event: 'heartbeat',
+                data: JSON.stringify({
+                  type: 'heartbeat',
+                  cursor,
+                  audioFileId,
+                  analysisRevisionId: snapshot.analysisRevisionId,
+                  occurredAt: new Date().toISOString(),
+                }),
+              });
+            }
+          } catch {
+            await eventStream.writeSSE({
+              id: cursor,
+              event: 'error',
+              data: JSON.stringify({
+                type: 'error',
+                cursor,
+                audioFileId,
+                analysisRevisionId: snapshot.analysisRevisionId,
+                error: {
+                  code: 'STREAM_UNAVAILABLE',
+                  message: '模型执行实时流暂时不可用。',
+                  retryable: true,
+                },
+              }),
+            });
+            break;
+          }
+          await eventStream.sleep(500);
+        }
+      });
     });
     app.post('/api/audio-files/:audioFileId/business-analyses', async (context) => {
       const input = AudioBusinessAnalysisStartRequestSchema.parse(await context.req.json());

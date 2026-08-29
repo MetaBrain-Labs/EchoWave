@@ -9,7 +9,10 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { AudioAiExecutionTraceResponseSchema } from '@echowave/contracts';
+import {
+  AudioAiExecutionStreamEventSchema,
+  AudioAiExecutionTraceResponseSchema,
+} from '@echowave/contracts';
 
 const id = '10000000-0000-4000-8000-000000000001';
 const secondId = '20000000-0000-4000-8000-000000000002';
@@ -32,13 +35,36 @@ function trace() {
         durationMs: 2_000,
         error: null,
         steps: [],
-        modelCalls: [],
+        modelCalls: [
+          {
+            id,
+            sequence: 1,
+            operation: 'business-analysis-generation',
+            name: '结合转写与知识证据生成业务分析',
+            provider: 'deepseek',
+            model: 'deepseek-v4-flash',
+            status: 'running',
+            attempt: 1,
+            startedAt: '2026-08-29T01:00:00.500Z',
+            completedAt: null,
+            durationMs: null,
+            inputTokens: null,
+            outputTokens: null,
+            reasoningMode: 'streaming',
+            reasoningContent: '正在核对转写与证据。',
+            reasoningTruncated: false,
+            estimatedCost: null,
+          },
+        ],
         toolCalls: [
           {
-            sequence: 1,
-            name: 'search_knowledge',
+            id: secondId,
+            sequence: 2,
+            operation: 'search_knowledge',
+            name: '检索分组关联知识库',
             status: 'completed',
-            occurredAt: '2026-08-29T01:00:01.000Z',
+            startedAt: '2026-08-29T01:00:01.000Z',
+            completedAt: '2026-08-29T01:00:01.050Z',
             durationMs: 50,
             query: '客户异议处理',
             knowledgeBases: [{ id, name: '销售知识库' }],
@@ -68,5 +94,43 @@ describe('audio AI execution trace contract', () => {
     const value = trace();
     value.runs[0].toolCalls[0].query = 'x'.repeat(4_001);
     assert.throws(() => AudioAiExecutionTraceResponseSchema.parse(value));
+  });
+
+  it('accepts resumable snapshots and bounded reasoning deltas', () => {
+    assert.equal(
+      AudioAiExecutionStreamEventSchema.parse({
+        type: 'snapshot',
+        cursor: '17',
+        audioFileId: id,
+        analysisRevisionId: secondId,
+        trace: trace(),
+      }).type,
+      'snapshot',
+    );
+    assert.equal(
+      AudioAiExecutionStreamEventSchema.parse({
+        type: 'reasoning-delta',
+        cursor: '18',
+        audioFileId: id,
+        analysisRevisionId: secondId,
+        runId: id,
+        operationId: secondId,
+        delta: '核对知识证据',
+        truncated: false,
+      }).cursor,
+      '18',
+    );
+    assert.throws(() =>
+      AudioAiExecutionStreamEventSchema.parse({
+        type: 'reasoning-delta',
+        cursor: '19',
+        audioFileId: id,
+        analysisRevisionId: secondId,
+        runId: id,
+        operationId: secondId,
+        delta: 'x'.repeat(2_049),
+        truncated: false,
+      }),
+    );
   });
 });

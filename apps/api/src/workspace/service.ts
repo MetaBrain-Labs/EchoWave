@@ -221,6 +221,16 @@ export interface WorkspaceService {
     id: string,
     groupId?: string,
   ): Promise<Awaited<ReturnType<AudioExecutionRepository['getTrace']>>>;
+  getAudioExecutionStreamSnapshot(
+    id: string,
+    groupId?: string,
+  ): Promise<Awaited<ReturnType<AudioExecutionRepository['getStreamSnapshot']>>>;
+  getAudioExecutionStreamEvents(
+    id: string,
+    revisionId: string,
+    groupId: string | undefined,
+    cursor: string,
+  ): ReturnType<AudioExecutionRepository['getStreamEvents']>;
   confirmAudioTranscript(
     id: string,
     input: AudioTranscriptConfirmationRequest,
@@ -431,6 +441,29 @@ export class DefaultWorkspaceService implements WorkspaceService {
       throw new WorkspaceRepositoryError('CONFLICT', '模型执行轨迹服务尚未配置。');
     }
     return this.audioExecutionRepository.getTrace(id, detail.id, groupId);
+  }
+
+  /** 校验音频访问后返回 SSE 首帧快照与当前游标。 */
+  async getAudioExecutionStreamSnapshot(id: string, groupId?: string) {
+    const detail = await this.repository.getAudioAnalysis(id);
+    if (groupId) await this.repository.assertGroupAudioAccess(groupId, id);
+    if (!this.audioExecutionRepository) {
+      throw new WorkspaceRepositoryError('CONFLICT', '模型执行轨迹服务尚未配置。');
+    }
+    return this.audioExecutionRepository.getStreamSnapshot(id, detail.id, groupId);
+  }
+
+  /** 在已经完成首帧访问校验的 SSE 连接中读取后续有界增量。 */
+  getAudioExecutionStreamEvents(
+    id: string,
+    revisionId: string,
+    groupId: string | undefined,
+    cursor: string,
+  ) {
+    if (!this.audioExecutionRepository) {
+      throw new WorkspaceRepositoryError('CONFLICT', '模型执行轨迹服务尚未配置。');
+    }
+    return this.audioExecutionRepository.getStreamEvents(id, revisionId, groupId, cursor);
   }
 
   confirmAudioTranscript(id: string, input: AudioTranscriptConfirmationRequest) {

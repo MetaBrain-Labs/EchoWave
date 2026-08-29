@@ -354,6 +354,7 @@ export class AudioTranscriptionWorker {
     );
     report.recordModelCall({
       name: 'audio-file-transcription',
+      displayName: '识别整段音频并生成带时间戳的说话人转写',
       provider: 'dashscope',
       model: job.model,
       status: 'completed',
@@ -365,6 +366,7 @@ export class AudioTranscriptionWorker {
       ),
       inputTokens: null,
       outputTokens: null,
+      reasoningMode: 'unsupported',
       input: {
         kind: 'file-transcription',
         audio: '[OMITTED_AUDIO]',

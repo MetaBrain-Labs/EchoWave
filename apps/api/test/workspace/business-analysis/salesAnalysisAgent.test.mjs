@@ -5,7 +5,7 @@
  *
  * Responsibilities:
  * - 验证中文核心章节标题会规范化为内部英文代码。
- * - 验证销售分析请求始终显式开启思考模式。
+ * - 验证标签数量归一化、销售分析思考模式和截断后的结构修复。
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
@@ -74,19 +74,91 @@ function validResult() {
   };
 }
 
-function chatCompletion(content, { finishReason = 'stop', completionTokens = 10 } = {}) {
+function analysisTag(category, index) {
+  return {
+    category,
+    customLabel: category === 'custom' ? '自定义关注' : null,
+    title: `${category}-${index}`,
+    summary: `${category} 摘要 ${index}`,
+    details: [],
+    confidence: 90,
+    evidenceSegmentIds: [segmentId],
+    citedChunkIds: [],
+  };
+}
+
+function resultWithCategoryCounts(counts) {
+  return {
+    ...validResult(),
+    tags: Object.entries(counts).flatMap(([category, count]) =>
+      Array.from({ length: count }, (_, index) => analysisTag(category, index + 1)),
+    ),
+  };
+}
+
+function chatCompletion(
+  content,
+  { finishReason = 'stop', completionTokens = 10, reasoningContent = '分析当前任务。' } = {},
+) {
   return {
     id: 'chatcmpl-sales-test',
     object: 'chat.completion',
     created: 1,
     model: 'deepseek-v4-flash',
-    choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: finishReason }],
+    choices: [
+      {
+        index: 0,
+        message: { role: 'assistant', content, reasoning_content: reasoningContent },
+        finish_reason: finishReason,
+      },
+    ],
     usage: {
       prompt_tokens: 10,
       completion_tokens: completionTokens,
       total_tokens: 10 + completionTokens,
     },
   };
+}
+
+function responseForChatCompletion(completion, request) {
+  if (!request.stream) return Response.json(completion);
+  const choice = completion.choices[0];
+  const base = {
+    id: completion.id,
+    object: 'chat.completion.chunk',
+    created: completion.created,
+    model: completion.model,
+  };
+  const events = [
+    {
+      ...base,
+      choices: [
+        {
+          index: 0,
+          delta: {
+            role: 'assistant',
+            reasoning_content: choice.message.reasoning_content,
+          },
+          finish_reason: null,
+        },
+      ],
+    },
+    {
+      ...base,
+      choices: [{ index: 0, delta: { content: choice.message.content }, finish_reason: null }],
+    },
+    {
+      ...base,
+      choices: [{ index: 0, delta: {}, finish_reason: choice.finish_reason }],
+      usage: completion.usage,
+    },
+  ];
+  return new Response(
+    `${events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join('')}data: [DONE]\n\n`,
+    {
+      headers: { 'Content-Type': 'text/event-stream' },
+    },
+  );
 }
 
 function recorder(modelCalls, steps = []) {
@@ -114,6 +186,60 @@ describe('SalesAnalysisAgent', () => {
     assert.equal(parsed.data.tags[0].confidence, 90);
   });
 
+  it('balances over-limit tags across categories while preserving selected source order', () => {
+    const source = resultWithCategoryCounts({
+      strength: 4,
+      improvement: 4,
+      risk: 3,
+      suggestion: 3,
+    });
+    const parsed = parseSalesAnalysisResult(source);
+
+    assert.equal(parsed.success, true);
+    assert.equal(parsed.data.tags.length, 12);
+    assert.deepEqual(
+      Object.fromEntries(
+        ['strength', 'improvement', 'risk', 'suggestion'].map((category) => [
+          category,
+          parsed.data.tags.filter((tag) => tag.category === category).length,
+        ]),
+      ),
+      { strength: 3, improvement: 3, risk: 3, suggestion: 3 },
+    );
+    assert.deepEqual(
+      parsed.data.tags.map((tag) => tag.title),
+      source.tags.filter((tag) => !tag.title.endsWith('-4')).map((tag) => tag.title),
+    );
+  });
+
+  it('shares extra slots across five categories and leaves invalid categories for strict validation', () => {
+    const parsed = parseSalesAnalysisResult(
+      resultWithCategoryCounts({
+        strength: 3,
+        improvement: 3,
+        risk: 3,
+        suggestion: 3,
+        custom: 3,
+      }),
+    );
+    assert.equal(parsed.success, true);
+    assert.deepEqual(
+      Object.fromEntries(
+        ['strength', 'improvement', 'risk', 'suggestion', 'custom'].map((category) => [
+          category,
+          parsed.data.tags.filter((tag) => tag.category === category).length,
+        ]),
+      ),
+      { strength: 3, improvement: 3, risk: 2, suggestion: 2, custom: 2 },
+    );
+
+    const invalid = resultWithCategoryCounts({ strength: 12 });
+    invalid.tags.push(analysisTag('unknown', 1));
+    const invalidParsed = parseSalesAnalysisResult(invalid);
+    assert.equal(invalidParsed.success, false);
+    assert.ok(invalidParsed.error.issues.some((issue) => issue.path.join('.') === 'tags'));
+  });
+
   it('enables thinking for sales analysis even when the shared setting is disabled', async () => {
     const requests = [];
     const modelCalls = [];
@@ -125,8 +251,9 @@ describe('SalesAnalysisAgent', () => {
         enableThinking: false,
       },
       fetchImplementation: async (_url, init) => {
-        requests.push(JSON.parse(init.body));
-        return Response.json(chatCompletion('{"queries":["客户需求"]}'));
+        const request = JSON.parse(init.body);
+        requests.push(request);
+        return responseForChatCompletion(chatCompletion('{"queries":["客户需求"]}'), request);
       },
     });
 
@@ -152,7 +279,8 @@ describe('SalesAnalysisAgent', () => {
         deepSeekChatModel: 'deepseek-v4-flash',
         enableThinking: false,
       },
-      fetchImplementation: async () => Response.json(chatCompletion('{"summarySections":[]}')),
+      fetchImplementation: async (_url, init) =>
+        responseForChatCompletion(chatCompletion('{"summarySections":[]}'), JSON.parse(init.body)),
     });
 
     await assert.rejects(
@@ -178,18 +306,19 @@ describe('SalesAnalysisAgent', () => {
     assert.ok(
       modelCalls.every(
         (event) =>
-          event.input.messages[0].role === 'system' &&
-          event.input.messages.some((message) => message.role === 'user') &&
-          event.output.content.includes('summarySections'),
+          event.status === 'completed' &&
+          event.durationMs >= 0 &&
+          JSON.stringify(event.output).includes('summarySections'),
       ),
     );
+    assert.equal(modelCalls[0].input.kind, 'agent-chat');
     assert.deepEqual(
       modelCalls[1].input.messages.map(({ role }) => role),
       ['system', 'user'],
     );
   });
 
-  it('repairs a token-truncated thinking response with one compact non-thinking call', async () => {
+  it('repairs a token-truncated response and balances an over-limit repair result', async () => {
     const requests = [];
     const modelCalls = [];
     const steps = [];
@@ -201,15 +330,25 @@ describe('SalesAnalysisAgent', () => {
         enableThinking: false,
       },
       fetchImplementation: async (_url, init) => {
-        requests.push(JSON.parse(init.body));
-        return requests.length === 1
-          ? Response.json(
-              chatCompletion('{"summarySections":[{"title":"overall"', {
+        const request = JSON.parse(init.body);
+        requests.push(request);
+        const completion =
+          requests.length === 1
+            ? chatCompletion('{"summarySections":[{"title":"overall"', {
                 finishReason: 'length',
-                completionTokens: 8_000,
-              }),
-            )
-          : Response.json(chatCompletion(JSON.stringify(validResult())));
+                completionTokens: 7_998,
+              })
+            : chatCompletion(
+                JSON.stringify(
+                  resultWithCategoryCounts({
+                    strength: 4,
+                    improvement: 4,
+                    risk: 3,
+                    suggestion: 3,
+                  }),
+                ),
+              );
+        return responseForChatCompletion(completion, request);
       },
     });
 
@@ -220,7 +359,7 @@ describe('SalesAnalysisAgent', () => {
       recorder: recorder(modelCalls, steps),
     });
 
-    assert.equal(result.tags[0].confidence, 90);
+    assert.equal(result.tags.length, 12);
     assert.deepEqual(requests[0].thinking, { type: 'enabled' });
     assert.equal(requests[0].max_tokens, 8_000);
     assert.deepEqual(requests[1].thinking, { type: 'disabled' });
@@ -229,7 +368,7 @@ describe('SalesAnalysisAgent', () => {
       modelCalls.map(({ name }) => name),
       ['business-analysis-generation', 'business-analysis-structure-repair'],
     );
-    assert.equal(modelCalls[0].output.responseMetadata.finish_reason, 'length');
+    assert.equal(modelCalls[0].status, 'completed');
     assert.ok(
       steps.some(
         (step) =>
@@ -239,8 +378,55 @@ describe('SalesAnalysisAgent', () => {
     );
     assert.ok(
       steps.some(
-        (step) => step.name === 'business-analysis-structure-repair' && step.status === 'completed',
+        (step) =>
+          step.name === 'business-analysis-structure-repair' &&
+          step.status === 'completed' &&
+          step.metadata.tagLimitNormalization.originalCount === 14 &&
+          step.metadata.tagLimitNormalization.keptCount === 12 &&
+          step.metadata.tagLimitNormalization.keptByCategory.strength === 3 &&
+          step.metadata.tagLimitNormalization.keptByCategory.improvement === 3 &&
+          step.metadata.tagLimitNormalization.keptByCategory.risk === 3 &&
+          step.metadata.tagLimitNormalization.keptByCategory.suggestion === 3,
       ),
     );
+    assert.equal(requests.length, 2);
+  });
+
+  it('marks malformed near-limit output as truncated when the provider omits finish reason', async () => {
+    const requests = [];
+    const steps = [];
+    const agent = new SalesAnalysisAgent({
+      ragConfig: {
+        deepSeekApiKey: 'test-key',
+        deepSeekBaseUrl: 'https://deepseek.example.com/v1',
+        deepSeekChatModel: 'deepseek-v4-flash',
+        enableThinking: false,
+      },
+      fetchImplementation: async (_url, init) => {
+        const request = JSON.parse(init.body);
+        requests.push(request);
+        const completion =
+          requests.length === 1
+            ? chatCompletion('{"summarySections":[{"title":"overall"', {
+                finishReason: null,
+                completionTokens: 7_998,
+              })
+            : chatCompletion(JSON.stringify(validResult()));
+        return responseForChatCompletion(completion, request);
+      },
+    });
+
+    await agent.analyze({
+      job: analysisJob(),
+      preRetrieved: [],
+      searchKnowledge: async () => [],
+      recorder: recorder([], steps),
+    });
+
+    const validation = steps.find((step) => step.name === 'business-analysis-structure-validation');
+    assert.equal(validation.metadata.finishReason, null);
+    assert.equal(validation.metadata.outputTokens, 7_998);
+    assert.equal(validation.metadata.maxOutputTokens, 8_000);
+    assert.equal(validation.metadata.outputTruncated, true);
   });
 });
