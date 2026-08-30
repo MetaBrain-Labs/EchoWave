@@ -18,6 +18,7 @@ import {
   noOpAiExecutionReporter,
   type AiExecutionReporter,
 } from '../../ai-observability/executionReporter.ts';
+import type { LiveUpdateBroker } from '../../infrastructure/liveUpdateBroker.ts';
 import type {
   KnowledgeRepository,
   RetrievalChunk,
@@ -72,6 +73,7 @@ type BusinessAnalysisWorkerOptions = {
   embeddingModel: string;
   agent: SalesAnalysisAgent;
   reporter?: AiExecutionReporter;
+  liveUpdates?: LiveUpdateBroker;
 };
 
 /** 单并发轮询并执行销售复盘任务。 */
@@ -105,6 +107,7 @@ export class BusinessAnalysisWorker {
     try {
       const job = await this.options.repository.claim();
       if (!job) return;
+      this.notify(job, false);
       const execution = this.execute(job).finally(() => {
         if (this.active === execution) this.active = undefined;
         if (!this.stopping) void this.pump();
@@ -117,6 +120,15 @@ export class BusinessAnalysisWorker {
     } finally {
       this.pumping = false;
     }
+  }
+
+  private notify(job: ClaimedBusinessAnalysisJob, terminal: boolean): void {
+    this.options.liveUpdates?.publish({
+      kind: 'audio-analysis',
+      audioFileId: job.audioFileId,
+      groupId: job.groupId,
+      terminal,
+    });
   }
 
   private async execute(job: ClaimedBusinessAnalysisJob) {
@@ -256,8 +268,10 @@ export class BusinessAnalysisWorker {
         metadata: { queryCount: queries.length, usedFallback: plannedQueries.length === 0 },
       });
       await this.options.repository.updateProgress(job.id, 15);
+      this.notify(job, false);
       for (const query of queries) await search(query);
       await this.options.repository.updateProgress(job.id, 35);
+      this.notify(job, false);
       report.recordStep({
         name: 'analysis-generation',
         status: 'started',
@@ -308,6 +322,7 @@ export class BusinessAnalysisWorker {
         result.limitations = [...new Set([...result.limitations, '本次分析未使用知识库。'])];
       }
       await this.options.repository.updateProgress(job.id, 92);
+      this.notify(job, false);
       const publishedResult = {
         ...result,
         summarySections: result.summarySections.map((section) => ({
@@ -317,6 +332,7 @@ export class BusinessAnalysisWorker {
       };
       report.recordStep({ name: 'publish', status: 'started' });
       await this.options.repository.publish(job, publishedResult, retrieved);
+      this.notify(job, true);
       report.recordStep({ name: 'publish', status: 'completed' });
       report.recordOutput(publishedResult);
       await report.finish({
@@ -339,6 +355,7 @@ export class BusinessAnalysisWorker {
           known ? error.message : '销售复盘失败，请稍后重试。',
           retryable,
         );
+        this.notify(job, true);
       } catch (persistenceError) {
         // 报告是故障诊断旁路；任务失败状态写入异常时仍须尽力落盘原始分析错误。
         failurePersistenceError = persistenceError;

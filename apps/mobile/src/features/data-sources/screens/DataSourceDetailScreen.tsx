@@ -24,6 +24,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -59,6 +60,7 @@ import {
   updateDataSource,
   uploadDataSourceAudioFiles,
 } from '@/shared/api/workspaceApi';
+import { streamDataSourceAudio } from '@/shared/api/liveUpdateStreams';
 
 import {
   AudioTranscriptionConfirmDialog,
@@ -77,6 +79,7 @@ import {
 
 import {
   toDataSourceDetailView,
+  toSourceAudioItem,
   type DataSourceDetailView,
   type SourceAudioItem,
   type SourceAudioStatus,
@@ -598,6 +601,7 @@ export function DataSourceDetailScreen({
   const [error, setError] = useState('');
   const [operationError, setOperationError] = useState('');
   const [progressRefreshError, setProgressRefreshError] = useState('');
+  const [appActive, setAppActive] = useState(AppState.currentState !== 'background');
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
   const [editVisible, setEditVisible] = useState(false);
   const [formError, setFormError] = useState('');
@@ -667,16 +671,99 @@ export function DataSourceDetailScreen({
     return () => clearTimeout(task);
   }, [load]);
 
-  const pollingTranscription = source?.audioItems.some(
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      setAppActive(state === 'active');
+    });
+    return () => subscription.remove();
+  }, []);
+
+  const hasActiveTranscription = source?.audioItems.some(
     (item) => item.status.kind === 'transcribing',
   );
   useEffect(() => {
-    if (!pollingTranscription) return undefined;
-    const timer = setInterval(() => {
+    if (!hasActiveTranscription || !appActive) return undefined;
+    let disposed = false;
+    let controller: AbortController | undefined;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let fallbackTimer: ReturnType<typeof setInterval> | undefined;
+    let failures = 0;
+    const retryDelays = [1_000, 2_000, 5_000, 10_000];
+    const stopFallback = () => {
+      if (fallbackTimer) clearInterval(fallbackTimer);
+      fallbackTimer = undefined;
+    };
+    const startFallback = () => {
+      if (fallbackTimer) return;
       void load(false);
-    }, 2_000);
-    return () => clearInterval(timer);
-  }, [load, pollingTranscription]);
+      fallbackTimer = setInterval(() => void load(false), 5_000);
+    };
+    const connect = async () => {
+      controller = new AbortController();
+      try {
+        await streamDataSourceAudio({
+          dataSourceId: sourceId,
+          signal: controller.signal,
+          onEvent: (event) => {
+            if (event.type === 'error') {
+              setProgressRefreshError(`进度刷新失败：${event.error.message}`);
+              return;
+            }
+            failures = 0;
+            stopFallback();
+            setProgressRefreshError('');
+            if (event.type === 'snapshot') {
+              setSource((current) =>
+                current ? { ...current, audioItems: event.items.map(toSourceAudioItem) } : current,
+              );
+              return;
+            }
+            if (event.type === 'audio-file') {
+              setSource((current) => {
+                if (!current) return current;
+                if (!event.item) {
+                  return {
+                    ...current,
+                    audioItems: current.audioItems.filter((item) => item.id !== event.audioFileId),
+                  };
+                }
+                const next = toSourceAudioItem(event.item);
+                const exists = current.audioItems.some((item) => item.id === next.id);
+                return {
+                  ...current,
+                  audioItems: exists
+                    ? current.audioItems.map((item) => (item.id === next.id ? next : item))
+                    : [next, ...current.audioItems],
+                };
+              });
+              if (event.terminal) void load(false);
+              return;
+            }
+            if (event.type === 'refresh') void load(false);
+          },
+        });
+        if (!disposed) throw new Error('转写实时状态连接已关闭。');
+      } catch {
+        if (disposed || controller.signal.aborted) return;
+        failures += 1;
+        if (failures >= 5) {
+          setProgressRefreshError('实时连接暂时不可用，已切换为定时刷新。');
+          startFallback();
+        }
+        retryTimer = setTimeout(
+          () => void connect(),
+          failures >= 5 ? 30_000 : retryDelays[Math.min(failures - 1, retryDelays.length - 1)],
+        );
+      }
+    };
+    void connect();
+    return () => {
+      disposed = true;
+      controller?.abort();
+      if (retryTimer) clearTimeout(retryTimer);
+      stopFallback();
+    };
+  }, [appActive, hasActiveTranscription, load, sourceId]);
 
   const playAudio = (item: SourceAudioItem) => {
     setOperationError('');

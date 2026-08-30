@@ -9,16 +9,18 @@
  * Notes:
  * - 不执行真实上传、转写、播放或关联操作。
  */
-import { fireEvent, render, waitFor, within } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { Alert, StyleSheet } from 'react-native';
 import {
   AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
   DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
 } from '@echowave/contracts';
+import type { DataSourceAudioStreamEvent } from '@echowave/contracts';
 
 import { DataSourceDetailScreen } from '../DataSourceDetailScreen';
 import * as workspaceApi from '@/shared/api/workspaceApi';
+import * as liveUpdateApi from '@/shared/api/liveUpdateStreams';
 import {
   audioFixtures,
   dataSourceDetailFixture,
@@ -44,6 +46,9 @@ jest.mock('@/shared/api/workspaceApi', () => ({
   uploadDataSourceAudioFiles: jest.fn(),
 }));
 jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
+jest.mock('@/shared/api/liveUpdateStreams', () => ({ streamDataSourceAudio: jest.fn() }));
+
+let emitDataSourceStreamEvent: ((event: DataSourceAudioStreamEvent) => void) | undefined;
 
 async function renderDetail(
   sourceId = dataSourceDetailFixture.id,
@@ -60,6 +65,16 @@ async function renderDetail(
 describe('DataSourceDetailScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    emitDataSourceStreamEvent = undefined;
+    jest.mocked(liveUpdateApi.streamDataSourceAudio).mockImplementation(
+      ({ onEvent, signal }) =>
+        new Promise<void>((resolve) => {
+          emitDataSourceStreamEvent = onEvent;
+          signal.addEventListener('abort', () => {
+            resolve();
+          });
+        }),
+    );
     resetExpoAudioMock();
     jest.mocked(workspaceApi.getDataSource).mockResolvedValue(dataSourceDetailFixture);
     jest.mocked(workspaceApi.getAudioTranscriptionCapabilities).mockResolvedValue({
@@ -255,10 +270,7 @@ describe('DataSourceDetailScreen', () => {
           }
         : item,
     );
-    jest
-      .mocked(workspaceApi.listDataSourceAudioFiles)
-      .mockResolvedValueOnce({ items })
-      .mockResolvedValue({ items: expandedItems });
+    jest.mocked(workspaceApi.listDataSourceAudioFiles).mockResolvedValueOnce({ items });
     const screen = await renderDetail();
 
     expect(screen.getAllByText('Chunk 输出异常，正在细分 · Chunk 3/8').length).toBeGreaterThan(0);
@@ -266,6 +278,16 @@ describe('DataSourceDetailScreen', () => {
     expect(screen.getByText('Chunk 输出异常，正在细分')).toBeTruthy();
     expect(screen.getByText('Chunk 8')).toBeTruthy();
     expect(screen.getAllByText('模型转写').length).toBeGreaterThan(0);
+    await waitFor(() => expect(emitDataSourceStreamEvent).toBeDefined());
+    act(() =>
+      emitDataSourceStreamEvent?.({
+        type: 'snapshot',
+        cursor: '2',
+        occurredAt: '2026-08-30T01:00:00.000Z',
+        dataSourceId: dataSourceDetailFixture.id,
+        items: expandedItems,
+      }),
+    );
     await waitFor(
       () => expect(screen.getAllByText('模型转写 · Chunk 3/9').length).toBeGreaterThan(0),
       {
@@ -275,12 +297,19 @@ describe('DataSourceDetailScreen', () => {
     expect(screen.getByText('Chunk 9')).toBeTruthy();
   });
 
-  it('keeps the last progress when polling fails and supports a manual refresh', async () => {
-    jest
-      .mocked(workspaceApi.listDataSourceAudioFiles)
-      .mockResolvedValueOnce({ items: audioFixtures })
-      .mockRejectedValueOnce(new Error('network offline'));
+  it('keeps the last progress when the stream reports an error and supports a manual refresh', async () => {
+    jest.mocked(workspaceApi.listDataSourceAudioFiles).mockResolvedValue({ items: audioFixtures });
     const screen = await renderDetail();
+
+    await waitFor(() => expect(emitDataSourceStreamEvent).toBeDefined());
+    act(() =>
+      emitDataSourceStreamEvent?.({
+        type: 'error',
+        cursor: '2',
+        occurredAt: '2026-08-30T01:00:00.000Z',
+        error: { code: 'STREAM_UNAVAILABLE', message: 'network offline', retryable: true },
+      }),
+    );
 
     await waitFor(() => expect(screen.getByText(/进度刷新失败：network offline/)).toBeTruthy(), {
       timeout: 3_500,

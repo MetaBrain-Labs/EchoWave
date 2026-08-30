@@ -123,6 +123,18 @@ function sourceAudioStatus(audio: AudioFileSummary): SourceAudioStatus {
   }
 }
 
+/** 将单条服务端音频摘要转换为可原位更新的页面卡片。 */
+export function toSourceAudioItem(audio: AudioFileSummary): SourceAudioItem {
+  return {
+    id: audio.id,
+    title: audio.title,
+    duration: audio.durationMs === null ? '--:--' : formatDuration(audio.durationMs),
+    createdAt: new Date(audio.createdAt).toLocaleDateString(),
+    hasTranscript: audio.hasTranscript,
+    status: sourceAudioStatus(audio),
+  };
+}
+
 /** 将服务端数据源详情及其子资源转换为单页展示模型。 */
 export function toDataSourceDetailView(
   detail: DataSourceContract,
@@ -146,14 +158,7 @@ export function toDataSourceDetailView(
     skipInvalidAudio: detail.settings.skipInvalidAudio,
     customBusinessRoles: detail.settings.customBusinessRoles,
     totalDuration: formatDuration(detail.metrics.totalDurationMs),
-    audioItems: audioItems.map((audio) => ({
-      id: audio.id,
-      title: audio.title,
-      duration: audio.durationMs === null ? '--:--' : formatDuration(audio.durationMs),
-      createdAt: new Date(audio.createdAt).toLocaleDateString(),
-      hasTranscript: audio.hasTranscript,
-      status: sourceAudioStatus(audio),
-    })),
+    audioItems: audioItems.map(toSourceAudioItem),
     uploadRecords: records.map((record) => {
       const occurredAt = new Date(record.occurredAt);
       const failed = record.kind !== 'upload-success';

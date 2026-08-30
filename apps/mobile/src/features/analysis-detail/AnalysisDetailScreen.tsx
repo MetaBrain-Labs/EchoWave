@@ -29,6 +29,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
 import { useAudioPlayback } from '@/shared/audio/useAudioPlayback';
 import { streamAudioExecutionTrace } from '@/shared/api/audioExecutionStream';
+import { streamAudioAnalysisStatus } from '@/shared/api/liveUpdateStreams';
 import {
   confirmAudioTranscript,
   getAudioAnalysis,
@@ -207,7 +208,7 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
     return () => clearTimeout(task);
   }, [groupId]);
 
-  const pollingPostAnalysis =
+  const hasActiveAnalysis =
     detail?.postAnalysis.emotion.state === 'queued' ||
     detail?.postAnalysis.emotion.state === 'running' ||
     detail?.postAnalysis.role.state === 'queued' ||
@@ -215,10 +216,71 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
     detail?.businessAnalysis.state === 'queued' ||
     detail?.businessAnalysis.state === 'running';
   useEffect(() => {
-    if (!pollingPostAnalysis) return undefined;
-    const timer = setInterval(() => void load(false), 2_000);
-    return () => clearInterval(timer);
-  }, [load, pollingPostAnalysis]);
+    if (!hasActiveAnalysis || !appActive || activeTab === 'model') return undefined;
+    let disposed = false;
+    let controller: AbortController | undefined;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let fallbackTimer: ReturnType<typeof setInterval> | undefined;
+    let failures = 0;
+    const retryDelays = [1_000, 2_000, 5_000, 10_000];
+    const stopFallback = () => {
+      if (fallbackTimer) clearInterval(fallbackTimer);
+      fallbackTimer = undefined;
+    };
+    const startFallback = () => {
+      if (fallbackTimer) return;
+      void load(false);
+      fallbackTimer = setInterval(() => void load(false), 5_000);
+    };
+    const connect = async () => {
+      controller = new AbortController();
+      try {
+        await streamAudioAnalysisStatus({
+          audioFileId: detailId,
+          groupId,
+          signal: controller.signal,
+          onEvent: (event) => {
+            if (event.type === 'error') return;
+            failures = 0;
+            stopFallback();
+            if (event.type !== 'snapshot' && event.type !== 'analysis-status') return;
+            setDetail((current) =>
+              current && current.id === event.analysisRevisionId
+                ? {
+                    ...current,
+                    postAnalysis: {
+                      emotion: event.state.emotion,
+                      role: event.state.role,
+                    },
+                    businessAnalysis: {
+                      ...event.state.business,
+                      result: current.businessAnalysis.result,
+                    },
+                  }
+                : current,
+            );
+            if (event.type === 'analysis-status' && event.terminal) void load(false);
+          },
+        });
+        if (!disposed) throw new Error('分析实时状态连接已关闭。');
+      } catch {
+        if (disposed || controller.signal.aborted) return;
+        failures += 1;
+        if (failures >= 5) startFallback();
+        retryTimer = setTimeout(
+          () => void connect(),
+          failures >= 5 ? 30_000 : retryDelays[Math.min(failures - 1, retryDelays.length - 1)],
+        );
+      }
+    };
+    void connect();
+    return () => {
+      disposed = true;
+      controller?.abort();
+      if (retryTimer) clearTimeout(retryTimer);
+      stopFallback();
+    };
+  }, [activeTab, appActive, detailId, groupId, hasActiveAnalysis, load]);
   useEffect(() => {
     if (activeTab !== 'model' || !appActive) return undefined;
     let disposed = false;

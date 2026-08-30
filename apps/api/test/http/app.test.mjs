@@ -12,6 +12,7 @@ import {
 } from '@echowave/contracts';
 
 import { createApp } from '../../dist/http/app.js';
+import { LiveUpdateBroker } from '../../dist/infrastructure/liveUpdateBroker.js';
 import { WorkspaceRepositoryError } from '../../dist/workspace/persistence/errors.js';
 import { AudioUploadValidationError } from '../../dist/workspace/service.js';
 import { DashScopeCallbackError } from '../../dist/workspace/transcription/dashScopeCallback.js';
@@ -327,7 +328,32 @@ describe('workspace routes', () => {
       throw new WorkspaceRepositoryError('NOT_FOUND', '音频不存在。');
     },
   };
-  const workspaceApp = createApp({ corsOrigins: ['http://localhost:8081'] }, { workspaceService });
+  const liveUpdateBroker = new LiveUpdateBroker();
+  const workspaceApp = createApp(
+    { corsOrigins: ['http://localhost:8081'] },
+    { workspaceService, liveUpdateBroker },
+  );
+
+  const wakeExecutionStream = () => {
+    setTimeout(
+      () =>
+        liveUpdateBroker.publish({
+          kind: 'audio-execution',
+          audioFileId: groupId,
+          analysisRevisionId: groupId,
+        }),
+      0,
+    );
+    setTimeout(
+      () =>
+        liveUpdateBroker.publish({
+          kind: 'audio-execution',
+          audioFileId: groupId,
+          analysisRevisionId: groupId,
+        }),
+      20,
+    );
+  };
 
   it('exposes group summaries and validates route identifiers', async () => {
     const response = await workspaceApp.request('/api/groups');
@@ -439,6 +465,7 @@ describe('workspace routes', () => {
 
   it('streams an initial execution snapshot and cursor-ordered lifecycle events', async () => {
     requestedExecutionStreamEventsInputs.length = 0;
+    wakeExecutionStream();
     const response = await workspaceApp.request(
       `/api/audio-files/${groupId}/analysis/executions/stream?groupId=${groupId}`,
     );
@@ -462,6 +489,7 @@ describe('workspace routes', () => {
 
   it('continues execution SSE from a cursor and rejects malformed cursors', async () => {
     requestedExecutionStreamEventsInputs.length = 0;
+    wakeExecutionStream();
     const continued = await workspaceApp.request(
       `/api/audio-files/${groupId}/analysis/executions/stream?groupId=${groupId}&cursor=4`,
     );
@@ -474,6 +502,192 @@ describe('workspace routes', () => {
       `/api/audio-files/${groupId}/analysis/executions/stream?groupId=${groupId}&cursor=bad`,
     );
     assert.equal(invalid.status, 400);
+  });
+
+  it('streams data-source audio updates only after broker signals', async () => {
+    const broker = new LiveUpdateBroker();
+    let reads = 0;
+    const streamApp = createApp(
+      { corsOrigins: ['http://localhost:8081'] },
+      {
+        liveUpdateBroker: broker,
+        workspaceService: {
+          ...workspaceService,
+          listDataSourceAudioFiles: async () => {
+            reads += 1;
+            if (reads >= 3) throw new Error('close test stream');
+            return {
+              items: [
+                {
+                  id: groupId,
+                  sourceId: groupId,
+                  title: '客户访谈',
+                  durationMs: 1_000,
+                  createdAt: '2026-08-30T01:00:00.000Z',
+                  sharedFrom: null,
+                  hasTranscript: false,
+                  status:
+                    reads === 1
+                      ? { kind: 'waiting' }
+                      : { kind: 'transcribing', progress: 35, activity: null },
+                },
+              ],
+            };
+          },
+        },
+      },
+    );
+    setTimeout(
+      () =>
+        broker.publish({
+          kind: 'data-source-audio',
+          dataSourceId: groupId,
+          audioFileId: groupId,
+          terminal: false,
+        }),
+      0,
+    );
+    setTimeout(
+      () =>
+        broker.publish({
+          kind: 'data-source-audio',
+          dataSourceId: groupId,
+          audioFileId: groupId,
+          terminal: false,
+        }),
+      20,
+    );
+
+    const response = await streamApp.request(`/api/data-sources/${groupId}/audio-files/stream`);
+    const body = await response.text();
+    assert.match(body, /event: snapshot/);
+    assert.match(body, /event: audio-file/);
+    assert.match(body, /event: error/);
+    assert.equal(reads, 3);
+  });
+
+  it('streams analysis status updates only after matching broker signals', async () => {
+    const broker = new LiveUpdateBroker();
+    let reads = 0;
+    const streamApp = createApp(
+      { corsOrigins: ['http://localhost:8081'] },
+      {
+        liveUpdateBroker: broker,
+        workspaceService: {
+          ...workspaceService,
+          getAudioAnalysis: async () => {
+            reads += 1;
+            if (reads >= 3) throw new Error('close test stream');
+            return {
+              id: groupId,
+              postAnalysis: {
+                emotion: { state: 'idle' },
+                role: { state: 'idle' },
+              },
+              businessAnalysis: {
+                state: reads === 1 ? 'queued' : 'running',
+                groupId,
+                jobId: groupId,
+                model: 'deepseek-v4-flash',
+                progress: reads === 1 ? 0 : 35,
+                confirmationVersion: 1,
+                settingsCurrent: true,
+                knowledgeCurrent: true,
+                error: null,
+                result: null,
+              },
+            };
+          },
+        },
+      },
+    );
+    setTimeout(
+      () =>
+        broker.publish({
+          kind: 'audio-analysis',
+          audioFileId: groupId,
+          groupId,
+          terminal: false,
+        }),
+      0,
+    );
+    setTimeout(
+      () =>
+        broker.publish({
+          kind: 'audio-analysis',
+          audioFileId: groupId,
+          groupId,
+          terminal: true,
+        }),
+      20,
+    );
+
+    const response = await streamApp.request(
+      `/api/audio-files/${groupId}/analysis/status/stream?groupId=${groupId}`,
+    );
+    const body = await response.text();
+    assert.match(body, /event: snapshot/);
+    assert.match(body, /event: analysis-status/);
+    assert.match(body, /event: error/);
+    assert.equal(reads, 3);
+  });
+
+  it('streams knowledge-document updates only after matching broker signals', async () => {
+    const broker = new LiveUpdateBroker();
+    let reads = 0;
+    const streamApp = createApp(
+      { corsOrigins: ['http://localhost:8081'] },
+      {
+        liveUpdateBroker: broker,
+        knowledgeService: {
+          listDocuments: async () => {
+            reads += 1;
+            if (reads >= 3) throw new Error('close test stream');
+            return {
+              items: [
+                {
+                  id: groupId,
+                  knowledgeBaseId: groupId,
+                  title: 'Product handbook',
+                  format: 'markdown',
+                  sizeBytes: 128,
+                  status: reads === 1 ? { kind: 'queued' } : { kind: 'embedding', progress: 35 },
+                  vectorCount: 0,
+                  updatedAt: '2026-08-30T01:00:00.000Z',
+                },
+              ],
+            };
+          },
+        },
+      },
+    );
+    setTimeout(
+      () =>
+        broker.publish({
+          kind: 'knowledge-document',
+          knowledgeBaseId: groupId,
+          documentId: groupId,
+          terminal: false,
+        }),
+      0,
+    );
+    setTimeout(
+      () =>
+        broker.publish({
+          kind: 'knowledge-document',
+          knowledgeBaseId: groupId,
+          documentId: groupId,
+          terminal: true,
+        }),
+      20,
+    );
+
+    const response = await streamApp.request(`/api/knowledge-bases/${groupId}/documents/stream`);
+    const body = await response.text();
+    assert.match(body, /event: snapshot/);
+    assert.match(body, /event: document/);
+    assert.match(body, /event: error/);
+    assert.equal(reads, 3);
   });
 
   it('routes nested read models to the workspace service', async () => {

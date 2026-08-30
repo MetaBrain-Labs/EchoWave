@@ -15,9 +15,12 @@
 import {
   ApiErrorResponseSchema,
   AudioBusinessAnalysisStartRequestSchema,
+  AudioAnalysisStatusStreamEventSchema,
+  AudioBusinessAnalysisLiveStateSchema,
   AudioTranscriptConfirmationRequestSchema,
   AudioTranscriptionStartRequestSchema,
   DataSourceCreateRequestSchema,
+  DataSourceAudioStreamEventSchema,
   DataSourceGroupLinkRequestSchema,
   DataSourceUpdateRequestSchema,
   EntityIdSchema,
@@ -28,8 +31,10 @@ import {
   KnowledgeBaseCreateRequestSchema,
   KnowledgeBaseGroupLinkRequestSchema,
   KnowledgeBaseUpdateRequestSchema,
+  KnowledgeDocumentStreamEventSchema,
   RagQueryRequestSchema,
   type ApiErrorCode,
+  type AudioAnalysisDetail,
 } from '@echowave/contracts';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
@@ -38,6 +43,7 @@ import { createReadStream } from 'node:fs';
 import { ZodError } from 'zod';
 
 import type { ApiConfig } from '../config/env.ts';
+import { LiveUpdateBroker } from '../infrastructure/liveUpdateBroker.ts';
 import { KnowledgeAnswerError } from '../knowledge/answer/knowledgeAnswer.ts';
 import { RagRepositoryError } from '../knowledge/persistence/errors.ts';
 import { UploadValidationError, type KnowledgeService } from '../knowledge/service.ts';
@@ -59,6 +65,26 @@ function id(value: string): string {
   return EntityIdSchema.parse(value);
 }
 
+let liveCursor = BigInt(Date.now()) * 1_000n;
+
+/** 为非持久实时事件生成单进程递增标识；重连恢复仍以数据库快照为准。 */
+function nextLiveCursor(): string {
+  liveCursor += 1n;
+  return liveCursor.toString();
+}
+
+function occurredAt(): string {
+  return new Date().toISOString();
+}
+
+function analysisLiveState(detail: AudioAnalysisDetail) {
+  return {
+    emotion: detail.postAnalysis.emotion,
+    role: detail.postAnalysis.role,
+    business: AudioBusinessAnalysisLiveStateSchema.parse(detail.businessAnalysis),
+  };
+}
+
 /** 创建不启动监听器的 Hono 应用，使生产服务器和测试通过同一传输接口调用业务模块。 */
 export function createApp(
   config: Pick<ApiConfig, 'corsOrigins'>,
@@ -66,9 +92,11 @@ export function createApp(
     dashScopeCallbackService?: DashScopeCallbackService;
     knowledgeService?: KnowledgeService;
     workspaceService?: WorkspaceService;
+    liveUpdateBroker?: LiveUpdateBroker;
   } = {},
 ) {
   const app = new Hono();
+  const liveUpdates = dependencies.liveUpdateBroker ?? new LiveUpdateBroker();
 
   app.use(
     '*',
@@ -142,6 +170,91 @@ export function createApp(
     app.get('/api/knowledge-bases/:knowledgeBaseId/documents', async (context) =>
       context.json(await service.listDocuments(id(context.req.param('knowledgeBaseId')))),
     );
+    app.get('/api/knowledge-bases/:knowledgeBaseId/documents/stream', async (context) => {
+      const knowledgeBaseId = id(context.req.param('knowledgeBaseId'));
+      const subscription = liveUpdates.subscribe(
+        (event) => event.kind === 'knowledge-document' && event.knowledgeBaseId === knowledgeBaseId,
+      );
+      let snapshot;
+      try {
+        snapshot = await service.listDocuments(knowledgeBaseId);
+      } catch (error) {
+        subscription.close();
+        throw error;
+      }
+      context.header('Cache-Control', 'private, no-cache, no-transform');
+      context.header('Content-Encoding', 'Identity');
+      context.header('X-Accel-Buffering', 'no');
+      return streamSSE(context, async (eventStream) => {
+        try {
+          const initial = KnowledgeDocumentStreamEventSchema.parse({
+            type: 'snapshot',
+            cursor: nextLiveCursor(),
+            occurredAt: occurredAt(),
+            knowledgeBaseId,
+            items: snapshot.items,
+          });
+          await eventStream.writeSSE({
+            id: initial.cursor,
+            event: initial.type,
+            data: JSON.stringify(initial),
+          });
+          while (!eventStream.aborted) {
+            const signal = await subscription.wait(15_000);
+            if (!signal) {
+              const heartbeat = KnowledgeDocumentStreamEventSchema.parse({
+                type: 'heartbeat',
+                cursor: nextLiveCursor(),
+                occurredAt: occurredAt(),
+              });
+              await eventStream.writeSSE({
+                id: heartbeat.cursor,
+                event: heartbeat.type,
+                data: JSON.stringify(heartbeat),
+              });
+              continue;
+            }
+            if (signal.kind !== 'knowledge-document') continue;
+            const documents = await service.listDocuments(knowledgeBaseId);
+            const item =
+              documents.items.find((document) => document.id === signal.documentId) ?? null;
+            const update = KnowledgeDocumentStreamEventSchema.parse({
+              type: 'document',
+              cursor: nextLiveCursor(),
+              occurredAt: occurredAt(),
+              knowledgeBaseId,
+              item,
+              terminal: signal.terminal,
+            });
+            await eventStream.writeSSE({
+              id: update.cursor,
+              event: update.type,
+              data: JSON.stringify(update),
+            });
+          }
+        } catch {
+          if (!eventStream.aborted) {
+            const failure = KnowledgeDocumentStreamEventSchema.parse({
+              type: 'error',
+              cursor: nextLiveCursor(),
+              occurredAt: occurredAt(),
+              error: {
+                code: 'STREAM_UNAVAILABLE',
+                message: '文档实时状态暂时不可用。',
+                retryable: true,
+              },
+            });
+            await eventStream.writeSSE({
+              id: failure.cursor,
+              event: failure.type,
+              data: JSON.stringify(failure),
+            });
+          }
+        } finally {
+          subscription.close();
+        }
+      });
+    });
     app.post('/api/knowledge-bases/:knowledgeBaseId/documents', async (context) => {
       const contentLength = Number(context.req.header('content-length') ?? 0);
       if (contentLength > 21 * 1024 * 1024) {
@@ -286,6 +399,104 @@ export function createApp(
     app.get('/api/data-sources/:dataSourceId/audio-files', async (context) =>
       context.json(await workspace.listDataSourceAudioFiles(id(context.req.param('dataSourceId')))),
     );
+    app.get('/api/data-sources/:dataSourceId/audio-files/stream', async (context) => {
+      const dataSourceId = id(context.req.param('dataSourceId'));
+      const subscription = liveUpdates.subscribe(
+        (event) => event.kind === 'data-source-audio' && event.dataSourceId === dataSourceId,
+      );
+      let snapshot;
+      try {
+        snapshot = await workspace.listDataSourceAudioFiles(dataSourceId);
+      } catch (error) {
+        subscription.close();
+        throw error;
+      }
+      context.header('Cache-Control', 'private, no-cache, no-transform');
+      context.header('Content-Encoding', 'Identity');
+      context.header('X-Accel-Buffering', 'no');
+      return streamSSE(context, async (eventStream) => {
+        try {
+          const initial = DataSourceAudioStreamEventSchema.parse({
+            type: 'snapshot',
+            cursor: nextLiveCursor(),
+            occurredAt: occurredAt(),
+            dataSourceId,
+            items: snapshot.items,
+          });
+          await eventStream.writeSSE({
+            id: initial.cursor,
+            event: initial.type,
+            data: JSON.stringify(initial),
+          });
+          while (!eventStream.aborted) {
+            const signal = await subscription.wait(15_000);
+            if (!signal) {
+              const heartbeat = DataSourceAudioStreamEventSchema.parse({
+                type: 'heartbeat',
+                cursor: nextLiveCursor(),
+                occurredAt: occurredAt(),
+              });
+              await eventStream.writeSSE({
+                id: heartbeat.cursor,
+                event: heartbeat.type,
+                data: JSON.stringify(heartbeat),
+              });
+              continue;
+            }
+            if (signal.kind !== 'data-source-audio') continue;
+            const audioFiles = await workspace.listDataSourceAudioFiles(dataSourceId);
+            const item = audioFiles.items.find((audio) => audio.id === signal.audioFileId) ?? null;
+            const update = DataSourceAudioStreamEventSchema.parse({
+              type: 'audio-file',
+              cursor: nextLiveCursor(),
+              occurredAt: occurredAt(),
+              dataSourceId,
+              audioFileId: signal.audioFileId,
+              item,
+              terminal: signal.terminal,
+            });
+            await eventStream.writeSSE({
+              id: update.cursor,
+              event: update.type,
+              data: JSON.stringify(update),
+            });
+            if (signal.terminal) {
+              const refresh = DataSourceAudioStreamEventSchema.parse({
+                type: 'refresh',
+                cursor: nextLiveCursor(),
+                occurredAt: occurredAt(),
+                dataSourceId,
+              });
+              await eventStream.writeSSE({
+                id: refresh.cursor,
+                event: refresh.type,
+                data: JSON.stringify(refresh),
+              });
+            }
+          }
+        } catch {
+          if (!eventStream.aborted) {
+            const failure = DataSourceAudioStreamEventSchema.parse({
+              type: 'error',
+              cursor: nextLiveCursor(),
+              occurredAt: occurredAt(),
+              error: {
+                code: 'STREAM_UNAVAILABLE',
+                message: '转写实时状态暂时不可用。',
+                retryable: true,
+              },
+            });
+            await eventStream.writeSSE({
+              id: failure.cursor,
+              event: failure.type,
+              data: JSON.stringify(failure),
+            });
+          }
+        } finally {
+          subscription.close();
+        }
+      });
+    });
     app.post('/api/data-sources/:dataSourceId/audio-files', async (context) => {
       const contentLength = Number(context.req.header('content-length') ?? 0);
       if (contentLength > 201 * 1024 * 1024) {
@@ -335,6 +546,96 @@ export function createApp(
         ),
       );
     });
+    app.get('/api/audio-files/:audioFileId/analysis/status/stream', async (context) => {
+      const audioFileId = id(context.req.param('audioFileId'));
+      const requestedGroupId = context.req.query('groupId');
+      const groupId = requestedGroupId ? id(requestedGroupId) : undefined;
+      const subscription = liveUpdates.subscribe(
+        (event) =>
+          event.kind === 'audio-analysis' &&
+          event.audioFileId === audioFileId &&
+          (event.groupId === null || event.groupId === (groupId ?? null)),
+      );
+      let snapshot;
+      try {
+        snapshot = await workspace.getAudioAnalysis(audioFileId, groupId);
+      } catch (error) {
+        subscription.close();
+        throw error;
+      }
+      context.header('Cache-Control', 'private, no-cache, no-transform');
+      context.header('Content-Encoding', 'Identity');
+      context.header('X-Accel-Buffering', 'no');
+      return streamSSE(context, async (eventStream) => {
+        try {
+          const initial = AudioAnalysisStatusStreamEventSchema.parse({
+            type: 'snapshot',
+            cursor: nextLiveCursor(),
+            occurredAt: occurredAt(),
+            audioFileId,
+            analysisRevisionId: snapshot.id,
+            state: analysisLiveState(snapshot),
+          });
+          await eventStream.writeSSE({
+            id: initial.cursor,
+            event: initial.type,
+            data: JSON.stringify(initial),
+          });
+          while (!eventStream.aborted) {
+            const signal = await subscription.wait(15_000);
+            if (!signal) {
+              const heartbeat = AudioAnalysisStatusStreamEventSchema.parse({
+                type: 'heartbeat',
+                cursor: nextLiveCursor(),
+                occurredAt: occurredAt(),
+              });
+              await eventStream.writeSSE({
+                id: heartbeat.cursor,
+                event: heartbeat.type,
+                data: JSON.stringify(heartbeat),
+              });
+              continue;
+            }
+            if (signal.kind !== 'audio-analysis') continue;
+            const detail = await workspace.getAudioAnalysis(audioFileId, groupId);
+            const update = AudioAnalysisStatusStreamEventSchema.parse({
+              type: 'analysis-status',
+              cursor: nextLiveCursor(),
+              occurredAt: occurredAt(),
+              audioFileId,
+              analysisRevisionId: detail.id,
+              state: analysisLiveState(detail),
+              terminal: signal.terminal,
+            });
+            await eventStream.writeSSE({
+              id: update.cursor,
+              event: update.type,
+              data: JSON.stringify(update),
+            });
+          }
+        } catch {
+          if (!eventStream.aborted) {
+            const failure = AudioAnalysisStatusStreamEventSchema.parse({
+              type: 'error',
+              cursor: nextLiveCursor(),
+              occurredAt: occurredAt(),
+              error: {
+                code: 'STREAM_UNAVAILABLE',
+                message: '分析实时状态暂时不可用。',
+                retryable: true,
+              },
+            });
+            await eventStream.writeSSE({
+              id: failure.cursor,
+              event: failure.type,
+              data: JSON.stringify(failure),
+            });
+          }
+        } finally {
+          subscription.close();
+        }
+      });
+    });
     app.get('/api/audio-files/:audioFileId/analysis/executions', async (context) => {
       const requestedGroupId = context.req.query('groupId');
       return context.json(
@@ -356,7 +657,16 @@ export function createApp(
       ) {
         return context.json(errorBody('BAD_REQUEST', '请求参数无效。'), 400);
       }
-      const snapshot = await workspace.getAudioExecutionStreamSnapshot(audioFileId, groupId);
+      const subscription = liveUpdates.subscribe(
+        (event) => event.kind === 'audio-execution' && event.audioFileId === audioFileId,
+      );
+      let snapshot;
+      try {
+        snapshot = await workspace.getAudioExecutionStreamSnapshot(audioFileId, groupId);
+      } catch (error) {
+        subscription.close();
+        throw error;
+      }
       context.header('Cache-Control', 'private, no-cache, no-transform');
       context.header('Content-Encoding', 'Identity');
       context.header('X-Accel-Buffering', 'no');
@@ -372,55 +682,59 @@ export function createApp(
             data: JSON.stringify(snapshot),
           });
         }
-        while (!eventStream.aborted) {
-          try {
-            const events = await workspace.getAudioExecutionStreamEvents(
-              audioFileId,
-              snapshot.analysisRevisionId,
-              groupId,
-              cursor,
-            );
-            for (const event of events) {
-              cursor = event.cursor;
-              await eventStream.writeSSE({
-                id: event.cursor,
-                event: event.type,
-                data: JSON.stringify(event),
-              });
-            }
-            if (Date.now() - lastHeartbeatAt >= 15_000) {
-              lastHeartbeatAt = Date.now();
+        try {
+          while (!eventStream.aborted) {
+            const signal = await subscription.wait(15_000);
+            try {
+              const events = await workspace.getAudioExecutionStreamEvents(
+                audioFileId,
+                snapshot.analysisRevisionId,
+                groupId,
+                cursor,
+              );
+              for (const event of events) {
+                cursor = event.cursor;
+                await eventStream.writeSSE({
+                  id: event.cursor,
+                  event: event.type,
+                  data: JSON.stringify(event),
+                });
+              }
+              if (!signal || Date.now() - lastHeartbeatAt >= 15_000) {
+                lastHeartbeatAt = Date.now();
+                await eventStream.writeSSE({
+                  id: cursor,
+                  event: 'heartbeat',
+                  data: JSON.stringify({
+                    type: 'heartbeat',
+                    cursor,
+                    audioFileId,
+                    analysisRevisionId: snapshot.analysisRevisionId,
+                    occurredAt: new Date().toISOString(),
+                  }),
+                });
+              }
+            } catch {
               await eventStream.writeSSE({
                 id: cursor,
-                event: 'heartbeat',
+                event: 'error',
                 data: JSON.stringify({
-                  type: 'heartbeat',
+                  type: 'error',
                   cursor,
                   audioFileId,
                   analysisRevisionId: snapshot.analysisRevisionId,
-                  occurredAt: new Date().toISOString(),
+                  error: {
+                    code: 'STREAM_UNAVAILABLE',
+                    message: '模型执行实时流暂时不可用。',
+                    retryable: true,
+                  },
                 }),
               });
+              break;
             }
-          } catch {
-            await eventStream.writeSSE({
-              id: cursor,
-              event: 'error',
-              data: JSON.stringify({
-                type: 'error',
-                cursor,
-                audioFileId,
-                analysisRevisionId: snapshot.analysisRevisionId,
-                error: {
-                  code: 'STREAM_UNAVAILABLE',
-                  message: '模型执行实时流暂时不可用。',
-                  retryable: true,
-                },
-              }),
-            });
-            break;
           }
-          await eventStream.sleep(500);
+        } finally {
+          subscription.close();
         }
       });
     });

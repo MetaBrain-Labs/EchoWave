@@ -20,6 +20,7 @@ import {
   type AiExecutionRecorder,
   type AiExecutionReporter,
 } from '../../ai-observability/executionReporter.ts';
+import type { LiveUpdateBroker } from '../../infrastructure/liveUpdateBroker.ts';
 import {
   AudioAnalysisRepository,
   type ClaimedAudioTranscription,
@@ -43,6 +44,7 @@ type WorkerOptions = {
   preprocessor: AudioInputPreprocessor;
   repository: AudioAnalysisRepository;
   reporter?: AiExecutionReporter;
+  liveUpdates?: LiveUpdateBroker;
 };
 
 type WorkItem =
@@ -131,6 +133,7 @@ export class AudioTranscriptionWorker {
     try {
       const work = await this.claimWork();
       if (!work) return;
+      if (work.kind !== 'poll') this.notify(work.job, false);
       const execution = this.execute(work).finally(() => {
         if (this.active === execution) this.active = undefined;
         if (!this.stopping) void this.pump();
@@ -143,6 +146,16 @@ export class AudioTranscriptionWorker {
     } finally {
       this.pumping = false;
     }
+  }
+
+  private notify(job: ClaimedAudioTranscription, terminal: boolean): void {
+    if (!job.dataSource) return;
+    this.options.liveUpdates?.publish({
+      kind: 'data-source-audio',
+      dataSourceId: job.dataSource.id,
+      audioFileId: job.audioFileId,
+      terminal,
+    });
   }
 
   private async claimWork(): Promise<WorkItem | undefined> {
@@ -245,6 +258,7 @@ export class AudioTranscriptionWorker {
     if (!objectKey) {
       const wholeFile = await reportedStep(report, 'preprocess-whole-file', async () => {
         await repository.updateActivity(job, { stage: 'preprocessing', progress: 5 });
+        this.notify(job, false);
         return preprocessor.createWholeFile(job);
       });
       objectKey = await reportedStep(report, 'oss-staging-upload', () =>
@@ -257,6 +271,7 @@ export class AudioTranscriptionWorker {
 
     const providerDurationMs = job.preprocessingManifest?.processedDurationMs ?? job.durationMs;
     await repository.updateActivity(job, { stage: 'transcribing', progress: 15 });
+    this.notify(job, false);
     const taskId = await reportedStep(report, 'dashscope-submit', () =>
       dashScope.submit(ossStaging.signedGetUrl(objectKey!), {
         revisionId: job.revisionId,
@@ -269,6 +284,7 @@ export class AudioTranscriptionWorker {
     job.providerTaskId = taskId;
     job.providerSubmittedAt = submittedAt;
     await repository.updateActivity(job, { stage: 'awaiting_result', progress: 35 });
+    this.notify(job, false);
   }
 
   /** 执行一次供应商状态查询；未完成或瞬时失败只安排下一次查询。 */
@@ -391,6 +407,7 @@ export class AudioTranscriptionWorker {
       }
     }
     await this.options.repository.updateActivity(job, { stage: 'publishing', progress: 95 });
+    this.notify(job, false);
     await reportedStep(report, 'publish', () =>
       this.options.repository.publishTranscription(job, segments, {
         language: AUDIO_TRANSCRIPTION_LANGUAGE,
@@ -401,6 +418,7 @@ export class AudioTranscriptionWorker {
         speakerIdentityScope: 'recording',
       }),
     );
+    this.notify(job, true);
     await this.cleanupProviderArtifact(job, report);
     await this.options.preprocessor.cleanup(job);
     report.recordOutput(segments);
@@ -426,6 +444,7 @@ export class AudioTranscriptionWorker {
     let persistenceError: unknown;
     try {
       await this.options.repository.failTranscription(job, code, message, retryable, details);
+      this.notify(job, true);
       report.recordStep({ name: 'persist-failure', status: 'completed' });
     } catch (reason) {
       persistenceError = reason;

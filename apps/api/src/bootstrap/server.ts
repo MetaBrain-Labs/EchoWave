@@ -32,6 +32,7 @@ if (transcriptionCapabilities.ffmpeg.available && !transcriptionCapabilities.sil
 const app = createApp(config, {
   knowledgeService: ragRuntime.service,
   workspaceService: ragRuntime.workspaceService,
+  liveUpdateBroker: ragRuntime.liveUpdates,
   ...(ragRuntime.dashScopeCallbackService
     ? { dashScopeCallbackService: ragRuntime.dashScopeCallbackService }
     : {}),

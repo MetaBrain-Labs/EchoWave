@@ -18,6 +18,7 @@ import {
 import { createSttRawResponseReporter } from '../ai-observability/sttRawResponseReporter.ts';
 import type { ApiConfig } from '../config/env.ts';
 import { createDatabasePool, createPostgresConnectionString } from '../infrastructure/postgres.ts';
+import { LiveUpdateBroker } from '../infrastructure/liveUpdateBroker.ts';
 import { createKnowledgeAnswerModule } from '../knowledge/answer/knowledgeAnswer.ts';
 import { DeepSeekQueryAgent } from '../knowledge/answer/deepSeekQueryAgent.ts';
 import { DashScopeEmbeddings } from '../knowledge/embeddings/dashScopeEmbeddings.ts';
@@ -54,10 +55,12 @@ export function createRagRuntime(config: ApiConfig) {
     outputDirectory: config.aiExecutionReports.outputDirectory,
   });
   const pool = createDatabasePool(config.database);
+  const liveUpdates = new LiveUpdateBroker();
   const audioExecutionRepository = new AudioExecutionRepository(
     pool,
     config.database.schema,
     config.rag.tenantId,
+    liveUpdates,
   );
   const audioExecutionReporter = createCompositeAiExecutionReporter([
     executionReporter,
@@ -72,6 +75,7 @@ export function createRagRuntime(config: ApiConfig) {
     pool,
     config.database.schema,
     config.rag.tenantId,
+    liveUpdates,
   );
   const conversationRepository = new ConversationRepository(
     pool,
@@ -185,6 +189,7 @@ export function createRagRuntime(config: ApiConfig) {
     notifyMode: config.rag.dashScope.asyncNotifyMode,
     preprocessor: audioInputPreprocessor,
     reporter: audioExecutionReporter,
+    liveUpdates,
     ...(ossStaging ? { ossStaging } : {}),
   });
   const dashScopeCallbackService =
@@ -209,6 +214,7 @@ export function createRagRuntime(config: ApiConfig) {
     repository: postAnalysisRepository,
     preprocessor: audioWindowPreprocessor,
     reporter: audioExecutionReporter,
+    liveUpdates,
     emotionAnalyzer: new QwenEmotionAnalyzer({
       apiKey: config.rag.dashScope.apiKey,
       baseUrl: config.rag.dashScope.compatibleBaseUrl,
@@ -220,6 +226,7 @@ export function createRagRuntime(config: ApiConfig) {
     type: 'role',
     repository: postAnalysisRepository,
     reporter: audioExecutionReporter,
+    liveUpdates,
     roleRecognizer: new DeepSeekRoleRecognizer({
       apiKey: config.rag.deepSeekApiKey,
       baseUrl: config.rag.deepSeekBaseUrl,
@@ -233,6 +240,7 @@ export function createRagRuntime(config: ApiConfig) {
     embeddingModel: config.rag.embeddingModel,
     agent: new SalesAnalysisAgent({ ragConfig: config.rag }),
     reporter: audioExecutionReporter,
+    liveUpdates,
   });
   return {
     service,
@@ -244,6 +252,7 @@ export function createRagRuntime(config: ApiConfig) {
     roleWorker,
     businessAnalysisWorker,
     audioInputPreprocessor,
+    liveUpdates,
     async close() {
       await answers.dispose();
       await transcriptionWorker.stop();

@@ -18,6 +18,7 @@ import {
   type AiExecutionRecorder,
   type AiExecutionReporter,
 } from '../../ai-observability/executionReporter.ts';
+import type { LiveUpdateBroker } from '../../infrastructure/liveUpdateBroker.ts';
 import {
   type ClaimedPostAnalysisJob,
   type EmotionPublication,
@@ -65,6 +66,7 @@ type WorkerOptions = {
   preprocessor?: AudioWindowPreprocessor;
   ossStaging?: OssStagingStore;
   reporter?: AiExecutionReporter;
+  liveUpdates?: LiveUpdateBroker;
 };
 
 /** 周期领取并执行一种后置分析任务。 */
@@ -101,6 +103,7 @@ export class AudioPostAnalysisWorker {
     try {
       const job = await this.options.repository.claim(this.options.type);
       if (!job) return;
+      this.notify(job, false);
       const execution = this.execute(job).finally(() => {
         if (this.active === execution) this.active = undefined;
         if (!this.stopping) void this.pump();
@@ -114,6 +117,15 @@ export class AudioPostAnalysisWorker {
     } finally {
       this.pumping = false;
     }
+  }
+
+  private notify(job: ClaimedPostAnalysisJob, terminal: boolean): void {
+    this.options.liveUpdates?.publish({
+      kind: 'audio-analysis',
+      audioFileId: job.audioFileId,
+      groupId: null,
+      terminal,
+    });
   }
 
   private async execute(job: ClaimedPostAnalysisJob): Promise<void> {
@@ -158,6 +170,7 @@ export class AudioPostAnalysisWorker {
       let failurePersistenceError: unknown;
       try {
         await this.options.repository.fail(job.id, code, message, retryable);
+        this.notify(job, true);
       } catch (persistenceError) {
         // 数据库故障不得阻止模型失败报告落盘，二者各自保留诊断信号。
         failurePersistenceError = persistenceError;
@@ -198,7 +211,9 @@ export class AudioPostAnalysisWorker {
       report,
     );
     await this.options.repository.updateProgress(job.id, 95);
+    this.notify(job, false);
     await this.options.repository.publishRoles(job, results);
+    this.notify(job, true);
     report.recordOutput(results);
   }
 
@@ -222,6 +237,7 @@ export class AudioPostAnalysisWorker {
         job.id,
         5 + (results.length / job.segments.length) * 88,
       );
+      this.notify(job, false);
     }
     const unique = new Map(results.map((result) => [result.segmentId, result]));
     if (unique.size !== job.segments.length) {
@@ -232,7 +248,9 @@ export class AudioPostAnalysisWorker {
       );
     }
     await this.options.repository.updateProgress(job.id, 95);
+    this.notify(job, false);
     await this.options.repository.publishEmotion(job, [...unique.values()]);
+    this.notify(job, true);
     report.recordOutput([...unique.values()]);
   }
 
