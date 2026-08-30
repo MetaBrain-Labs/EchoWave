@@ -161,7 +161,7 @@ erDiagram
 - `staged_path`：临时文件位置。
 - 结构化错误字段。
 
-领取索引配合 `FOR UPDATE SKIP LOCKED` 和租约机制，允许 worker 安全领取待处理任务并恢复过期任务。
+领取索引配合 `FOR UPDATE SKIP LOCKED` 和租约机制，允许 worker 安全领取待处理任务并恢复过期任务。迁移 019 在知识入库、音频转写、音频后处理和业务分析任务表上增加提交后通知触发器；通知只包含 schema、租户和队列名，用于低延迟唤醒，不创建第二套队列表，也不改变任务状态的权威来源。
 
 ### `rag_conversations`
 

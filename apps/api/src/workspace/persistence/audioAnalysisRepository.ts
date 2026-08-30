@@ -413,6 +413,30 @@ export class AudioAnalysisRepository {
     return this.mapClaimedTranscription(row);
   }
 
+  /** 返回最近的供应商查询或六小时超时截止点，避免固定高频扫描时间驱动任务。 */
+  async nextWorkerWakeAt(notifyMode: 'polling' | 'eventbridge'): Promise<Date | undefined> {
+    const result = await this.pool.query(
+      `SELECT min(wake_at) AS wake_at
+       FROM (
+         SELECT provider_submitted_at + interval '6 hours' AS wake_at
+         FROM ${this.table('audio_analysis_revisions')}
+         WHERE tenant_id = $1 AND transcription_provider = 'dashscope'
+           AND status = 'transcribing' AND provider_task_id IS NOT NULL
+           AND provider_terminal_received_at IS NULL AND provider_submitted_at IS NOT NULL
+         UNION ALL
+         SELECT provider_next_poll_at AS wake_at
+         FROM ${this.table('audio_analysis_revisions')}
+         WHERE $2 = 'polling' AND tenant_id = $1 AND transcription_provider = 'dashscope'
+           AND status = 'transcribing' AND provider_task_id IS NOT NULL
+           AND provider_terminal_received_at IS NULL AND provider_next_poll_at IS NOT NULL
+           AND processing_stage = 'awaiting_result'
+       ) deadlines`,
+      [this.tenantId, notifyMode],
+    );
+    const wakeAt = result.rows[0]?.wake_at;
+    return wakeAt ? new Date(wakeAt as string | Date) : undefined;
+  }
+
   private mapClaimedTranscription(row: Record<string, any>): ClaimedAudioTranscription {
     return {
       audioFileId: row.audio_file_id,

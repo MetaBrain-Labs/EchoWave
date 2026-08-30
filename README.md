@@ -77,7 +77,7 @@ FFmpeg 是整文件转写的必需能力。配置 `FFMPEG_PATH` 后，API 启动
 
 按说话轮次分段使用北京地域 `qwen-audio-3.0-asr-flash-filetrans`。`DASHSCOPE_API_KEY` 和 `DASHSCOPE_BASE_URL` 始终必填，供知识库嵌入和转写复用；四项 `ALIYUN_OSS_*` 配置必须全部为空或全部配置。`DASHSCOPE_ASYNC_NOTIFY_MODE` 必须显式选择 `polling` 或 `eventbridge`：本地与测试建议使用 `polling`，并保持两个回调变量为空；生产可使用 `eventbridge`，此时必须成对配置 `DASHSCOPE_EVENTBRIDGE_CALLBACK_URL` 与 `DASHSCOPE_EVENTBRIDGE_CALLBACK_TOKEN`。服务端把本地权威音频转成单声道整文件后，临时上传到 `echowave/asr-staging/<tenant>/<revision>/`，使用 24 小时签名 GET URL 提交任务，并在成功或失败后尽力删除。OSS Bucket 必须另外配置该前缀的一天生命周期规则作为清理兜底。
 
-`polling` 模式每次只查询一次 DashScope 任务状态，按 2/5/10/15 秒递增间隔把下次查询时间写入数据库并释放 worker，六小时后停止查询。`eventbridge` 模式的回调地址固定指向 `POST /api/webhooks/dashscope/async-task-finished`；在华北 2（北京）地域 default 事件总线创建规则，筛选 `source=acs.dashscope`、`type=dashscope:System:AsyncTaskFinish` 和模型后缀 `:qwen-audio-3.0-asr-flash-filetrans`，HTTP 目标选择“完整事件”并填写相同 Token。回调 URL 必须可由 EventBridge 通过公网或已配置 VPC 访问；反向代理后的外部完整 URL 必须与环境变量和 EventBridge 目标完全一致。`AUDIO_TRANSCRIPTION_MAX_IN_FLIGHT` 同时约束两种模式中等待供应商终态的任务数，首次部署建议保持 `1`。
+`polling` 模式每次只查询一次 DashScope 任务状态，按 2/5/10/15 秒递增间隔把下次查询时间写入数据库并释放 worker，worker 按最近持久化截止时间精确唤醒，六小时后停止查询。所有后台任务在事务提交后通过 PostgreSQL `LISTEN/NOTIFY` 低延迟唤醒，15 秒扫描只作为通知丢失、监听重连和进程恢复的安全兜底；任务表与 `FOR UPDATE SKIP LOCKED` 仍是权威事实和领取机制。该监听固定占用连接池中的一个连接。`eventbridge` 模式的回调地址固定指向 `POST /api/webhooks/dashscope/async-task-finished`；在华北 2（北京）地域 default 事件总线创建规则，筛选 `source=acs.dashscope`、`type=dashscope:System:AsyncTaskFinish` 和模型后缀 `:qwen-audio-3.0-asr-flash-filetrans`，HTTP 目标选择“完整事件”并填写相同 Token。回调 URL 必须可由 EventBridge 通过公网或已配置 VPC 访问；反向代理后的外部完整 URL 必须与环境变量和 EventBridge 目标完全一致。`AUDIO_TRANSCRIPTION_MAX_IN_FLIGHT` 同时约束两种模式中等待供应商终态的任务数，首次部署建议保持 `1`。
 
 转写发布后，供应商正文作为不可变 Raw Transcript 保存，移动端允许用户逐片段修正并确认；每次确认生成完整、不可变的 Confirmed Transcript 版本。只有完成确认后才能独立启动情绪分析和角色识别，任务会固化排队时使用的确认版本。再次修正不会清除或自动重跑既有情绪、角色结果，用户可按需手动重跑。情绪分析固定使用北京地域 `qwen3.5-omni-flash`，通过 `DASHSCOPE_COMPATIBLE_BASE_URL` 的 OpenAI-compatible Chat Completions 接收短期 OSS 音频窗口；角色识别复用官方 DeepSeek `deepseek-v4-flash`。两类任务各自单并发运行并按 ASR revision 发布，情绪窗口使用 `echowave/emotion-staging/` 前缀，同样需要 Bucket 一天生命周期规则兜底。
 
@@ -238,7 +238,7 @@ pnpm check
 - 分组内跨标签搜索、音频创建时间排序与多状态筛选
 - 音频完成、跨分组、待分析、上传中、分析中状态示例
 - 分组、知识库、新建、分析、更多五项导航
-- Markdown、DOCX、XLSX 单文件上传、异步解析、分块、嵌入与状态轮询
+- Markdown、DOCX、XLSX 单文件上传、异步解析、分块、嵌入与 SSE 状态增量（REST 降级）
 - PostgreSQL 租户隔离、revision 原子发布、HNSW 检索和引用回溯
 - PostgreSQL 数据源创建、编辑、软归档、分组关联/解除，以及本地批量音频上传与软归档
 - PostgreSQL 音频上传时间线和版本化分析结果查询纵切片

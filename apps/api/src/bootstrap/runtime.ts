@@ -19,6 +19,7 @@ import { createSttRawResponseReporter } from '../ai-observability/sttRawResponse
 import type { ApiConfig } from '../config/env.ts';
 import { createDatabasePool, createPostgresConnectionString } from '../infrastructure/postgres.ts';
 import { LiveUpdateBroker } from '../infrastructure/liveUpdateBroker.ts';
+import { PostgresWorkerWakeup } from '../infrastructure/workerWakeup.ts';
 import { createKnowledgeAnswerModule } from '../knowledge/answer/knowledgeAnswer.ts';
 import { DeepSeekQueryAgent } from '../knowledge/answer/deepSeekQueryAgent.ts';
 import { DashScopeEmbeddings } from '../knowledge/embeddings/dashScopeEmbeddings.ts';
@@ -56,6 +57,7 @@ export function createRagRuntime(config: ApiConfig) {
   });
   const pool = createDatabasePool(config.database);
   const liveUpdates = new LiveUpdateBroker();
+  const workerWakeup = new PostgresWorkerWakeup(pool, config.database.schema, config.rag.tenantId);
   const audioExecutionRepository = new AudioExecutionRepository(
     pool,
     config.database.schema,
@@ -143,6 +145,7 @@ export function createRagRuntime(config: ApiConfig) {
     uploadTempDirectory: config.rag.uploadTempDir,
     concurrency: 2,
     reporter: executionReporter,
+    wakeup: workerWakeup,
   });
   const service = new DefaultKnowledgeService(
     knowledgeRepository,
@@ -190,6 +193,7 @@ export function createRagRuntime(config: ApiConfig) {
     preprocessor: audioInputPreprocessor,
     reporter: audioExecutionReporter,
     liveUpdates,
+    wakeup: workerWakeup,
     ...(ossStaging ? { ossStaging } : {}),
   });
   const dashScopeCallbackService =
@@ -215,6 +219,7 @@ export function createRagRuntime(config: ApiConfig) {
     preprocessor: audioWindowPreprocessor,
     reporter: audioExecutionReporter,
     liveUpdates,
+    wakeup: workerWakeup,
     emotionAnalyzer: new QwenEmotionAnalyzer({
       apiKey: config.rag.dashScope.apiKey,
       baseUrl: config.rag.dashScope.compatibleBaseUrl,
@@ -227,6 +232,7 @@ export function createRagRuntime(config: ApiConfig) {
     repository: postAnalysisRepository,
     reporter: audioExecutionReporter,
     liveUpdates,
+    wakeup: workerWakeup,
     roleRecognizer: new DeepSeekRoleRecognizer({
       apiKey: config.rag.deepSeekApiKey,
       baseUrl: config.rag.deepSeekBaseUrl,
@@ -241,6 +247,7 @@ export function createRagRuntime(config: ApiConfig) {
     agent: new SalesAnalysisAgent({ ragConfig: config.rag }),
     reporter: audioExecutionReporter,
     liveUpdates,
+    wakeup: workerWakeup,
   });
   return {
     service,
@@ -253,11 +260,13 @@ export function createRagRuntime(config: ApiConfig) {
     businessAnalysisWorker,
     audioInputPreprocessor,
     liveUpdates,
+    workerWakeup,
     async close() {
       await answers.dispose();
       await transcriptionWorker.stop();
       await Promise.all([emotionWorker.stop(), roleWorker.stop(), businessAnalysisWorker.stop()]);
       await worker.stop();
+      await workerWakeup.close();
       await checkpointer.end();
       await pool.end();
     },

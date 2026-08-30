@@ -9,11 +9,15 @@ create table public.ai_execution_events (
   occurred_at timestamp with time zone not null,
   duration_ms bigint,
   details jsonb not null default '{}'::jsonb,
+  operation_id uuid not null,
+  stream_cursor bigint not null,
   foreign key (tenant_id, execution_run_id) references public.ai_execution_runs (tenant_id, id)
   match simple on update no action on delete cascade
 );
 create unique index ai_execution_events_tenant_id_execution_run_id_sequence_no_key on ai_execution_events using btree (tenant_id, execution_run_id, sequence_no);
 create index ai_execution_events_run_sequence_idx on ai_execution_events using btree (tenant_id, execution_run_id, sequence_no);
+create unique index ai_execution_events_stream_cursor_idx on ai_execution_events using btree (stream_cursor);
+create index ai_execution_events_run_operation_idx on ai_execution_events using btree (tenant_id, execution_run_id, operation_id, sequence_no);
 
 create table public.ai_execution_runs (
   id uuid primary key not null default gen_random_uuid(),

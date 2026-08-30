@@ -49,6 +49,7 @@ const shutdown = createGracefulShutdown({
 let startupCompleted = false;
 try {
   await startWorkersAfterListening(server, async () => {
+    await ragRuntime.workerWakeup.start();
     ragRuntime.worker.start();
     await ragRuntime.transcriptionWorker.start();
     await Promise.all([

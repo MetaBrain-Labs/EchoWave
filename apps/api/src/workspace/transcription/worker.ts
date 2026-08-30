@@ -1,7 +1,7 @@
 /**
  * DashScope 音频转写后台 worker。
  *
- * 周期领取 PostgreSQL 中的 revision，将供应商任务拆为提交、终态发现和统一完成阶段；
+ * 按数据库通知领取 PostgreSQL 中的 revision，将供应商任务拆为提交、终态发现和统一完成阶段；
  * Polling 与 EventBridge 只负责发现终态，结果处理始终走同一后台路径。
  *
  * Responsibilities:
@@ -11,6 +11,7 @@
  *
  * Notes:
  * - 当前本地文件存储只支持单 API 实例；提交与完成阶段均保持单 worker 执行。
+ * - 供应商查询按持久化截止时间精确唤醒，15 秒安全扫描仅负责通知或定时器遗漏恢复。
  */
 import type { AudioFailureDetails } from '@echowave/contracts';
 
@@ -21,6 +22,7 @@ import {
   type AiExecutionReporter,
 } from '../../ai-observability/executionReporter.ts';
 import type { LiveUpdateBroker } from '../../infrastructure/liveUpdateBroker.ts';
+import type { WorkerWakeupSource } from '../../infrastructure/workerWakeup.ts';
 import {
   AudioAnalysisRepository,
   type ClaimedAudioTranscription,
@@ -35,6 +37,8 @@ import { restoreOriginalTimeline, VoiceActivityError } from './voiceActivity.ts'
 
 const AUDIO_TRANSCRIPTION_LANGUAGE = 'zh' as const;
 const POLL_DELAYS_MS = [2_000, 5_000, 10_000, 15_000] as const;
+const SAFETY_POLL_INTERVAL_MS = 15_000;
+const MIN_DEADLINE_DELAY_MS = 50;
 
 type WorkerOptions = {
   dashScope: DashScopeFileTranscription;
@@ -45,6 +49,7 @@ type WorkerOptions = {
   repository: AudioAnalysisRepository;
   reporter?: AiExecutionReporter;
   liveUpdates?: LiveUpdateBroker;
+  wakeup?: WorkerWakeupSource;
 };
 
 type WorkItem =
@@ -106,15 +111,22 @@ export class AudioTranscriptionWorker {
   private pumping = false;
   private stopping = false;
   private timer?: NodeJS.Timeout;
+  private deadlineTimer?: NodeJS.Timeout;
+  private deadlineVersion = 0;
+  private unsubscribeWakeup?: () => void;
 
   constructor(private readonly options: WorkerOptions) {}
 
-  /** 恢复中断阶段并启动终态完成、Polling、超时和新提交的周期领取。 */
+  /** 恢复中断阶段并启动通知订阅、精确截止时间调度与低频安全扫描。 */
   async start(): Promise<void> {
     if (this.timer) return;
     this.stopping = false;
     await this.options.repository.resetInterruptedTranscriptions(this.options.notifyMode);
-    this.timer = setInterval(() => void this.pump(), 750);
+    this.unsubscribeWakeup = this.options.wakeup?.subscribe(
+      'audio-transcription',
+      () => void this.pump(),
+    );
+    this.timer = setInterval(() => void this.pump(), SAFETY_POLL_INTERVAL_MS);
     this.timer.unref();
     void this.pump();
   }
@@ -122,17 +134,27 @@ export class AudioTranscriptionWorker {
   /** 停止领取新阶段并等待当前阶段安全收敛。 */
   async stop(): Promise<void> {
     this.stopping = true;
+    this.unsubscribeWakeup?.();
+    this.unsubscribeWakeup = undefined;
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
+    if (this.deadlineTimer) clearTimeout(this.deadlineTimer);
+    this.deadlineTimer = undefined;
+    this.deadlineVersion += 1;
     if (this.active) await Promise.allSettled([this.active]);
   }
 
   private async pump(): Promise<void> {
     if (this.pumping || this.stopping || this.active) return;
+    if (this.deadlineTimer) clearTimeout(this.deadlineTimer);
+    this.deadlineTimer = undefined;
+    this.deadlineVersion += 1;
     this.pumping = true;
+    let claimed = false;
     try {
       const work = await this.claimWork();
       if (!work) return;
+      claimed = true;
       if (work.kind !== 'poll') this.notify(work.job, false);
       const execution = this.execute(work).finally(() => {
         if (this.active === execution) this.active = undefined;
@@ -145,6 +167,33 @@ export class AudioTranscriptionWorker {
       });
     } finally {
       this.pumping = false;
+      if (!claimed && !this.stopping) void this.scheduleNextDeadline();
+    }
+  }
+
+  /** 为供应商 Polling 与六小时超时设置最近截止时间；失败时由低频安全扫描恢复。 */
+  private async scheduleNextDeadline(): Promise<void> {
+    if (this.deadlineTimer) clearTimeout(this.deadlineTimer);
+    this.deadlineTimer = undefined;
+    if (this.stopping) return;
+    const deadlineVersion = ++this.deadlineVersion;
+    // 测试替身和旧的运行时装配可能尚未实现截止时间查询；此时仍由安全扫描兜底。
+    if (typeof this.options.repository.nextWorkerWakeAt !== 'function') return;
+    try {
+      const wakeAt = await this.options.repository.nextWorkerWakeAt(this.options.notifyMode);
+      if (deadlineVersion !== this.deadlineVersion || !wakeAt || this.stopping || this.active) {
+        return;
+      }
+      const delay = Math.max(MIN_DEADLINE_DELAY_MS, wakeAt.getTime() - Date.now());
+      this.deadlineTimer = setTimeout(() => {
+        this.deadlineTimer = undefined;
+        void this.pump();
+      }, delay);
+      this.deadlineTimer.unref();
+    } catch (error) {
+      console.warn('Failed to schedule audio transcription deadline', {
+        error: error instanceof Error ? error.name : 'UnknownError',
+      });
     }
   }
 

@@ -10,6 +10,7 @@
  *
  * Notes:
  * - Worker 不修改 ASR、确认转写或后置识别结果。
+ * - PostgreSQL 通知负责低延迟唤醒，15 秒安全扫描负责通知遗漏恢复。
  */
 import type { DashScopeEmbeddings } from '../../knowledge/embeddings/dashScopeEmbeddings.ts';
 import {
@@ -19,6 +20,7 @@ import {
   type AiExecutionReporter,
 } from '../../ai-observability/executionReporter.ts';
 import type { LiveUpdateBroker } from '../../infrastructure/liveUpdateBroker.ts';
+import type { WorkerWakeupSource } from '../../infrastructure/workerWakeup.ts';
 import type {
   KnowledgeRepository,
   RetrievalChunk,
@@ -36,6 +38,8 @@ const coreSummaryLabels = {
   risks: '风险提示',
   actions: '行动建议',
 } as const;
+
+const SAFETY_POLL_INTERVAL_MS = 15_000;
 
 /** 将模型侧固定英文代码转换为产品侧中文章节标题。 */
 function localizeCoreSummaryTitle(title: string): string {
@@ -74,14 +78,16 @@ type BusinessAnalysisWorkerOptions = {
   agent: SalesAnalysisAgent;
   reporter?: AiExecutionReporter;
   liveUpdates?: LiveUpdateBroker;
+  wakeup?: WorkerWakeupSource;
 };
 
-/** 单并发轮询并执行销售复盘任务。 */
+/** 由数据库通知优先唤醒、单并发执行销售复盘任务。 */
 export class BusinessAnalysisWorker {
   private active?: Promise<void>;
   private pumping = false;
   private stopping = false;
   private timer?: NodeJS.Timeout;
+  private unsubscribeWakeup?: () => void;
 
   constructor(private readonly options: BusinessAnalysisWorkerOptions) {}
 
@@ -89,13 +95,19 @@ export class BusinessAnalysisWorker {
     if (this.timer) return;
     this.stopping = false;
     await this.options.repository.resetInterrupted();
-    this.timer = setInterval(() => void this.pump(), 750);
+    this.unsubscribeWakeup = this.options.wakeup?.subscribe(
+      'audio-business-analysis',
+      () => void this.pump(),
+    );
+    this.timer = setInterval(() => void this.pump(), SAFETY_POLL_INTERVAL_MS);
     this.timer.unref();
     void this.pump();
   }
 
   async stop(): Promise<void> {
     this.stopping = true;
+    this.unsubscribeWakeup?.();
+    this.unsubscribeWakeup = undefined;
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
     if (this.active) await Promise.allSettled([this.active]);

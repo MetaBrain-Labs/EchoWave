@@ -13,6 +13,26 @@ const audioFileId = '40000000-0000-4000-8000-000000000001';
 const revisionId = '50000000-0000-4000-8000-000000000001';
 
 describe('AudioAnalysisRepository', () => {
+  it('returns the nearest provider polling or timeout deadline', async () => {
+    const calls = [];
+    const wakeAt = new Date('2026-08-30T08:00:00.000Z');
+    const repository = new AudioAnalysisRepository(
+      {
+        query: async (sql, values) => {
+          calls.push({ sql, values });
+          return { rows: [{ wake_at: wakeAt }] };
+        },
+      },
+      'echowave',
+      tenantId,
+    );
+
+    assert.equal((await repository.nextWorkerWakeAt('polling'))?.getTime(), wakeAt.getTime());
+    assert.match(calls[0].sql, /provider_submitted_at \+ interval '6 hours'/);
+    assert.match(calls[0].sql, /provider_next_poll_at/);
+    assert.deepEqual(calls[0].values, [tenantId, 'polling']);
+  });
+
   it('queues a new revision and claims it with SKIP LOCKED', async () => {
     const calls = [];
     const client = {

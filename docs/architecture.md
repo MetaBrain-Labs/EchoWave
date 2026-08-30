@@ -53,15 +53,15 @@ apps/api/src/http ───────> @echowave/contracts <──── apps/
 - 知识库可通过租户隔离的批量接口关联多个活动分组；批量校验和插入在同一事务内完成，重复关联保持幂等。
 - 新音频修订版只有完整写入本次产生的场景和 Raw Transcript 后才替换当前版本指针，并以待确认状态展示；情绪与角色结果分别写入版本化结果表，并在各自事务的最后切换 revision 上的 active 指针。再次确认正文、后处理失败或重跑都不会覆盖旧分析结果，新 ASR revision 也不会读取旧 revision 的确认或后处理指针。
 - 所有仓储 SQL 都包含 `tenant_id`，检索还同时约束知识库和文档当前生效 revision。
-- `ingestion_jobs` 通过 `FOR UPDATE SKIP LOCKED`、租约和幂等 chunk 唯一键恢复执行。
-- 音频转写通过部分唯一索引阻止同一音频并发任务，并用 `FOR UPDATE SKIP LOCKED` 领取。DashScope 的任务 ID、临时 OSS 对象键和提交时间随修订持久化；提交后进入 `awaiting_result` 并释放 worker。Polling 模式只领取已到数据库截止时间的任务并单次查询状态；EventBridge 模式不查询状态，只等待验签回调。单实例重启时只重新排队未完成提交的修订，已有 task ID 的修订恢复对应发现机制，已持久化终态的修订直接重新领取完成阶段。
+- `ingestion_jobs` 通过 `FOR UPDATE SKIP LOCKED`、租约和幂等 chunk 唯一键恢复执行。知识入库、音频转写、情绪、角色和业务分析任务在事务提交后统一发送 PostgreSQL `NOTIFY` 失效信号；同进程 worker 立即尝试领取，15 秒安全扫描只负责通知丢失、监听重连或未知写入路径。通知不携带任务正文，也不替代任务表。
+- 音频转写通过部分唯一索引阻止同一音频并发任务，并用 `FOR UPDATE SKIP LOCKED` 领取。DashScope 的任务 ID、临时 OSS 对象键和提交时间随修订持久化；提交后进入 `awaiting_result` 并释放 worker。Polling 模式只领取已到数据库截止时间的任务并单次查询状态，进程内定时器按全局最近的查询或六小时超时截止点精确唤醒；EventBridge 模式不查询状态，只等待验签回调。进程重启时只重新排队未完成提交的修订，已有 task ID 的修订从持久化截止点恢复对应发现机制，已持久化终态的修订直接重新领取完成阶段。
 - Qwen Filetrans 适配器要求每个非空句子都有 `speaker_id` 与有序有效毫秒时间戳；Speaker 变化、同 Speaker 间隔达到 1500ms 或合并后超过 240 字软上限时创建新段。缺失 Speaker、时间戳异常或乱序直接以 `INVALID_MODEL_OUTPUT` 失败，不进行模型或分段回退。原始 ASR 只产生正文、Speaker 与时间戳，角色和情绪由后处理结果覆盖兼容字段。
 - 情绪 worker 按说话轮次生成最多 5 分钟或 50 个目标片段的窗口，并加入前后各 1 秒上下文。窗口经 FFmpeg 转为音频后暂存到独立 OSS 前缀并交给 Qwen；网络最多重试三次，结构纠正一次，仍无效时递归二分，单片段失败则整项任务失败。
 - 角色 worker 把完整有序转写、每个 `speakerKey`、核心角色和本次数据源角色快照发送给 DeepSeek。输出必须完整覆盖已观察说话人，角色必须在白名单内，证据片段必须属于对应说话人。
 - 转写 worker 将阶段、当前 Chunk/动态总数、音频时间范围、网络尝试和更新时间持久化到当前修订。Polling 和 EventBridge 只负责发现并持久化首个供应商终态，结果下载、结构校验、时间轴恢复、发布与清理由同一完成路径处理；移动端通过单实例进程内事件总线唤醒的 SSE 展示业务进度，REST 仅负责首帧和连接失败后的临时降级。旧修订的结构尝试字段仅作兼容读取。
 - 新 revision 仅在全部向量写入成功后才在单事务中成为 active revision；失败不会使旧内容离线。
 - 原文件使用随机临时路径，发布成功或不可重试失败后删除；超过 24 小时的孤立文件由 worker 清理。
-- 首期只允许单 API 实例。SSE 的进程内事件总线只传递失效信号，PostgreSQL 快照仍是权威状态；扩展到多 API 实例前必须替换为 PostgreSQL `LISTEN/NOTIFY` 或独立消息系统。DashScope 路径的 OSS 仅是带一天生命周期兜底的临时中转，不是权威音频存储；权威对象存储和独立 worker 仍是多实例部署的前置条件。
+- 首期只允许单 API 实例。worker 任务唤醒已使用 PostgreSQL `LISTEN/NOTIFY`，但移动端 SSE 仍使用单实例进程内事件总线，PostgreSQL 快照始终是权威状态；扩展到多 API 实例前仍需为 SSE 失效信号引入跨实例分发，并把本地权威音频和临时处理文件迁移到可共享对象存储。DashScope 路径的 OSS 仅是带一天生命周期兜底的临时中转，不是权威音频存储。
 
 ### 为什么保留原生 PostgreSQL 接口
 
