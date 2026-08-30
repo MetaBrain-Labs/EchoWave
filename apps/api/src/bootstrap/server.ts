@@ -32,6 +32,7 @@ if (transcriptionCapabilities.ffmpeg.available && !transcriptionCapabilities.sil
 const app = createApp(config, {
   knowledgeService: ragRuntime.service,
   workspaceService: ragRuntime.workspaceService,
+  liveUpdateBroker: ragRuntime.liveUpdates,
   ...(ragRuntime.dashScopeCallbackService
     ? { dashScopeCallbackService: ragRuntime.dashScopeCallbackService }
     : {}),
@@ -48,6 +49,7 @@ const shutdown = createGracefulShutdown({
 let startupCompleted = false;
 try {
   await startWorkersAfterListening(server, async () => {
+    await ragRuntime.workerWakeup.start();
     ragRuntime.worker.start();
     await ragRuntime.transcriptionWorker.start();
     await Promise.all([

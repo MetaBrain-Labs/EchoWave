@@ -15,7 +15,8 @@ import { DocumentParseError } from './parserTypes.ts';
 
 const MAX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024;
 
-export async function inspectOfficeArchive(buffer: Buffer, requiredEntry: string): Promise<void> {
+/** 校验 Office ZIP 容器并返回已完成 CRC 检查的归档，供格式解析器复用。 */
+export async function inspectOfficeArchive(buffer: Buffer, requiredEntry: string): Promise<JSZip> {
   if (buffer[0] !== 0x50 || buffer[1] !== 0x4b) {
     throw new DocumentParseError('INVALID_FILE', 'Office 文件不是有效的 ZIP 容器。');
   }
@@ -37,4 +38,5 @@ export async function inspectOfficeArchive(buffer: Buffer, requiredEntry: string
       throw new DocumentParseError('DOCUMENT_TOO_LARGE', '解压后的文件内容超过 100 MB。');
     }
   }
+  return archive;
 }

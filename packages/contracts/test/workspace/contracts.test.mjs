@@ -28,6 +28,9 @@ import {
   GroupResourceLinksUpdateRequestSchema,
   GroupSettingsUpdateRequestSchema,
   AudioPostAnalysisStartResponseSchema,
+  AudioAnalysisStatusStreamEventSchema,
+  DataSourceAudioStreamEventSchema,
+  KnowledgeDocumentStreamEventSchema,
   AudioTranscriptConfirmationRequestSchema,
 } from '../../dist/index.js';
 
@@ -582,6 +585,61 @@ describe('workspace contracts', () => {
         analysisRevisionId: firstId,
         baseVersion: -1,
         segments: [{ segmentId: secondId, text: '   ' }],
+      }),
+    );
+  });
+
+  it('validates realtime snapshots and rejects unsafe event shapes', () => {
+    const common = { cursor: '1', occurredAt: '2026-08-30T01:00:00.000Z' };
+    const audioSnapshot = DataSourceAudioStreamEventSchema.parse({
+      ...common,
+      type: 'snapshot',
+      dataSourceId: firstId,
+      items: [
+        {
+          id: secondId,
+          sourceId: firstId,
+          title: '访谈录音',
+          durationMs: 1_000,
+          createdAt: common.occurredAt,
+          sharedFrom: null,
+          hasTranscript: false,
+          status: { kind: 'waiting' },
+        },
+      ],
+    });
+    assert.equal(audioSnapshot.items.length, 1);
+
+    const analysisSnapshot = AudioAnalysisStatusStreamEventSchema.parse({
+      ...common,
+      type: 'snapshot',
+      audioFileId: firstId,
+      analysisRevisionId: secondId,
+      state: {
+        emotion: { state: 'idle' },
+        role: { state: 'idle' },
+        business: {
+          state: 'idle',
+          groupId: null,
+          jobId: null,
+          model: null,
+          progress: 0,
+          confirmationVersion: null,
+          settingsCurrent: true,
+          knowledgeCurrent: true,
+          error: null,
+        },
+      },
+    });
+    assert.equal(analysisSnapshot.state.business.state, 'idle');
+
+    assert.throws(() =>
+      KnowledgeDocumentStreamEventSchema.parse({
+        ...common,
+        type: 'document',
+        knowledgeBaseId: firstId,
+        item: { prompt: 'must not be accepted' },
+        terminal: false,
       }),
     );
   });

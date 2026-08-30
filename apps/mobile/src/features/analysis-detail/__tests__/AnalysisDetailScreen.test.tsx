@@ -43,6 +43,12 @@ jest.mock('@/shared/api/audioExecutionStream', () => ({
       new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve())),
   ),
 }));
+jest.mock('@/shared/api/liveUpdateStreams', () => ({
+  streamAudioAnalysisStatus: jest.fn(
+    ({ signal }: { signal: AbortSignal }) =>
+      new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve())),
+  ),
+}));
 
 async function renderAnalysis(
   detailId = analysisFixture.audioFileId,

@@ -77,13 +77,15 @@ FFmpeg 是整文件转写的必需能力。配置 `FFMPEG_PATH` 后，API 启动
 
 按说话轮次分段使用北京地域 `qwen-audio-3.0-asr-flash-filetrans`。`DASHSCOPE_API_KEY` 和 `DASHSCOPE_BASE_URL` 始终必填，供知识库嵌入和转写复用；四项 `ALIYUN_OSS_*` 配置必须全部为空或全部配置。`DASHSCOPE_ASYNC_NOTIFY_MODE` 必须显式选择 `polling` 或 `eventbridge`：本地与测试建议使用 `polling`，并保持两个回调变量为空；生产可使用 `eventbridge`，此时必须成对配置 `DASHSCOPE_EVENTBRIDGE_CALLBACK_URL` 与 `DASHSCOPE_EVENTBRIDGE_CALLBACK_TOKEN`。服务端把本地权威音频转成单声道整文件后，临时上传到 `echowave/asr-staging/<tenant>/<revision>/`，使用 24 小时签名 GET URL 提交任务，并在成功或失败后尽力删除。OSS Bucket 必须另外配置该前缀的一天生命周期规则作为清理兜底。
 
-`polling` 模式每次只查询一次 DashScope 任务状态，按 2/5/10/15 秒递增间隔把下次查询时间写入数据库并释放 worker，六小时后停止查询。`eventbridge` 模式的回调地址固定指向 `POST /api/webhooks/dashscope/async-task-finished`；在华北 2（北京）地域 default 事件总线创建规则，筛选 `source=acs.dashscope`、`type=dashscope:System:AsyncTaskFinish` 和模型后缀 `:qwen-audio-3.0-asr-flash-filetrans`，HTTP 目标选择“完整事件”并填写相同 Token。回调 URL 必须可由 EventBridge 通过公网或已配置 VPC 访问；反向代理后的外部完整 URL 必须与环境变量和 EventBridge 目标完全一致。`AUDIO_TRANSCRIPTION_MAX_IN_FLIGHT` 同时约束两种模式中等待供应商终态的任务数，首次部署建议保持 `1`。
+`polling` 模式每次只查询一次 DashScope 任务状态，按 2/5/10/15 秒递增间隔把下次查询时间写入数据库并释放 worker，worker 按最近持久化截止时间精确唤醒，六小时后停止查询。所有后台任务在事务提交后通过 PostgreSQL `LISTEN/NOTIFY` 低延迟唤醒，15 秒扫描只作为通知丢失、监听重连和进程恢复的安全兜底；任务表与 `FOR UPDATE SKIP LOCKED` 仍是权威事实和领取机制。该监听固定占用连接池中的一个连接。`eventbridge` 模式的回调地址固定指向 `POST /api/webhooks/dashscope/async-task-finished`；在华北 2（北京）地域 default 事件总线创建规则，筛选 `source=acs.dashscope`、`type=dashscope:System:AsyncTaskFinish` 和模型后缀 `:qwen-audio-3.0-asr-flash-filetrans`，HTTP 目标选择“完整事件”并填写相同 Token。回调 URL 必须可由 EventBridge 通过公网或已配置 VPC 访问；反向代理后的外部完整 URL 必须与环境变量和 EventBridge 目标完全一致。`AUDIO_TRANSCRIPTION_MAX_IN_FLIGHT` 同时约束两种模式中等待供应商终态的任务数，首次部署建议保持 `1`。
 
 转写发布后，供应商正文作为不可变 Raw Transcript 保存，移动端允许用户逐片段修正并确认；每次确认生成完整、不可变的 Confirmed Transcript 版本。只有完成确认后才能独立启动情绪分析和角色识别，任务会固化排队时使用的确认版本。再次修正不会清除或自动重跑既有情绪、角色结果，用户可按需手动重跑。情绪分析固定使用北京地域 `qwen3.5-omni-flash`，通过 `DASHSCOPE_COMPATIBLE_BASE_URL` 的 OpenAI-compatible Chat Completions 接收短期 OSS 音频窗口；角色识别复用官方 DeepSeek `deepseek-v4-flash`。两类任务各自单并发运行并按 ASR revision 发布，情绪窗口使用 `echowave/emotion-staging/` 前缀，同样需要 Bucket 一天生命周期规则兜底。
 
 分析详情和数据源音频列表使用 `expo-audio` 播放原始上传文件。API 通过租户隔离的 `GET/HEAD /api/audio-files/:audioFileId/content` 提供媒体流并支持单段 HTTP Range；客户端不会接收 `storage_key` 或服务器路径。详情页顶部播放器提供真实进度、倍速和跳转，正文片段按钮只播放对应时间范围并在片段结束时自动暂停。播放器仅在当前页面前台运行，离页即停止，不启用后台或锁屏播放。
 
 分析详情的“模型详情”标签页按当前 ASR 修订展示转写、情绪、角色和当前分组业务分析的运行记录。它从 PostgreSQL 安全审计表读取模型、状态、耗时、Token、执行步骤、工具调用、检索查询、知识库名称和命中文档定位；不展示模型隐藏推理、完整提示词、原始模型输出或知识块正文。功能上线前的历史运行不会回填或伪造轨迹。
+
+销售复盘使用持久化 LangGraph 组织“准备 → 检索规划 → 并行检索 → DeepAgent 分析 → 结构校验 → 原子发布”。进程中断会使用原 thread 从最后成功节点继续；可重试错误会在 15 秒和 60 秒后最多恢复两次。DeepAgent 保留为原子节点，不对内部模型/工具回合做细粒度恢复。任务终态后会删除 checkpoint，清理失败不影响已发布结果，并在下次 API 启动时补偿。
 
 原音频直传支持 MP3、WAV、M4A、AAC、FLAC、OGG 和 WebM，但仅允许不超过 45 秒且不超过 200 MB 的音频；长音频必须启用 FFmpeg。base64 会使请求体增大约三分之一，供应商拒绝时应重新转写并勾选 FFmpeg，不会自动回退或覆盖旧结果。
 
@@ -127,7 +129,7 @@ FFmpeg 模式将录音转为 16kHz 单声道 64kbps MP3，并按固定 45 秒无
 
 转写只使用 DashScope Filetrans：默认先以 Silero VAD 检测人声，仅压缩连续超过 30 秒的非人声区间，再由 FFmpeg 生成 16kHz 单声道整文件 MP3；用户也可明确选择保留完整音频。两种通知模式都经短期 OSS 对象和签名 URL 异步提交，并开启 `diarization_enabled=true`。Polling 通过到期任务的单次 `/tasks/{task_id}` 查询发现终态；EventBridge 通过原始 Body、Token、时间窗和 RSA 签名校验后快速落库，且该模式绝不查询任务状态。两种来源最终都由同一后台完成路径下载结果、校验并发布。VAD 清单随 revision 持久化，供应商时间戳发布前恢复到原录音时间轴，被删除区间写入无效片段表。结果严格要求每句包含 `speaker_id` 和有序有效毫秒时间戳：Speaker 变化或同一 Speaker 停顿达到 1500ms 时开始新段，相邻同 Speaker 在不足 1500ms 且合并后不超过 240 字时合并，供应商单句不会被硬拆。业务角色和情绪始终为 `unknown`。
 
-数据源详情页沿用 2 秒列表轮询 EchoWave API，显示 `排队 → 预处理 → 模型转写 → 等待模型完成 → 校验 → 发布`。音频卡片展示持久化阶段和单调百分比；点击进行中状态可查看阶段时间线。该客户端轮询不访问 DashScope，模型正文始终不会进入进度接口或弹窗。
+数据源转写、分析详情和知识文档入库均以 REST 快照作为权威首帧，并在存在进行中任务时通过 SSE 接收状态增量；健康连接下不会周期刷新完整页面。连接连续失败后移动端临时使用 5 秒 REST 降级，并每 30 秒尝试恢复 SSE。音频卡片显示 `排队 → 预处理 → 模型转写 → 等待模型完成 → 校验 → 发布` 的持久化阶段和单调百分比；模型正文始终不会进入进度接口或弹窗。
 
 `AI_EXECUTION_REPORT_OUTPUT_ENABLED="false"` 是附加汇总 Output 章节的安全默认值，并且不控制 Model Calls 的 Prompt/Output 或独立 STT 原始响应报告。两类报告目录都已被 Git 忽略且不会自动清理，避免后台任务误删诊断证据；已生成的历史报告不会回填或重新执行。
 
@@ -238,7 +240,7 @@ pnpm check
 - 分组内跨标签搜索、音频创建时间排序与多状态筛选
 - 音频完成、跨分组、待分析、上传中、分析中状态示例
 - 分组、知识库、新建、分析、更多五项导航
-- Markdown、DOCX、XLSX 单文件上传、异步解析、分块、嵌入与状态轮询
+- Markdown、DOCX、XLSX 单文件上传、异步解析、分块、嵌入与 SSE 状态增量（REST 降级）
 - PostgreSQL 租户隔离、revision 原子发布、HNSW 检索和引用回溯
 - PostgreSQL 数据源创建、编辑、软归档、分组关联/解除，以及本地批量音频上传与软归档
 - PostgreSQL 音频上传时间线和版本化分析结果查询纵切片
@@ -246,6 +248,7 @@ pnpm check
 - Raw Transcript 与版本化 Confirmed Transcript 分离、逐片段修正和确认前分析门槛
 - 基于 Qwen3.5-Omni 的逐片段声学情绪分析，以及基于 DeepSeek 的录音级说话人业务角色识别
 - DeepSeek + DeepAgents 知识问答、无证据拒答与短会话 checkpoint
+- LangGraph 持久化销售复盘、并行检索恢复、有界重试与幂等发布
 - 可选的知识问答、入库与音频转写 Markdown 执行诊断报告
 - 移动端知识库列表、文档/块详情、上传、动态问答反馈、最近六轮只读历史和可返回聊天的引用跳转
 - 更多页中的 API 加载、在线、离线、超时和重试状态
@@ -253,6 +256,6 @@ pnpm check
 
 ## 当前边界
 
-本里程碑不包含真实鉴权、转写修正统计或 Correction Dataset 导出、意图分析、业务总结、情绪融合评分、精确声学数值测量、数据源同步、Redis、权威音频对象存储迁移、OCR、PDF、旧版 Office、多 API 实例部署或 EAS Build。OSS 只用于 DashScope 单次任务的短期中转；手动上传音频仍保存在 `AUDIO_STORAGE_DIR` 指定的单机持久化目录。知识入库、音频转写及两类后处理 worker 均与 API 同进程，本地文件模式仅支持单 API 实例，横向扩容前必须迁移到权威对象存储和独立 worker。详见 [文档索引](./docs/README.md) 与 [架构说明](./docs/architecture.md)。
+本里程碑不包含真实鉴权、转写修正统计或 Correction Dataset 导出、意图分析、跨录音业务聚合、情绪融合评分、精确声学数值测量、数据源同步、Redis、权威音频对象存储迁移、OCR、PDF、旧版 Office、多 API 实例部署或 EAS Build。OSS 只用于 DashScope 单次任务的短期中转；手动上传音频仍保存在 `AUDIO_STORAGE_DIR` 指定的单机持久化目录。知识入库、音频转写、两类后处理及业务分析 worker 均与 API 同进程，本地文件模式仅支持单 API 实例，横向扩容前必须迁移到权威对象存储和独立 worker。详见 [文档索引](./docs/README.md) 与 [架构说明](./docs/architecture.md)。
 
 在 Windows 上无法运行 iOS Simulator；iOS 本轮通过 Expo bundle 导出、TypeScript 检查和应用配置校验，最终原生运行验收需在 macOS/Xcode 环境完成。

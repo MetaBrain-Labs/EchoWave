@@ -17,6 +17,7 @@ import type { DocumentFormat } from '@echowave/contracts';
 
 import type { DatabasePool } from '../../infrastructure/postgres.ts';
 import { quoteIdentifier } from '../../infrastructure/postgres.ts';
+import type { LiveUpdateBroker } from '../../infrastructure/liveUpdateBroker.ts';
 import type { ParsedChunkDraft } from '../ingestion/documentParser.ts';
 import { RagRepositoryError } from './errors.ts';
 
@@ -54,12 +55,22 @@ export class IngestionRepository {
     private readonly pool: DatabasePool,
     schema: string,
     private readonly tenantId: string,
+    private readonly liveUpdates?: LiveUpdateBroker,
   ) {
     this.schema = quoteIdentifier(schema);
   }
 
   private table(name: string): string {
     return `${this.schema}.${quoteIdentifier(name)}`;
+  }
+
+  private notify(knowledgeBaseId: string, documentId: string, terminal: boolean): void {
+    this.liveUpdates?.publish({
+      kind: 'knowledge-document',
+      knowledgeBaseId,
+      documentId,
+      terminal,
+    });
   }
 
   /** 在单个事务中创建文档、处理中 revision 与待领取任务。 */
@@ -127,6 +138,7 @@ export class IngestionRepository {
         [this.tenantId, input.knowledgeBaseId, documentId, revisionId, input.stagedPath],
       );
       await client.query('COMMIT');
+      this.notify(input.knowledgeBaseId, documentId, false);
       return { documentId, jobId: job.rows[0].id as string };
     } catch (error) {
       await client.query('ROLLBACK');
@@ -185,6 +197,7 @@ export class IngestionRepository {
        WHERE tenant_id = $1 AND id = $2`,
       [this.tenantId, job.documentId, status, progress],
     );
+    this.notify(job.knowledgeBaseId, job.documentId, false);
   }
 
   /** 原子写入全部文档块并发布 revision，提交前旧 active revision 始终可检索。 */
@@ -255,6 +268,7 @@ export class IngestionRepository {
         [this.tenantId, input.job.id],
       );
       await client.query('COMMIT');
+      this.notify(input.job.knowledgeBaseId, input.job.documentId, true);
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -287,6 +301,7 @@ export class IngestionRepository {
        WHERE tenant_id = $1 AND id = $2`,
       [this.tenantId, job.revisionId],
     );
+    this.notify(job.knowledgeBaseId, job.documentId, true);
   }
 
   /** 仅重新排队仍保留暂存文件且标记为可重试的失败任务。 */
@@ -308,5 +323,6 @@ export class IngestionRepository {
        WHERE tenant_id = $1 AND knowledge_base_id = $2 AND id = $3`,
       [this.tenantId, knowledgeBaseId, documentId],
     );
+    this.notify(knowledgeBaseId, documentId, false);
   }
 }

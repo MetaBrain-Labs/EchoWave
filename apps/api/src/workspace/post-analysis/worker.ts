@@ -10,6 +10,7 @@
  *
  * Notes:
  * - worker 不修改原始转写，失败不会清除既有 active 后处理结果。
+ * - PostgreSQL 通知负责低延迟唤醒，15 秒安全扫描负责通知遗漏恢复。
  */
 import type { AudioPostAnalysisType } from '@echowave/contracts';
 
@@ -18,6 +19,8 @@ import {
   type AiExecutionRecorder,
   type AiExecutionReporter,
 } from '../../ai-observability/executionReporter.ts';
+import type { LiveUpdateBroker } from '../../infrastructure/liveUpdateBroker.ts';
+import type { WorkerWakeupSource } from '../../infrastructure/workerWakeup.ts';
 import {
   type ClaimedPostAnalysisJob,
   type EmotionPublication,
@@ -35,6 +38,7 @@ import { PostAnalysisProviderError, type QwenEmotionAnalyzer } from './qwenEmoti
 const MAX_WINDOW_MS = 5 * 60 * 1_000;
 const MAX_WINDOW_SEGMENTS = 50;
 const WINDOW_CONTEXT_MS = 1_000;
+const SAFETY_POLL_INTERVAL_MS = 15_000;
 
 /** 将连续说话轮次组合成不超过时长和数量上限的初始窗口。 */
 export function buildEmotionWindows(
@@ -65,24 +69,31 @@ type WorkerOptions = {
   preprocessor?: AudioWindowPreprocessor;
   ossStaging?: OssStagingStore;
   reporter?: AiExecutionReporter;
+  liveUpdates?: LiveUpdateBroker;
+  wakeup?: WorkerWakeupSource;
 };
 
-/** 周期领取并执行一种后置分析任务。 */
+/** 由数据库通知优先唤醒、单并发执行一种后置分析任务。 */
 export class AudioPostAnalysisWorker {
   private active?: Promise<void>;
   private pumping = false;
   private stopping = false;
   private timer?: NodeJS.Timeout;
+  private unsubscribeWakeup?: () => void;
   private windowSequence = 0;
 
   constructor(private readonly options: WorkerOptions) {}
 
-  /** 重新排队中断任务后开始轮询。 */
+  /** 重新排队中断任务后订阅数据库通知，并启动低频安全扫描。 */
   async start(): Promise<void> {
     if (this.timer) return;
     this.stopping = false;
     await this.options.repository.resetInterrupted(this.options.type);
-    this.timer = setInterval(() => void this.pump(), 750);
+    this.unsubscribeWakeup = this.options.wakeup?.subscribe(
+      this.options.type === 'emotion' ? 'audio-emotion-analysis' : 'audio-role-analysis',
+      () => void this.pump(),
+    );
+    this.timer = setInterval(() => void this.pump(), SAFETY_POLL_INTERVAL_MS);
     this.timer.unref();
     void this.pump();
   }
@@ -90,6 +101,8 @@ export class AudioPostAnalysisWorker {
   /** 停止领取并等待当前任务收敛。 */
   async stop(): Promise<void> {
     this.stopping = true;
+    this.unsubscribeWakeup?.();
+    this.unsubscribeWakeup = undefined;
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
     if (this.active) await Promise.allSettled([this.active]);
@@ -101,6 +114,7 @@ export class AudioPostAnalysisWorker {
     try {
       const job = await this.options.repository.claim(this.options.type);
       if (!job) return;
+      this.notify(job, false);
       const execution = this.execute(job).finally(() => {
         if (this.active === execution) this.active = undefined;
         if (!this.stopping) void this.pump();
@@ -114,6 +128,15 @@ export class AudioPostAnalysisWorker {
     } finally {
       this.pumping = false;
     }
+  }
+
+  private notify(job: ClaimedPostAnalysisJob, terminal: boolean): void {
+    this.options.liveUpdates?.publish({
+      kind: 'audio-analysis',
+      audioFileId: job.audioFileId,
+      groupId: null,
+      terminal,
+    });
   }
 
   private async execute(job: ClaimedPostAnalysisJob): Promise<void> {
@@ -158,6 +181,7 @@ export class AudioPostAnalysisWorker {
       let failurePersistenceError: unknown;
       try {
         await this.options.repository.fail(job.id, code, message, retryable);
+        this.notify(job, true);
       } catch (persistenceError) {
         // 数据库故障不得阻止模型失败报告落盘，二者各自保留诊断信号。
         failurePersistenceError = persistenceError;
@@ -198,7 +222,9 @@ export class AudioPostAnalysisWorker {
       report,
     );
     await this.options.repository.updateProgress(job.id, 95);
+    this.notify(job, false);
     await this.options.repository.publishRoles(job, results);
+    this.notify(job, true);
     report.recordOutput(results);
   }
 
@@ -222,6 +248,7 @@ export class AudioPostAnalysisWorker {
         job.id,
         5 + (results.length / job.segments.length) * 88,
       );
+      this.notify(job, false);
     }
     const unique = new Map(results.map((result) => [result.segmentId, result]));
     if (unique.size !== job.segments.length) {
@@ -232,7 +259,9 @@ export class AudioPostAnalysisWorker {
       );
     }
     await this.options.repository.updateProgress(job.id, 95);
+    this.notify(job, false);
     await this.options.repository.publishEmotion(job, [...unique.values()]);
+    this.notify(job, true);
     report.recordOutput([...unique.values()]);
   }
 

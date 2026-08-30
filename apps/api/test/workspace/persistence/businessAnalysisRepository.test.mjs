@@ -22,6 +22,30 @@ const confirmationId = '44444444-4444-4444-8444-444444444444';
 const knowledgeBaseId = '55555555-5555-4555-8555-555555555555';
 const jobId = '66666666-6666-4666-8666-666666666666';
 
+function claimedJob() {
+  return {
+    id: jobId,
+    audioFileId: audioId,
+    groupId,
+    revisionId,
+    confirmationId,
+    confirmationVersion: 3,
+    model: 'deepseek-v4-flash',
+    workflowVersion: 'langgraph-v1',
+    recoveryAttempts: 0,
+    knowledgeBaseIds: [],
+    knowledgeBases: [],
+    settings: {
+      timing: 'manual',
+      contentFocus: '关注异议处理',
+      tone: '正式、专业',
+      customTags: [],
+      settingsUpdatedAt: null,
+    },
+    segments: [],
+  };
+}
+
 function snapshotRow() {
   return {
     audio_file_id: audioId,
@@ -85,6 +109,7 @@ describe('BusinessAnalysisRepository', () => {
     );
     assert.equal(insert.values[5], 3);
     assert.deepEqual(insert.values[9], [knowledgeBaseId]);
+    assert.equal(insert.values[12], 'langgraph-v1');
     assert.equal(forcedClient.calls.at(-1).sql, 'COMMIT');
   });
 
@@ -110,7 +135,9 @@ describe('BusinessAnalysisRepository', () => {
     const client = {
       query: async (sql, values) => {
         calls.push({ sql, values });
-        if (/UPDATE .*audio_business_analysis_jobs/.test(sql)) return { rowCount: 0, rows: [] };
+        if (/SELECT job\.status, head\.active_job_id/.test(sql)) {
+          return { rowCount: 1, rows: [{ status: 'failed', active_job_id: null }] };
+        }
         return { rowCount: 1, rows: [] };
       },
       release: () => {},
@@ -122,24 +149,7 @@ describe('BusinessAnalysisRepository', () => {
     );
     await assert.rejects(() =>
       repository.publish(
-        {
-          id: jobId,
-          audioFileId: audioId,
-          groupId,
-          revisionId,
-          confirmationId,
-          confirmationVersion: 3,
-          model: 'deepseek-v4-flash',
-          knowledgeBaseIds: [],
-          settings: {
-            timing: 'manual',
-            contentFocus: '关注异议处理',
-            tone: '正式、专业',
-            customTags: [],
-            settingsUpdatedAt: null,
-          },
-          segments: [],
-        },
+        claimedJob(),
         { limitations: [], summarySections: [], tags: [] },
         new Map(),
       ),
@@ -149,5 +159,82 @@ describe('BusinessAnalysisRepository', () => {
       false,
     );
     assert.equal(calls.at(-1).sql, 'ROLLBACK');
+  });
+
+  it('treats an already committed publication for the same head as success', async () => {
+    const calls = [];
+    const client = {
+      query: async (sql, values) => {
+        calls.push({ sql, values });
+        if (/SELECT job\.status, head\.active_job_id/.test(sql)) {
+          return { rows: [{ status: 'ready', active_job_id: jobId }] };
+        }
+        return { rowCount: 1, rows: [] };
+      },
+      release: () => {},
+    };
+    const repository = new BusinessAnalysisRepository(
+      { connect: async () => client },
+      'echowave',
+      tenantId,
+    );
+
+    await repository.publish(
+      claimedJob(),
+      { limitations: [], summarySections: [{ title: '结论', body: '内容' }], tags: [] },
+      new Map(),
+    );
+
+    assert.equal(
+      calls.some(({ sql }) => /INSERT INTO .*business_analysis_summary_sections/.test(sql)),
+      false,
+    );
+    assert.equal(
+      calls.some(({ sql }) => /INSERT INTO .*audio_group_business_analysis_heads/.test(sql)),
+      false,
+    );
+    assert.equal(calls.at(-1).sql, 'COMMIT');
+  });
+
+  it('persists bounded recovery backoff without resetting the workflow job', async () => {
+    const calls = [];
+    const repository = new BusinessAnalysisRepository(
+      {
+        query: async (sql, values) => {
+          calls.push({ sql, values });
+          return { rowCount: 1, rows: [] };
+        },
+      },
+      'echowave',
+      tenantId,
+    );
+
+    assert.equal(await repository.scheduleRecovery(jobId, 'UPSTREAM', 'temporary', 15_000), true);
+    const scheduled = calls.at(-1);
+    assert.match(scheduled.sql, /recovery_attempts = recovery_attempts \+ 1/);
+    assert.match(scheduled.sql, /recovery_attempts < \$6/);
+    assert.equal(scheduled.values[2], 15_000);
+    assert.equal(scheduled.values[5], 2);
+  });
+
+  it('requeues interrupted work without consuming recovery attempts or losing progress', async () => {
+    const calls = [];
+    const repository = new BusinessAnalysisRepository(
+      {
+        query: async (sql, values) => {
+          calls.push({ sql, values });
+          return { rowCount: 1, rows: [] };
+        },
+      },
+      'echowave',
+      tenantId,
+    );
+
+    await repository.resetInterrupted();
+    const reset = calls.at(-1);
+    assert.match(reset.sql, /status = 'queued'/);
+    assert.match(reset.sql, /next_attempt_at = now\(\)/);
+    assert.doesNotMatch(reset.sql, /recovery_attempts\s*=/);
+    assert.doesNotMatch(reset.sql, /progress\s*=/);
   });
 });

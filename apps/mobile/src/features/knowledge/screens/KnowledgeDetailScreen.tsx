@@ -5,7 +5,7 @@
  *
  * Responsibilities:
  * - 加载知识库概览、文档和关联分组事实。
- * - 协调上传轮询、文档重试、批量关联和目标分组确认。
+ * - 协调上传状态订阅、文档重试、批量关联和目标分组确认。
  * - 保持三个同级页面独立纵向滚动及固定操作栏。
  *
  * Notes:
@@ -14,7 +14,15 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  AppState,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type {
   DocumentStatus,
@@ -47,13 +55,8 @@ import {
 } from '../components/KnowledgeGroupDialogs';
 import { SearchAndFilter } from '../components/SearchAndFilter';
 import { showComingSoon } from '../components/feedback';
-import {
-  getDocument,
-  getKnowledgeBase,
-  listDocuments,
-  retryDocument,
-  uploadDocument,
-} from '../apiClient';
+import { getKnowledgeBase, listDocuments, retryDocument, uploadDocument } from '../apiClient';
+import { streamKnowledgeDocuments } from '@/shared/api/liveUpdateStreams';
 
 const detailTabs = [
   { key: 'overview', label: '概览' },
@@ -291,6 +294,7 @@ export function KnowledgeDetailScreen({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [appActive, setAppActive] = useState(AppState.currentState !== 'background');
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
   const [query, setQuery] = useState('');
   const [pickerVisible, setPickerVisible] = useState(false);
@@ -306,29 +310,114 @@ export function KnowledgeDetailScreen({
     tabs: detailTabKeys,
   });
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const [nextKnowledge, nextDocuments, nextGroups] = await Promise.all([
-        getKnowledgeBase(knowledgeId),
-        listDocuments(knowledgeId),
-        listKnowledgeBaseGroups(knowledgeId),
-      ]);
-      setKnowledge(nextKnowledge);
-      setDocuments(nextDocuments.items);
-      setLinkedGroups(nextGroups.items);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '知识库加载失败。');
-    } finally {
-      setLoading(false);
-    }
-  }, [knowledgeId]);
+  const load = useCallback(
+    async (showLoading = true) => {
+      if (showLoading) setLoading(true);
+      setError('');
+      try {
+        const [nextKnowledge, nextDocuments, nextGroups] = await Promise.all([
+          getKnowledgeBase(knowledgeId),
+          listDocuments(knowledgeId),
+          listKnowledgeBaseGroups(knowledgeId),
+        ]);
+        setKnowledge(nextKnowledge);
+        setDocuments(nextDocuments.items);
+        setLinkedGroups(nextGroups.items);
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : '知识库加载失败。');
+      } finally {
+        if (showLoading) setLoading(false);
+      }
+    },
+    [knowledgeId],
+  );
 
   useEffect(() => {
     const task = setTimeout(() => void load(), 0);
     return () => clearTimeout(task);
   }, [load]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      setAppActive(state === 'active');
+    });
+    return () => subscription.remove();
+  }, []);
+
+  const processingDocuments = documents.some((document) =>
+    ['queued', 'validating', 'parsing', 'chunking', 'embedding'].includes(document.status.kind),
+  );
+  useEffect(() => {
+    if (!processingDocuments || !appActive) return undefined;
+    let disposed = false;
+    let controller: AbortController | undefined;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let fallbackTimer: ReturnType<typeof setInterval> | undefined;
+    let failures = 0;
+    const retryDelays = [1_000, 2_000, 5_000, 10_000];
+    const stopFallback = () => {
+      if (fallbackTimer) clearInterval(fallbackTimer);
+      fallbackTimer = undefined;
+    };
+    const startFallback = () => {
+      if (fallbackTimer) return;
+      void load(false);
+      fallbackTimer = setInterval(() => void load(false), 5_000);
+    };
+    const connect = async () => {
+      controller = new AbortController();
+      try {
+        await streamKnowledgeDocuments({
+          knowledgeBaseId: knowledgeId,
+          signal: controller.signal,
+          onEvent: (event) => {
+            if (event.type === 'error') {
+              setError(event.error.message);
+              return;
+            }
+            failures = 0;
+            stopFallback();
+            if (event.type === 'snapshot') {
+              setError('');
+              setDocuments(event.items);
+              return;
+            }
+            if (event.type !== 'document') return;
+            setError('');
+            setDocuments((items) => {
+              if (!event.item) return items;
+              const next = event.item;
+              const exists = items.some((item) => item.id === next.id);
+              return exists
+                ? items.map((item) => (item.id === next.id ? next : item))
+                : [next, ...items];
+            });
+            if (event.terminal) {
+              void getKnowledgeBase(knowledgeId)
+                .then(setKnowledge)
+                .catch(() => undefined);
+            }
+          },
+        });
+        if (!disposed) throw new Error('文档实时状态连接已关闭。');
+      } catch {
+        if (disposed || controller.signal.aborted) return;
+        failures += 1;
+        if (failures >= 5) startFallback();
+        retryTimer = setTimeout(
+          () => void connect(),
+          failures >= 5 ? 30_000 : retryDelays[Math.min(failures - 1, retryDelays.length - 1)],
+        );
+      }
+    };
+    void connect();
+    return () => {
+      disposed = true;
+      controller?.abort();
+      if (retryTimer) clearTimeout(retryTimer);
+      stopFallback();
+    };
+  }, [appActive, knowledgeId, load, processingDocuments]);
 
   const filteredDocuments = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
@@ -379,15 +468,10 @@ export function KnowledgeDetailScreen({
     setError('');
     try {
       const uploaded = await uploadDocument(knowledgeId, asset);
-      await load();
-      let delay = 2_000;
-      for (let attempt = 0; attempt < 60; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        const current = await getDocument(knowledgeId, uploaded.document.id);
-        setDocuments((items) => items.map((item) => (item.id === current.id ? current : item)));
-        if (current.status.kind === 'ready' || current.status.kind === 'failed') break;
-        if (attempt >= 4) delay = 5_000;
-      }
+      setDocuments((items) => [
+        uploaded.document,
+        ...items.filter((item) => item.id !== uploaded.document.id),
+      ]);
       setKnowledge(await getKnowledgeBase(knowledgeId));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '文档上传失败。');

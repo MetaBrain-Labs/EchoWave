@@ -10,7 +10,8 @@
  * - 在停止时等待当前任务安全收敛。
  *
  * Notes:
- * - 当前 worker 与 API 同进程，尚不支持多实例协调。
+ * - PostgreSQL 通知负责低延迟唤醒，15 秒安全扫描与 SKIP LOCKED 负责遗漏恢复和并发互斥。
+ * - 当前 worker 仍与 API 同进程，本地临时文件路径不支持跨主机接管。
  */
 import { readFile, readdir, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
@@ -22,6 +23,7 @@ import {
   type AiExecutionRecorder,
   type AiExecutionReporter,
 } from '../../ai-observability/executionReporter.ts';
+import type { WorkerWakeupSource } from '../../infrastructure/workerWakeup.ts';
 import {
   DocumentParseError,
   parseKnowledgeDocument,
@@ -38,6 +40,7 @@ import {
 } from '../persistence/ingestionRepository.ts';
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
+const SAFETY_POLL_INTERVAL_MS = 15_000;
 
 const IngestionState = Annotation.Root({
   job: Annotation<ClaimedIngestionJob>(),
@@ -54,6 +57,7 @@ type WorkerOptions = {
   uploadTempDirectory: string;
   concurrency?: number;
   reporter?: AiExecutionReporter;
+  wakeup?: WorkerWakeupSource;
 };
 
 async function runReportedStep<T>(
@@ -88,6 +92,7 @@ export class IngestionWorker {
   private readonly concurrency: number;
   private readonly active = new Set<Promise<void>>();
   private timer?: NodeJS.Timeout;
+  private unsubscribeWakeup?: () => void;
   private stopping = false;
   private pumping = false;
   private readonly graph;
@@ -276,12 +281,16 @@ export class IngestionWorker {
       .compile();
   }
 
-  /** 启动孤立文件清理和周期任务领取；重复调用不会创建第二个 timer。 */
+  /** 启动通知订阅、孤立文件清理和低频安全扫描；重复调用不会创建第二个 timer。 */
   start(): void {
     if (this.timer) return;
     this.stopping = false;
+    this.unsubscribeWakeup = this.options.wakeup?.subscribe(
+      'knowledge-ingestion',
+      () => void this.pump(),
+    );
     void this.cleanupOrphanedFiles();
-    this.timer = setInterval(() => void this.pump(), 750);
+    this.timer = setInterval(() => void this.pump(), SAFETY_POLL_INTERVAL_MS);
     this.timer.unref();
     void this.pump();
   }
@@ -289,6 +298,8 @@ export class IngestionWorker {
   /** 停止领取新任务并等待所有活动任务完成或失败收敛。 */
   async stop(): Promise<void> {
     this.stopping = true;
+    this.unsubscribeWakeup?.();
+    this.unsubscribeWakeup = undefined;
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
     await Promise.allSettled(this.active);
@@ -307,7 +318,10 @@ export class IngestionWorker {
           return;
         }
         if (!job) return;
-        const execution = this.execute(job).finally(() => this.active.delete(execution));
+        const execution = this.execute(job).finally(() => {
+          this.active.delete(execution);
+          if (!this.stopping) void this.pump();
+        });
         this.active.add(execution);
       }
     } finally {

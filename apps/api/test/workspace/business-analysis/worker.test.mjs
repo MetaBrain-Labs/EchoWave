@@ -1,14 +1,16 @@
 /**
  * 分组销售复盘 Worker 测试。
  *
- * 验证主动检索与 Agent 工具检索共享同一知识库白名单，并拒绝虚构证据标识。
+ * 验证任务成功收口、有限持久恢复、终态失败和 checkpoint 清理边界。
  *
  * Responsibilities:
- * - 锁定白名单检索、零知识库和发布前证据校验行为。
+ * - 锁定 15/60 秒恢复预算与终态清理行为。
+ * - 验证每次恢复尝试生成独立安全执行报告。
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { BusinessAnalysisProviderError } from '../../../dist/workspace/business-analysis/salesAnalysisAgent.js';
 import {
   BusinessAnalysisWorker,
   buildBusinessRetrievalQueries,
@@ -20,8 +22,6 @@ const revisionId = '33333333-3333-4333-8333-333333333333';
 const confirmationId = '44444444-4444-4444-8444-444444444444';
 const jobId = '55555555-5555-4555-8555-555555555555';
 const segmentId = '66666666-6666-4666-8666-666666666666';
-const knowledgeBaseId = '77777777-7777-4777-8777-777777777777';
-const chunkId = '88888888-8888-4888-8888-888888888888';
 
 function makeJob(overrides = {}) {
   return {
@@ -32,8 +32,10 @@ function makeJob(overrides = {}) {
     confirmationId,
     confirmationVersion: 1,
     model: 'deepseek-v4-flash',
-    knowledgeBaseIds: [knowledgeBaseId],
-    knowledgeBases: [{ id: knowledgeBaseId, name: '销售知识库' }],
+    workflowVersion: 'langgraph-v1',
+    recoveryAttempts: 0,
+    knowledgeBaseIds: [],
+    knowledgeBases: [],
     settings: {
       timing: 'manual',
       contentFocus: '分析销售话术',
@@ -63,23 +65,41 @@ async function waitUntil(predicate) {
   }
 }
 
-function reporter(record) {
+function reporter(records) {
   return {
     start: (input) => {
-      record.start = input;
+      const record = { input, metadata: undefined, outputs: [], steps: [], finish: undefined };
+      records.push(record);
       return {
         recordMetadata: (value) => (record.metadata = value),
         recordStep: (value) => record.steps.push(value),
-        recordModelCall: (value) => record.models.push(value),
-        recordToolCall: (value) => record.tools.push(value),
-        recordContext: (value) => record.contexts.push(value),
-        recordReasoning: (value) => record.reasoning.push(value),
+        recordModelCall: () => {},
+        recordToolCall: () => {},
+        recordContext: () => {},
+        recordReasoning: () => {},
         recordOutput: (value) => record.outputs.push(value),
         finish: async (value) => {
           record.finish = value;
         },
       };
     },
+  };
+}
+
+function repositoryFor(job, overrides = {}) {
+  let claimed = false;
+  return {
+    resetInterrupted: async () => {},
+    listCheckpointCleanupCandidates: async () => [],
+    markCheckpointCleaned: async () => {},
+    claim: async () => {
+      if (claimed) return undefined;
+      claimed = true;
+      return job;
+    },
+    scheduleRecovery: async () => false,
+    fail: async () => {},
+    ...overrides,
   };
 }
 
@@ -93,173 +113,187 @@ describe('BusinessAnalysisWorker', () => {
     assert.ok(queries.every((query) => query.length <= 3_110));
   });
 
-  it('uses the immutable knowledge-base whitelist for proactive and tool searches', async () => {
-    const whitelistCalls = [];
-    let claimed = false;
-    let published;
-    let failure;
-    const report = {
-      steps: [],
-      models: [],
-      tools: [],
-      contexts: [],
-      reasoning: [],
-      outputs: [],
-    };
-    const repository = {
-      resetInterrupted: async () => {},
-      claim: async () => {
-        if (claimed) return undefined;
-        claimed = true;
-        return makeJob();
-      },
-      updateProgress: async () => {},
-      publish: async (_job, result) => {
-        published = result;
-      },
-      fail: async (_job, code) => {
-        failure = code;
-      },
-    };
-    const chunk = {
-      id: chunkId,
-      knowledgeBaseId,
-      documentId: confirmationId,
-      documentTitle: '销售手册',
-      content: '处理异议前先确认客户顾虑。',
-      locator: { kind: 'markdown', headingPath: ['异议处理'], lineStart: 1, lineEnd: 2 },
-      distance: 0.1,
+  it('finishes a successful workflow attempt and cleans its checkpoint', async () => {
+    const records = [];
+    const cleaned = [];
+    const repository = repositoryFor(makeJob(), {
+      markCheckpointCleaned: async (id) => cleaned.push(id),
+    });
+    const workflow = {
+      run: async () => ({
+        publication: { limitations: [], summarySections: [], tags: [] },
+        retrievedChunks: [],
+        resumed: true,
+      }),
+      deleteCheckpoint: async (job) => cleaned.push(`thread:${job.id}`),
     };
     const worker = new BusinessAnalysisWorker({
       repository,
-      embeddings: { embedQuery: async () => [0.1, 0.2] },
-      embeddingModel: 'text-embedding-v4',
-      knowledgeRepository: {
-        searchMany: async (knowledgeBaseIds) => {
-          whitelistCalls.push(knowledgeBaseIds);
-          return [chunk];
-        },
-      },
-      agent: {
-        planRetrievalQueries: async () => ['客户异议 处理方法'],
-        analyze: async ({ searchKnowledge, recorder }) => {
-          await searchKnowledge('补充检索');
-          recorder.recordModelCall({
-            name: 'business-analysis-generation',
-            provider: 'deepseek',
-            model: 'deepseek-v4-flash',
-            status: 'completed',
-            attempt: 1,
-            input: {
-              kind: 'chat',
-              messages: [
-                { role: 'system', content: 'system prompt' },
-                { role: 'user', content: 'user prompt' },
-              ],
-            },
-            output: { role: 'assistant', content: 'model output' },
-          });
-          return {
-            limitations: [],
-            summarySections: [{ title: 'overall', body: '证据充分。' }],
-            tags: [
-              {
-                category: 'strength',
-                customLabel: null,
-                title: '先确认顾虑',
-                summary: '回应路径清晰。',
-                details: [],
-                confidence: 90,
-                evidenceSegmentIds: [segmentId],
-                citedChunkIds: [chunkId],
-              },
-            ],
-          };
-        },
-      },
-      reporter: reporter(report),
+      workflow,
+      reporter: reporter(records),
     });
+
     await worker.start();
-    await waitUntil(() => published || failure);
+    await waitUntil(() => records[0]?.finish);
     await worker.stop();
-    assert.equal(failure, undefined);
-    assert.ok(published);
-    assert.equal(published.summarySections[0].title, '总体总结');
-    assert.equal(report.start.kind, 'audio-business-analysis');
-    assert.equal(report.finish.status, 'completed');
-    assert.ok(report.models.some((event) => event.name === 'business-analysis-generation'));
-    assert.ok(report.models.some((event) => event.name === 'business-analysis-query-embedding'));
-    assert.ok(report.outputs.length > 0);
-    assert.ok(whitelistCalls.length >= 2);
-    assert.ok(
-      whitelistCalls.every(
-        (ids) => ids === makeJob().knowledgeBaseIds || ids[0] === knowledgeBaseId,
-      ),
-    );
+
+    assert.equal(records[0].finish.status, 'completed');
+    assert.equal(records[0].finish.metadata.resumedFromCheckpoint, true);
+    assert.deepEqual(cleaned, [`thread:${jobId}`, jobId]);
   });
 
-  it('rejects a fabricated transcript segment without replacing the published head', async () => {
-    let claimed = false;
-    let published = false;
-    let failure;
-    const report = {
-      steps: [],
-      models: [],
-      tools: [],
-      contexts: [],
-      reasoning: [],
-      outputs: [],
-    };
-    const repository = {
-      resetInterrupted: async () => {},
-      claim: async () => {
-        if (claimed) return undefined;
-        claimed = true;
-        return makeJob({ knowledgeBaseIds: [] });
+  it('schedules the first retryable failure after 15 seconds without deleting checkpoint', async () => {
+    const records = [];
+    const scheduled = [];
+    let failed = false;
+    let deleted = false;
+    const repository = repositoryFor(makeJob(), {
+      scheduleRecovery: async (...args) => {
+        scheduled.push(args);
+        return true;
       },
-      updateProgress: async () => {},
-      publish: async () => {
-        published = true;
+      fail: async () => {
+        failed = true;
       },
-      fail: async (_job, code) => {
-        failure = code;
+    });
+    const workflow = {
+      run: async () => {
+        throw new BusinessAnalysisProviderError('MODEL_TIMEOUT', '模型超时。', true);
+      },
+      deleteCheckpoint: async () => {
+        deleted = true;
       },
     };
     const worker = new BusinessAnalysisWorker({
       repository,
-      embeddings: { embedQuery: async () => assert.fail('zero-KB analysis must not embed') },
-      embeddingModel: 'text-embedding-v4',
-      knowledgeRepository: {
-        searchMany: async () => assert.fail('zero-KB analysis must not search'),
-      },
-      agent: {
-        planRetrievalQueries: async () => ['不会执行的零知识库查询'],
-        analyze: async () => ({
-          limitations: [],
-          summarySections: [{ title: 'overall', body: '待校验。' }],
-          tags: [
-            {
-              category: 'risk',
-              customLabel: null,
-              title: '未知证据',
-              summary: '引用了不存在的片段。',
-              details: [],
-              confidence: 70,
-              evidenceSegmentIds: ['99999999-9999-4999-8999-999999999999'],
-              citedChunkIds: [],
-            },
-          ],
-        }),
-      },
-      reporter: reporter(report),
+      workflow,
+      reporter: reporter(records),
     });
+
     await worker.start();
-    await waitUntil(() => failure);
+    await waitUntil(() => records[0]?.finish);
     await worker.stop();
-    assert.equal(failure, 'INVALID_MODEL_OUTPUT');
-    assert.equal(published, false);
-    assert.equal(report.start.kind, 'audio-business-analysis');
-    assert.equal(report.finish.status, 'failed');
-    assert.equal(report.finish.metadata.code, 'INVALID_MODEL_OUTPUT');
+
+    assert.equal(scheduled.length, 1);
+    assert.deepEqual(scheduled[0].slice(0, 4), [jobId, 'MODEL_TIMEOUT', '模型超时。', 15_000]);
+    assert.equal(records[0].finish.metadata.willRetry, true);
+    assert.deepEqual(records[0].steps.at(-1), {
+      name: 'workflow-recovery-decision',
+      status: 'completed',
+      metadata: {
+        recoveryAttempt: 0,
+        nextRecoveryAttempt: 1,
+        willRetry: true,
+        retryable: true,
+      },
+    });
+    assert.equal(failed, false);
+    assert.equal(deleted, false);
+  });
+
+  it('uses the second 60-second delay and fails terminally after the recovery budget', async () => {
+    const delays = [];
+    for (const [recoveryAttempts, expectedDelay] of [
+      [1, 60_000],
+      [2, null],
+    ]) {
+      const records = [];
+      let failed = false;
+      let cleaned = false;
+      const repository = repositoryFor(makeJob({ recoveryAttempts }), {
+        scheduleRecovery: async (_id, _code, _message, delay) => {
+          delays.push(delay);
+          return true;
+        },
+        fail: async () => {
+          failed = true;
+        },
+        markCheckpointCleaned: async () => {
+          cleaned = true;
+        },
+      });
+      const workflow = {
+        run: async () => {
+          throw new BusinessAnalysisProviderError('MODEL_UNAVAILABLE', '服务不可用。', true);
+        },
+        deleteCheckpoint: async () => {},
+      };
+      const worker = new BusinessAnalysisWorker({
+        repository,
+        workflow,
+        reporter: reporter(records),
+      });
+      await worker.start();
+      await waitUntil(() => records[0]?.finish);
+      await worker.stop();
+      assert.equal(failed, recoveryAttempts === 2);
+      assert.equal(cleaned, recoveryAttempts === 2);
+      assert.equal(records[0].finish.metadata.willRetry, recoveryAttempts === 1);
+      if (expectedDelay !== null) assert.equal(delays.at(-1), expectedDelay);
+    }
+  });
+
+  it('fails a non-retryable error immediately and removes its checkpoint', async () => {
+    const records = [];
+    let scheduled = false;
+    let failed;
+    let cleaned = false;
+    const repository = repositoryFor(makeJob(), {
+      scheduleRecovery: async () => {
+        scheduled = true;
+        return true;
+      },
+      fail: async (...args) => {
+        failed = args;
+      },
+      markCheckpointCleaned: async () => {
+        cleaned = true;
+      },
+    });
+    const workflow = {
+      run: async () => {
+        throw new BusinessAnalysisProviderError(
+          'INVALID_MODEL_OUTPUT',
+          '确认转写中没有可分析的正文。',
+          false,
+        );
+      },
+      deleteCheckpoint: async () => {},
+    };
+    const worker = new BusinessAnalysisWorker({
+      repository,
+      workflow,
+      reporter: reporter(records),
+    });
+
+    await worker.start();
+    await waitUntil(() => records[0]?.finish);
+    await worker.stop();
+
+    assert.equal(scheduled, false);
+    assert.deepEqual(failed, [
+      jobId,
+      'INVALID_MODEL_OUTPUT',
+      '确认转写中没有可分析的正文。',
+      false,
+    ]);
+    assert.equal(cleaned, true);
+    assert.equal(records[0].finish.metadata.willRetry, false);
+  });
+
+  it('cleans terminal checkpoint candidates during startup without blocking claims', async () => {
+    const cleaned = [];
+    const repository = repositoryFor(undefined, {
+      listCheckpointCleanupCandidates: async () => [{ id: jobId, workflowVersion: 'langgraph-v1' }],
+      markCheckpointCleaned: async (id) => cleaned.push(`marked:${id}`),
+    });
+    const workflow = {
+      run: async () => assert.fail('no job should run'),
+      deleteCheckpoint: async (job) => cleaned.push(`deleted:${job.id}`),
+    };
+    const worker = new BusinessAnalysisWorker({ repository, workflow });
+    await worker.start();
+    await worker.stop();
+    assert.deepEqual(cleaned, [`deleted:${jobId}`, `marked:${jobId}`]);
   });
 });

@@ -18,6 +18,8 @@ import {
 import { createSttRawResponseReporter } from '../ai-observability/sttRawResponseReporter.ts';
 import type { ApiConfig } from '../config/env.ts';
 import { createDatabasePool, createPostgresConnectionString } from '../infrastructure/postgres.ts';
+import { LiveUpdateBroker } from '../infrastructure/liveUpdateBroker.ts';
+import { PostgresWorkerWakeup } from '../infrastructure/workerWakeup.ts';
 import { createKnowledgeAnswerModule } from '../knowledge/answer/knowledgeAnswer.ts';
 import { DeepSeekQueryAgent } from '../knowledge/answer/deepSeekQueryAgent.ts';
 import { DashScopeEmbeddings } from '../knowledge/embeddings/dashScopeEmbeddings.ts';
@@ -44,6 +46,7 @@ import { AudioPostAnalysisWorker } from '../workspace/post-analysis/worker.ts';
 import { BusinessAnalysisRepository } from '../workspace/persistence/businessAnalysisRepository.ts';
 import { AudioExecutionRepository } from '../workspace/persistence/audioExecutionRepository.ts';
 import { SalesAnalysisAgent } from '../workspace/business-analysis/salesAnalysisAgent.ts';
+import { BusinessAnalysisWorkflow } from '../workspace/business-analysis/workflow.ts';
 import { BusinessAnalysisWorker } from '../workspace/business-analysis/worker.ts';
 
 /** 装配完整 RAG 运行时，并返回服务器所需的应用接口、worker 与关闭函数。 */
@@ -54,10 +57,13 @@ export function createRagRuntime(config: ApiConfig) {
     outputDirectory: config.aiExecutionReports.outputDirectory,
   });
   const pool = createDatabasePool(config.database);
+  const liveUpdates = new LiveUpdateBroker();
+  const workerWakeup = new PostgresWorkerWakeup(pool, config.database.schema, config.rag.tenantId);
   const audioExecutionRepository = new AudioExecutionRepository(
     pool,
     config.database.schema,
     config.rag.tenantId,
+    liveUpdates,
   );
   const audioExecutionReporter = createCompositeAiExecutionReporter([
     executionReporter,
@@ -72,6 +78,7 @@ export function createRagRuntime(config: ApiConfig) {
     pool,
     config.database.schema,
     config.rag.tenantId,
+    liveUpdates,
   );
   const conversationRepository = new ConversationRepository(
     pool,
@@ -139,6 +146,7 @@ export function createRagRuntime(config: ApiConfig) {
     uploadTempDirectory: config.rag.uploadTempDir,
     concurrency: 2,
     reporter: executionReporter,
+    wakeup: workerWakeup,
   });
   const service = new DefaultKnowledgeService(
     knowledgeRepository,
@@ -185,6 +193,8 @@ export function createRagRuntime(config: ApiConfig) {
     notifyMode: config.rag.dashScope.asyncNotifyMode,
     preprocessor: audioInputPreprocessor,
     reporter: audioExecutionReporter,
+    liveUpdates,
+    wakeup: workerWakeup,
     ...(ossStaging ? { ossStaging } : {}),
   });
   const dashScopeCallbackService =
@@ -209,6 +219,8 @@ export function createRagRuntime(config: ApiConfig) {
     repository: postAnalysisRepository,
     preprocessor: audioWindowPreprocessor,
     reporter: audioExecutionReporter,
+    liveUpdates,
+    wakeup: workerWakeup,
     emotionAnalyzer: new QwenEmotionAnalyzer({
       apiKey: config.rag.dashScope.apiKey,
       baseUrl: config.rag.dashScope.compatibleBaseUrl,
@@ -220,19 +232,28 @@ export function createRagRuntime(config: ApiConfig) {
     type: 'role',
     repository: postAnalysisRepository,
     reporter: audioExecutionReporter,
+    liveUpdates,
+    wakeup: workerWakeup,
     roleRecognizer: new DeepSeekRoleRecognizer({
       apiKey: config.rag.deepSeekApiKey,
       baseUrl: config.rag.deepSeekBaseUrl,
       model: config.rag.deepSeekChatModel,
     }),
   });
-  const businessAnalysisWorker = new BusinessAnalysisWorker({
+  const businessAnalysisWorkflow = new BusinessAnalysisWorkflow({
     repository: businessAnalysisRepository,
     knowledgeRepository,
     embeddings,
     embeddingModel: config.rag.embeddingModel,
     agent: new SalesAnalysisAgent({ ragConfig: config.rag }),
+    checkpointer,
+  });
+  const businessAnalysisWorker = new BusinessAnalysisWorker({
+    repository: businessAnalysisRepository,
+    workflow: businessAnalysisWorkflow,
     reporter: audioExecutionReporter,
+    liveUpdates,
+    wakeup: workerWakeup,
   });
   return {
     service,
@@ -244,11 +265,14 @@ export function createRagRuntime(config: ApiConfig) {
     roleWorker,
     businessAnalysisWorker,
     audioInputPreprocessor,
+    liveUpdates,
+    workerWakeup,
     async close() {
       await answers.dispose();
       await transcriptionWorker.stop();
       await Promise.all([emotionWorker.stop(), roleWorker.stop(), businessAnalysisWorker.stop()]);
       await worker.stop();
+      await workerWakeup.close();
       await checkpointer.end();
       await pool.end();
     },

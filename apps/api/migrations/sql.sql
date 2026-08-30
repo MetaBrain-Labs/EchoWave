@@ -9,11 +9,15 @@ create table public.ai_execution_events (
   occurred_at timestamp with time zone not null,
   duration_ms bigint,
   details jsonb not null default '{}'::jsonb,
+  operation_id uuid not null,
+  stream_cursor bigint not null,
   foreign key (tenant_id, execution_run_id) references public.ai_execution_runs (tenant_id, id)
   match simple on update no action on delete cascade
 );
 create unique index ai_execution_events_tenant_id_execution_run_id_sequence_no_key on ai_execution_events using btree (tenant_id, execution_run_id, sequence_no);
 create index ai_execution_events_run_sequence_idx on ai_execution_events using btree (tenant_id, execution_run_id, sequence_no);
+create unique index ai_execution_events_stream_cursor_idx on ai_execution_events using btree (stream_cursor);
+create index ai_execution_events_run_operation_idx on ai_execution_events using btree (tenant_id, execution_run_id, operation_id, sequence_no);
 
 create table public.ai_execution_runs (
   id uuid primary key not null default gen_random_uuid(),
@@ -164,6 +168,10 @@ create table public.audio_business_analysis_jobs (
   created_at timestamp with time zone not null default now(),
   completed_at timestamp with time zone,
   published_at timestamp with time zone,
+  workflow_version text not null default 'langgraph-v1'::text,
+  recovery_attempts smallint not null default 0,
+  next_attempt_at timestamp with time zone,
+  checkpoint_cleanup_pending boolean not null default false,
   foreign key (tenant_id, analysis_revision_id, emotion_job_id) references public.audio_post_analysis_jobs (tenant_id, analysis_revision_id, id)
   match simple on update no action on delete no action,
   foreign key (tenant_id, analysis_revision_id, role_job_id) references public.audio_post_analysis_jobs (tenant_id, analysis_revision_id, id)
@@ -182,6 +190,7 @@ create unique index audio_business_analysis_jobs_tenant_id_group_id_audio_file__
 create unique index uq_audio_business_analysis_running on audio_business_analysis_jobs using btree (tenant_id, group_id, audio_file_id) WHERE (status = ANY (ARRAY['queued'::text, 'running'::text]));
 create index audio_business_analysis_claim_idx on audio_business_analysis_jobs using btree (tenant_id, status, created_at);
 create index audio_business_analysis_fingerprint_idx on audio_business_analysis_jobs using btree (tenant_id, group_id, audio_file_id, transcript_confirmation_id, input_fingerprint, created_at);
+create index audio_business_analysis_due_idx on audio_business_analysis_jobs using btree (tenant_id, next_attempt_at, created_at) WHERE (status = 'queued'::text);
 
 create table public.audio_files (
   id uuid primary key not null default gen_random_uuid(),

@@ -38,6 +38,7 @@ import {
   type AiToolCallStart,
 } from '../../ai-observability/executionReporter.ts';
 import { quoteIdentifier, type DatabasePool } from '../../infrastructure/postgres.ts';
+import type { LiveUpdateBroker } from '../../infrastructure/liveUpdateBroker.ts';
 
 const REASONING_LIMIT = 120_000;
 const REASONING_BATCH_CHARACTERS = 512;
@@ -175,6 +176,7 @@ export class AudioExecutionRepository {
     private readonly pool: DatabasePool,
     schema: string,
     private readonly tenantId: string,
+    private readonly liveUpdates?: LiveUpdateBroker,
   ) {
     this.schema = quoteIdentifier(schema);
     this.resetPromise = this.resetInterrupted().catch(() => {
@@ -227,6 +229,7 @@ export class AudioExecutionRepository {
           input,
           context,
           this.resetPromise,
+          this.liveUpdates,
         );
       },
     };
@@ -554,6 +557,7 @@ class PostgresAudioExecutionRecorder implements AiExecutionRecorder {
     private readonly input: AiExecutionStart,
     private readonly context: RunContext,
     resetPromise: Promise<void>,
+    private readonly liveUpdates?: LiveUpdateBroker,
   ) {
     this.ready = resetPromise
       .then(async () => {
@@ -589,6 +593,7 @@ class PostgresAudioExecutionRecorder implements AiExecutionRecorder {
             details: {},
           });
           await client.query('COMMIT');
+          this.notify();
           return true;
         } catch (error) {
           await client.query('ROLLBACK');
@@ -744,6 +749,7 @@ class PostgresAudioExecutionRecorder implements AiExecutionRecorder {
           durationMs: durationMs === undefined ? null : Math.max(0, Math.round(durationMs)),
           details,
         });
+        this.notify();
       })
       .catch(() => {
         console.warn('[audio-execution-audit] failed to persist live event');
@@ -781,6 +787,14 @@ class PostgresAudioExecutionRecorder implements AiExecutionRecorder {
         JSON.stringify(event.details),
       ],
     );
+  }
+
+  private notify(): void {
+    this.liveUpdates?.publish({
+      kind: 'audio-execution',
+      audioFileId: this.context.audioFileId,
+      analysisRevisionId: this.context.revisionId,
+    });
   }
 
   async finish(result: AiExecutionResult): Promise<void> {
@@ -829,6 +843,7 @@ class PostgresAudioExecutionRecorder implements AiExecutionRecorder {
         details: {},
       });
       await client.query('COMMIT');
+      this.notify();
     } catch {
       await client.query('ROLLBACK');
       console.warn('[audio-execution-audit] failed to finish execution run');

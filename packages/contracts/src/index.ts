@@ -229,6 +229,15 @@ export {
   type TranscriptSegment,
 } from './analysis.ts';
 export {
+  AudioAnalysisStatusStreamEventSchema,
+  AudioBusinessAnalysisLiveStateSchema,
+  DataSourceAudioStreamEventSchema,
+  KnowledgeDocumentStreamEventSchema,
+  type AudioAnalysisStatusStreamEvent,
+  type DataSourceAudioStreamEvent,
+  type KnowledgeDocumentStreamEvent,
+} from './liveUpdates.ts';
+export {
   AudioAiExecutionKindSchema,
   AudioAiExecutionModelCallSchema,
   AudioAiExecutionRunSchema,
