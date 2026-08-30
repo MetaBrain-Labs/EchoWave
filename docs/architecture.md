@@ -7,8 +7,8 @@ Expo mobile ── validated JSON/multipart ──> Hono API
                                                 │
                ┌────────────────────────────────┼────────────────────┐
                │                                │                    │
-        PostgreSQL + pgvector          LangGraph ingestion     DeepAgent query
-        business source of truth       in-process workers      search_knowledge only
+        PostgreSQL + pgvector          LangGraph workflows     DeepAgent nodes
+        business source of truth       in-process workers      bounded tools only
                │                                │                    │
                └──── active revision + chunks ──┴──── HNSW ─────────┘
 ```
@@ -54,6 +54,9 @@ apps/api/src/http ───────> @echowave/contracts <──── apps/
 - 新音频修订版只有完整写入本次产生的场景和 Raw Transcript 后才替换当前版本指针，并以待确认状态展示；情绪与角色结果分别写入版本化结果表，并在各自事务的最后切换 revision 上的 active 指针。再次确认正文、后处理失败或重跑都不会覆盖旧分析结果，新 ASR revision 也不会读取旧 revision 的确认或后处理指针。
 - 所有仓储 SQL 都包含 `tenant_id`，检索还同时约束知识库和文档当前生效 revision。
 - `ingestion_jobs` 通过 `FOR UPDATE SKIP LOCKED`、租约和幂等 chunk 唯一键恢复执行。知识入库、音频转写、情绪、角色和业务分析任务在事务提交后统一发送 PostgreSQL `NOTIFY` 失效信号；同进程 worker 立即尝试领取，15 秒安全扫描只负责通知丢失、监听重连或未知写入路径。通知不携带任务正文，也不替代任务表。
+- 分组业务分析使用持久化 LangGraph 表达 `prepare → plan_retrieval → retrieve_query 并行扇出 → deep_agent → validate → publish`。任务表仍是状态、进度和重试的权威来源；Graph 只 checkpoint 可序列化快照，仓储、模型和报告器通过 runtime context 注入。稳定 thread ID 绑定 workflow 版本和 job ID，`sync` durability 保证进入下一节点前 checkpoint 已落库。
+- 业务分析进程中断时，启动恢复会把遗留 `running` 任务重新排队，使用原 thread 从最后成功节点继续，不消耗错误恢复预算。可重试错误最多在 15 秒和 60 秒后恢复两次；DeepAgent 是原子节点，节点内中断会重跑该节点，但不重跑已 checkpoint 的规划和成功检索分支。
+- 业务分析发布在单事务中写入摘要、标签、证据和 head；同 job 已成功发布且仍为 head 时重复调用视为成功。成功或最终失败后删除 thread checkpoint，删除失败不回滚业务终态，由下次启动扫描补偿。
 - 音频转写通过部分唯一索引阻止同一音频并发任务，并用 `FOR UPDATE SKIP LOCKED` 领取。DashScope 的任务 ID、临时 OSS 对象键和提交时间随修订持久化；提交后进入 `awaiting_result` 并释放 worker。Polling 模式只领取已到数据库截止时间的任务并单次查询状态，进程内定时器按全局最近的查询或六小时超时截止点精确唤醒；EventBridge 模式不查询状态，只等待验签回调。进程重启时只重新排队未完成提交的修订，已有 task ID 的修订从持久化截止点恢复对应发现机制，已持久化终态的修订直接重新领取完成阶段。
 - Qwen Filetrans 适配器要求每个非空句子都有 `speaker_id` 与有序有效毫秒时间戳；Speaker 变化、同 Speaker 间隔达到 1500ms 或合并后超过 240 字软上限时创建新段。缺失 Speaker、时间戳异常或乱序直接以 `INVALID_MODEL_OUTPUT` 失败，不进行模型或分段回退。原始 ASR 只产生正文、Speaker 与时间戳，角色和情绪由后处理结果覆盖兼容字段。
 - 情绪 worker 按说话轮次生成最多 5 分钟或 50 个目标片段的窗口，并加入前后各 1 秒上下文。窗口经 FFmpeg 转为音频后暂存到独立 OSS 前缀并交给 Qwen；网络最多重试三次，结构纠正一次，仍无效时递归二分，单片段失败则整项任务失败。
@@ -78,6 +81,7 @@ apps/api/src/http ───────> @echowave/contracts <──── apps/
 - 检索使用 cosine HNSW、`ef_search=100` 和 pgvector iterative scan，初召回 30，去重和文档配额后最多向 Agent 提供 8 块/12000 字符。
 - DeepAgent 使用 DeepSeek `deepseek-v4-flash`、结构化 `{ answer, grounded, citedChunkIds }` 输出和 PostgreSQL checkpointer。
 - 文件系统权限全部拒绝，不配置 skills、长期记忆或子代理；业务工具只有租户范围内的 `search_knowledge`，单轮最多实际执行四次。
+- 销售复盘的外层恢复边界是 LangGraph；DeepAgent 只作为其中一个原子分析节点，保留检索工具白名单、调用次数限制、结构修复和证据安全校验，不配置内部 checkpointer。
 - 模型应选择最多 8 个最有代表性的引用；超出时先执行引用压缩。引用数量属于可纠正的质量约束，压缩仍超限但引用均通过本轮白名单时保留完整证据，不得误降级为“依据不足”。移动端默认展示前 4 条引用，其余来源由用户按需展开。
 - 服务端只接受本次检索白名单中的 chunk ID。依据不足返回 `grounded=false`，不使用常识补答。
 - 第五次及后续检索意图由工具中间件阻止；模型改用本轮已有块生成结果，服务端在完成引用白名单校验后追加“证据可能不完整”的稳定提示。工具限制不能降低引用合法性要求。
@@ -95,7 +99,7 @@ apps/api/src/http ───────> @echowave/contracts <──── apps/
 
 ## AI 执行诊断边界
 
-分析详情的“模型详情”从 `ai_execution_runs` 与 `ai_execution_events` 读取当前已发布修订的产品审计轨迹。ASR、情绪、角色运行不依赖分组；业务分析轨迹只在请求分组通过音频访问校验后返回。旧修订和功能启用前的运行不回填，也不会从模型结果反推不存在的执行过程。进程重启时遗留的 `running` 记录收敛为 `interrupted`，重新排队后的工作生成新的运行记录。
+分析详情的“模型详情”从 `ai_execution_runs` 与 `ai_execution_events` 读取当前已发布修订的产品审计轨迹。ASR、情绪、角色运行不依赖分组；业务分析轨迹只在请求分组通过音频访问校验后返回。旧修订和功能启用前的运行不回填，也不会从模型结果反推不存在的执行过程。进程重启时遗留的 `running` 记录收敛为 `interrupted`，重新排队后的工作生成新的运行记录；业务分析每轮 checkpoint 恢复也生成独立运行记录，不覆盖之前的中断或失败轨迹。
 
 产品审计与下面的本地诊断报告是两个明确边界：产品审计始终启用但字段严格受限，本地报告默认关闭且可在受控环境记录更完整的开发诊断。移动端展示的“分析过程”是阶段和决策事实摘要，不是模型隐藏链路推理。
 

@@ -1,81 +1,39 @@
 /**
  * 分组销售复盘后台 Worker。
  *
- * 领取版本化任务，主动检索当前分组知识库，再调用带白名单搜索工具的 DeepSeek Agent；
- * 发布前严格验证模型引用的片段与知识块确实属于本次输入。
+ * 领取版本化任务并交给持久化 LangGraph 工作流；可重试失败使用同一 thread 按有限退避恢复，
+ * 终态后尽力删除 checkpoint，业务任务表和安全执行审计继续承担长期历史职责。
  *
  * Responsibilities:
- * - 编排主动检索、Agent 补充检索、进度、校验和原子发布。
- * - 将供应商失败映射为安全、可重试的任务错误。
+ * - 编排任务领取、持久化恢复、终态通知和 checkpoint 补偿清理。
+ * - 将供应商失败映射为安全、有限预算的任务错误。
  *
  * Notes:
  * - Worker 不修改 ASR、确认转写或后置识别结果。
- * - PostgreSQL 通知负责低延迟唤醒，15 秒安全扫描负责通知遗漏恢复。
+ * - PostgreSQL 通知负责低延迟唤醒，15 秒安全扫描负责到期重试与通知遗漏恢复。
  */
-import type { DashScopeEmbeddings } from '../../knowledge/embeddings/dashScopeEmbeddings.ts';
 import {
-  beginAiModelCall,
-  beginAiToolCall,
   noOpAiExecutionReporter,
   type AiExecutionReporter,
 } from '../../ai-observability/executionReporter.ts';
 import type { LiveUpdateBroker } from '../../infrastructure/liveUpdateBroker.ts';
 import type { WorkerWakeupSource } from '../../infrastructure/workerWakeup.ts';
 import type {
-  KnowledgeRepository,
-  RetrievalChunk,
-} from '../../knowledge/persistence/knowledgeRepository.ts';
-import type {
   BusinessAnalysisRepository,
   ClaimedBusinessAnalysisJob,
 } from '../persistence/businessAnalysisRepository.ts';
-import { BusinessAnalysisProviderError, type SalesAnalysisAgent } from './salesAnalysisAgent.ts';
+import { BUSINESS_ANALYSIS_MAX_RECOVERY_ATTEMPTS } from '../persistence/businessAnalysisRepository.ts';
+import { BusinessAnalysisProviderError } from './salesAnalysisAgent.ts';
+import type { BusinessAnalysisWorkflow } from './workflow.ts';
 
-const coreSummaryLabels = {
-  overall: '总体总结',
-  strengths: '话术优点',
-  improvements: '待改进点',
-  risks: '风险提示',
-  actions: '行动建议',
-} as const;
+export { buildBusinessRetrievalQueries } from './workflow.ts';
 
 const SAFETY_POLL_INTERVAL_MS = 15_000;
-
-/** 将模型侧固定英文代码转换为产品侧中文章节标题。 */
-function localizeCoreSummaryTitle(title: string): string {
-  if (!(title in coreSummaryLabels)) {
-    throw new BusinessAnalysisProviderError(
-      'INVALID_MODEL_OUTPUT',
-      '销售复盘返回了未知的总结章节。',
-      true,
-    );
-  }
-  return coreSummaryLabels[title as keyof typeof coreSummaryLabels];
-}
-
-/** 将长转写分成最多三个有界主动检索查询。 */
-export function buildBusinessRetrievalQueries(
-  contentFocus: string,
-  segments: readonly { text: string }[],
-): string[] {
-  const transcript = segments
-    .map((segment) => segment.text.trim())
-    .filter(Boolean)
-    .join('\n');
-  if (!transcript) return [];
-  const size = Math.max(1, Math.ceil(transcript.length / 3));
-  return [0, size, size * 2]
-    .map((start) => transcript.slice(start, start + Math.min(size, 2_500)).trim())
-    .filter(Boolean)
-    .map((part) => `${contentFocus.slice(0, 600)}\n对话片段：${part}`);
-}
+const RECOVERY_DELAYS_MS = [15_000, 60_000] as const;
 
 type BusinessAnalysisWorkerOptions = {
   repository: BusinessAnalysisRepository;
-  knowledgeRepository: KnowledgeRepository;
-  embeddings: Pick<DashScopeEmbeddings, 'embedQuery'>;
-  embeddingModel: string;
-  agent: SalesAnalysisAgent;
+  workflow: BusinessAnalysisWorkflow;
   reporter?: AiExecutionReporter;
   liveUpdates?: LiveUpdateBroker;
   wakeup?: WorkerWakeupSource;
@@ -95,6 +53,7 @@ export class BusinessAnalysisWorker {
     if (this.timer) return;
     this.stopping = false;
     await this.options.repository.resetInterrupted();
+    await this.cleanupTerminalCheckpoints();
     this.unsubscribeWakeup = this.options.wakeup?.subscribe(
       'audio-business-analysis',
       () => void this.pump(),
@@ -159,237 +118,111 @@ export class BusinessAnalysisWorker {
         segmentCount: job.segments.length,
         knowledgeBaseIds: job.knowledgeBaseIds,
         settingsSnapshot: job.settings,
+        workflowVersion: job.workflowVersion,
+        recoveryAttempt: job.recoveryAttempts,
       },
     });
     try {
-      if (job.segments.length === 0) {
-        throw new BusinessAnalysisProviderError(
-          'INVALID_MODEL_OUTPUT',
-          '确认转写中没有可分析的正文。',
-          false,
-        );
-      }
-      const retrieved = new Map<string, RetrievalChunk>();
-      let retrievalSequence = 0;
-      const search = async (query: string) => {
-        if (job.knowledgeBaseIds.length === 0) return [];
-        retrievalSequence += 1;
-        const attempt = retrievalSequence;
-        const embeddingStartedAt = Date.now();
-        const embeddingCall = beginAiModelCall(report, {
-          name: 'business-analysis-query-embedding',
-          displayName: '将知识检索问题转换为语义向量',
-          provider: 'dashscope',
-          model: this.options.embeddingModel,
-          attempt,
-          reasoningMode: 'unsupported',
-        });
-        let embedding: number[];
-        try {
-          embedding = await this.options.embeddings.embedQuery(query);
-          embeddingCall.finish({
-            status: 'completed',
-            durationMs: Date.now() - embeddingStartedAt,
-            inputTokens: null,
-            outputTokens: null,
-            input: { kind: 'embedding', texts: [query] },
-            output: { vectorCount: 1, dimensions: embedding.length },
-          });
-        } catch (error) {
-          embeddingCall.finish({
-            status: 'failed',
-            durationMs: Date.now() - embeddingStartedAt,
-            inputTokens: null,
-            outputTokens: null,
-            input: { kind: 'embedding', texts: [query] },
-            output: { error },
-          });
-          throw error;
-        }
-        const searchStartedAt = Date.now();
-        const searchCall = beginAiToolCall(report, {
-          name: 'search_knowledge',
-          displayName: '检索分组关联知识库',
-          summary: {
-            audit: {
-              query,
-              knowledgeBases: job.knowledgeBases,
-              hitCount: 0,
-              hits: [],
-            },
-          },
-        });
-        try {
-          const chunks = await this.options.knowledgeRepository.searchMany(
-            job.knowledgeBaseIds,
-            embedding,
-            this.options.embeddingModel,
-          );
-          searchCall.finish({
-            status: 'completed',
-            durationMs: Date.now() - searchStartedAt,
-            summary: {
-              attempt,
-              hitCount: chunks.length,
-              audit: {
-                query,
-                knowledgeBases: job.knowledgeBases,
-                hitCount: chunks.length,
-                hits: chunks.map((chunk) => ({
-                  chunkId: chunk.id,
-                  knowledgeBaseId: chunk.knowledgeBaseId,
-                  documentId: chunk.documentId,
-                  documentTitle: chunk.documentTitle,
-                  locator: chunk.locator,
-                })),
-              },
-            },
-            input: { query, knowledgeBaseIds: job.knowledgeBaseIds },
-            output: chunks,
-          });
-          for (const chunk of chunks) retrieved.set(chunk.id, chunk);
-          return chunks;
-        } catch (error) {
-          searchCall.finish({
-            status: 'failed',
-            durationMs: Date.now() - searchStartedAt,
-            summary: {
-              attempt,
-              audit: {
-                query,
-                knowledgeBases: job.knowledgeBases,
-                hitCount: 0,
-                hits: [],
-              },
-            },
-            input: { query, knowledgeBaseIds: job.knowledgeBaseIds },
-            output: { error },
-          });
-          throw error;
-        }
-      };
-      report.recordStep({ name: 'retrieval-planning', status: 'started' });
-      const plannedQueries = await this.options.agent.planRetrievalQueries(job, report);
-      const queries =
-        plannedQueries.length > 0
-          ? plannedQueries
-          : buildBusinessRetrievalQueries(job.settings.contentFocus, job.segments);
-      report.recordStep({
-        name: 'retrieval-planning',
-        status: 'completed',
-        metadata: { queryCount: queries.length, usedFallback: plannedQueries.length === 0 },
-      });
-      await this.options.repository.updateProgress(job.id, 15);
-      this.notify(job, false);
-      for (const query of queries) await search(query);
-      await this.options.repository.updateProgress(job.id, 35);
-      this.notify(job, false);
-      report.recordStep({
-        name: 'analysis-generation',
-        status: 'started',
-        metadata: { preRetrievedChunkCount: retrieved.size },
-      });
-      const result = await this.options.agent.analyze({
-        job,
-        preRetrieved: [...retrieved.values()],
-        searchKnowledge: search,
-        recorder: report,
-      });
-      report.recordStep({ name: 'analysis-generation', status: 'completed' });
-      const segmentIds = new Set(job.segments.map((segment) => segment.id));
-      const customTags = new Set(job.settings.customTags);
-      for (const tag of result.tags) {
-        if (tag.evidenceSegmentIds.some((id) => !segmentIds.has(id))) {
-          throw new BusinessAnalysisProviderError(
-            'INVALID_MODEL_OUTPUT',
-            '销售复盘引用了不存在的转写片段。',
-            true,
-          );
-        }
-        if (tag.citedChunkIds.some((id) => !retrieved.has(id))) {
-          throw new BusinessAnalysisProviderError(
-            'INVALID_MODEL_OUTPUT',
-            '销售复盘引用了未检索或未授权的知识块。',
-            true,
-          );
-        }
-        if (
-          (tag.category === 'custom' && (!tag.customLabel || !customTags.has(tag.customLabel))) ||
-          (tag.category !== 'custom' && tag.customLabel !== null)
-        ) {
-          throw new BusinessAnalysisProviderError(
-            'INVALID_MODEL_OUTPUT',
-            '销售复盘返回了未配置的自定义标签。',
-            true,
-          );
-        }
-      }
-      if (!job.segments.some((segment) => segment.role)) {
-        result.limitations = [...new Set([...result.limitations, '本次分析未使用角色识别结果。'])];
-      }
-      if (!job.segments.some((segment) => segment.emotion)) {
-        result.limitations = [...new Set([...result.limitations, '本次分析未使用情绪识别结果。'])];
-      }
-      if (job.knowledgeBaseIds.length === 0) {
-        result.limitations = [...new Set([...result.limitations, '本次分析未使用知识库。'])];
-      }
-      await this.options.repository.updateProgress(job.id, 92);
-      this.notify(job, false);
-      const publishedResult = {
-        ...result,
-        summarySections: result.summarySections.map((section) => ({
-          ...section,
-          title: localizeCoreSummaryTitle(section.title),
-        })),
-      };
-      report.recordStep({ name: 'publish', status: 'started' });
-      await this.options.repository.publish(job, publishedResult, retrieved);
+      const result = await this.options.workflow.run(job, report, () => this.notify(job, false));
       this.notify(job, true);
-      report.recordStep({ name: 'publish', status: 'completed' });
-      report.recordOutput(publishedResult);
+      report.recordOutput(result.publication);
       await report.finish({
         status: 'completed',
         metadata: {
           durationMs: Date.now() - startedAt,
-          retrievedChunkCount: retrieved.size,
-          tagCount: publishedResult.tags.length,
+          retrievedChunkCount: result.retrievedChunks.length,
+          tagCount: result.publication.tags.length,
+          resumedFromCheckpoint: result.resumed,
+          workflowVersion: job.workflowVersion,
+          recoveryAttempt: job.recoveryAttempts,
         },
       });
+      await this.cleanupCheckpoint(job);
     } catch (error) {
       const known = error instanceof BusinessAnalysisProviderError;
       const code = known ? error.code : 'INTERNAL_ERROR';
       const retryable = known ? error.retryable : true;
+      const message = known ? error.message : '销售复盘失败，请稍后重试。';
+      let willRetry = false;
       let failurePersistenceError: unknown;
       try {
-        await this.options.repository.fail(
-          job.id,
-          code,
-          known ? error.message : '销售复盘失败，请稍后重试。',
-          retryable,
-        );
-        this.notify(job, true);
+        if (retryable && job.recoveryAttempts < BUSINESS_ANALYSIS_MAX_RECOVERY_ATTEMPTS) {
+          const delayMs = RECOVERY_DELAYS_MS[job.recoveryAttempts] ?? RECOVERY_DELAYS_MS[1];
+          willRetry = await this.options.repository.scheduleRecovery(
+            job.id,
+            code,
+            message,
+            delayMs,
+          );
+        }
+        if (!willRetry) {
+          await this.options.repository.fail(job.id, code, message, retryable);
+        }
+        this.notify(job, !willRetry);
       } catch (persistenceError) {
-        // 报告是故障诊断旁路；任务失败状态写入异常时仍须尽力落盘原始分析错误。
+        // 报告是故障诊断旁路；任务状态写入异常时仍须尽力落盘原始分析错误。
         failurePersistenceError = persistenceError;
       }
+      report.recordStep({
+        name: 'workflow-recovery-decision',
+        status: failurePersistenceError ? 'failed' : 'completed',
+        metadata: {
+          recoveryAttempt: job.recoveryAttempts,
+          nextRecoveryAttempt: willRetry ? job.recoveryAttempts + 1 : null,
+          willRetry,
+          retryable,
+        },
+      });
       await report.finish({
         status: 'failed',
         error,
         metadata: {
           code,
           retryable,
+          willRetry,
+          recoveryAttempt: job.recoveryAttempts,
+          nextRecoveryAttempt: willRetry ? job.recoveryAttempts + 1 : null,
           durationMs: Date.now() - startedAt,
           failurePersistenceError,
         },
       });
+      if (!willRetry && !failurePersistenceError) await this.cleanupCheckpoint(job);
       console.error('Business analysis failed', {
         audioFileId: job.audioFileId,
         groupId: job.groupId,
         jobId: job.id,
         code,
-        message: known ? error.message : 'Unexpected business analysis failure.',
+        retryable,
+        willRetry,
+        message,
         failurePersistenceError:
           failurePersistenceError instanceof Error ? failurePersistenceError.name : undefined,
+      });
+    }
+  }
+
+  private async cleanupCheckpoint(
+    job: Pick<ClaimedBusinessAnalysisJob, 'id' | 'workflowVersion'>,
+  ): Promise<void> {
+    try {
+      await this.options.workflow.deleteCheckpoint(job);
+      await this.options.repository.markCheckpointCleaned(job.id);
+    } catch (error) {
+      console.error('Failed to clean business analysis checkpoint', {
+        jobId: job.id,
+        error: error instanceof Error ? error.name : 'UnknownError',
+      });
+    }
+  }
+
+  private async cleanupTerminalCheckpoints(): Promise<void> {
+    try {
+      const candidates = await this.options.repository.listCheckpointCleanupCandidates();
+      for (const candidate of candidates) await this.cleanupCheckpoint(candidate);
+    } catch (error) {
+      // 清理失败不能阻断业务 Worker 启动；终态标记会让后续启动继续补偿。
+      console.error('Failed to list business analysis checkpoints for cleanup', {
+        error: error instanceof Error ? error.name : 'UnknownError',
       });
     }
   }

@@ -46,6 +46,7 @@ import { AudioPostAnalysisWorker } from '../workspace/post-analysis/worker.ts';
 import { BusinessAnalysisRepository } from '../workspace/persistence/businessAnalysisRepository.ts';
 import { AudioExecutionRepository } from '../workspace/persistence/audioExecutionRepository.ts';
 import { SalesAnalysisAgent } from '../workspace/business-analysis/salesAnalysisAgent.ts';
+import { BusinessAnalysisWorkflow } from '../workspace/business-analysis/workflow.ts';
 import { BusinessAnalysisWorker } from '../workspace/business-analysis/worker.ts';
 
 /** 装配完整 RAG 运行时，并返回服务器所需的应用接口、worker 与关闭函数。 */
@@ -239,12 +240,17 @@ export function createRagRuntime(config: ApiConfig) {
       model: config.rag.deepSeekChatModel,
     }),
   });
-  const businessAnalysisWorker = new BusinessAnalysisWorker({
+  const businessAnalysisWorkflow = new BusinessAnalysisWorkflow({
     repository: businessAnalysisRepository,
     knowledgeRepository,
     embeddings,
     embeddingModel: config.rag.embeddingModel,
     agent: new SalesAnalysisAgent({ ragConfig: config.rag }),
+    checkpointer,
+  });
+  const businessAnalysisWorker = new BusinessAnalysisWorker({
+    repository: businessAnalysisRepository,
+    workflow: businessAnalysisWorkflow,
     reporter: audioExecutionReporter,
     liveUpdates,
     wakeup: workerWakeup,

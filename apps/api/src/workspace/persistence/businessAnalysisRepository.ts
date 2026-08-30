@@ -27,6 +27,9 @@ import { quoteIdentifier, type DatabasePool } from '../../infrastructure/postgre
 import type { RetrievalChunk } from '../../knowledge/persistence/knowledgeRepository.ts';
 import { WorkspaceRepositoryError } from './errors.ts';
 
+export const BUSINESS_ANALYSIS_WORKFLOW_VERSION = 'langgraph-v1';
+export const BUSINESS_ANALYSIS_MAX_RECOVERY_ATTEMPTS = 2;
+
 export type BusinessAnalysisSegment = {
   id: string;
   speakerKey: string;
@@ -54,6 +57,8 @@ export type ClaimedBusinessAnalysisJob = {
   confirmationId: string;
   confirmationVersion: number;
   model: string;
+  workflowVersion: string;
+  recoveryAttempts: number;
   knowledgeBaseIds: string[];
   knowledgeBases: { id: string; name: string }[];
   settings: BusinessAnalysisSettingsSnapshot;
@@ -258,8 +263,10 @@ export class BusinessAnalysisRepository {
         `INSERT INTO ${this.table('audio_business_analysis_jobs')}
            (tenant_id, group_id, audio_file_id, analysis_revision_id,
             transcript_confirmation_id, confirmation_version, model, input_fingerprint,
-            settings_snapshot, knowledge_base_ids, emotion_job_id, role_job_id, status, progress)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::uuid[], $11, $12, 'queued', 0)
+            settings_snapshot, knowledge_base_ids, emotion_job_id, role_job_id, status, progress,
+            workflow_version)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::uuid[], $11, $12,
+                 'queued', 0, $13)
          RETURNING id`,
         [
           this.tenantId,
@@ -274,6 +281,7 @@ export class BusinessAnalysisRepository {
           snapshot.knowledgeBaseIds,
           snapshot.emotionJobId,
           snapshot.roleJobId,
+          BUSINESS_ANALYSIS_WORKFLOW_VERSION,
         ],
       );
       await client.query('COMMIT');
@@ -315,8 +323,7 @@ export class BusinessAnalysisRepository {
   async resetInterrupted(): Promise<void> {
     await this.pool.query(
       `UPDATE ${this.table('audio_business_analysis_jobs')}
-       SET status = 'queued', progress = 0, error_code = NULL, error_message = NULL,
-           error_retryable = NULL, completed_at = NULL
+       SET status = 'queued', next_attempt_at = now(), completed_at = NULL
        WHERE tenant_id = $1 AND status = 'running'`,
       [this.tenantId],
     );
@@ -326,12 +333,15 @@ export class BusinessAnalysisRepository {
   async claim(): Promise<ClaimedBusinessAnalysisJob | undefined> {
     const claimed = await this.pool.query(
       `WITH candidate AS (
-         SELECT id FROM ${this.table('audio_business_analysis_jobs')}
+       SELECT id FROM ${this.table('audio_business_analysis_jobs')}
          WHERE tenant_id = $1 AND status = 'queued'
+           AND (next_attempt_at IS NULL OR next_attempt_at <= now())
          ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1
        )
        UPDATE ${this.table('audio_business_analysis_jobs')} job
-       SET status = 'running', progress = 1
+       SET status = 'running', progress = greatest(progress, 1), next_attempt_at = NULL,
+           error_code = NULL, error_message = NULL, error_retryable = NULL,
+           checkpoint_cleanup_pending = true
        FROM candidate
        WHERE job.id = candidate.id
        RETURNING job.*`,
@@ -375,6 +385,8 @@ export class BusinessAnalysisRepository {
       confirmationId: row.transcript_confirmation_id,
       confirmationVersion: Number(row.confirmation_version),
       model: row.model,
+      workflowVersion: String(row.workflow_version),
+      recoveryAttempts: Number(row.recovery_attempts),
       knowledgeBaseIds,
       knowledgeBases: knowledgeBases.rows.map((item) => ({
         id: String(item.id),
@@ -411,6 +423,32 @@ export class BusinessAnalysisRepository {
     );
   }
 
+  /** 为同一 checkpoint 工作流安排下一次持久化恢复。 */
+  async scheduleRecovery(
+    jobId: string,
+    code: string,
+    message: string,
+    delayMs: number,
+  ): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE ${this.table('audio_business_analysis_jobs')}
+       SET status = 'queued', recovery_attempts = recovery_attempts + 1,
+           next_attempt_at = now() + ($3::double precision * interval '1 millisecond'),
+           completed_at = NULL, error_code = $4, error_message = $5, error_retryable = true
+       WHERE tenant_id = $1 AND id = $2 AND status = 'running'
+         AND recovery_attempts < $6`,
+      [
+        this.tenantId,
+        jobId,
+        Math.max(0, delayMs),
+        code,
+        message.slice(0, 500),
+        BUSINESS_ANALYSIS_MAX_RECOVERY_ATTEMPTS,
+      ],
+    );
+    return result.rowCount === 1;
+  }
+
   /** 原子发布经校验的总结、标签、片段证据和检索引用。 */
   async publish(
     job: ClaimedBusinessAnalysisJob,
@@ -420,6 +458,27 @@ export class BusinessAnalysisRepository {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      const current = await client.query(
+        `SELECT job.status, head.active_job_id
+         FROM ${this.table('audio_business_analysis_jobs')} job
+         LEFT JOIN ${this.table('audio_group_business_analysis_heads')} head
+           ON head.tenant_id = job.tenant_id AND head.group_id = job.group_id
+          AND head.audio_file_id = job.audio_file_id
+         WHERE job.tenant_id = $1 AND job.id = $2
+         FOR UPDATE OF job`,
+        [this.tenantId, job.id],
+      );
+      const currentJob = current.rows[0];
+      if (!currentJob) {
+        throw new WorkspaceRepositoryError('NOT_FOUND', '业务分析任务不存在。');
+      }
+      if (currentJob.status === 'ready' && currentJob.active_job_id === job.id) {
+        await client.query('COMMIT');
+        return;
+      }
+      if (currentJob.status !== 'running') {
+        throw new WorkspaceRepositoryError('CONFLICT', '业务分析任务状态已变化，无法发布结果。');
+      }
       for (const [index, section] of result.summarySections.entries()) {
         await client.query(
           `INSERT INTO ${this.table('business_analysis_summary_sections')}
@@ -508,9 +567,39 @@ export class BusinessAnalysisRepository {
     await this.pool.query(
       `UPDATE ${this.table('audio_business_analysis_jobs')}
        SET status = 'failed', completed_at = now(), error_code = $3,
-           error_message = $4, error_retryable = $5
-       WHERE tenant_id = $1 AND id = $2`,
+           error_message = $4, error_retryable = $5, next_attempt_at = NULL,
+           checkpoint_cleanup_pending = true
+       WHERE tenant_id = $1 AND id = $2 AND status = 'running'`,
       [this.tenantId, jobId, code, message.slice(0, 500), retryable],
+    );
+  }
+
+  /** 列出已进入终态但仍需清理 LangGraph thread 的任务。 */
+  async listCheckpointCleanupCandidates(
+    limit = 100,
+  ): Promise<{ id: string; workflowVersion: string }[]> {
+    const result = await this.pool.query(
+      `SELECT id, workflow_version
+       FROM ${this.table('audio_business_analysis_jobs')}
+       WHERE tenant_id = $1 AND status IN ('ready', 'failed')
+         AND checkpoint_cleanup_pending = true
+       ORDER BY completed_at NULLS LAST, created_at
+       LIMIT $2`,
+      [this.tenantId, Math.max(1, Math.min(500, Math.round(limit)))],
+    );
+    return result.rows.map((row) => ({
+      id: String(row.id),
+      workflowVersion: String(row.workflow_version),
+    }));
+  }
+
+  /** 仅在 thread 删除成功后清除补偿标记。 */
+  async markCheckpointCleaned(jobId: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE ${this.table('audio_business_analysis_jobs')}
+       SET checkpoint_cleanup_pending = false
+       WHERE tenant_id = $1 AND id = $2 AND status IN ('ready', 'failed')`,
+      [this.tenantId, jobId],
     );
   }
 

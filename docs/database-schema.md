@@ -361,6 +361,24 @@ ASR 确认后的情绪分析和角色识别任务。每条任务固化 `analysis
 
 `active_emotion_job_id` 与 `active_role_job_id` 都属于 ASR revision，因此重转写产生的新 revision 不会泄漏旧 revision 的后处理结果。
 
+### `group_analysis_settings`
+
+分组级销售复盘设置，保存自动或手动时机、内容关注点、语气和最多 12 个自定义标签。任务创建时会把当时设置固化到 job，后续修改不改变已排队或历史结果。
+
+### `audio_business_analysis_jobs`
+
+分组、音频和已确认转写版本的销售复盘任务。每条任务固化 ASR revision、Confirmed Transcript、分组设置、知识库白名单、可选情绪/角色 job 与输入指纹；状态为 `queued`、`running`、`ready` 或 `failed`，并保存单调进度和脱敏错误。
+
+`workflow_version` 绑定恢复语义，首版为 `langgraph-v1`；`recovery_attempts` 只记录可重试错误后已安排的恢复，进程中断不消耗该预算；`next_attempt_at` 持久化 15 秒和 60 秒退避截止点，claim 只领取已到期任务。`checkpoint_cleanup_pending` 表示业务已终态但 LangGraph thread 仍需补偿删除。
+
+### `audio_group_business_analysis_heads`
+
+每个分组和音频只保存一个当前已发布 job 指针，历史 job 及其结果继续保留。摘要、标签、片段证据、知识引用、job 终态和 head 移动在同一发布事务中完成；同 job 已是 `ready` 且仍为 head 时重复发布是幂等成功。
+
+### `business_analysis_summary_sections` 与结构化标签表
+
+`business_analysis_summary_sections` 保存有序复盘摘要；`business_analysis_tags` 保存优点、改进、风险、建议或自定义标签及置信度；`business_analysis_tag_segments` 关联 Confirmed Transcript 对应的原始片段 ID；`business_analysis_citations` 仅允许保存本次检索白名单中的 chunk 与文档定位。
+
 ### `analysis_scenes`
 
 分析修订版中的有序场景或章节，例如“开场”“需求讨论”“后续安排”。
@@ -441,6 +459,8 @@ ASR 确认后的情绪分析和角色识别任务。每条任务固化 `analysis
 ### `checkpoint_writes`
 
 保存某个 checkpoint 中各任务对 channel 的中间写入，支持工作流暂停、恢复和并行节点执行。
+
+分组业务分析使用 `echowave:business-analysis:<workflowVersion>:<jobId>` 作为稳定 thread ID。checkpoint 只用于非终态恢复，可能短期包含已确认转写、检索查询和知识块副本；成功或最终失败后删除，删除失败由 `audio_business_analysis_jobs.checkpoint_cleanup_pending` 在 API 启动时重试。长期历史与审计仍以业务表和 `ai_execution_*` 为准。
 
 ## 数据生命周期与约束原则
 
