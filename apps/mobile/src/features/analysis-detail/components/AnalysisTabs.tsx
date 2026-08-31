@@ -60,13 +60,11 @@ const styles = StyleSheet.create({
   },
   detailTabs: {
     flexDirection: 'row',
-    gap: spacing.xs,
-    minHeight: 64,
+    gap: spacing.lg,
+    minHeight: 34,
     paddingHorizontal: spacing.md,
   },
   detailTab: {
-    alignItems: 'center',
-    flex: 1,
     justifyContent: 'flex-end',
   },
   detailTabText: {

@@ -199,7 +199,10 @@ export function PostAnalysisConfirmDialog({
 }
 
 const styles = StyleSheet.create({
-  container: { paddingHorizontal: spacing.md, paddingTop: spacing.md },
+  container: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+  },
   collapseHeader: {
     alignItems: 'center',
     backgroundColor: colors.background,
