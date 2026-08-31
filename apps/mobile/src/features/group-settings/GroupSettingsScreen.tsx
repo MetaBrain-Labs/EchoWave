@@ -44,6 +44,7 @@ import {
 } from '@/shared/api/groupsApi';
 import { listDataSources } from '@/shared/api/dataSourcesApi';
 import { listKnowledgeBases } from '@/shared/api/knowledgeBasesApi';
+import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import {
   colors,
   fontFamilies,
@@ -118,6 +119,7 @@ export function GroupSettingsScreen({
   const [selectedKnowledgeIds, setSelectedKnowledgeIds] = useState<Set<string>>(() => new Set());
   const [dataSources, setDataSources] = useState<DataSourceSummary[]>([]);
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(() => new Set());
+  const runInitialRequest = useInitialRequestLoading();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -148,9 +150,9 @@ export function GroupSettingsScreen({
   }, [groupId]);
 
   useEffect(() => {
-    const task = setTimeout(() => void load(), 0);
+    const task = setTimeout(() => void runInitialRequest(load), 0);
     return () => clearTimeout(task);
-  }, [load]);
+  }, [load, runInitialRequest]);
 
   const toggle = (setter: typeof setSelectedKnowledgeIds, id: string) => {
     setter((current) => {

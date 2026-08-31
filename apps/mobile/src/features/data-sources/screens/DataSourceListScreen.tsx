@@ -33,6 +33,7 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 import { createDataSource, listDataSources } from '@/shared/api/dataSourcesApi';
+import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 
 import { DataSourceFormSheet, type DataSourceFormValue } from '../components/DataSourceDialogs';
 
@@ -97,6 +98,7 @@ export function DataSourceListScreen({
   const [formVisible, setFormVisible] = useState(false);
   const [formError, setFormError] = useState('');
   const [creating, setCreating] = useState(false);
+  const runInitialRequest = useInitialRequestLoading();
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -109,9 +111,9 @@ export function DataSourceListScreen({
     }
   }, []);
   useEffect(() => {
-    const task = setTimeout(() => void load(), 0);
+    const task = setTimeout(() => void runInitialRequest(load), 0);
     return () => clearTimeout(task);
-  }, [load]);
+  }, [load, runInitialRequest]);
 
   const create = async (value: DataSourceFormValue) => {
     setCreating(true);

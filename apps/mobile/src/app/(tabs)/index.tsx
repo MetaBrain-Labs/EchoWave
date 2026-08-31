@@ -13,14 +13,12 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { GroupScreen } from '@/features/group/GroupScreen';
-import { useNavigationLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import { firstRouteParam } from '@/shared/navigation/routeParams';
 
 /** 连接分组页面与分析详情导航。 */
 export default function GroupRoute() {
   const router = useRouter();
   const params = useLocalSearchParams<{ groupId?: string | string[]; tab?: string | string[] }>();
-  const { runWithLoading } = useNavigationLoading();
   const initialGroupId = firstRouteParam(params.groupId) || undefined;
   const routedTab = firstRouteParam(params.tab);
   const initialTab = routedTab === 'knowledge' || routedTab === 'sources' ? routedTab : undefined;
@@ -30,30 +28,22 @@ export default function GroupRoute() {
       initialGroupId={initialGroupId}
       initialTab={initialTab}
       onOpenAudio={(id, groupId) => {
-        void runWithLoading(() =>
-          router.push({ pathname: '/analysis/[id]', params: { id, groupId } }),
-        );
+        router.push({ pathname: '/analysis/[id]', params: { id, groupId } });
       }}
       onOpenKnowledge={(knowledgeId) => {
-        void runWithLoading(() =>
-          router.push({
-            pathname: '/knowledge/[knowledgeId]',
-            params: { knowledgeId },
-          }),
-        );
+        router.push({
+          pathname: '/knowledge/[knowledgeId]',
+          params: { knowledgeId },
+        });
       }}
       onOpenSource={(sourceId, groupId) => {
-        void runWithLoading(() =>
-          router.push({
-            pathname: '/sources/[sourceId]',
-            params: { sourceId, groupId },
-          }),
-        );
+        router.push({
+          pathname: '/sources/[sourceId]',
+          params: { sourceId, groupId },
+        });
       }}
       onOpenSettings={(groupId) => {
-        void runWithLoading(() =>
-          router.push({ pathname: '/groups/[groupId]/settings', params: { groupId } }),
-        );
+        router.push({ pathname: '/groups/[groupId]/settings', params: { groupId } });
       }}
     />
   );

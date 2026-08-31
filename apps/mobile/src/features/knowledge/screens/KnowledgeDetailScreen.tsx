@@ -16,6 +16,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   AppState,
   Pressable,
   ScrollView,
@@ -36,6 +37,7 @@ import { useSwipePager } from '@/shared/hooks/useSwipePager';
 import { useGroupAssociationEditor } from '@/shared/hooks/useGroupAssociationEditor';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { PageTabs } from '@/shared/ui/PageTabs';
+import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import {
   colors,
   fontFamilies,
@@ -45,6 +47,7 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 import { DocumentFormatIcon, DocumentStatusView } from '../components/DocumentUi';
+import { KnowledgeDocumentActions } from '../components/KnowledgeDocumentActions';
 import { EmptyState } from '../components/EmptyState';
 import {
   KnowledgeGroupPicker,
@@ -138,17 +141,14 @@ function InfoRow({
 
 function DocumentRow({
   document,
+  onMore,
   onOpen,
-  onRetry,
 }: {
   document: KnowledgeDocument;
+  onMore: () => void;
   onOpen: () => void;
-  onRetry: () => void;
 }) {
   const enabled = document.status.kind === 'ready';
-  const requiresReupload =
-    document.status.kind === 'failed' &&
-    document.status.code === 'EMBEDDING_MODEL_MIGRATION_REQUIRED';
   const content = (
     <>
       <DocumentFormatIcon format={document.format} size={40} />
@@ -172,19 +172,12 @@ function DocumentRow({
         <DocumentStatusView document={document} />
       </View>
       <Pressable
-        accessibilityLabel={
-          document.status.kind === 'failed'
-            ? requiresReupload
-              ? `重新上传文档：${document.title}`
-              : `重试文档：${document.title}`
-            : `${document.title}更多操作`
-        }
+        accessibilityLabel={`${document.title}更多操作`}
         accessibilityRole="button"
         hitSlop={8}
         onPress={(event) => {
           event?.stopPropagation();
-          if (document.status.kind === 'failed') onRetry();
-          else showComingSoon('文件更多操作');
+          onMore();
         }}
         style={({ pressed }) => [styles.moreButton, pressed && styles.pressed]}
       >
@@ -295,6 +288,9 @@ export function KnowledgeDetailScreen({
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
   const [query, setQuery] = useState('');
   const [switchTarget, setSwitchTarget] = useState<GroupSummary>();
+  const [actionDocument, setActionDocument] = useState<KnowledgeDocument>();
+  const [pendingDocumentId, setPendingDocumentId] = useState<string>();
+  const runInitialRequest = useInitialRequestLoading();
   const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } = useSwipePager({
     activeTab,
     onTabChange: setActiveTab,
@@ -324,9 +320,9 @@ export function KnowledgeDetailScreen({
   );
 
   useEffect(() => {
-    const task = setTimeout(() => void load(), 0);
+    const task = setTimeout(() => void runInitialRequest(load), 0);
     return () => clearTimeout(task);
-  }, [load]);
+  }, [load, runInitialRequest]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
@@ -384,21 +380,19 @@ export function KnowledgeDetailScreen({
     toggleGroup,
   } = useGroupAssociationEditor({ linkGroups: linkSelectedGroups });
 
-  const retry = (document: KnowledgeDocument) => {
-    if (
-      document.status.kind === 'failed' &&
-      document.status.code === 'EMBEDDING_MODEL_MIGRATION_REQUIRED'
-    ) {
-      void pickAndUpload();
-      return;
+  const retry = async (document: KnowledgeDocument) => {
+    if (pendingDocumentId) return;
+    setPendingDocumentId(document.id);
+    setError('');
+    try {
+      const current = await retryDocument(knowledgeId, document.id);
+      setDocuments((items) => items.map((item) => (item.id === current.id ? current : item)));
+      setActionDocument(undefined);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '重试失败，请重新上传文件。');
+    } finally {
+      setPendingDocumentId(undefined);
     }
-    void retryDocument(knowledgeId, document.id)
-      .then((current) =>
-        setDocuments((items) => items.map((item) => (item.id === current.id ? current : item))),
-      )
-      .catch((reason) =>
-        setError(reason instanceof Error ? reason.message : '重试失败，请重新上传文件。'),
-      );
   };
 
   const pickAndUpload = async () => {
@@ -429,6 +423,25 @@ export function KnowledgeDetailScreen({
     } finally {
       setUploading(false);
     }
+  };
+
+  const confirmRetry = (document: KnowledgeDocument) => {
+    Alert.alert('确认重新解析', `将重新排队解析“${document.title}”，是否继续？`, [
+      { text: '取消', style: 'cancel' },
+      { text: '重新解析', onPress: () => void retry(document) },
+    ]);
+  };
+  const confirmReupload = (document: KnowledgeDocument) => {
+    Alert.alert('确认重新上传', `“${document.title}”需要使用当前嵌入模型重新上传原文件。`, [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '选择文件',
+        onPress: () => {
+          setActionDocument(undefined);
+          void pickAndUpload();
+        },
+      },
+    ]);
   };
 
   if (loading && !knowledge) {
@@ -543,6 +556,32 @@ export function KnowledgeDetailScreen({
           if (target) onSwitchGroup?.(target.id);
         }}
       />
+      <KnowledgeDocumentActions
+        document={actionDocument}
+        onClose={() => {
+          if (!pendingDocumentId) setActionDocument(undefined);
+        }}
+        onOpen={() => {
+          const target = actionDocument;
+          setActionDocument(undefined);
+          if (target) onOpenDocument(target.id);
+        }}
+        onReupload={() => {
+          if (actionDocument) confirmReupload(actionDocument);
+        }}
+        onRetry={() => {
+          if (actionDocument) confirmRetry(actionDocument);
+        }}
+        onShowFailure={() => {
+          if (actionDocument?.status.kind === 'failed') {
+            Alert.alert(
+              '解析失败原因',
+              `${actionDocument.status.message}\n\n错误代码：${actionDocument.status.code}`,
+            );
+          }
+        }}
+        pending={pendingDocumentId === actionDocument?.id || uploading}
+      />
       <PageHeader
         onBack={onBack}
         onMore={() => showComingSoon('知识库更多操作')}
@@ -636,8 +675,8 @@ export function KnowledgeDetailScreen({
                     <DocumentRow
                       key={document.id}
                       document={document}
+                      onMore={() => setActionDocument(document)}
                       onOpen={() => onOpenDocument(document.id)}
-                      onRetry={() => retry(document)}
                     />
                   ))
               ) : (
@@ -670,8 +709,8 @@ export function KnowledgeDetailScreen({
                 <DocumentRow
                   key={document.id}
                   document={document}
+                  onMore={() => setActionDocument(document)}
                   onOpen={() => onOpenDocument(document.id)}
-                  onRetry={() => retry(document)}
                 />
               ))
             ) : (

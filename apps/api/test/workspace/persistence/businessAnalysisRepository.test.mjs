@@ -81,6 +81,101 @@ function queueClient({ existing = undefined } = {}) {
 }
 
 describe('BusinessAnalysisRepository', () => {
+  it('hydrates historical citation excerpts from current knowledge chunks', async () => {
+    const tagId = '77777777-7777-4777-8777-777777777777';
+    const chunkId = '88888888-8888-4888-8888-888888888888';
+    const documentId = '99999999-9999-4999-8999-999999999999';
+    const chunkContent = `  先确认客户顾虑。\n\n${'再提供可核实的业务证据。'.repeat(30)}  `;
+    const pool = {
+      query: async (sql) => {
+        if (/SELECT af\.id AS audio_file_id/.test(sql)) return { rows: [snapshotRow()] };
+        if (/SELECT gkb\.knowledge_base_id/.test(sql)) {
+          return { rows: [{ knowledge_base_id: knowledgeBaseId }] };
+        }
+        if (/FROM .*audio_business_analysis_jobs.*ORDER BY created_at DESC/s.test(sql)) {
+          return {
+            rows: [
+              {
+                id: jobId,
+                model: 'deepseek-v4-flash',
+                status: 'ready',
+                progress: 100,
+                confirmation_version: 3,
+                input_fingerprint: 'fingerprint',
+              },
+            ],
+          };
+        }
+        if (/FROM .*audio_group_business_analysis_heads.*JOIN/s.test(sql)) {
+          return {
+            rows: [
+              {
+                id: jobId,
+                model: 'deepseek-v4-flash',
+                published_at: new Date('2026-08-28T08:00:00.000Z'),
+                confirmation_version: 3,
+                knowledge_base_ids: [knowledgeBaseId],
+                settings_snapshot: {
+                  timing: 'manual',
+                  contentFocus: '关注异议处理',
+                  tone: '正式、专业',
+                  customTags: ['需求探索'],
+                },
+                limitations: [],
+              },
+            ],
+          };
+        }
+        if (/business_analysis_summary_sections/.test(sql)) return { rows: [] };
+        if (/business_analysis_tags/.test(sql)) {
+          return {
+            rows: [
+              {
+                id: tagId,
+                category: 'strength',
+                custom_label: null,
+                title: '异议处理',
+                summary: '处理清晰',
+                details: [],
+                confidence: 90,
+                segment_ids: [confirmationId],
+              },
+            ],
+          };
+        }
+        if (/business_analysis_citations/.test(sql)) {
+          assert.match(sql, /JOIN .*document_chunks/);
+          return {
+            rows: [
+              {
+                tag_id: tagId,
+                chunk_id: chunkId,
+                knowledge_base_id: knowledgeBaseId,
+                document_id: documentId,
+                document_title: '销售异议处理手册',
+                content: chunkContent,
+                locator: {
+                  kind: 'markdown',
+                  headingPath: ['异议处理'],
+                  lineStart: 12,
+                  lineEnd: 18,
+                },
+              },
+            ],
+          };
+        }
+        assert.fail(`unexpected SQL: ${sql}`);
+      },
+    };
+    const repository = new BusinessAnalysisRepository(pool, 'echowave', tenantId);
+
+    const state = await repository.getState(audioId, groupId);
+    const excerpt = state.result.tags[0].citations[0].excerpt;
+    assert.equal(excerpt.length, 240);
+    assert.doesNotMatch(excerpt, /\s{2,}/);
+    assert.match(excerpt, /^先确认客户顾虑。/);
+  });
+
   it('reuses the same completed snapshot unless force is requested', async () => {
     const reusedClient = queueClient({ existing: { id: jobId, status: 'ready' } });
     const repository = new BusinessAnalysisRepository(

@@ -51,15 +51,32 @@ export const AudioAiExecutionModelCallSchema = z.object({
     .nullable(),
 });
 
-export const AudioAiExecutionStepSchema = z.object({
-  id: EntityIdSchema,
-  sequence: z.number().int().positive(),
-  name: z.string().min(1).max(120),
-  status: z.enum(['started', 'completed', 'failed']),
-  occurredAt: z.string().datetime(),
-  durationMs: z.number().int().nonnegative().nullable(),
-  summary: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
-});
+export const AudioAiExecutionStepSchema = z
+  .object({
+    id: EntityIdSchema,
+    sequence: z.number().int().positive(),
+    name: z.string().min(1).max(120),
+    status: z.enum(['started', 'completed', 'failed']),
+    occurredAt: z.string().datetime(),
+    durationMs: z.number().int().nonnegative().nullable(),
+    summary: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
+  })
+  .superRefine((step, context) => {
+    if (step.status === 'started' && step.durationMs !== null) {
+      context.addIssue({
+        code: 'custom',
+        path: ['durationMs'],
+        message: 'Running steps must not have a final duration.',
+      });
+    }
+    if (step.status !== 'started' && step.durationMs === null) {
+      context.addIssue({
+        code: 'custom',
+        path: ['durationMs'],
+        message: 'Terminal steps must have a final duration.',
+      });
+    }
+  });
 
 export const AudioAiKnowledgeBaseSnapshotSchema = z.object({
   id: EntityIdSchema,

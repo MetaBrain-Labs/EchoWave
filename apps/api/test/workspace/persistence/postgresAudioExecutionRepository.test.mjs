@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { PostgresAudioExecutionRepository } from '../../../dist/workspace/audio/execution/postgresAudioExecutionRepository.js';
+import { AudioExecutionEventMapper } from '../../../dist/workspace/audio/execution/eventMapping.js';
 
 const audioFileId = '10000000-0000-4000-8000-000000000001';
 const revisionId = '20000000-0000-4000-8000-000000000002';
@@ -17,6 +18,92 @@ const jobId = '30000000-0000-4000-8000-000000000003';
 const groupId = '40000000-0000-4000-8000-000000000004';
 
 describe('PostgresAudioExecutionRepository', () => {
+  it('preserves database null durations and merges legacy step lifecycle events', () => {
+    const runId = '50000000-0000-4000-8000-000000000005';
+    const startedId = '60000000-0000-4000-8000-000000000006';
+    const terminalId = '70000000-0000-4000-8000-000000000007';
+    const base = {
+      execution_run_id: runId,
+      stream_cursor: '1',
+      event_type: 'step',
+      name: 'analysis-generation',
+      details: { summary: {} },
+    };
+    const mapped = new AudioExecutionEventMapper().mapRun(
+      {
+        id: runId,
+        kind: 'audio-business-analysis',
+        name: 'review',
+        phase: null,
+        status: 'running',
+        group_id: groupId,
+        source_job_id: jobId,
+        started_at: '2026-08-29T01:00:00.000Z',
+        completed_at: null,
+        duration_ms: null,
+        error_code: null,
+      },
+      [
+        {
+          ...base,
+          id: startedId,
+          operation_id: startedId,
+          sequence_no: 1,
+          status: 'started',
+          occurred_at: '2026-08-29T01:00:00.000Z',
+          duration_ms: null,
+        },
+        {
+          ...base,
+          id: terminalId,
+          operation_id: terminalId,
+          sequence_no: 2,
+          status: 'completed',
+          occurred_at: '2026-08-29T01:00:01.250Z',
+          duration_ms: null,
+        },
+      ],
+    );
+
+    assert.equal(mapped.durationMs, null);
+    assert.equal(mapped.steps.length, 1);
+    assert.equal(mapped.steps[0].id, startedId);
+    assert.equal(mapped.steps[0].status, 'completed');
+    assert.equal(mapped.steps[0].durationMs, 1_250);
+  });
+
+  it('persists one logical step id with an elapsed terminal duration', async () => {
+    const statements = [];
+    const client = {
+      query: async (sql, values = []) => {
+        statements.push({ sql, values });
+        return { rows: [], rowCount: 1 };
+      },
+      release: () => undefined,
+    };
+    const repository = new PostgresAudioExecutionRepository(
+      { query: client.query, connect: async () => client },
+      'public',
+      groupId,
+    );
+    const recorder = repository.createReporter().start({
+      kind: 'audio-business-analysis',
+      name: 'review',
+      metadata: { audioFileId, revisionId, jobId, groupId },
+    });
+    recorder.recordStep({ name: 'analysis-generation', status: 'started', durationMs: 0 });
+    recorder.recordStep({ name: 'analysis-generation', status: 'completed', durationMs: 0 });
+    await recorder.finish({ status: 'completed' });
+
+    const stepEvents = statements.filter(
+      ({ sql, values }) => /INSERT INTO .*ai_execution_events/.test(sql) && values[4] === 'step',
+    );
+    assert.equal(stepEvents.length, 2);
+    assert.equal(stepEvents[0].values[2], stepEvents[1].values[2]);
+    assert.equal(stepEvents[0].values[8], null);
+    assert.equal(typeof stepEvents[1].values[8], 'number');
+  });
+
   it('persists only safe model and retrieval audit details', async () => {
     const statements = [];
     const client = {

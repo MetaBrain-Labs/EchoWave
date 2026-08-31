@@ -13,40 +13,30 @@
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 
 import { KnowledgeDetailScreen } from '@/features/knowledge/screens/KnowledgeDetailScreen';
-import { useNavigationLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import { firstRouteParam } from '@/shared/navigation/routeParams';
 
 /** 读取知识库 ID 并连接详情、文档与问答路由。 */
 export default function KnowledgeDetailRoute() {
   const router = useRouter();
-  const { runWithLoading } = useNavigationLoading();
   const { knowledgeId } = useLocalSearchParams<{ knowledgeId?: string | string[] }>();
   const id = firstRouteParam(knowledgeId);
   const goBack = () => {
-    void runWithLoading(() => {
-      router.replace('/knowledge');
-    });
+    router.replace('/knowledge');
   };
 
   return (
     <KnowledgeDetailScreen
       knowledgeId={id}
       onBack={goBack}
-      onAsk={() => {
-        void runWithLoading(() => router.push(`/knowledge/${id}/ask` as Href));
-      }}
+      onAsk={() => router.push(`/knowledge/${id}/ask` as Href)}
       onOpenDocument={(documentId) => {
-        void runWithLoading(() =>
-          router.push({
-            pathname: '/knowledge/[knowledgeId]/files/[fileId]',
-            params: { fileId: documentId, knowledgeId: id },
-          }),
-        );
+        router.push({
+          pathname: '/knowledge/[knowledgeId]/files/[fileId]',
+          params: { fileId: documentId, knowledgeId: id },
+        });
       }}
       onSwitchGroup={(groupId) => {
-        void runWithLoading(() => {
-          router.replace({ pathname: '/', params: { groupId, tab: 'knowledge' } });
-        });
+        router.replace({ pathname: '/', params: { groupId, tab: 'knowledge' } });
       }}
     />
   );

@@ -83,6 +83,7 @@ export function uuid(value: unknown): string | undefined {
 }
 
 export function integer(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
   const candidate = Number(value);
   return Number.isSafeInteger(candidate) && candidate >= 0 ? candidate : null;
 }

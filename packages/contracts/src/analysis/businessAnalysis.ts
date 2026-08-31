@@ -24,6 +24,7 @@ export const BusinessAnalysisCitationSchema = z.object({
   knowledgeBaseId: EntityIdSchema,
   documentId: EntityIdSchema,
   documentTitle: z.string().min(1),
+  excerpt: z.string().trim().min(1).max(240),
   locator: SourceLocatorSchema,
 });
 export const BusinessAnalysisTagSchema = z

@@ -20,6 +20,7 @@ import { PageHeader } from '@/shared/ui/PageHeader';
 import { PageTabs } from '@/shared/ui/PageTabs';
 
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
+import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import {
   colors,
   fontFamilies,
@@ -82,6 +83,7 @@ export function DocumentDetailScreen({
   const [error, setError] = useState('');
   const searchInputRef = useRef<TextInput>(null);
   const importantBlocks = useImportantBlocks();
+  const runInitialRequest = useInitialRequestLoading();
   const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } = useSwipePager({
     activeTab,
     onTabChange: setActiveTab,
@@ -90,7 +92,7 @@ export function DocumentDetailScreen({
 
   useEffect(() => {
     let active = true;
-    void getDocument(knowledgeId, documentId)
+    void runInitialRequest(() => getDocument(knowledgeId, documentId))
       .then((value) => {
         if (active) setDocument(value);
       })
@@ -100,7 +102,7 @@ export function DocumentDetailScreen({
     return () => {
       active = false;
     };
-  }, [documentId, knowledgeId]);
+  }, [documentId, knowledgeId, runInitialRequest]);
 
   const chunks = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();

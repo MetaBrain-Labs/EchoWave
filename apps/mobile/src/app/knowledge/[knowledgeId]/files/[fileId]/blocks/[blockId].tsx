@@ -13,13 +13,11 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { BlockDetailScreen } from '@/features/knowledge/screens/BlockDetailScreen';
-import { useNavigationLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import { firstRouteParam } from '@/shared/navigation/routeParams';
 
 /** 渲染指定文档块并保留完整来源层级参数。 */
 export default function BlockDetailRoute() {
   const router = useRouter();
-  const { runWithLoading } = useNavigationLoading();
   const params = useLocalSearchParams<{
     blockId?: string | string[];
     fileId?: string | string[];
@@ -30,18 +28,17 @@ export default function BlockDetailRoute() {
   const documentId = firstRouteParam(params.fileId);
   const blockId = firstRouteParam(params.blockId);
   const returnsToQuery = firstRouteParam(params.returnTo) === 'knowledge-query';
+  const returnsToAnalysis = firstRouteParam(params.returnTo) === 'analysis';
   const fileRoute = {
     pathname: '/knowledge/[knowledgeId]/files/[fileId]' as const,
     params: { fileId: documentId, knowledgeId },
   };
   const goBack = () => {
-    void runWithLoading(() => {
-      if (returnsToQuery && router.canGoBack()) {
-        router.back();
-      } else {
-        router.replace(fileRoute);
-      }
-    });
+    if ((returnsToQuery || returnsToAnalysis) && router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace(fileRoute);
+    }
   };
 
   return (
@@ -51,30 +48,34 @@ export default function BlockDetailRoute() {
       knowledgeId={knowledgeId}
       onBack={goBack}
       onLocateOriginal={(targetBlockId) => {
-        void runWithLoading(() =>
-          router.replace({
-            pathname: fileRoute.pathname,
-            params: {
-              ...fileRoute.params,
-              block: targetBlockId,
-              tab: 'original',
-              ...(returnsToQuery ? { returnTo: 'knowledge-query' } : {}),
-            },
-          }),
-        );
+        router.replace({
+          pathname: fileRoute.pathname,
+          params: {
+            ...fileRoute.params,
+            block: targetBlockId,
+            tab: 'original',
+            ...(returnsToQuery
+              ? { returnTo: 'knowledge-query' }
+              : returnsToAnalysis
+                ? { returnTo: 'analysis' }
+                : {}),
+          },
+        });
       }}
       onNavigateBlock={(nextBlockId) => {
-        void runWithLoading(() =>
-          router.replace({
-            pathname: '/knowledge/[knowledgeId]/files/[fileId]/blocks/[blockId]',
-            params: {
-              blockId: nextBlockId,
-              fileId: documentId,
-              knowledgeId,
-              ...(returnsToQuery ? { returnTo: 'knowledge-query' } : {}),
-            },
-          }),
-        );
+        router.replace({
+          pathname: '/knowledge/[knowledgeId]/files/[fileId]/blocks/[blockId]',
+          params: {
+            blockId: nextBlockId,
+            fileId: documentId,
+            knowledgeId,
+            ...(returnsToQuery
+              ? { returnTo: 'knowledge-query' }
+              : returnsToAnalysis
+                ? { returnTo: 'analysis' }
+                : {}),
+          },
+        });
       }}
     />
   );

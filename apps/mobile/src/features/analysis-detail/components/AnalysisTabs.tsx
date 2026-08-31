@@ -11,9 +11,10 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, fontFamilies, spacing, textColors, typography } from '@/shared/theme/tokens';
 
-export type AnalysisTab = 'transcript' | 'summary' | 'model';
+export type AnalysisTab = 'transcript' | 'tasks' | 'summary' | 'model';
 const analysisTabs: readonly { key: AnalysisTab; label: string }[] = [
   { key: 'transcript', label: '转写分析' },
+  { key: 'tasks', label: '分析任务' },
   { key: 'summary', label: '分析总结' },
   { key: 'model', label: '模型详情' },
 ];
@@ -59,11 +60,13 @@ const styles = StyleSheet.create({
   },
   detailTabs: {
     flexDirection: 'row',
-    gap: spacing.lg,
+    gap: spacing.xs,
     minHeight: 64,
     paddingHorizontal: spacing.md,
   },
   detailTab: {
+    alignItems: 'center',
+    flex: 1,
     justifyContent: 'flex-end',
   },
   detailTabText: {

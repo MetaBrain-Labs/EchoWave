@@ -649,9 +649,12 @@ export class BusinessAnalysisRepository {
         ),
       ]);
       const citations = await this.pool.query(
-        `SELECT tag_id, chunk_id, knowledge_base_id, document_id, document_title, locator
-         FROM ${this.table('business_analysis_citations')}
-         WHERE tenant_id = $1 AND job_id = $2`,
+        `SELECT citation.tag_id, citation.chunk_id, citation.knowledge_base_id,
+                citation.document_id, citation.document_title, citation.locator, chunk.content
+         FROM ${this.table('business_analysis_citations')} citation
+         JOIN ${this.table('document_chunks')} chunk
+           ON chunk.tenant_id = citation.tenant_id AND chunk.id = citation.chunk_id
+         WHERE citation.tenant_id = $1 AND citation.job_id = $2`,
         [this.tenantId, published.id],
       );
       const limitations = safeArray(published.limitations);
@@ -691,6 +694,7 @@ export class BusinessAnalysisRepository {
               knowledgeBaseId: citation.knowledge_base_id,
               documentId: citation.document_id,
               documentTitle: citation.document_title,
+              excerpt: String(citation.content).replace(/\s+/g, ' ').trim().slice(0, 240),
               locator: citation.locator,
             })),
         })),

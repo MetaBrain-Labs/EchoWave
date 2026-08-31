@@ -13,13 +13,11 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { AnalysisDetailScreen } from '@/features/analysis-detail/AnalysisDetailScreen';
-import { useNavigationLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import { firstRouteParam } from '@/shared/navigation/routeParams';
 
 /** 读取分析 ID 并渲染对应分析详情页面。 */
 export default function AnalysisDetailRoute() {
   const router = useRouter();
-  const { runWithLoading } = useNavigationLoading();
   const { groupId, id, returnSourceId } = useLocalSearchParams<{
     groupId?: string | string[];
     id?: string | string[];
@@ -29,10 +27,8 @@ export default function AnalysisDetailRoute() {
   const sourceId = firstRouteParam(returnSourceId);
   const analysisGroupId = firstRouteParam(groupId);
   const goBack = () => {
-    void runWithLoading(() => {
-      if (sourceId) router.replace({ pathname: '/sources/[sourceId]', params: { sourceId } });
-      else router.replace('/');
-    });
+    if (sourceId) router.replace({ pathname: '/sources/[sourceId]', params: { sourceId } });
+    else router.replace('/');
   };
 
   return (
@@ -40,6 +36,17 @@ export default function AnalysisDetailRoute() {
       detailId={detailId}
       groupId={analysisGroupId || undefined}
       onBack={goBack}
+      onOpenCitation={(knowledgeBaseId, documentId, chunkId) =>
+        router.push({
+          pathname: '/knowledge/[knowledgeId]/files/[fileId]/blocks/[blockId]',
+          params: {
+            knowledgeId: knowledgeBaseId,
+            fileId: documentId,
+            blockId: chunkId,
+            returnTo: 'analysis',
+          },
+        })
+      }
     />
   );
 }

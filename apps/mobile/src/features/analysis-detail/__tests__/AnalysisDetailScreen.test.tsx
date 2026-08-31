@@ -10,6 +10,7 @@
  * - 不连接真实分析后端。
  */
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
+import type { AudioAnalysisStatusStreamEvent } from '@echowave/contracts';
 import { Alert, StyleSheet } from 'react-native';
 
 import { fontFamilies, textColors } from '@/shared/theme/tokens';
@@ -22,6 +23,7 @@ import * as audioAnalysisApi from '@/shared/api/audioAnalysisApi';
 import * as groupsApi from '@/shared/api/groupsApi';
 import * as requestApi from '@/shared/api/request';
 import * as executionStreamApi from '@/shared/api/audioExecutionStream';
+import * as liveUpdateApi from '@/shared/api/liveUpdateStreams';
 import { analysisFixture } from '@/test/workspaceFixtures';
 import { mockAudioPlayers, resetExpoAudioMock } from '@/test/ExpoAudioMock';
 
@@ -58,12 +60,22 @@ async function renderAnalysis(
   detailId = analysisFixture.audioFileId,
   onBack = jest.fn(),
   groupId?: string,
+  onOpenCitation?: (knowledgeBaseId: string, documentId: string, chunkId: string) => void,
 ) {
   const screen = render(
-    <AnalysisDetailScreen detailId={detailId} groupId={groupId} onBack={onBack} />,
+    <AnalysisDetailScreen
+      detailId={detailId}
+      groupId={groupId}
+      onBack={onBack}
+      onOpenCitation={onOpenCitation}
+    />,
   );
   await waitFor(() => expect(screen.queryByLabelText('正在加载分析详情')).toBeNull());
   return screen;
+}
+
+function openAnalysisTasks(screen: Awaited<ReturnType<typeof renderAnalysis>>) {
+  fireEvent.press(screen.getByRole('tab', { name: '分析任务' }));
 }
 
 describe('AnalysisDetailScreen', () => {
@@ -79,6 +91,7 @@ describe('AnalysisDetailScreen', () => {
       runs: [],
     });
     jest.mocked(executionStreamApi.streamAudioExecutionTrace).mockClear();
+    jest.mocked(liveUpdateApi.streamAudioAnalysisStatus).mockClear();
     jest.mocked(workspaceApi.getGroupSettings).mockResolvedValue({
       groupId: '10000000-0000-4000-8000-000000000001',
       name: '销售复盘组',
@@ -139,6 +152,7 @@ describe('AnalysisDetailScreen', () => {
 
   it('confirms and starts the two post-analysis tasks independently', async () => {
     const screen = await renderAnalysis();
+    openAnalysisTasks(screen);
     fireEvent.press(screen.getByRole('button', { name: '展开情绪分析与角色识别' }));
 
     fireEvent.press(screen.getByRole('button', { name: '情绪分析' }));
@@ -162,7 +176,7 @@ describe('AnalysisDetailScreen', () => {
   });
 
   it('shows independent task progress and keeps a failed task retryable', async () => {
-    jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValueOnce({
+    jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValue({
       ...analysisFixture,
       postAnalysis: {
         emotion: {
@@ -184,11 +198,85 @@ describe('AnalysisDetailScreen', () => {
       },
     });
     const screen = await renderAnalysis();
+    await waitFor(() => expect(workspaceApi.getAudioAnalysis).toHaveBeenCalledTimes(2));
+    openAnalysisTasks(screen);
     fireEvent.press(screen.getByRole('button', { name: '展开情绪分析与角色识别' }));
 
     expect(screen.getByText('分析中 45% · 基于确认版 v1')).toBeTruthy();
     expect(screen.getByText('模型返回格式无效，请重试。 · 基于确认版 v1')).toBeTruthy();
     expect(screen.getByRole('button', { name: '重新识别' })).toBeTruthy();
+  });
+
+  it('refreshes authoritative state immediately when SSE reports a terminal task', async () => {
+    const jobId = '90000000-0000-4000-8000-000000000001';
+    const running = {
+      ...analysisFixture,
+      postAnalysis: {
+        emotion: {
+          state: 'running' as const,
+          jobId,
+          model: 'qwen3.5-omni-flash',
+          progress: 1,
+          confirmationVersion: 1,
+        },
+        role: { state: 'idle' as const },
+      },
+    };
+    const ready = {
+      ...running,
+      postAnalysis: {
+        emotion: {
+          state: 'ready' as const,
+          jobId,
+          model: 'qwen3.5-omni-flash',
+          completedAt: '2026-08-29T01:00:03.000Z',
+          confirmationVersion: 1,
+        },
+        role: { state: 'idle' as const },
+      },
+    };
+    let emit: ((event: AudioAnalysisStatusStreamEvent) => void) | undefined;
+    jest
+      .mocked(liveUpdateApi.streamAudioAnalysisStatus)
+      .mockImplementation(({ onEvent, signal }) => {
+        emit = onEvent;
+        return new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve()));
+      });
+    jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValue(running);
+    const screen = await renderAnalysis();
+    await waitFor(() => expect(emit).toBeDefined());
+    await waitFor(() => expect(workspaceApi.getAudioAnalysis).toHaveBeenCalledTimes(2));
+    jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValue(ready);
+
+    await act(async () => {
+      emit?.({
+        type: 'analysis-status',
+        cursor: '2',
+        occurredAt: '2026-08-29T01:00:03.000Z',
+        audioFileId: analysisFixture.audioFileId,
+        analysisRevisionId: analysisFixture.id,
+        terminal: true,
+        state: {
+          emotion: ready.postAnalysis.emotion,
+          role: ready.postAnalysis.role,
+          business: {
+            state: 'idle',
+            groupId: null,
+            jobId: null,
+            model: null,
+            progress: 0,
+            confirmationVersion: null,
+            settingsCurrent: true,
+            knowledgeCurrent: true,
+            error: null,
+          },
+        },
+      });
+    });
+
+    openAnalysisTasks(screen);
+    fireEvent.press(screen.getByRole('button', { name: '展开情绪分析与角色识别' }));
+    await waitFor(() => expect(screen.getByText(/已完成/)).toBeTruthy());
   });
 
   it('requires confirmation before analysis and allows an unchanged first confirmation', async () => {
@@ -207,6 +295,7 @@ describe('AnalysisDetailScreen', () => {
     jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValueOnce(pendingFixture);
     const screen = await renderAnalysis();
 
+    openAnalysisTasks(screen);
     fireEvent.press(screen.getByRole('button', { name: '展开情绪分析与角色识别' }));
     expect(screen.getAllByText('请先确认转写正文')).toHaveLength(2);
     expect(screen.getByRole('button', { name: '情绪分析' }).props.accessibilityState).toEqual({
@@ -310,6 +399,7 @@ describe('AnalysisDetailScreen', () => {
 
   it('defaults post-analysis controls to collapsed and remembers the latest session choice', async () => {
     const firstScreen = await renderAnalysis();
+    openAnalysisTasks(firstScreen);
 
     expect(
       firstScreen.getByRole('button', { name: '展开情绪分析与角色识别' }).props.accessibilityState,
@@ -323,6 +413,7 @@ describe('AnalysisDetailScreen', () => {
     firstScreen.unmount();
 
     const secondScreen = await renderAnalysis('40000000-0000-4000-8000-000000000002');
+    openAnalysisTasks(secondScreen);
     expect(
       secondScreen.getByRole('button', { name: '折叠情绪分析与角色识别' }).props.accessibilityState,
     ).toEqual(expect.objectContaining({ expanded: true }));
@@ -331,6 +422,7 @@ describe('AnalysisDetailScreen', () => {
     secondScreen.unmount();
 
     const thirdScreen = await renderAnalysis('40000000-0000-4000-8000-000000000003');
+    openAnalysisTasks(thirdScreen);
     expect(
       thirdScreen.getByRole('button', { name: '展开情绪分析与角色识别' }).props.accessibilityState,
     ).toEqual(expect.objectContaining({ expanded: false }));
@@ -489,6 +581,43 @@ describe('AnalysisDetailScreen', () => {
     expect(screen.queryByText('Speaker 0')).toBeNull();
     expect(screen.getByText('平静')).toBeTruthy();
     expect(screen.queryByRole('tab', { name: '分析总结' })).toBeNull();
+    const detailTabs = screen.getAllByRole('tab').slice(0, 3);
+    ['转写分析', '分析任务', '模型详情'].forEach((label, index) => {
+      expect(within(detailTabs[index]).getByText(label)).toBeTruthy();
+    });
+  });
+
+  it('orders the four detail tabs and keeps task controls out of the transcript page', async () => {
+    jest.mocked(workspaceApi.getGroupSettings).mockResolvedValueOnce({
+      groupId: '10000000-0000-4000-8000-000000000001',
+      name: '销售复盘组',
+      analysis: {
+        timing: 'manual',
+        contentFocus: '分析销售话术',
+        tone: '正式、专业',
+        customTags: [],
+      },
+      updatedAt: '2026-08-28T08:00:00.000Z',
+    });
+    const screen = await renderAnalysis(
+      analysisFixture.audioFileId,
+      jest.fn(),
+      '10000000-0000-4000-8000-000000000001',
+    );
+
+    const detailTabs = screen.getAllByRole('tab').slice(0, 4);
+    ['转写分析', '分析任务', '分析总结', '模型详情'].forEach((label, index) => {
+      expect(within(detailTabs[index]).getByText(label)).toBeTruthy();
+    });
+    expect(
+      within(screen.getByTestId('analysis-transcript-page')).queryByRole('button', {
+        name: '展开情绪分析与角色识别',
+      }),
+    ).toBeNull();
+
+    openAnalysisTasks(screen);
+    expect(screen.getByRole('button', { name: '展开情绪分析与角色识别' })).toBeTruthy();
+    expect(screen.getByText('ASR 结果分析')).toBeTruthy();
   });
 
   it('explains when the selected model did not return speaker information', async () => {
@@ -619,7 +748,7 @@ describe('AnalysisDetailScreen', () => {
       nativeEvent: { contentOffset: { x: 480, y: 0 } },
     });
 
-    expect(screen.getByRole('tab', { name: '分析总结' }).props.accessibilityState).toEqual({
+    expect(screen.getByRole('tab', { name: '分析任务' }).props.accessibilityState).toEqual({
       selected: true,
     });
     expect(screen.queryByLabelText('收起播放器')).toBeNull();
@@ -638,6 +767,76 @@ describe('AnalysisDetailScreen', () => {
 
     expect(screen.queryByTestId('ai-tag-sheet')).toBeNull();
     expect(screen.getAllByText('高频访谈记录场景')).toHaveLength(1);
+  });
+
+  it('shows citation excerpts and forwards the complete knowledge location', async () => {
+    const onOpenCitation = jest.fn();
+    const knowledgeBaseId = 'a1000000-0000-4000-8000-000000000010';
+    const documentId = 'a1000000-0000-4000-8000-000000000011';
+    const chunkId = 'a1000000-0000-4000-8000-000000000012';
+    jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValueOnce({
+      ...analysisFixture,
+      businessAnalysis: {
+        state: 'ready',
+        groupId: '10000000-0000-4000-8000-000000000001',
+        jobId: 'a1000000-0000-4000-8000-000000000013',
+        model: 'deepseek-v4-flash',
+        progress: 100,
+        confirmationVersion: 1,
+        settingsCurrent: true,
+        knowledgeCurrent: true,
+        error: null,
+        result: {
+          jobId: 'a1000000-0000-4000-8000-000000000013',
+          groupId: '10000000-0000-4000-8000-000000000001',
+          confirmationVersion: 1,
+          model: 'deepseek-v4-flash',
+          generatedAt: '2026-08-29T01:00:00.000Z',
+          knowledgeBaseIds: [knowledgeBaseId],
+          knowledgeStatus: 'used',
+          limitations: [],
+          summarySections: [],
+          tags: [
+            {
+              id: 'a1000000-0000-4000-8000-000000000014',
+              category: 'strength',
+              customLabel: null,
+              title: '知识证据标签',
+              summary: '结论有具体知识依据。',
+              details: [],
+              confidence: 90,
+              evidenceSegmentIds: [analysisFixture.scenes[0].segments[0].id],
+              citations: [
+                {
+                  chunkId,
+                  knowledgeBaseId,
+                  documentId,
+                  documentTitle: '销售异议处理手册',
+                  excerpt: '先确认客户顾虑，再使用可核实的案例说明方案价值。',
+                  locator: {
+                    kind: 'markdown',
+                    headingPath: ['异议处理'],
+                    lineStart: 12,
+                    lineEnd: 18,
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    const screen = await renderAnalysis(
+      analysisFixture.audioFileId,
+      jest.fn(),
+      undefined,
+      onOpenCitation,
+    );
+
+    fireEvent.press(screen.getByLabelText('查看 AI 标签：知识证据标签'));
+    expect(screen.getByText('先确认客户顾虑，再使用可核实的案例说明方案价值。')).toBeTruthy();
+    fireEvent.press(screen.getByRole('link', { name: '查看知识依据：销售异议处理手册' }));
+    expect(onOpenCitation).toHaveBeenCalledWith(knowledgeBaseId, documentId, chunkId);
   });
 
   it('embeds the AI tag control in its transcript timeline rail', async () => {

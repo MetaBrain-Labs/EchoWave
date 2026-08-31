@@ -1,10 +1,10 @@
 /**
  * 导航加载状态 provider。
  *
- * 为路由切换和未来异步操作提供具有最短展示时间的全局加载遮罩，避免快速闪烁和重复状态实现。
+ * 为页面初始异步请求提供延迟出现的全局加载遮罩，避免快速请求闪烁和重复状态实现。
  *
  * Responsibilities:
- * - 协调加载任务计数与最短可见时长。
+ * - 协调并发加载任务计数与延迟显示。
  * - 向页面暴露开始和结束加载的 Hook。
  *
  * Notes:
@@ -22,7 +22,7 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 
-export const minimumNavigationLoadingMs = 700;
+export const navigationLoadingDelayMs = 150;
 
 type NavigationLoadingContextValue = {
   runWithLoading: <Result>(operation: () => Result | Promise<Result>) => Promise<Result>;
@@ -30,10 +30,10 @@ type NavigationLoadingContextValue = {
 
 const NavigationLoadingContext = createContext<NavigationLoadingContextValue | null>(null);
 
-function wait(milliseconds: number) {
-  return new Promise<void>((resolve) => {
-    setTimeout(resolve, milliseconds);
-  });
+async function runWithoutOverlay<Result>(
+  operation: () => Result | Promise<Result>,
+): Promise<Result> {
+  return await operation();
 }
 
 const barColors = ['#22B8CF', colors.success, '#5B8CFF', '#B47CF6', '#FFB84D'];
@@ -138,23 +138,35 @@ function LivelyLoadingMark() {
   );
 }
 
-/** 为子树提供可计数、具有最短展示时长的导航加载状态。 */
+/** 为子树提供可计数、按真实请求生命周期展示的导航加载状态。 */
 export function NavigationLoadingProvider({ children }: { children: React.ReactNode }) {
   const [visible, setVisible] = useState(false);
-  const operationId = useRef(0);
+  const pendingOperations = useRef(0);
+  const showTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  useEffect(
+    () => () => {
+      if (showTimer.current) clearTimeout(showTimer.current);
+    },
+    [],
+  );
 
   const runWithLoading = useCallback(async <Result,>(operation: () => Result | Promise<Result>) => {
-    const currentOperationId = operationId.current + 1;
-    operationId.current = currentOperationId;
-    const startedAt = Date.now();
-    setVisible(true);
+    pendingOperations.current += 1;
+    if (pendingOperations.current === 1) {
+      showTimer.current = setTimeout(() => {
+        showTimer.current = undefined;
+        if (pendingOperations.current > 0) setVisible(true);
+      }, navigationLoadingDelayMs);
+    }
 
     try {
       return await operation();
     } finally {
-      const remainingTime = Math.max(minimumNavigationLoadingMs - (Date.now() - startedAt), 0);
-      await wait(remainingTime);
-      if (operationId.current === currentOperationId) {
+      pendingOperations.current = Math.max(0, pendingOperations.current - 1);
+      if (pendingOperations.current === 0) {
+        if (showTimer.current) clearTimeout(showTimer.current);
+        showTimer.current = undefined;
         setVisible(false);
       }
     }
@@ -188,6 +200,11 @@ export function useNavigationLoading() {
     throw new Error('useNavigationLoading must be used within NavigationLoadingProvider');
   }
   return context;
+}
+
+/** 让网络型页面接入初始请求遮罩；独立测试未挂载 provider 时保持原请求语义。 */
+export function useInitialRequestLoading() {
+  return useContext(NavigationLoadingContext)?.runWithLoading ?? runWithoutOverlay;
 }
 
 const styles = StyleSheet.create({

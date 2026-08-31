@@ -10,11 +10,13 @@
  * Notes:
  * - 服务端请求由 feature 级 mock 控制。
  */
-import { fireEvent, render, waitFor, within } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import type { ComponentProps } from 'react';
+import { Alert } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
 
 import { KnowledgeDetailScreen } from '../KnowledgeDetailScreen';
-import { getKnowledgeBase, listDocuments } from '../../apiClient';
+import { getKnowledgeBase, listDocuments, retryDocument } from '../../apiClient';
 import { document, knowledge } from '../../testing/fixtures';
 import { linkKnowledgeBaseGroups, listKnowledgeBaseGroups } from '@/shared/api/knowledgeBasesApi';
 import { listGroups } from '@/shared/api/groupsApi';
@@ -52,6 +54,7 @@ describe('KnowledgeDetailScreen', () => {
     jest.mocked(listKnowledgeBaseGroups).mockResolvedValue({ items: [] });
     jest.mocked(listGroups).mockResolvedValue({ items: [groupFixture, secondGroup] });
     jest.mocked(linkKnowledgeBaseGroups).mockResolvedValue({ items: [groupFixture, secondGroup] });
+    jest.mocked(retryDocument).mockResolvedValue({ ...document, status: { kind: 'queued' } });
   });
 
   it('opens on overview with server statistics, settings, and recent documents', async () => {
@@ -87,6 +90,66 @@ describe('KnowledgeDetailScreen', () => {
     );
     fireEvent.press(screen.getByText('问知识库'));
     expect(onAsk).toHaveBeenCalled();
+  });
+
+  it('opens document actions without retrying until the confirmation is accepted', async () => {
+    const failedDocument = {
+      ...document,
+      status: {
+        kind: 'failed' as const,
+        code: 'UPSTREAM_TIMEOUT',
+        message: '解析服务暂时不可用。',
+        retryable: true,
+      },
+    };
+    jest.mocked(listDocuments).mockResolvedValue({ items: [failedDocument] });
+    const alert = jest.spyOn(Alert, 'alert');
+    const screen = await renderDetail();
+
+    fireEvent.press(screen.getAllByLabelText(`${document.title}更多操作`)[0]);
+    expect(screen.getByText('重新解析')).toBeTruthy();
+    expect(retryDocument).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByText('重新解析'));
+    expect(retryDocument).not.toHaveBeenCalled();
+    const buttons = alert.mock.calls.at(-1)?.[2];
+    await act(async () => {
+      buttons?.find((button) => button.text === '重新解析')?.onPress?.();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(retryDocument).toHaveBeenCalledWith(knowledge.id, document.id));
+  });
+
+  it('does not open the file picker for a migration failure before confirmation', async () => {
+    jest.mocked(listDocuments).mockResolvedValue({
+      items: [
+        {
+          ...document,
+          status: {
+            kind: 'failed',
+            code: 'EMBEDDING_MODEL_MIGRATION_REQUIRED',
+            message: '嵌入模型已更新，请重新上传原文件。',
+            retryable: false,
+          },
+        },
+      ],
+    });
+    jest
+      .mocked(DocumentPicker.getDocumentAsync)
+      .mockResolvedValue({ canceled: true, assets: null });
+    const alert = jest.spyOn(Alert, 'alert');
+    const screen = await renderDetail();
+
+    fireEvent.press(screen.getAllByLabelText(`${document.title}更多操作`)[0]);
+    fireEvent.press(screen.getByText('重新上传文件'));
+    expect(DocumentPicker.getDocumentAsync).not.toHaveBeenCalled();
+    const buttons = alert.mock.calls.at(-1)?.[2];
+    await act(async () => {
+      buttons?.find((button) => button.text === '选择文件')?.onPress?.();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(DocumentPicker.getDocumentAsync).toHaveBeenCalledTimes(1));
   });
 
   it('keeps linked groups disabled and batches new associations', async () => {

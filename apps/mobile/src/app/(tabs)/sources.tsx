@@ -14,12 +14,10 @@ import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 
 import { DataSourceListScreen } from '@/features/data-sources/screens/DataSourceListScreen';
-import { useNavigationLoading } from '@/shared/navigation/NavigationLoadingProvider';
 
 /** 连接数据源目录与数据源详情导航。 */
 export default function DataSourcesRoute() {
   const router = useRouter();
-  const { runWithLoading } = useNavigationLoading();
   const [refreshKey, setRefreshKey] = useState(0);
   const firstFocus = useRef(true);
 
@@ -37,12 +35,10 @@ export default function DataSourcesRoute() {
     <DataSourceListScreen
       key={refreshKey}
       onOpenSource={(sourceId) => {
-        void runWithLoading(() =>
-          router.push({
-            pathname: '/sources/[sourceId]',
-            params: { sourceId },
-          }),
-        );
+        router.push({
+          pathname: '/sources/[sourceId]',
+          params: { sourceId },
+        });
       }}
     />
   );

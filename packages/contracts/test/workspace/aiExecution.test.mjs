@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  AudioAiExecutionStepSchema,
   AudioAiExecutionStreamEventSchema,
   AudioAiExecutionTraceResponseSchema,
 } from '@echowave/contracts';
@@ -86,6 +87,27 @@ function trace() {
 }
 
 describe('audio AI execution trace contract', () => {
+  it('keeps running step durations empty and terminal durations concrete', () => {
+    const base = {
+      id,
+      sequence: 1,
+      name: 'analysis-generation',
+      occurredAt: '2026-08-29T01:00:00.000Z',
+      summary: {},
+    };
+
+    assert.equal(
+      AudioAiExecutionStepSchema.parse({ ...base, status: 'started', durationMs: null }).durationMs,
+      null,
+    );
+    assert.equal(
+      AudioAiExecutionStepSchema.parse({ ...base, status: 'completed', durationMs: 12 }).durationMs,
+      12,
+    );
+    assert.throws(() =>
+      AudioAiExecutionStepSchema.parse({ ...base, status: 'completed', durationMs: null }),
+    );
+  });
   it('accepts safe model and retrieval summaries', () => {
     assert.equal(AudioAiExecutionTraceResponseSchema.parse(trace()).runs.length, 1);
   });

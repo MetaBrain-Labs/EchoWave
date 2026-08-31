@@ -13,13 +13,11 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { DocumentDetailScreen } from '@/features/knowledge/screens/DocumentDetailScreen';
-import { useNavigationLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import { firstRouteParam } from '@/shared/navigation/routeParams';
 
 /** 渲染指定知识文档并连接文档块详情导航。 */
 export default function DocumentDetailRoute() {
   const router = useRouter();
-  const { runWithLoading } = useNavigationLoading();
   const params = useLocalSearchParams<{
     block?: string | string[];
     fileId?: string | string[];
@@ -33,16 +31,14 @@ export default function DocumentDetailRoute() {
   const initialTab = firstRouteParam(params.tab) === 'original' ? 'original' : 'parsed';
   const returnsToQuery = firstRouteParam(params.returnTo) === 'knowledge-query';
   const goBack = () => {
-    void runWithLoading(() => {
-      if (returnsToQuery && router.canGoBack()) {
-        router.back();
-      } else {
-        router.replace({
-          pathname: '/knowledge/[knowledgeId]',
-          params: { knowledgeId },
-        });
-      }
-    });
+    if (returnsToQuery && router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace({
+        pathname: '/knowledge/[knowledgeId]',
+        params: { knowledgeId },
+      });
+    }
   };
 
   return (
@@ -53,17 +49,15 @@ export default function DocumentDetailRoute() {
       knowledgeId={knowledgeId}
       onBack={goBack}
       onOpenBlock={(nextBlockId) => {
-        void runWithLoading(() =>
-          router.push({
-            pathname: '/knowledge/[knowledgeId]/files/[fileId]/blocks/[blockId]',
-            params: {
-              blockId: nextBlockId,
-              fileId: documentId,
-              knowledgeId,
-              ...(returnsToQuery ? { returnTo: 'knowledge-query' } : {}),
-            },
-          }),
-        );
+        router.push({
+          pathname: '/knowledge/[knowledgeId]/files/[fileId]/blocks/[blockId]',
+          params: {
+            blockId: nextBlockId,
+            fileId: documentId,
+            knowledgeId,
+            ...(returnsToQuery ? { returnTo: 'knowledge-query' } : {}),
+          },
+        });
       }}
     />
   );

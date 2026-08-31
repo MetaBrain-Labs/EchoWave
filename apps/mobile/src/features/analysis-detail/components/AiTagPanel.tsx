@@ -38,6 +38,7 @@ export function AiTagPanel({
   hideIrrelevant,
   onClose,
   onHideIrrelevantChange,
+  onOpenCitation,
   segments,
 }: {
   analysis: AiTagAnalysis | undefined;
@@ -45,6 +46,7 @@ export function AiTagPanel({
   hideIrrelevant: boolean;
   onClose: () => void;
   onHideIrrelevantChange: (value: boolean) => void;
+  onOpenCitation?: (knowledgeBaseId: string, documentId: string, chunkId: string) => void;
   segments: readonly TranscriptSegment[];
 }) {
   if (!analysis) {
@@ -109,9 +111,26 @@ export function AiTagPanel({
           <>
             <Text style={styles.analysisParagraphTitle}>知识依据</Text>
             {analysis.citations.map((citation) => (
-              <Text key={citation.chunkId} style={styles.analysisParagraph}>
-                {citation.documentTitle} · {locatorLabel(citation.locator)}
-              </Text>
+              <Pressable
+                key={citation.chunkId}
+                accessibilityLabel={`查看知识依据：${citation.documentTitle}`}
+                accessibilityRole="link"
+                disabled={!onOpenCitation}
+                onPress={() =>
+                  onOpenCitation?.(citation.knowledgeBaseId, citation.documentId, citation.chunkId)
+                }
+                style={({ pressed }) => [styles.citationCard, pressed && styles.pressed]}
+              >
+                <Text style={styles.citationExcerpt}>{citation.excerpt}</Text>
+                <View style={styles.citationMetaRow}>
+                  <Text style={styles.citationMeta}>
+                    {citation.documentTitle} · {locatorLabel(citation.locator)}
+                  </Text>
+                  {onOpenCitation ? (
+                    <Ionicons color={colors.secondary} name="chevron-forward" size={18} />
+                  ) : null}
+                </View>
+              </Pressable>
             ))}
           </>
         ) : null}
@@ -226,5 +245,30 @@ const styles = StyleSheet.create({
     height: 8,
     marginTop: spacing.md,
     width: 8,
+  },
+  citationCard: {
+    backgroundColor: colors.background,
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    padding: spacing.md,
+  },
+  citationExcerpt: {
+    ...typography.body,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sans,
+  },
+  citationMetaRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  citationMeta: {
+    ...typography.label,
+    color: textColors.secondary,
+    flex: 1,
+    fontFamily: fontFamilies.sans,
   },
 });
