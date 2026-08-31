@@ -63,17 +63,7 @@ export class AudioExecutionEventMapper {
             retryable: Boolean(run.error_retryable),
           }
         : null,
-      steps: events
-        .filter((event) => event.event_type === 'step')
-        .map((event) => ({
-          id: event.operation_id,
-          sequence: Number(event.sequence_no),
-          name: event.name,
-          status: event.status,
-          occurredAt: iso(event.occurred_at),
-          durationMs: integer(event.duration_ms),
-          summary: object(event.details)?.summary ?? {},
-        })),
+      steps: this.mapSteps(events.filter((event) => event.event_type === 'step')),
       modelCalls: [...modelOperations.values()]
         .map((operationEvents) => this.mapModelCall(operationEvents, run))
         .sort((left, right) => left.sequence - right.sequence),
@@ -81,6 +71,61 @@ export class AudioExecutionEventMapper {
         .map((operationEvents) => this.mapToolCall(operationEvents, run))
         .sort((left, right) => left.sequence - right.sequence),
     };
+  }
+
+  /** 将成对步骤恢复为一条生命周期记录，并兼容旧版不同 operation_id 的相邻事件。 */
+  private mapSteps(events: EventRow[]) {
+    type LogicalStep = { first: EventRow; terminal?: EventRow };
+    const logicalSteps: LogicalStep[] = [];
+    const byOperation = new Map<string, LogicalStep>();
+    const pendingByName = new Map<string, LogicalStep[]>();
+
+    for (const event of [...events].sort(
+      (left, right) => Number(left.sequence_no) - Number(right.sequence_no),
+    )) {
+      if (event.status === 'started') {
+        const logical = { first: event };
+        logicalSteps.push(logical);
+        byOperation.set(event.operation_id, logical);
+        const pending = pendingByName.get(event.name) ?? [];
+        pending.push(logical);
+        pendingByName.set(event.name, pending);
+        continue;
+      }
+
+      const sameOperation = byOperation.get(event.operation_id);
+      const pending = pendingByName.get(event.name) ?? [];
+      const logical = sameOperation ?? pending.shift();
+      if (logical) {
+        logical.terminal = event;
+        const pendingIndex = pending.indexOf(logical);
+        if (pendingIndex >= 0) pending.splice(pendingIndex, 1);
+        if (pending.length === 0) pendingByName.delete(event.name);
+        else pendingByName.set(event.name, pending);
+      } else {
+        const terminalOnly = { first: event, terminal: event };
+        logicalSteps.push(terminalOnly);
+        byOperation.set(event.operation_id, terminalOnly);
+      }
+    }
+
+    return logicalSteps.map(({ first, terminal }) => ({
+      id: first.operation_id,
+      sequence: Number(first.sequence_no),
+      name: first.name,
+      status: terminal?.status ?? 'started',
+      occurredAt: iso(first.occurred_at),
+      durationMs: terminal
+        ? (integer(terminal.duration_ms) ??
+          (terminal === first
+            ? 0
+            : Math.max(
+                0,
+                new Date(terminal.occurred_at).getTime() - new Date(first.occurred_at).getTime(),
+              )))
+        : null,
+      summary: object(terminal?.details ?? first.details)?.summary ?? {},
+    }));
   }
 
   private mapModelCall(events: EventRow[], run: Record<string, any>) {
@@ -209,7 +254,9 @@ export class AudioExecutionEventMapper {
     }
     if (event.event_type === 'step') {
       const step = run.steps.find(
-        (item) => item.id === event.operation_id && item.sequence === Number(event.sequence_no),
+        (item) =>
+          item.id === event.operation_id ||
+          (item.name === event.name && item.status === event.status),
       );
       if (!step) throw new Error('Execution stream event references an unknown step.');
       return AudioAiExecutionStreamEventSchema.parse({ ...common, type: 'step', step });

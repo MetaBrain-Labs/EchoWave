@@ -29,6 +29,7 @@ import {
   GroupSettingsUpdateRequestSchema,
   AudioPostAnalysisStartResponseSchema,
   AudioAnalysisStatusStreamEventSchema,
+  BusinessAnalysisCitationSchema,
   DataSourceAudioStreamEventSchema,
   KnowledgeDocumentStreamEventSchema,
   AudioTranscriptConfirmationRequestSchema,
@@ -131,6 +132,23 @@ describe('workspace contracts', () => {
           tags: [{ ...result.tags[0], evidenceSegmentIds: [firstId, firstId] }],
         },
       }),
+    );
+  });
+
+  it('requires a bounded knowledge excerpt on every business-analysis citation', () => {
+    const citation = {
+      chunkId: firstId,
+      knowledgeBaseId: secondId,
+      documentId: thirdId,
+      documentTitle: '销售异议处理手册',
+      excerpt: '先确认客户顾虑，再使用可核实的案例说明方案价值。',
+      locator: { kind: 'markdown', headingPath: ['异议处理'], lineStart: 12, lineEnd: 18 },
+    };
+
+    assert.equal(BusinessAnalysisCitationSchema.parse(citation).excerpt, citation.excerpt);
+    assert.throws(() => BusinessAnalysisCitationSchema.parse({ ...citation, excerpt: '' }));
+    assert.throws(() =>
+      BusinessAnalysisCitationSchema.parse({ ...citation, excerpt: '知'.repeat(241) }),
     );
   });
 

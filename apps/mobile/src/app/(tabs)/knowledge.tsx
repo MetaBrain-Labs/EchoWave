@@ -13,22 +13,18 @@
 import { useRouter } from 'expo-router';
 
 import { KnowledgeListScreen } from '@/features/knowledge/screens/KnowledgeListScreen';
-import { useNavigationLoading } from '@/shared/navigation/NavigationLoadingProvider';
 
 /** 连接知识库目录与知识库详情导航。 */
 export default function KnowledgeScreen() {
   const router = useRouter();
-  const { runWithLoading } = useNavigationLoading();
 
   return (
     <KnowledgeListScreen
       onOpenKnowledge={(knowledgeId) => {
-        void runWithLoading(() =>
-          router.push({
-            pathname: '/knowledge/[knowledgeId]',
-            params: { knowledgeId },
-          }),
-        );
+        router.push({
+          pathname: '/knowledge/[knowledgeId]',
+          params: { knowledgeId },
+        });
       }}
     />
   );

@@ -15,13 +15,10 @@ import { Tabs } from 'expo-router';
 import type { ComponentProps } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { useNavigationLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import { colors, radii } from '@/shared/theme/tokens';
 
 /** 渲染五个固定产品区域的底部标签布局。 */
 export default function TabsLayout() {
-  const { runWithLoading } = useNavigationLoading();
-
   return (
     <Tabs
       screenOptions={{
@@ -36,13 +33,7 @@ export default function TabsLayout() {
             {...props}
             accessibilityState={accessibilityState}
             android_ripple={undefined}
-            onPress={(event) => {
-              if (accessibilityState?.selected) {
-                onPress?.(event);
-                return;
-              }
-              void runWithLoading(() => onPress?.(event));
-            }}
+            onPress={onPress}
             ref={ref as ComponentProps<typeof Pressable>['ref']}
           />
         ),

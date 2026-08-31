@@ -41,6 +41,7 @@ import {
   listGroups,
 } from '@/shared/api/groupsApi';
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
+import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import {
   colors,
   fontFamilies,
@@ -119,6 +120,7 @@ export function GroupScreen({
   onOpenSource?: (id: string, groupId: string) => void;
   onOpenSettings?: (id: string) => void;
 }) {
+  const runInitialRequest = useInitialRequestLoading();
   const [activeTab, setActiveTab] = useState<TabKey>(initialTab ?? 'audio');
   const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [group, setGroup] = useState<GroupSummary>();
@@ -222,7 +224,7 @@ export function GroupScreen({
   }, []);
 
   const selectGroup = useCallback(
-    (nextGroup: GroupSummary) => {
+    async (nextGroup: GroupSummary) => {
       if (selectedGroupId.current === nextGroup.id) {
         return;
       }
@@ -235,7 +237,7 @@ export function GroupScreen({
       setKnowledgeBases([]);
       setDataSources([]);
       setCollapsedTabs({ audio: false, knowledge: false, sources: false });
-      void Promise.all([
+      await Promise.all([
         loadAudio(nextGroup.id),
         loadKnowledgeBases(nextGroup.id),
         loadSources(nextGroup.id),
@@ -252,7 +254,7 @@ export function GroupScreen({
       setGroups(response.items);
       const firstGroup =
         response.items.find((item) => item.id === initialGroupId) ?? response.items[0];
-      if (firstGroup) selectGroup(firstGroup);
+      if (firstGroup) await selectGroup(firstGroup);
       else clearSelection();
     } catch (reason) {
       setDirectoryError(reason instanceof Error ? reason.message : '分组加载失败。');
@@ -264,10 +266,10 @@ export function GroupScreen({
 
   useEffect(() => {
     const task = setTimeout(() => {
-      void loadDirectory();
+      void runInitialRequest(loadDirectory);
     }, 0);
     return () => clearTimeout(task);
-  }, [loadDirectory]);
+  }, [loadDirectory, runInitialRequest]);
 
   const handleCreateGroup = async (name: string) => {
     setCreating(true);

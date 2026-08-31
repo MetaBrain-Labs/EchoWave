@@ -17,6 +17,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 
 import {
   colors,
@@ -59,10 +60,11 @@ export function BlockDetailScreen({
   const [document, setDocument] = useState<KnowledgeDocumentDetail>();
   const [error, setError] = useState('');
   const importantBlocks = useImportantBlocks();
+  const runInitialRequest = useInitialRequestLoading();
 
   useEffect(() => {
     let active = true;
-    void getDocument(knowledgeId, documentId)
+    void runInitialRequest(() => getDocument(knowledgeId, documentId))
       .then((value) => {
         if (active) setDocument(value);
       })
@@ -72,7 +74,7 @@ export function BlockDetailScreen({
     return () => {
       active = false;
     };
-  }, [documentId, knowledgeId]);
+  }, [documentId, knowledgeId, runInitialRequest]);
 
   const index = useMemo(
     () => document?.chunks.findIndex((chunk) => chunk.id === blockId) ?? -1,

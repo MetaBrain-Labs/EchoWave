@@ -49,6 +49,7 @@ export class PostgresAudioExecutionRecorder implements AiExecutionRecorder {
   private writeQueue: Promise<void> = Promise.resolve();
   private sequence = 1;
   private finished = false;
+  private readonly activeSteps = new Map<string, { operationId: string; startedAt: Date }[]>();
 
   constructor(
     private readonly pool: DatabasePool,
@@ -112,9 +113,46 @@ export class PostgresAudioExecutionRecorder implements AiExecutionRecorder {
   recordMetadata(): void {}
 
   recordStep(event: AiStepEvent): void {
-    this.enqueue('step', randomUUID(), event.name, event.status, event.durationMs, {
-      summary: safeStepSummary(event.metadata),
-    });
+    const occurredAt = new Date();
+    if (event.status === 'started') {
+      const operationId = randomUUID();
+      const active = this.activeSteps.get(event.name) ?? [];
+      active.push({ operationId, startedAt: occurredAt });
+      this.activeSteps.set(event.name, active);
+      this.enqueue(
+        'step',
+        operationId,
+        event.name,
+        event.status,
+        undefined,
+        {
+          summary: safeStepSummary(event.metadata),
+        },
+        occurredAt,
+      );
+      return;
+    }
+
+    const active = this.activeSteps.get(event.name) ?? [];
+    const matching = active.shift();
+    if (active.length === 0) this.activeSteps.delete(event.name);
+    else this.activeSteps.set(event.name, active);
+    const operationId = matching?.operationId ?? randomUUID();
+    const durationMs =
+      matching !== undefined
+        ? Math.max(0, occurredAt.getTime() - matching.startedAt.getTime())
+        : event.durationMs;
+    this.enqueue(
+      'step',
+      operationId,
+      event.name,
+      event.status,
+      durationMs,
+      {
+        summary: safeStepSummary(event.metadata),
+      },
+      occurredAt,
+    );
   }
 
   beginModelCall(event: AiModelCallStart): AiModelCallSpan {

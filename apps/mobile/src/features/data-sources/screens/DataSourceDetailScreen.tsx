@@ -45,6 +45,7 @@ import {
 } from '@/shared/theme/tokens';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { PageTabs } from '@/shared/ui/PageTabs';
+import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import {
   getDataSource,
   archiveDataSource,
@@ -135,6 +136,7 @@ export function DataSourceDetailScreen({
   const [confirming, setConfirming] = useState(false);
   const [uploading, setUploading] = useState(false);
   const audioPlayback = useAudioPlayback();
+  const runInitialRequest = useInitialRequestLoading();
   const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } = useSwipePager({
     activeTab,
     onTabChange: setActiveTab,
@@ -173,9 +175,9 @@ export function DataSourceDetailScreen({
     [sourceId],
   );
   useEffect(() => {
-    const task = setTimeout(() => void load(), 0);
+    const task = setTimeout(() => void runInitialRequest(load), 0);
     return () => clearTimeout(task);
-  }, [load]);
+  }, [load, runInitialRequest]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {

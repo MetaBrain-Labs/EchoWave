@@ -63,7 +63,7 @@ export function BusinessAnalysisControls({
     <View style={styles.card}>
       <View style={styles.cardHeader}>
         <View style={styles.iconSurface}>
-          <Ionicons color={colors.success} name="analytics-outline" size={22} />
+          <Ionicons color={colors.secondary} name="stats-chart-outline" size={22} />
         </View>
         <View style={styles.cardCopy}>
           <Text style={styles.cardTitle}>ASR 结果分析</Text>
@@ -158,7 +158,7 @@ export function BusinessAnalysisPreflightDialog({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.card,
+    backgroundColor: colors.background,
     borderBottomColor: colors.divider,
     borderBottomWidth: StyleSheet.hairlineWidth,
     padding: spacing.md,
@@ -166,7 +166,7 @@ const styles = StyleSheet.create({
   cardHeader: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
   iconSurface: {
     alignItems: 'center',
-    backgroundColor: colors.successSurface,
+    backgroundColor: colors.background,
     borderRadius: radii.round,
     height: 40,
     justifyContent: 'center',

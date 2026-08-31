@@ -67,6 +67,7 @@ const reasoningBottomThreshold = 24;
 
 function duration(value: number | null): string {
   if (value === null) return '—';
+  if (value < 1) return '<1 ms';
   if (value < 1_000) return `${value} ms`;
   return `${(value / 1_000).toFixed(value < 10_000 ? 1 : 0)} 秒`;
 }
@@ -273,7 +274,16 @@ function RunCard({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (run.status !== 'running') return undefined;
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, [run.status]);
   const models = [...new Set(run.modelCalls.map((call) => `${call.provider} / ${call.model}`))];
+  const visibleRunDuration =
+    run.durationMs ??
+    (run.status === 'running' ? Math.max(0, now - new Date(run.startedAt).getTime()) : null);
   return (
     <View style={styles.card}>
       <Pressable
@@ -290,7 +300,7 @@ function RunCard({
             </Text>
           </View>
           <Text style={styles.meta}>
-            {new Date(run.startedAt).toLocaleString()} · {duration(run.durationMs)}
+            {new Date(run.startedAt).toLocaleString()} · {duration(visibleRunDuration)}
           </Text>
           <Text numberOfLines={2} style={styles.meta}>
             {models.length > 0 ? models.join('、') : '尚无模型调用记录'}
@@ -322,29 +332,36 @@ function RunCard({
           {run.steps.length === 0 ? (
             <Text style={styles.emptyText}>暂无可审计步骤。</Text>
           ) : (
-            run.steps.map((step) => (
-              <View key={step.sequence} style={styles.timelineRow}>
-                <View style={styles.timelineDot} />
-                <View style={styles.timelineContent}>
-                  <Text style={styles.detailTitle}>{stepLabels[step.name] ?? step.name}</Text>
-                  <Text style={styles.meta}>
-                    {step.status === 'started'
-                      ? '开始'
-                      : step.status === 'completed'
-                        ? '完成'
-                        : '失败'}
-                    {step.durationMs === null ? '' : ` · ${duration(step.durationMs)}`}
-                  </Text>
-                  {Object.keys(step.summary).length > 0 ? (
-                    <Text style={styles.summaryText}>
-                      {Object.entries(step.summary)
-                        .map(([key, value]) => `${key}: ${String(value)}`)
-                        .join(' · ')}
+            run.steps.map((step) => {
+              const visibleStepDuration =
+                step.durationMs ??
+                (step.status === 'started'
+                  ? Math.max(0, now - new Date(step.occurredAt).getTime())
+                  : null);
+              return (
+                <View key={step.id} style={styles.timelineRow}>
+                  <View style={styles.timelineDot} />
+                  <View style={styles.timelineContent}>
+                    <Text style={styles.detailTitle}>{stepLabels[step.name] ?? step.name}</Text>
+                    <Text style={styles.meta}>
+                      {step.status === 'started'
+                        ? '运行中'
+                        : step.status === 'completed'
+                          ? '完成'
+                          : '失败'}
+                      {visibleStepDuration === null ? '' : ` · ${duration(visibleStepDuration)}`}
                     </Text>
-                  ) : null}
+                    {Object.keys(step.summary).length > 0 ? (
+                      <Text style={styles.summaryText}>
+                        {Object.entries(step.summary)
+                          .map(([key, value]) => `${key}: ${String(value)}`)
+                          .join(' · ')}
+                      </Text>
+                    ) : null}
+                  </View>
                 </View>
-              </View>
-            ))
+              );
+            })
           )}
 
           <Text style={styles.sectionTitle}>工具与知识检索</Text>

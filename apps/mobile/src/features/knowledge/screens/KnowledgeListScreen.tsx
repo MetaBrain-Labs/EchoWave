@@ -23,6 +23,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { KnowledgeBaseSummary } from '@echowave/contracts';
+import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 
 import {
   colors,
@@ -65,6 +66,7 @@ export function KnowledgeListScreen({
   const [createName, setCreateName] = useState('');
   const [createDescription, setCreateDescription] = useState('');
   const [creating, setCreating] = useState(false);
+  const runInitialRequest = useInitialRequestLoading();
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -95,9 +97,9 @@ export function KnowledgeListScreen({
     }
   };
   useEffect(() => {
-    const task = setTimeout(() => void load(), 0);
+    const task = setTimeout(() => void runInitialRequest(load), 0);
     return () => clearTimeout(task);
-  }, [load]);
+  }, [load, runInitialRequest]);
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>

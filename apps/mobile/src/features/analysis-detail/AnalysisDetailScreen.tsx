@@ -11,7 +11,11 @@
  * - 只展示服务端已经原子发布的当前分析修订版。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { AudioAiExecutionTraceResponse, AudioPostAnalysisType } from '@echowave/contracts';
+import type {
+  AudioAiExecutionTraceResponse,
+  AudioAnalysisStatusStreamEvent,
+  AudioPostAnalysisType,
+} from '@echowave/contracts';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -40,6 +44,7 @@ import {
 } from '@/shared/api/audioAnalysisApi';
 import { getGroupSettings } from '@/shared/api/groupsApi';
 import { WorkspaceRequestError } from '@/shared/api/request';
+import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import {
   colors,
   fontFamilies,
@@ -74,14 +79,71 @@ import {
 
 const playbackRates = [1, 1.5, 2] as const;
 
+type AudioAnalysisStatusPayload = Extract<
+  AudioAnalysisStatusStreamEvent,
+  { type: 'snapshot' | 'analysis-status' }
+>;
+type AudioAnalysisLiveState = AudioAnalysisStatusPayload['state'];
+
+function isPostAnalysisActive(state: AudioAnalysisLiveState['emotion']): boolean {
+  return state.state === 'queued' || state.state === 'running';
+}
+
+function hasActiveLiveAnalysis(state: AudioAnalysisLiveState): boolean {
+  return (
+    isPostAnalysisActive(state.emotion) ||
+    isPostAnalysisActive(state.role) ||
+    state.business.state === 'queued' ||
+    state.business.state === 'running'
+  );
+}
+
+function hasConvergedToTerminalState(
+  current: AnalysisDetailView,
+  expected: AudioAnalysisLiveState,
+): boolean {
+  const postAnalysisConverged = (type: 'emotion' | 'role') => {
+    const expectedState = expected[type];
+    if (isPostAnalysisActive(expectedState) || expectedState.state === 'idle') return true;
+    const currentState = current.postAnalysis[type];
+    return currentState.state === expectedState.state && currentState.jobId === expectedState.jobId;
+  };
+  const businessConverged = (() => {
+    if (
+      expected.business.state === 'queued' ||
+      expected.business.state === 'running' ||
+      expected.business.state === 'idle'
+    ) {
+      return true;
+    }
+    if (
+      current.businessAnalysis.state !== expected.business.state ||
+      current.businessAnalysis.jobId !== expected.business.jobId
+    ) {
+      return false;
+    }
+    return (
+      expected.business.state !== 'ready' ||
+      current.businessAnalysis.result?.jobId === expected.business.jobId
+    );
+  })();
+  return postAnalysisConverged('emotion') && postAnalysisConverged('role') && businessConverged;
+}
+
 type AnalysisDetailScreenProps = {
   detailId: string;
   groupId?: string;
   onBack: () => void;
+  onOpenCitation?: (knowledgeBaseId: string, documentId: string, chunkId: string) => void;
 };
 
 /** 渲染指定分析记录的转写、摘要和交互式播放展示。 */
-export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDetailScreenProps) {
+export function AnalysisDetailScreen({
+  detailId,
+  groupId,
+  onBack,
+  onOpenCitation,
+}: AnalysisDetailScreenProps) {
   const [detail, setDetail] = useState<AnalysisDetailView>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -91,6 +153,7 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
   const [executionTraceError, setExecutionTraceError] = useState('');
   const [appActive, setAppActive] = useState(AppState.currentState !== 'background');
   const executionCursorRef = useRef('');
+  const detailRequestSequenceRef = useRef(0);
   const [activeTab, setActiveTab] = useState<AnalysisTab>('transcript');
   const [expandedPlayer, setExpandedPlayer] = useState(false);
   const [playbackRateIndex, setPlaybackRateIndex] = useState(0);
@@ -110,6 +173,7 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
   const [supplementingBusiness, setSupplementingBusiness] = useState(false);
   const [analysisTiming, setAnalysisTiming] = useState<'automatic' | 'manual'>('manual');
   const [preflightPrompted, setPreflightPrompted] = useState(false);
+  const runInitialRequest = useInitialRequestLoading();
   const playback = useAudioPlayback(detailId || undefined);
   const changeHideIrrelevant = (value: boolean) => {
     setHideIrrelevantSegmentsPreference(value);
@@ -138,28 +202,36 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
   const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } = useSwipePager({
     activeTab,
     onTabChange: applyTabChange,
-    tabs: hasSummary ? analysisTabKeys : (['transcript', 'model'] as AnalysisTab[]),
+    tabs: hasSummary ? analysisTabKeys : (['transcript', 'tasks', 'model'] as AnalysisTab[]),
   });
 
   const load = useCallback(
-    async (showLoading = true) => {
+    async (showLoading = true): Promise<AnalysisDetailView | undefined> => {
+      const requestSequence = ++detailRequestSequenceRef.current;
       if (showLoading) setLoading(true);
-      setError('');
+      if (showLoading) setError('');
       try {
-        setDetail(toAnalysisDetailView(await getAudioAnalysis(detailId, groupId)));
+        const nextDetail = toAnalysisDetailView(await getAudioAnalysis(detailId, groupId));
+        if (requestSequence !== detailRequestSequenceRef.current) return undefined;
+        setDetail(nextDetail);
+        setError('');
+        return nextDetail;
       } catch (reason) {
-        if (showLoading) setDetail(undefined);
-        setError(reason instanceof Error ? reason.message : '分析详情加载失败。');
+        if (requestSequence === detailRequestSequenceRef.current && showLoading) {
+          setDetail(undefined);
+          setError(reason instanceof Error ? reason.message : '分析详情加载失败。');
+        }
+        return undefined;
       } finally {
-        if (showLoading) setLoading(false);
+        if (requestSequence === detailRequestSequenceRef.current && showLoading) setLoading(false);
       }
     },
     [detailId, groupId],
   );
   useEffect(() => {
-    const task = setTimeout(() => void load(), 0);
+    const task = setTimeout(() => void runInitialRequest(load), 0);
     return () => clearTimeout(task);
-  }, [load]);
+  }, [load, runInitialRequest]);
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
       setAppActive(state === 'active');
@@ -216,22 +288,37 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
     detail?.businessAnalysis.state === 'queued' ||
     detail?.businessAnalysis.state === 'running';
   useEffect(() => {
-    if (!hasActiveAnalysis || !appActive || activeTab === 'model') return undefined;
+    if (!hasActiveAnalysis || !appActive) return undefined;
     let disposed = false;
     let controller: AbortController | undefined;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    let fallbackTimer: ReturnType<typeof setInterval> | undefined;
     let failures = 0;
     const retryDelays = [1_000, 2_000, 5_000, 10_000];
-    const stopFallback = () => {
-      if (fallbackTimer) clearInterval(fallbackTimer);
-      fallbackTimer = undefined;
+    const reconciliationTimers = new Set<ReturnType<typeof setTimeout>>();
+    const pollTimer = setInterval(() => void load(false), 5_000);
+    const waitForRetry = (delayMs: number) =>
+      new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          reconciliationTimers.delete(timer);
+          resolve();
+        }, delayMs);
+        reconciliationTimers.add(timer);
+      });
+    const reconcileTerminalState = async (expected: AudioAnalysisLiveState) => {
+      for (const delayMs of [0, 1_000, 2_000, 5_000]) {
+        if (delayMs > 0) await waitForRetry(delayMs);
+        if (disposed) return;
+        const nextDetail = await load(false);
+        if (
+          nextDetail &&
+          nextDetail.revisionId === detail?.revisionId &&
+          hasConvergedToTerminalState(nextDetail, expected)
+        ) {
+          return;
+        }
+      }
     };
-    const startFallback = () => {
-      if (fallbackTimer) return;
-      void load(false);
-      fallbackTimer = setInterval(() => void load(false), 5_000);
-    };
+    const initialPollTimer = setTimeout(() => void load(false), 0);
     const connect = async () => {
       controller = new AbortController();
       try {
@@ -242,10 +329,14 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
           onEvent: (event) => {
             if (event.type === 'error') return;
             failures = 0;
-            stopFallback();
             if (event.type !== 'snapshot' && event.type !== 'analysis-status') return;
+            if (event.analysisRevisionId !== detail?.revisionId) return;
+            if (!hasActiveLiveAnalysis(event.state)) {
+              void reconcileTerminalState(event.state);
+              return;
+            }
             setDetail((current) =>
-              current && current.id === event.analysisRevisionId
+              current && current.revisionId === event.analysisRevisionId
                 ? {
                     ...current,
                     postAnalysis: {
@@ -266,10 +357,9 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
       } catch {
         if (disposed || controller.signal.aborted) return;
         failures += 1;
-        if (failures >= 5) startFallback();
         retryTimer = setTimeout(
           () => void connect(),
-          failures >= 5 ? 30_000 : retryDelays[Math.min(failures - 1, retryDelays.length - 1)],
+          retryDelays[Math.min(failures - 1, retryDelays.length - 1)],
         );
       }
     };
@@ -278,9 +368,11 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
       disposed = true;
       controller?.abort();
       if (retryTimer) clearTimeout(retryTimer);
-      stopFallback();
+      clearTimeout(initialPollTimer);
+      clearInterval(pollTimer);
+      reconciliationTimers.forEach(clearTimeout);
     };
-  }, [activeTab, appActive, detailId, groupId, hasActiveAnalysis, load]);
+  }, [appActive, detail?.revisionId, detailId, groupId, hasActiveAnalysis, load]);
   useEffect(() => {
     if (activeTab !== 'model' || !appActive) return undefined;
     let disposed = false;
@@ -775,19 +867,7 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
         style={styles.pager}
         testID="analysis-tab-pager"
       >
-        <View style={[styles.page, { width: pageWidth }]}>
-          <PostAnalysisControls
-            confirmed={detail.transcriptConfirmation.status === 'confirmed'}
-            emotion={detail.postAnalysis.emotion}
-            onStart={setConfirmAnalysisType}
-            role={detail.postAnalysis.role}
-          />
-          {groupId ? (
-            <BusinessAnalysisControls
-              onStart={requestBusinessAnalysis}
-              state={detail.businessAnalysis}
-            />
-          ) : null}
+        <View style={[styles.page, { width: pageWidth }]} testID="analysis-transcript-page">
           <TranscriptContent
             confirming={confirmingTranscript}
             detail={detail}
@@ -818,6 +898,26 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
             selectedSegmentIds={selectedTag?.evidenceSegmentIds ?? []}
           />
         </View>
+        <ScrollView
+          contentContainerStyle={styles.tasksContent}
+          nestedScrollEnabled
+          showsVerticalScrollIndicator={false}
+          style={[styles.page, { width: pageWidth }]}
+          testID="analysis-tasks-scroll"
+        >
+          <PostAnalysisControls
+            confirmed={detail.transcriptConfirmation.status === 'confirmed'}
+            emotion={detail.postAnalysis.emotion}
+            onStart={setConfirmAnalysisType}
+            role={detail.postAnalysis.role}
+          />
+          {groupId ? (
+            <BusinessAnalysisControls
+              onStart={requestBusinessAnalysis}
+              state={detail.businessAnalysis}
+            />
+          ) : null}
+        </ScrollView>
         {hasSummary ? (
           <View style={[styles.page, { width: pageWidth }]}>
             <SummaryContent detail={detail} />
@@ -838,6 +938,10 @@ export function AnalysisDetailScreen({ detailId, groupId, onBack }: AnalysisDeta
         hideIrrelevant={hideIrrelevant}
         onClose={() => setSelectedTag(undefined)}
         onHideIrrelevantChange={changeHideIrrelevant}
+        onOpenCitation={(knowledgeBaseId, documentId, chunkId) => {
+          setSelectedTag(undefined);
+          onOpenCitation?.(knowledgeBaseId, documentId, chunkId);
+        }}
         segments={transcriptSegments.filter((segment) =>
           selectedTag?.evidenceSegmentIds.includes(segment.id),
         )}
@@ -882,6 +986,10 @@ const styles = StyleSheet.create({
   },
   page: {
     height: '100%',
+  },
+  tasksContent: {
+    gap: spacing.md,
+    paddingBottom: spacing.xxl,
   },
   unknownTopBar: {
     minHeight: 64,
