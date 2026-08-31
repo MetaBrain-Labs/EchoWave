@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
 import { describe, it } from 'node:test';
 
-import { readApiConfig } from '../../dist/config/env.js';
+import { readApiConfig, readApiConfigFile } from '../../dist/config/env.js';
+import { createDatabaseConfig, DatabaseEnvironmentSchema } from '../../dist/config/database.js';
+import { createHttpConfig, HttpEnvironmentSchema } from '../../dist/config/http.js';
 
 const completeValues = {
   PORT: '3101',
@@ -51,6 +54,30 @@ const completeValues = {
 };
 
 describe('API environment', () => {
+  it('parses HTTP and PostgreSQL modules independently before composition', () => {
+    assert.deepEqual(createHttpConfig(HttpEnvironmentSchema.parse(completeValues)), {
+      port: 3101,
+      corsOrigins: ['http://localhost:8081', 'http://localhost:19006'],
+    });
+    assert.deepEqual(createDatabaseConfig(DatabaseEnvironmentSchema.parse(completeValues)), {
+      host: 'db.internal',
+      port: 5433,
+      user: 'echowave',
+      password: 'secret',
+      database: 'meta-pm-agent',
+      schema: 'private',
+      ssl: true,
+    });
+  });
+
+  it('reports the exact missing .env file without reading process.env', () => {
+    const missing = pathToFileURL('Z:/definitely-missing/echowave-api.env');
+    assert.throws(
+      () => readApiConfigFile(missing),
+      /Required API configuration file was not found/,
+    );
+  });
+
   it('normalizes the shared DashScope configuration', () => {
     const config = readApiConfig(completeValues);
     assert.deepEqual(config.rag.dashScope, {

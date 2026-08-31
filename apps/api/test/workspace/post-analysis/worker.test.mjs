@@ -6,11 +6,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { PostAnalysisProviderError } from '../../../dist/workspace/post-analysis/qwenEmotionAnalyzer.js';
+import { PostAnalysisProviderError } from '../../../dist/workspace/audio/post-analysis/qwenEmotionAnalyzer.js';
 import {
   AudioPostAnalysisWorker,
   buildEmotionWindows,
-} from '../../../dist/workspace/post-analysis/worker.js';
+} from '../../../dist/workspace/audio/post-analysis/worker.js';
 
 const makeSegment = (index, startMs = index * 1_000) => ({
   id: `${String(index + 1).padStart(8, '0')}-1111-4111-8111-111111111111`,

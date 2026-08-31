@@ -6,8 +6,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { WorkspaceRepositoryError } from '../../../dist/workspace/persistence/errors.js';
-import { TranscriptConfirmationRepository } from '../../../dist/workspace/persistence/transcriptConfirmationRepository.js';
+import { WorkspaceRepositoryError } from '../../../dist/workspace/errors.js';
+import { TranscriptConfirmationRepository } from '../../../dist/workspace/audio/core/transcriptConfirmationRepository.js';
 
 const tenantId = '00000000-0000-4000-8000-000000000001';
 const audioId = '11111111-1111-4111-8111-111111111111';

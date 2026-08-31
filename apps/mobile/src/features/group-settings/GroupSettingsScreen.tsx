@@ -36,14 +36,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   archiveGroup,
   getGroupSettings,
-  listDataSources,
   listGroupDataSources,
   listGroupKnowledgeBases,
-  listKnowledgeBases,
   replaceGroupDataSources,
   replaceGroupKnowledgeBases,
   updateGroupSettings,
-} from '@/shared/api/workspaceApi';
+} from '@/shared/api/groupsApi';
+import { listDataSources } from '@/shared/api/dataSourcesApi';
+import { listKnowledgeBases } from '@/shared/api/knowledgeBasesApi';
 import {
   colors,
   fontFamilies,

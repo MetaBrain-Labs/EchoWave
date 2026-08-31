@@ -13,9 +13,9 @@ import {
 
 import { createApp } from '../../dist/http/app.js';
 import { LiveUpdateBroker } from '../../dist/infrastructure/liveUpdateBroker.js';
-import { WorkspaceRepositoryError } from '../../dist/workspace/persistence/errors.js';
-import { AudioUploadValidationError } from '../../dist/workspace/service.js';
-import { DashScopeCallbackError } from '../../dist/workspace/transcription/dashScopeCallback.js';
+import { WorkspaceRepositoryError } from '../../dist/workspace/errors.js';
+import { AudioUploadValidationError } from '../../dist/workspace/data-sources/service.js';
+import { DashScopeCallbackError } from '../../dist/workspace/audio/transcription/dashScopeCallback.js';
 
 const app = createApp({ corsOrigins: ['http://localhost:8081'] });
 const groupId = '11111111-1111-4111-8111-111111111111';
@@ -331,7 +331,12 @@ describe('workspace routes', () => {
   const liveUpdateBroker = new LiveUpdateBroker();
   const workspaceApp = createApp(
     { corsOrigins: ['http://localhost:8081'] },
-    { workspaceService, liveUpdateBroker },
+    {
+      groupService: workspaceService,
+      dataSourceService: workspaceService,
+      audioService: workspaceService,
+      liveUpdateBroker,
+    },
   );
 
   const wakeExecutionStream = () => {
@@ -511,7 +516,7 @@ describe('workspace routes', () => {
       { corsOrigins: ['http://localhost:8081'] },
       {
         liveUpdateBroker: broker,
-        workspaceService: {
+        dataSourceService: {
           ...workspaceService,
           listDataSourceAudioFiles: async () => {
             reads += 1;
@@ -573,7 +578,7 @@ describe('workspace routes', () => {
       { corsOrigins: ['http://localhost:8081'] },
       {
         liveUpdateBroker: broker,
-        workspaceService: {
+        audioService: {
           ...workspaceService,
           getAudioAnalysis: async () => {
             reads += 1;
@@ -874,7 +879,7 @@ describe('workspace routes', () => {
     const mediaApp = createApp(
       { corsOrigins: ['http://localhost:8081'] },
       {
-        workspaceService: {
+        audioService: {
           ...workspaceService,
           getAudioPlaybackFile: async () => ({
             absolutePath,
@@ -938,7 +943,7 @@ describe('workspace routes', () => {
     const conflictApp = createApp(
       { corsOrigins: ['http://localhost:8081'] },
       {
-        workspaceService: {
+        audioService: {
           ...workspaceService,
           confirmAudioTranscript: async () => {
             throw new WorkspaceRepositoryError('CONFLICT', '确认版本已变化，请重新加载后再编辑。');
@@ -988,7 +993,7 @@ describe('workspace routes', () => {
     const conflictApp = createApp(
       { corsOrigins: ['http://localhost:8081'] },
       {
-        workspaceService: {
+        audioService: {
           ...workspaceService,
           startAudioPostAnalysis: async () => {
             throw new WorkspaceRepositoryError('CONFLICT', '该类型已有进行中的分析任务。');
@@ -1015,7 +1020,7 @@ describe('workspace routes', () => {
     const unavailableApp = createApp(
       { corsOrigins: ['http://localhost:8081'] },
       {
-        workspaceService: {
+        audioService: {
           ...workspaceService,
           startAudioTranscription: async () => {
             throw new WorkspaceRepositoryError(
@@ -1040,7 +1045,7 @@ describe('workspace routes', () => {
     const validationApp = createApp(
       { corsOrigins: ['http://localhost:8081'] },
       {
-        workspaceService: {
+        dataSourceService: {
           ...workspaceService,
           uploadDataSourceAudioFiles: async () => {
             throw new AudioUploadValidationError('TOO_MANY_FILES', '单批最多上传 20 个音频文件。');

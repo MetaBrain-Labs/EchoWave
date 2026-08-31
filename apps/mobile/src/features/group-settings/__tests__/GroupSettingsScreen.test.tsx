@@ -10,20 +10,24 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 
 import { GroupSettingsScreen } from '../GroupSettingsScreen';
-import * as workspaceApi from '@/shared/api/workspaceApi';
+import * as groupsApi from '@/shared/api/groupsApi';
+import * as dataSourcesApi from '@/shared/api/dataSourcesApi';
+import * as knowledgeBasesApi from '@/shared/api/knowledgeBasesApi';
 import { groupFixture, knowledgeFixtures, sourceFixtures } from '@/test/workspaceFixtures';
 
-jest.mock('@/shared/api/workspaceApi', () => ({
+jest.mock('@/shared/api/groupsApi', () => ({
   archiveGroup: jest.fn(),
   getGroupSettings: jest.fn(),
-  listDataSources: jest.fn(),
   listGroupDataSources: jest.fn(),
   listGroupKnowledgeBases: jest.fn(),
-  listKnowledgeBases: jest.fn(),
   replaceGroupDataSources: jest.fn(),
   replaceGroupKnowledgeBases: jest.fn(),
   updateGroupSettings: jest.fn(),
 }));
+jest.mock('@/shared/api/dataSourcesApi', () => ({ listDataSources: jest.fn() }));
+jest.mock('@/shared/api/knowledgeBasesApi', () => ({ listKnowledgeBases: jest.fn() }));
+
+const workspaceApi = { ...groupsApi, ...dataSourcesApi, ...knowledgeBasesApi };
 
 describe('GroupSettingsScreen', () => {
   beforeEach(() => {

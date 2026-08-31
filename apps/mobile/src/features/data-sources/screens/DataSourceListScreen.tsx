@@ -32,7 +32,7 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
-import { createDataSource, listDataSources } from '@/shared/api/workspaceApi';
+import { createDataSource, listDataSources } from '@/shared/api/dataSourcesApi';
 
 import { DataSourceFormSheet, type DataSourceFormValue } from '../components/DataSourceDialogs';
 

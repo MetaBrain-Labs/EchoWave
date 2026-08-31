@@ -12,7 +12,7 @@ import { describe, it } from 'node:test';
 import {
   DashScopeFileTranscription,
   normalizeSpeakerTurnSegments,
-} from '../../../dist/workspace/transcription/dashScopeFileTranscription.js';
+} from '../../../dist/workspace/audio/transcription/dashScopeFileTranscription.js';
 
 function result(sentences) {
   return { transcripts: [{ sentences }] };

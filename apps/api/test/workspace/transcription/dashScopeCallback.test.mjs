@@ -9,7 +9,7 @@ import { describe, it } from 'node:test';
 import {
   DashScopeCallbackError,
   DashScopeCallbackService,
-} from '../../../dist/workspace/transcription/dashScopeCallback.js';
+} from '../../../dist/workspace/audio/transcription/dashScopeCallback.js';
 
 function callback(overrides = {}) {
   return {

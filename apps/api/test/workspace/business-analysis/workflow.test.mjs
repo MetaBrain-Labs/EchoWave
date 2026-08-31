@@ -12,8 +12,8 @@ import { describe, it } from 'node:test';
 
 import { MemorySaver } from '@langchain/langgraph';
 
-import { BusinessAnalysisProviderError } from '../../../dist/workspace/business-analysis/salesAnalysisAgent.js';
-import { BusinessAnalysisWorkflow } from '../../../dist/workspace/business-analysis/workflow.js';
+import { BusinessAnalysisProviderError } from '../../../dist/workspace/audio/business-analysis/salesAnalysisAgent.js';
+import { BusinessAnalysisWorkflow } from '../../../dist/workspace/audio/business-analysis/workflow.js';
 
 const groupId = '11111111-1111-4111-8111-111111111111';
 const audioId = '22222222-2222-4222-8222-222222222222';

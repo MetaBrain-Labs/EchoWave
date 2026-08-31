@@ -37,6 +37,44 @@ apps/api/src/http ───────> @echowave/contracts <──── apps/
 - 知识模块按生命周期形成深模块：可信回答、embedding、入库和持久化。服务、回答模块和 worker 直接依赖所需窄仓储，不设置委托式总仓储。
 - `packages/contracts` 按通用错误、知识库、文档和 RAG 拆分，包根继续作为公共导出兼容面。
 
+## 文件结构与领域所有权
+
+API 采用“领域优先、领域内分层”，顶层目录只表达稳定的技术边界：
+
+```text
+apps/api/src/
+  bootstrap/       组合根、领域 runtime factory、分领域 seed、启动与统一关闭
+  config/          HTTP、数据库、Redis、模型、音频和报告配置；env.ts 统一加载装配
+  http/            app、错误映射、SSE 基础设施及按领域拆分的 routes
+  ai-runtime/      跨领域结构化输出和模型调用生命周期基础能力
+  knowledge/
+    catalog/       知识库、文档和块目录
+    retrieval/     检索 port、RetrievalChunk 与向量实现
+    answer/        可信问答 Agent
+    ingestion/     入库 workflow、worker 和生命周期持久化
+  workspace/
+    groups/        GroupService 与分组 Repository
+    data-sources/  DataSourceService 与数据源 Repository
+    audio/
+      core/        播放、分析详情、转写确认与 AudioService
+      transcription/  转写 Repository、供应商适配器、workflow 与 Worker
+      post-analysis/  情绪/角色 Context、Repository、供应商适配器与 Worker
+      business-analysis/  销售复盘 Context、Repository、LangGraph 与 Worker
+      execution/   执行查询 port、PostgreSQL recorder、事件 mapper 与 Repository
+```
+
+- `http/app.ts`、`config/env.ts` 和 contracts 根 `index.ts` 是长期组合入口，不放置领域实现。
+- `bootstrap/runtime.ts` 只创建跨领域共享资源并调用 knowledge、workspace、audio runtime factory；`bootstrap/seed.ts` 只维护事务和领域 seed 调用顺序。
+- Route 只能依赖显式 Service port；Service 直接依赖所需的窄 Repository，不通过聚合 Service 或聚合 Repository 转发。
+- Repository 拥有 SQL 与事务，Service 拥有用例协调，Route 拥有网络解析和状态码，Worker 拥有领取、恢复与停止生命周期。
+- LangGraph workflow 使用 `state.ts`、`nodes.ts`、`graph.ts`；`addNode` 只引用有名称的节点函数，依赖经工厂或 runtime context 注入。
+- 每个模型任务就近维护一个 `CONTEXT.ts`，只包含该任务的系统/修复指令和动态 user context builder；schema、请求、重试与持久化不得进入 Context。
+- 文件只按职责、依赖方向和可独立测试边界拆分。大文件需要审查，但不设置行数阈值，也不为几行日期转换、表名生成或简单展示组件制造公共抽象。
+
+移动端同样按 feature 拥有状态与展示：Screen 负责页面编排，复杂加载、实时订阅和确认流程进入 feature hook，组件及样式留在所属 feature。`shared/api` 按 groups、data-sources、audio-analysis 等资源拆分，并复用基础请求错误；只有确认存在复杂共享状态机时才进入 `shared/hooks`。
+
+共享契约按 wire domain 拆分，analysis 下区分 transcript、post-analysis、business-analysis，audio 下区分 processing、transcription。拆分不得改变原 schema/type 名称或 JSON 形状。
+
 ## 数据与发布边界
 
 - PostgreSQL 是知识库、文档、revision、chunk、任务、会话和运行记录的权威来源。

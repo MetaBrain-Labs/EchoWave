@@ -13,7 +13,7 @@ import {
   buildVoiceActivityManifest,
   restoreOriginalTimeline,
   speechRangesFromProbabilities,
-} from '../../../dist/workspace/transcription/voiceActivity.js';
+} from '../../../dist/workspace/audio/transcription/voiceActivity.js';
 
 const samples = (milliseconds) => Math.round((milliseconds * 16_000) / 1_000);
 

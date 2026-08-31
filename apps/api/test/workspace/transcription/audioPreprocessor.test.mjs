@@ -12,7 +12,7 @@ import { describe, it } from 'node:test';
 import {
   AudioInputPreprocessor,
   FfmpegAudioPreprocessor,
-} from '../../../dist/workspace/transcription/audioPreprocessor.js';
+} from '../../../dist/workspace/audio/transcription/audioPreprocessor.js';
 
 const job = {
   audioFileId: '40000000-0000-4000-8000-000000000001',

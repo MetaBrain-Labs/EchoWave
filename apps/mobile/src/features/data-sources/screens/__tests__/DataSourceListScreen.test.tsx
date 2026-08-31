@@ -13,10 +13,10 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { Alert, StyleSheet } from 'react-native';
 
 import { DataSourceListScreen } from '../DataSourceListScreen';
-import * as workspaceApi from '@/shared/api/workspaceApi';
+import * as workspaceApi from '@/shared/api/dataSourcesApi';
 import { dataSourceDetailFixture, sourceFixtures } from '@/test/workspaceFixtures';
 
-jest.mock('@/shared/api/workspaceApi', () => ({
+jest.mock('@/shared/api/dataSourcesApi', () => ({
   createDataSource: jest.fn(),
   listDataSources: jest.fn(),
 }));

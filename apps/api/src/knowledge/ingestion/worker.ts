@@ -13,42 +13,23 @@
  * - PostgreSQL 通知负责低延迟唤醒，15 秒安全扫描与 SKIP LOCKED 负责遗漏恢复和并发互斥。
  * - 当前 worker 仍与 API 同进程，本地临时文件路径不支持跨主机接管。
  */
-import { readFile, readdir, stat, unlink } from 'node:fs/promises';
+import { readdir, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
-
-import { Annotation, END, START, StateGraph } from '@langchain/langgraph';
 
 import {
   noOpAiExecutionReporter,
-  type AiExecutionRecorder,
   type AiExecutionReporter,
 } from '../../ai-observability/executionReporter.ts';
 import type { WorkerWakeupSource } from '../../infrastructure/workerWakeup.ts';
-import {
-  DocumentParseError,
-  parseKnowledgeDocument,
-  type ParsedDocument,
-} from './documentParser.ts';
-import {
-  EmbeddingProviderError,
-  DashScopeEmbeddings,
-  type EmbeddingBatchResult,
-} from '../embeddings/dashScopeEmbeddings.ts';
+import { DocumentParseError } from './documentParser.ts';
+import { EmbeddingProviderError, DashScopeEmbeddings } from '../embeddings/dashScopeEmbeddings.ts';
 import {
   IngestionRepository,
   type ClaimedIngestionJob,
 } from '../persistence/ingestionRepository.ts';
+import { createIngestionGraph } from './graph/graph.ts';
 
-const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const SAFETY_POLL_INTERVAL_MS = 15_000;
-
-const IngestionState = Annotation.Root({
-  job: Annotation<ClaimedIngestionJob>(),
-  source: Annotation<Buffer>(),
-  parsed: Annotation<ParsedDocument>(),
-  embedding: Annotation<EmbeddingBatchResult>(),
-  report: Annotation<AiExecutionRecorder>(),
-});
 
 type WorkerOptions = {
   repository: IngestionRepository;
@@ -59,33 +40,6 @@ type WorkerOptions = {
   reporter?: AiExecutionReporter;
   wakeup?: WorkerWakeupSource;
 };
-
-async function runReportedStep<T>(
-  report: AiExecutionRecorder,
-  name: string,
-  operation: () => Promise<T>,
-  summarize?: (result: T) => Record<string, unknown>,
-): Promise<T> {
-  const startedAt = Date.now();
-  report.recordStep({ name, status: 'started' });
-  try {
-    const result = await operation();
-    report.recordStep({
-      name,
-      status: 'completed',
-      durationMs: Date.now() - startedAt,
-      metadata: summarize?.(result),
-    });
-    return result;
-  } catch (error) {
-    report.recordStep({
-      name,
-      status: 'failed',
-      durationMs: Date.now() - startedAt,
-    });
-    throw error;
-  }
-}
 
 /** 管理可恢复入库任务领取、LangGraph 执行和优雅停止的后台 worker。 */
 export class IngestionWorker {
@@ -99,186 +53,7 @@ export class IngestionWorker {
 
   constructor(private readonly options: WorkerOptions) {
     this.concurrency = options.concurrency ?? 2;
-    this.graph = new StateGraph(IngestionState)
-      .addNode('validate', async ({ job, report }) => {
-        const source = await runReportedStep(
-          report,
-          'validate',
-          async () => {
-            await options.repository.setJobStage(job, 'validate', 'validating');
-            const value = await readFile(job.stagedPath);
-            if (value.byteLength !== job.sizeBytes || value.byteLength > MAX_FILE_BYTES) {
-              throw new DocumentParseError(
-                'DOCUMENT_TOO_LARGE',
-                '文件超过 20 MB 或上传内容不完整。',
-              );
-            }
-            return value;
-          },
-          (value) => ({ sizeBytes: value.byteLength }),
-        );
-        return { source };
-      })
-      .addNode('parse', async ({ job, source, report }) => {
-        const parsed = await runReportedStep(
-          report,
-          'parse',
-          async () => {
-            await options.repository.setJobStage(job, 'parse', 'parsing');
-            return parseKnowledgeDocument(source, job.format, job.title);
-          },
-          (value) => ({
-            chunkCount: value.chunks.length,
-            warningCount: value.warnings.length,
-            previewLength: value.previewText.length,
-          }),
-        );
-        report.recordContext({
-          title: job.title,
-          previewText: parsed.previewText,
-          warnings: parsed.warnings,
-          chunks: parsed.chunks,
-        });
-        return { parsed };
-      })
-      .addNode('normalize', async ({ job, report }) => {
-        await runReportedStep(report, 'normalize', () =>
-          options.repository.setJobStage(job, 'normalize', 'parsing'),
-        );
-        return {};
-      })
-      .addNode('chunk', async ({ job, parsed, report }) => {
-        await runReportedStep(
-          report,
-          'chunk',
-          () => options.repository.setJobStage(job, 'chunk', 'chunking'),
-          () => ({ chunkCount: parsed.chunks.length }),
-        );
-        return {};
-      })
-      .addNode('embed', async ({ job, parsed, report }) => {
-        const embedding = await runReportedStep(
-          report,
-          'embed',
-          async () => {
-            await options.repository.setJobStage(job, 'embed', 'embedding', 5);
-            const modelStartedAt = Date.now();
-            let result;
-            try {
-              result = await options.embeddings.embedBatches(
-                parsed.chunks.map((chunk) => chunk.embeddingText),
-              );
-              report.recordModelCall({
-                name: 'document-embedding',
-                provider: result.provider,
-                model: result.model,
-                status: 'completed',
-                attempt: 1,
-                durationMs: Date.now() - modelStartedAt,
-                inputTokens: result.tokens,
-                outputTokens: null,
-                estimatedCost: result.estimatedCost,
-                input: {
-                  kind: 'embedding',
-                  texts: parsed.chunks.map((chunk) => chunk.embeddingText),
-                },
-                output: {
-                  vectorCount: result.vectors.length,
-                  dimensions: result.vectors[0]?.length ?? 0,
-                  tokens: result.tokens,
-                  estimatedCost: result.estimatedCost,
-                },
-                metadata: {
-                  inputCount: parsed.chunks.length,
-                  vectorCount: result.vectors.length,
-                  dimensions: result.vectors[0]?.length ?? 0,
-                },
-              });
-            } catch (error) {
-              report.recordModelCall({
-                name: 'document-embedding',
-                provider: 'dashscope',
-                model: options.embeddingModel,
-                status: 'failed',
-                attempt: 1,
-                durationMs: Date.now() - modelStartedAt,
-                inputTokens: null,
-                outputTokens: null,
-                input: {
-                  kind: 'embedding',
-                  texts: parsed.chunks.map((chunk) => chunk.embeddingText),
-                },
-                output: { error },
-                metadata: { inputCount: parsed.chunks.length },
-              });
-              throw error;
-            }
-            await options.repository.setJobStage(job, 'embed', 'embedding', 95);
-            return result;
-          },
-          (value) => ({
-            provider: value.provider,
-            model: value.model,
-            tokens: value.tokens,
-            estimatedCost: value.estimatedCost,
-            vectorCount: value.vectors.length,
-          }),
-        );
-        return { embedding };
-      })
-      .addNode('publish', async ({ job, parsed, embedding, report }) => {
-        await runReportedStep(
-          report,
-          'publish',
-          () =>
-            options.repository.publishRevision({
-              job,
-              chunks: parsed.chunks,
-              vectors: embedding.vectors,
-              previewText: parsed.previewText,
-              warnings: parsed.warnings,
-              provider: embedding.provider,
-              embeddingTokens: embedding.tokens,
-              estimatedCost: embedding.estimatedCost,
-              embeddingModel: options.embeddingModel,
-            }),
-          () => ({
-            revisionId: job.revisionId,
-            chunkCount: parsed.chunks.length,
-            warningCount: parsed.warnings.length,
-          }),
-        );
-        return {};
-      })
-      .addNode('cleanup', async ({ job, report }) => {
-        await runReportedStep(
-          report,
-          'cleanup',
-          async () =>
-            unlink(job.stagedPath).then(
-              () => ({ removed: true }),
-              (error: NodeJS.ErrnoException) => {
-                if (error.code !== 'ENOENT')
-                  console.warn('Failed to remove staged upload', { jobId: job.id });
-                return {
-                  removed: false,
-                  reason: error.code === 'ENOENT' ? 'already-missing' : 'unlink-failed',
-                };
-              },
-            ),
-          (result) => result,
-        );
-        return {};
-      })
-      .addEdge(START, 'validate')
-      .addEdge('validate', 'parse')
-      .addEdge('parse', 'normalize')
-      .addEdge('normalize', 'chunk')
-      .addEdge('chunk', 'embed')
-      .addEdge('embed', 'publish')
-      .addEdge('publish', 'cleanup')
-      .addEdge('cleanup', END)
-      .compile();
+    this.graph = createIngestionGraph(options);
   }
 
   /** 启动通知订阅、孤立文件清理和低频安全扫描；重复调用不会创建第二个 timer。 */

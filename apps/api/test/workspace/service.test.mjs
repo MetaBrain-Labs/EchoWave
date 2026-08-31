@@ -15,9 +15,10 @@ import { describe, it } from 'node:test';
 
 import {
   AudioUploadValidationError,
-  DefaultWorkspaceService,
-} from '../../dist/workspace/service.js';
-import { WorkspaceRepositoryError } from '../../dist/workspace/persistence/errors.js';
+  DefaultDataSourceService,
+} from '../../dist/workspace/data-sources/service.js';
+import { DefaultAudioService } from '../../dist/workspace/audio/core/service.js';
+import { WorkspaceRepositoryError } from '../../dist/workspace/errors.js';
 import { AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES } from '@echowave/contracts';
 
 const sourceId = '11111111-1111-4111-8111-111111111111';
@@ -52,11 +53,11 @@ function repository(overrides = {}) {
   };
 }
 
-describe('DefaultWorkspaceService audio uploads', () => {
+describe('DefaultDataSourceService audio uploads', () => {
   it('stores a structurally valid audio file and publishes extracted metadata', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'echowave-audio-'));
     let storedItems;
-    const service = new DefaultWorkspaceService(
+    const service = new DefaultDataSourceService(
       repository({
         createDataSourceAudioUpload: async (_id, items) => {
           storedItems = items;
@@ -81,7 +82,7 @@ describe('DefaultWorkspaceService audio uploads', () => {
   it('rejects unsupported, malformed, and oversized batches before database publication', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'echowave-audio-'));
     let publications = 0;
-    const service = new DefaultWorkspaceService(
+    const service = new DefaultDataSourceService(
       repository({
         createDataSourceAudioUpload: async () => {
           publications += 1;
@@ -123,7 +124,7 @@ describe('DefaultWorkspaceService audio uploads', () => {
 
   it('removes every newly written file when database publication fails', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'echowave-audio-'));
-    const service = new DefaultWorkspaceService(
+    const service = new DefaultDataSourceService(
       repository({
         createDataSourceAudioUpload: async () => {
           throw new Error('database unavailable');
@@ -143,11 +144,11 @@ describe('DefaultWorkspaceService audio uploads', () => {
   });
 });
 
-describe('DefaultWorkspaceService audio playback', () => {
+describe('DefaultAudioService audio playback', () => {
   it('opens a stored file without exposing a path outside AUDIO_STORAGE_DIR', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'echowave-playback-'));
     await writeFile(path.join(root, 'stored.wav'), Buffer.from('audio-bytes'));
-    const service = new DefaultWorkspaceService(
+    const service = new DefaultAudioService(
       repository({
         getAudioPlaybackSource: async () => ({
           storageKey: 'stored.wav',
@@ -171,7 +172,7 @@ describe('DefaultWorkspaceService audio playback', () => {
     const root = await mkdtemp(path.join(tmpdir(), 'echowave-playback-'));
     try {
       for (const storageKey of ['../escape.wav', 'missing.wav']) {
-        const service = new DefaultWorkspaceService(
+        const service = new DefaultAudioService(
           repository({
             getAudioPlaybackSource: async () => ({
               storageKey,
@@ -192,7 +193,7 @@ describe('DefaultWorkspaceService audio playback', () => {
   });
 });
 
-describe('DefaultWorkspaceService audio transcription', () => {
+describe('DefaultAudioService audio transcription', () => {
   it('rechecks FFmpeg before queueing the fixed whole-file route', async () => {
     const queued = [];
     const audioRepository = {
@@ -215,7 +216,7 @@ describe('DefaultWorkspaceService audio transcription', () => {
       }),
       refreshModeAvailability: async () => false,
     };
-    const service = new DefaultWorkspaceService(
+    const service = new DefaultAudioService(
       repository(),
       '.data/audio',
       audioRepository,
@@ -254,7 +255,7 @@ describe('DefaultWorkspaceService audio transcription', () => {
       }),
       refreshModeAvailability: async () => true,
     };
-    const service = new DefaultWorkspaceService(
+    const service = new DefaultAudioService(
       repository(),
       '.data/audio',
       audioRepository,
@@ -284,10 +285,10 @@ describe('DefaultWorkspaceService audio transcription', () => {
   });
 });
 
-describe('DefaultWorkspaceService audio post-analysis', () => {
+describe('DefaultAudioService audio post-analysis', () => {
   it('rejects emotion queueing when FFmpeg or the Qwen staging path is unavailable', async () => {
     const queued = [];
-    const service = new DefaultWorkspaceService(
+    const service = new DefaultAudioService(
       repository(),
       '.data/audio',
       {},
@@ -309,7 +310,7 @@ describe('DefaultWorkspaceService audio post-analysis', () => {
 
   it('queues role recognition without coupling it to the emotion audio dependencies', async () => {
     const queued = [];
-    const service = new DefaultWorkspaceService(
+    const service = new DefaultAudioService(
       repository(),
       '.data/audio',
       {},
@@ -335,7 +336,7 @@ describe('DefaultWorkspaceService audio post-analysis', () => {
   });
 });
 
-describe('DefaultWorkspaceService audio execution stream', () => {
+describe('DefaultAudioService audio execution stream', () => {
   it('validates audio and group access before returning the SSE snapshot', async () => {
     const revisionId = '22222222-2222-4222-8222-222222222222';
     const calls = [];
@@ -345,7 +346,7 @@ describe('DefaultWorkspaceService audio execution stream', () => {
         return { cursor: '0' };
       },
     };
-    const service = new DefaultWorkspaceService(
+    const service = new DefaultAudioService(
       repository({
         getAudioAnalysis: async (id) => {
           calls.push(['analysis', id]);
@@ -378,7 +379,7 @@ describe('DefaultWorkspaceService audio execution stream', () => {
 
   it('does not query execution events when group access is denied', async () => {
     let queried = false;
-    const service = new DefaultWorkspaceService(
+    const service = new DefaultAudioService(
       repository({
         getAudioAnalysis: async () => ({ id: sourceId }),
         assertGroupAudioAccess: async () => {

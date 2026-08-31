@@ -31,7 +31,9 @@ if (transcriptionCapabilities.ffmpeg.available && !transcriptionCapabilities.sil
 }
 const app = createApp(config, {
   knowledgeService: ragRuntime.service,
-  workspaceService: ragRuntime.workspaceService,
+  groupService: ragRuntime.groupService,
+  dataSourceService: ragRuntime.dataSourceService,
+  audioService: ragRuntime.audioService,
   liveUpdateBroker: ragRuntime.liveUpdates,
   ...(ragRuntime.dashScopeCallbackService
     ? { dashScopeCallbackService: ragRuntime.dashScopeCallbackService }
