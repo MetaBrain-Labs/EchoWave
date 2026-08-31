@@ -16,15 +16,13 @@ import type { ComponentProps } from 'react';
 import { KnowledgeDetailScreen } from '../KnowledgeDetailScreen';
 import { getKnowledgeBase, listDocuments } from '../../apiClient';
 import { document, knowledge } from '../../testing/fixtures';
-import {
-  linkKnowledgeBaseGroups,
-  listGroups,
-  listKnowledgeBaseGroups,
-} from '@/shared/api/workspaceApi';
+import { linkKnowledgeBaseGroups, listKnowledgeBaseGroups } from '@/shared/api/knowledgeBasesApi';
+import { listGroups } from '@/shared/api/groupsApi';
 import { groupFixture } from '@/test/workspaceFixtures';
 
 jest.mock('../../apiClient');
-jest.mock('@/shared/api/workspaceApi');
+jest.mock('@/shared/api/knowledgeBasesApi');
+jest.mock('@/shared/api/groupsApi');
 jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
 
 const secondGroup = {

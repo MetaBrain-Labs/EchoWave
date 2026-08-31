@@ -57,6 +57,12 @@ Use the repository's pinned toolchain and existing scripts. Do not change depend
 - Prefer one authoritative source of truth. Do not create competing browser, cache, file, and database representations without an explicit synchronization contract.
 - Model multi-stage workflows explicitly through the repository's workflow mechanism rather than hidden ad hoc calls.
 - Preserve state, provenance, idempotency, retry behavior, and downstream invalidation in resumable or parallel workflows.
+- Organize API code domain-first and layer within each domain. Do not create global `repositories`, `services`, or `utils` directories.
+- Name and place `Repository`, `Service`, `Route`, workflow, and `CONTEXT.ts` files under the domain that owns their lifecycle. Routes depend on service ports; services depend directly on narrow repositories.
+- Keep `http/app.ts`, `config/env.ts`, and `packages/contracts/src/index.ts` as composition or compatibility surfaces only.
+- Split LangGraph workflows into `state.ts`, `nodes.ts`, and `graph.ts`. Every `addNode` must reference a named node function; inject dependencies through factories or runtime context.
+- Keep exactly one uppercase `CONTEXT.ts` per model-facing agent or business task. Context modules may hold prompts and dynamic context builders, but not schemas, HTTP calls, retries, or persistence.
+- Review large files by responsibility, coupling, and test boundary rather than a numeric line threshold. Do not add line-count CI gates or extract trivial helpers merely because code repeats.
 
 ## EchoWave Invariants
 
@@ -123,6 +129,7 @@ pnpm-lock.yaml
 - Within `knowledge`, keep trusted-answer orchestration in `answer`, provider embeddings in `embeddings`, document processing in `ingestion`, and SQL lifecycle operations in `persistence`.
 - Keep knowledge, ingestion, and conversation persistence as narrow lifecycle repositories. Services and workers depend directly on the repositories they use; do not add a delegating aggregate repository.
 - Keep `packages/contracts/src/index.ts` as the compatibility export surface while domain schemas remain split across common errors, knowledge bases, documents, and RAG.
+- Keep analysis contracts split into transcript, post-analysis, and business-analysis; keep audio contracts split into processing and transcription. Preserve public names and wire shapes through the package root.
 - `GET /api/hello` must return `{ ok: true, service: "echowave-api", message: "HelloWorld" }` and pass `HelloResponseSchema` unless the shared contract is intentionally changed everywhere.
 - Validate untrusted network data at runtime. A TypeScript type assertion is not a replacement for Zod parsing.
 - Validate inputs at trust boundaries and return compact, actionable errors without leaking secrets, provider stacks, or large internal payloads.

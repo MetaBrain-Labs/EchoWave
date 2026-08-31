@@ -18,24 +18,26 @@ import {
   setHideIrrelevantSegmentsPreference,
   setPostAnalysisControlsCollapsedPreference,
 } from '../preferences';
-import * as workspaceApi from '@/shared/api/workspaceApi';
+import * as audioAnalysisApi from '@/shared/api/audioAnalysisApi';
+import * as groupsApi from '@/shared/api/groupsApi';
+import * as requestApi from '@/shared/api/request';
 import * as executionStreamApi from '@/shared/api/audioExecutionStream';
 import { analysisFixture } from '@/test/workspaceFixtures';
 import { mockAudioPlayers, resetExpoAudioMock } from '@/test/ExpoAudioMock';
 
-jest.mock('@/shared/api/workspaceApi', () => {
-  const actual = jest.requireActual('@/shared/api/workspaceApi');
+jest.mock('@/shared/api/audioAnalysisApi', () => {
+  const actual = jest.requireActual('@/shared/api/audioAnalysisApi');
   return {
     ...actual,
     confirmAudioTranscript: jest.fn(),
     getAudioAnalysis: jest.fn(),
     getAudioExecutionTrace: jest.fn(),
-    getGroupSettings: jest.fn(),
     startAudioBusinessAnalysis: jest.fn(),
     startAudioEmotionAnalysis: jest.fn(),
     startAudioRoleRecognition: jest.fn(),
   };
 });
+jest.mock('@/shared/api/groupsApi', () => ({ getGroupSettings: jest.fn() }));
 
 jest.mock('@/shared/api/audioExecutionStream', () => ({
   streamAudioExecutionTrace: jest.fn(
@@ -49,6 +51,8 @@ jest.mock('@/shared/api/liveUpdateStreams', () => ({
       new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve())),
   ),
 }));
+
+const workspaceApi = { ...audioAnalysisApi, ...groupsApi, ...requestApi };
 
 async function renderAnalysis(
   detailId = analysisFixture.audioFileId,

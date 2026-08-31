@@ -25,7 +25,7 @@ import {
 
 import type { KnowledgeAnswerModule } from './answer/knowledgeAnswer.ts';
 import type { IngestionRepository } from './persistence/ingestionRepository.ts';
-import type { KnowledgeRepository } from './persistence/knowledgeRepository.ts';
+import type { KnowledgeRepository } from './catalog/knowledgeRepository.ts';
 import type { ConversationRepository } from './persistence/conversationRepository.ts';
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;

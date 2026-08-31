@@ -17,20 +17,25 @@ EchoWave 是一个面向音频分析、知识库关联和数据源连接场景�
 apps/
   api/
     src/
-      bootstrap/       服务启动、运行时装配与显式迁移入口
+      bootstrap/       服务启动、领域 runtime/seed 工厂与显式迁移入口
       ai-observability/ AI 执行报告与安全诊断记录
-      config/          环境配置解析
+      ai-runtime/      跨领域模型调用与结构化输出基础能力
+      config/          分模块配置解析，env.ts 统一装配 .env
       infrastructure/ PostgreSQL 连接设施
-      http/            Hono 应用与传输层错误映射
-      knowledge/       知识库领域深模块（回答、嵌入、入库、持久化）
+      http/            Hono 组合入口、SSE 与领域路由
+      knowledge/       知识目录、检索、回答、入库与持久化
+      workspace/
+        groups/        分组 Service 与 PostgreSQL Repository
+        data-sources/  数据源 Service 与 PostgreSQL Repository
+        audio/         core、transcription、post-analysis、business-analysis、execution
   mobile/
     src/
       app/              Expo Router 薄路由
-      shared/           API 基础、Hook、导航、主题与通用 UI
-      features/         analysis-detail、group、knowledge、system-status
+      shared/           分资源 API 客户端、Hook、导航、主题与通用 UI
+      features/         analysis-detail、data-sources、group、knowledge、system-status
 packages/
   contracts/
-    src/                通用错误、知识库、文档与 RAG 网络契约
+    src/                按领域拆分的 Zod 网络契约与兼容根导出
 docs/
   README.md            文档索引
   architecture.md      架构与技术决策

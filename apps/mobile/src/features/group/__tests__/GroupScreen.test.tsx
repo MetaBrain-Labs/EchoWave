@@ -14,7 +14,7 @@ import type { ComponentProps } from 'react';
 import { StyleSheet } from 'react-native';
 
 import { GroupScreen } from '../GroupScreen';
-import * as workspaceApi from '@/shared/api/workspaceApi';
+import * as workspaceApi from '@/shared/api/groupsApi';
 import {
   audioFixtures,
   groupFixture,
@@ -22,7 +22,7 @@ import {
   sourceFixtures,
 } from '@/test/workspaceFixtures';
 
-jest.mock('@/shared/api/workspaceApi', () => ({
+jest.mock('@/shared/api/groupsApi', () => ({
   archiveGroup: jest.fn(),
   createGroup: jest.fn(),
   listGroups: jest.fn(),

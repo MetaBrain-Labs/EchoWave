@@ -34,12 +34,12 @@ import {
   confirmAudioTranscript,
   getAudioAnalysis,
   getAudioExecutionTrace,
-  getGroupSettings,
   startAudioBusinessAnalysis,
   startAudioEmotionAnalysis,
   startAudioRoleRecognition,
-  WorkspaceRequestError,
-} from '@/shared/api/workspaceApi';
+} from '@/shared/api/audioAnalysisApi';
+import { getGroupSettings } from '@/shared/api/groupsApi';
+import { WorkspaceRequestError } from '@/shared/api/request';
 import {
   colors,
   fontFamilies,

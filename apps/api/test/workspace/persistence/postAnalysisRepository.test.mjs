@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { PostAnalysisRepository } from '../../../dist/workspace/persistence/postAnalysisRepository.js';
+import { PostAnalysisRepository } from '../../../dist/workspace/audio/post-analysis/repository.js';
 
 const tenantId = '00000000-0000-4000-8000-000000000001';
 const audioId = '11111111-1111-4111-8111-111111111111';

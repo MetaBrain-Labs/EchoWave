@@ -11,7 +11,7 @@ import { describe, it } from 'node:test';
 import {
   EventBridgeSignatureError,
   EventBridgeSignatureVerifier,
-} from '../../../dist/workspace/transcription/eventBridgeSignature.js';
+} from '../../../dist/workspace/audio/transcription/eventBridgeSignature.js';
 
 const CALLBACK_URL = 'https://api.example.com/api/webhooks/dashscope/async-task-finished';
 const CERTIFICATE_URL =

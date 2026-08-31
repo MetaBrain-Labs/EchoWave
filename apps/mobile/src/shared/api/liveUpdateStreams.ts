@@ -21,7 +21,7 @@ import {
 import { fetch } from 'expo/fetch';
 
 import { apiUrl } from './apiUrl';
-import { WorkspaceRequestError } from './workspaceApi';
+import { WorkspaceRequestError } from './request';
 
 type Parser<T> = (value: unknown) => T;
 

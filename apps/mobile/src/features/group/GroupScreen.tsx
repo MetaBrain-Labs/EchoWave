@@ -39,7 +39,7 @@ import {
   listGroupDataSources,
   listGroupKnowledgeBases,
   listGroups,
-} from '@/shared/api/workspaceApi';
+} from '@/shared/api/groupsApi';
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
 import {
   colors,

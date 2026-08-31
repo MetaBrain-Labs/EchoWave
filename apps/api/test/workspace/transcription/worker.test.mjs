@@ -6,8 +6,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { AudioTranscriptionProviderError } from '../../../dist/workspace/transcription/errors.js';
-import { AudioTranscriptionWorker } from '../../../dist/workspace/transcription/worker.js';
+import { AudioTranscriptionProviderError } from '../../../dist/workspace/audio/transcription/errors.js';
+import { AudioTranscriptionWorker } from '../../../dist/workspace/audio/transcription/worker.js';
 
 function job(overrides = {}) {
   return {

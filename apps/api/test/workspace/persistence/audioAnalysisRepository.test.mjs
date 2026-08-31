@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { AudioAnalysisRepository } from '../../../dist/workspace/persistence/audioAnalysisRepository.js';
+import { AudioAnalysisRepository } from '../../../dist/workspace/audio/transcription/repository.js';
 
 const tenantId = '00000000-0000-4000-8000-000000000001';
 const audioFileId = '40000000-0000-4000-8000-000000000001';

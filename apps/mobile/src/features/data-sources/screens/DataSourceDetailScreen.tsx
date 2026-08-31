@@ -15,7 +15,6 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import type {
   AudioTranscriptionCapabilitiesResponse,
   AudioTranscriptionPreprocessing,
-  GroupSummary,
   LinkedDataSourceGroup,
 } from '@echowave/contracts';
 import { DEFAULT_AUDIO_TRANSCRIPTION_MODEL } from '@echowave/contracts';
@@ -34,6 +33,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
+import { useGroupAssociationEditor } from '@/shared/hooks/useGroupAssociationEditor';
 import { useAudioPlayback } from '@/shared/audio/useAudioPlayback';
 import {
   colors,
@@ -47,20 +47,20 @@ import { PageHeader } from '@/shared/ui/PageHeader';
 import { PageTabs } from '@/shared/ui/PageTabs';
 import {
   getDataSource,
-  getAudioTranscriptionCapabilities,
   archiveDataSource,
   archiveDataSourceAudioFile,
   linkDataSourceGroups,
-  listGroups,
   listDataSourceAudioFiles,
   listDataSourceGroups,
   listDataSourceIngestionRecords,
-  startAudioTranscription,
   unlinkDataSourceGroup,
   updateDataSource,
   uploadDataSourceAudioFiles,
-} from '@/shared/api/workspaceApi';
-import { streamDataSourceAudio } from '@/shared/api/liveUpdateStreams';
+} from '@/shared/api/dataSourcesApi';
+import {
+  getAudioTranscriptionCapabilities,
+  startAudioTranscription,
+} from '@/shared/api/audioAnalysisApi';
 
 import {
   AudioTranscriptionConfirmDialog,
@@ -72,19 +72,16 @@ import {
 import { DataSourceAudioActions } from '../components/DataSourceAudioActions';
 import { AnalysisGroupPicker } from '../components/AnalysisGroupPicker';
 import { AudioTranscriptionErrorDialog } from '../components/AudioTranscriptionErrorDialog';
-import {
-  AudioTranscriptionProgressDialog,
-  audioTranscriptionStageLabel,
-} from '../components/AudioTranscriptionProgressDialog';
+import { AudioTranscriptionProgressDialog } from '../components/AudioTranscriptionProgressDialog';
+import { useDataSourceAudioUpdates } from '../hooks/useDataSourceAudioUpdates';
 
-import {
-  toDataSourceDetailView,
-  toSourceAudioItem,
-  type DataSourceDetailView,
-  type SourceAudioItem,
-  type SourceAudioStatus,
-  type UploadRecord,
-} from '../model';
+import { toDataSourceDetailView, type DataSourceDetailView, type SourceAudioItem } from '../model';
+
+import { AudioRow } from '../components/DataSourceAudioRow';
+import { FixedActions, showComingSoon } from '../components/DataSourceFixedActions';
+import { GroupCard } from '../components/DataSourceGroupCard';
+import { OverviewContent } from '../components/DataSourceOverviewContent';
+import { UploadRecordRow } from '../components/DataSourceUploadRecordRow';
 
 const detailTabs = [
   { key: 'overview', label: '概览' },
@@ -94,491 +91,6 @@ const detailTabs = [
 ] as const;
 type DetailTab = (typeof detailTabs)[number]['key'];
 const detailTabKeys = detailTabs.map((tab) => tab.key);
-
-function showComingSoon(feature: string) {
-  Alert.alert('功能建设中', `${feature}将在后续版本开放。`);
-}
-
-function Metric({
-  divider = false,
-  label,
-  value,
-}: {
-  divider?: boolean;
-  label: string;
-  value: string;
-}) {
-  return (
-    <View style={[styles.metric, divider && styles.metricDivider]}>
-      <Text style={styles.metricValue}>{value}</Text>
-      <Text style={styles.metricLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function AudioStatusView({
-  onShowError,
-  onShowProgress,
-  status,
-}: {
-  onShowError: () => void;
-  onShowProgress: () => void;
-  status: SourceAudioStatus;
-}) {
-  switch (status.kind) {
-    case 'complete':
-      return null;
-    case 'uploading':
-      return (
-        <View style={styles.inlineStatus}>
-          <ActivityIndicator color={colors.ink} size={typography.body.lineHeight} />
-          <Text style={styles.statusText}>上传中</Text>
-        </View>
-      );
-    case 'transcribing':
-      return (
-        <Pressable
-          accessibilityLabel="查看转写进度"
-          accessibilityRole="button"
-          onPress={onShowProgress}
-          style={({ pressed }) => [styles.processingStatus, pressed && styles.pressed]}
-        >
-          <View style={styles.processingTitleRow}>
-            <Text numberOfLines={1} style={styles.processingTitle}>
-              {status.activity
-                ? `${audioTranscriptionStageLabel(status.activity.stage)}${['transcribing', 'validating', 'splitting'].includes(status.activity.stage) && status.activity.chunkIndex !== null ? ` · Chunk ${status.activity.chunkIndex}/${status.activity.chunkCount}` : ''}`
-                : '正在转写'}
-            </Text>
-            <Text style={styles.processingPercent}>{status.progress}%</Text>
-          </View>
-          <View style={styles.processingProgressTrack}>
-            <View
-              style={[
-                styles.processingProgressFill,
-                { width: `${Math.min(100, status.progress)}%` },
-              ]}
-            />
-          </View>
-          <Text numberOfLines={1} style={styles.processingAttempts}>
-            {status.activity?.networkAttempt !== null &&
-            status.activity?.networkAttempt !== undefined
-              ? `网络尝试 ${status.activity.networkAttempt}/3`
-              : '点击查看详细执行阶段'}
-          </Text>
-        </Pressable>
-      );
-    case 'waiting':
-      return (
-        <View style={styles.inlineStatus}>
-          <Ionicons color={colors.ink} name="hourglass-outline" size={typography.body.lineHeight} />
-          <Text style={styles.statusText}>待转写</Text>
-        </View>
-      );
-    case 'upload-failed':
-      return (
-        <View accessibilityRole="alert" style={styles.inlineStatus}>
-          <Ionicons
-            color={colors.ink}
-            name="alert-circle-outline"
-            size={typography.body.lineHeight}
-          />
-          <Text style={styles.failureStatusText}>上传失败</Text>
-        </View>
-      );
-    case 'transcription-failed':
-      return (
-        <Pressable
-          accessibilityLabel="查看转写失败详情"
-          accessibilityRole="button"
-          onPress={onShowError}
-          style={({ pressed }) => [styles.inlineStatus, pressed && styles.pressed]}
-        >
-          <Ionicons
-            color={colors.ink}
-            name="alert-circle-outline"
-            size={typography.body.lineHeight}
-          />
-          <Text style={styles.failureStatusText}>转写失败</Text>
-        </Pressable>
-      );
-  }
-}
-
-function AudioRow({
-  active,
-  item,
-  loading,
-  onMore,
-  onPlay,
-  onShowError,
-  onShowProgress,
-  playing,
-}: {
-  active: boolean;
-  item: SourceAudioItem;
-  loading: boolean;
-  onMore: () => void;
-  onPlay: () => void;
-  onShowError: () => void;
-  onShowProgress: () => void;
-  playing: boolean;
-}) {
-  const playbackDisabled = item.status.kind === 'uploading' || item.status.kind === 'upload-failed';
-  return (
-    <View style={styles.audioRow}>
-      <Pressable
-        accessibilityLabel={`${active && playing ? '暂停' : '播放'}音频：${item.title}`}
-        accessibilityRole="button"
-        accessibilityState={{ disabled: playbackDisabled }}
-        disabled={playbackDisabled}
-        onPress={onPlay}
-        style={({ pressed }) => [
-          styles.playButton,
-          playbackDisabled && styles.disabledButton,
-          pressed && styles.pressed,
-        ]}
-      >
-        {active && loading ? (
-          <ActivityIndicator color={colors.secondary} />
-        ) : (
-          <Ionicons
-            color={colors.secondary}
-            name={active && playing ? 'pause' : 'play'}
-            size={typography.heading1.lineHeight}
-          />
-        )}
-      </Pressable>
-      <View style={styles.audioMain}>
-        <Text numberOfLines={1} style={styles.audioTitle}>
-          {item.title}
-        </Text>
-        <Text style={styles.audioMeta}>
-          {item.duration} · {item.createdAt}
-        </Text>
-        <AudioStatusView
-          onShowError={onShowError}
-          onShowProgress={onShowProgress}
-          status={item.status}
-        />
-      </View>
-      <Pressable
-        accessibilityLabel={`${item.title}更多操作`}
-        accessibilityRole="button"
-        hitSlop={8}
-        onPress={onMore}
-        style={({ pressed }) => [styles.moreButton, pressed && styles.pressed]}
-      >
-        <Ionicons color={colors.ink} name="ellipsis-vertical" size={24} />
-      </Pressable>
-    </View>
-  );
-}
-
-function InfoRow({
-  icon,
-  label,
-  value,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  value: string;
-}) {
-  return (
-    <View style={styles.infoRow}>
-      <View style={styles.infoLabelRow}>
-        <Ionicons color={colors.secondary} name={icon} size={typography.description.lineHeight} />
-        <Text style={styles.infoLabel}>{label}</Text>
-      </View>
-      <Text numberOfLines={1} style={styles.infoValue}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
-function OverviewContent({
-  activeAudioFileId,
-  audioLoading,
-  audioPlaying,
-  onOpenAudioActions,
-  onPlayAudio,
-  onShowAudioError,
-  onShowAudioProgress,
-  source,
-}: {
-  activeAudioFileId?: string;
-  audioLoading: boolean;
-  audioPlaying: boolean;
-  onOpenAudioActions: (audio: SourceAudioItem) => void;
-  onPlayAudio: (audio: SourceAudioItem) => void;
-  onShowAudioError: (audio: SourceAudioItem) => void;
-  onShowAudioProgress: (audio: SourceAudioItem) => void;
-  source: DataSourceDetailView;
-}) {
-  const completedCount = source.audioItems.filter((item) => item.status.kind === 'complete').length;
-  const pendingCount = source.audioItems.length - completedCount;
-  return (
-    <View style={styles.overviewContent}>
-      <Text style={styles.sectionTitle}>数据源详情</Text>
-      <Text style={styles.recentUpload}>最近上传　{source.uploadedAt}:00</Text>
-      <View style={styles.metrics}>
-        <Metric label="音频数" value={`${source.audioItems.length}`} />
-        <Metric divider label="总时长" value={source.totalDuration} />
-        <Metric divider label="已转写" value={`${completedCount}`} />
-        <Metric divider label="待处理" value={`${pendingCount}`} />
-      </View>
-
-      <View style={styles.infoSection}>
-        <Text style={styles.sectionTitle}>音频接入</Text>
-        <InfoRow icon="cloud-upload-outline" label="接入方式" value="手动上传" />
-        <InfoRow
-          icon="grid-outline"
-          label="存储位置"
-          value={source.location === 'local' ? '本地' : '云端'}
-        />
-      </View>
-
-      <View style={styles.infoSection}>
-        <Text style={styles.sectionTitle}>音频分析</Text>
-        <InfoRow icon="hardware-chip-outline" label="转写模型" value={source.analysisModel} />
-        <InfoRow
-          icon="happy-outline"
-          label="情绪分析"
-          value={source.emotionAnalysis ? '已开启' : '未开启'}
-        />
-        <InfoRow
-          icon="people-outline"
-          label="说话人分离"
-          value={source.roleSeparation ? '已开启' : '未开启'}
-        />
-        <InfoRow
-          icon="copy-outline"
-          label="场景分离"
-          value={source.sceneSeparation ? '已开启' : '未开启'}
-        />
-      </View>
-
-      <View style={styles.infoSection}>
-        <Text style={styles.sectionTitle}>音频处理</Text>
-        <InfoRow
-          icon="stats-chart-outline"
-          label="转写方式"
-          value={source.autoTranscribe ? '自动转写' : '手动转写'}
-        />
-        <InfoRow
-          icon="arrow-redo-outline"
-          label="跳过无效音频"
-          value={source.skipInvalidAudio ? '已开启' : '未开启'}
-        />
-      </View>
-
-      <View style={styles.recentAudioSection}>
-        <Text style={styles.sectionTitle}>近期音频</Text>
-        {source.audioItems.length === 0 ? (
-          <Text style={styles.listEmptyText}>暂无音频，上传后会在这里显示。</Text>
-        ) : (
-          source.audioItems
-            .slice(0, 3)
-            .map((item) => (
-              <AudioRow
-                active={activeAudioFileId === item.id}
-                item={item}
-                key={item.id}
-                loading={activeAudioFileId === item.id && audioLoading}
-                onMore={() => onOpenAudioActions(item)}
-                onPlay={() => onPlayAudio(item)}
-                onShowError={() => onShowAudioError(item)}
-                onShowProgress={() => onShowAudioProgress(item)}
-                playing={activeAudioFileId === item.id && audioPlaying}
-              />
-            ))
-        )}
-      </View>
-    </View>
-  );
-}
-
-function UploadRecordRow({ onReupload, record }: { onReupload: () => void; record: UploadRecord }) {
-  const failed = record.kind !== 'upload-success';
-  const title =
-    record.kind === 'upload-success'
-      ? '上传成功'
-      : record.kind === 'upload-failed'
-        ? '上传失败'
-        : '转写失败';
-  const actionLabel = record.kind === 'upload-failed' ? '重新上传' : '重新转写';
-  return (
-    <View style={styles.recordRow}>
-      <Text style={styles.recordTime}>{record.time}</Text>
-      <View style={styles.timelineMarker}>
-        <View style={styles.timelineLine} />
-        <Ionicons
-          color={colors.ink}
-          name={failed ? 'alert-circle' : 'ellipse'}
-          size={typography.body.lineHeight}
-        />
-      </View>
-      <View style={[styles.recordContent, failed && styles.failedRecordContent]}>
-        <Text accessibilityRole={failed ? 'alert' : undefined} style={styles.recordTitle}>
-          {title}
-        </Text>
-        <Text style={styles.recordDescription}>{record.description}</Text>
-        <Text style={styles.recordDescription}>{record.detail}</Text>
-      </View>
-      {failed ? (
-        <Pressable
-          accessibilityLabel={`${actionLabel}：${record.time}`}
-          accessibilityRole="button"
-          onPress={record.kind === 'upload-failed' ? onReupload : () => showComingSoon(actionLabel)}
-          style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.retryText}>{actionLabel}</Text>
-        </Pressable>
-      ) : (
-        <Pressable
-          accessibilityLabel={`${record.time}上传记录更多操作`}
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={() => showComingSoon('上传记录更多操作')}
-          style={({ pressed }) => [styles.recordMoreButton, pressed && styles.pressed]}
-        >
-          <Ionicons color={colors.secondary} name="ellipsis-horizontal" size={24} />
-        </Pressable>
-      )}
-    </View>
-  );
-}
-
-function GroupCard({
-  group,
-  onSwitch,
-  onUnlink,
-}: {
-  group: LinkedDataSourceGroup;
-  onSwitch: () => void;
-  onUnlink: () => void;
-}) {
-  return (
-    <View style={styles.groupCard}>
-      <View style={styles.groupTitleRow}>
-        <Text style={styles.groupTitle}>{group.name}</Text>
-        <View style={styles.groupActions}>
-          <Pressable
-            accessibilityLabel={`切换到分组：${group.name}`}
-            accessibilityRole="button"
-            onPress={onSwitch}
-            style={styles.groupIconButton}
-          >
-            <Ionicons
-              color={colors.secondary}
-              name="swap-horizontal"
-              size={typography.heading2.lineHeight}
-            />
-          </Pressable>
-          <Pressable
-            accessibilityLabel={`解除关联分组：${group.name}`}
-            accessibilityRole="button"
-            onPress={onUnlink}
-            style={styles.groupIconButton}
-          >
-            <Ionicons
-              color={colors.secondary}
-              name="unlink-outline"
-              size={typography.heading2.lineHeight}
-            />
-          </Pressable>
-        </View>
-      </View>
-      <View style={styles.groupMetrics}>
-        <Metric label="分析数" value={`${group.analysisCount}`} />
-        <Metric divider label="音频数" value={`${group.audioCount}`} />
-        <Metric divider label="知识库" value={`${group.knowledgeCount}`} />
-        <Metric divider label="数据源" value={`${group.sourceCount}`} />
-      </View>
-    </View>
-  );
-}
-
-function ActionButton({
-  icon,
-  label,
-  onPress,
-  emphasized = false,
-  disabled = false,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  onPress: () => void;
-  emphasized?: boolean;
-  disabled?: boolean;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.actionButton,
-        emphasized && styles.emphasizedActionButton,
-        disabled && styles.disabledActionButton,
-        pressed && styles.pressed,
-      ]}
-    >
-      <Ionicons color={colors.ink} name={icon} size={typography.body.lineHeight} />
-      <Text style={styles.actionButtonText}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function FixedActions({
-  activeTab,
-  onLinkGroups,
-  onUpload,
-  uploading,
-}: {
-  activeTab: DetailTab;
-  onLinkGroups: () => void;
-  onUpload: () => void;
-  uploading: boolean;
-}) {
-  if (activeTab === 'groups') {
-    return (
-      <View style={styles.fixedActions} testID="data-source-fixed-actions">
-        <ActionButton emphasized icon="add" label="关联新分组" onPress={onLinkGroups} />
-      </View>
-    );
-  }
-  if (activeTab === 'uploads') {
-    return (
-      <View style={styles.fixedActions} testID="data-source-fixed-actions">
-        <ActionButton
-          emphasized
-          icon="cloud-upload-outline"
-          label={uploading ? '正在上传…' : '上传音频'}
-          onPress={onUpload}
-          disabled={uploading}
-        />
-      </View>
-    );
-  }
-  return (
-    <View style={styles.fixedActions} testID="data-source-fixed-actions">
-      <ActionButton
-        icon="create-outline"
-        label="全部转写"
-        onPress={() => showComingSoon('全部转写')}
-      />
-      <ActionButton
-        emphasized
-        icon="cloud-upload-outline"
-        label={uploading ? '正在上传…' : '上传音频'}
-        onPress={onUpload}
-        disabled={uploading}
-      />
-    </View>
-  );
-}
 
 /** 渲染数据源详情及四个可点击、可滑动的同级页面。 */
 export function DataSourceDetailScreen({
@@ -622,12 +134,6 @@ export function DataSourceDetailScreen({
   const [switchTarget, setSwitchTarget] = useState<LinkedDataSourceGroup>();
   const [confirming, setConfirming] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [pickerVisible, setPickerVisible] = useState(false);
-  const [availableGroups, setAvailableGroups] = useState<GroupSummary[]>([]);
-  const [pickerLoading, setPickerLoading] = useState(false);
-  const [pickerError, setPickerError] = useState('');
-  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(() => new Set());
-  const [linking, setLinking] = useState(false);
   const audioPlayback = useAudioPlayback();
   const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } = useSwipePager({
     activeTab,
@@ -681,89 +187,14 @@ export function DataSourceDetailScreen({
   const hasActiveTranscription = source?.audioItems.some(
     (item) => item.status.kind === 'transcribing',
   );
-  useEffect(() => {
-    if (!hasActiveTranscription || !appActive) return undefined;
-    let disposed = false;
-    let controller: AbortController | undefined;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    let fallbackTimer: ReturnType<typeof setInterval> | undefined;
-    let failures = 0;
-    const retryDelays = [1_000, 2_000, 5_000, 10_000];
-    const stopFallback = () => {
-      if (fallbackTimer) clearInterval(fallbackTimer);
-      fallbackTimer = undefined;
-    };
-    const startFallback = () => {
-      if (fallbackTimer) return;
-      void load(false);
-      fallbackTimer = setInterval(() => void load(false), 5_000);
-    };
-    const connect = async () => {
-      controller = new AbortController();
-      try {
-        await streamDataSourceAudio({
-          dataSourceId: sourceId,
-          signal: controller.signal,
-          onEvent: (event) => {
-            if (event.type === 'error') {
-              setProgressRefreshError(`进度刷新失败：${event.error.message}`);
-              return;
-            }
-            failures = 0;
-            stopFallback();
-            setProgressRefreshError('');
-            if (event.type === 'snapshot') {
-              setSource((current) =>
-                current ? { ...current, audioItems: event.items.map(toSourceAudioItem) } : current,
-              );
-              return;
-            }
-            if (event.type === 'audio-file') {
-              setSource((current) => {
-                if (!current) return current;
-                if (!event.item) {
-                  return {
-                    ...current,
-                    audioItems: current.audioItems.filter((item) => item.id !== event.audioFileId),
-                  };
-                }
-                const next = toSourceAudioItem(event.item);
-                const exists = current.audioItems.some((item) => item.id === next.id);
-                return {
-                  ...current,
-                  audioItems: exists
-                    ? current.audioItems.map((item) => (item.id === next.id ? next : item))
-                    : [next, ...current.audioItems],
-                };
-              });
-              if (event.terminal) void load(false);
-              return;
-            }
-            if (event.type === 'refresh') void load(false);
-          },
-        });
-        if (!disposed) throw new Error('转写实时状态连接已关闭。');
-      } catch {
-        if (disposed || controller.signal.aborted) return;
-        failures += 1;
-        if (failures >= 5) {
-          setProgressRefreshError('实时连接暂时不可用，已切换为定时刷新。');
-          startFallback();
-        }
-        retryTimer = setTimeout(
-          () => void connect(),
-          failures >= 5 ? 30_000 : retryDelays[Math.min(failures - 1, retryDelays.length - 1)],
-        );
-      }
-    };
-    void connect();
-    return () => {
-      disposed = true;
-      controller?.abort();
-      if (retryTimer) clearTimeout(retryTimer);
-      stopFallback();
-    };
-  }, [appActive, hasActiveTranscription, load, sourceId]);
+  useDataSourceAudioUpdates({
+    active: appActive,
+    dataSourceId: sourceId,
+    hasActiveTranscription: Boolean(hasActiveTranscription),
+    load,
+    setProgressRefreshError,
+    setSource,
+  });
 
   const playAudio = (item: SourceAudioItem) => {
     setOperationError('');
@@ -778,6 +209,27 @@ export function DataSourceDetailScreen({
     () => new Set(source?.linkedGroups.map((group) => group.id) ?? []),
     [source?.linkedGroups],
   );
+
+  const linkSelectedGroups = useCallback(
+    async (groupIds: string[]) => {
+      await linkDataSourceGroups(sourceId, { groupIds });
+      await load(false);
+    },
+    [load, sourceId],
+  );
+  const {
+    availableGroups,
+    confirmLinks,
+    linking,
+    loadAvailableGroups,
+    openGroupPicker,
+    pickerError,
+    pickerLoading,
+    pickerVisible,
+    selectedGroupIds,
+    setPickerVisible,
+    toggleGroup,
+  } = useGroupAssociationEditor({ linkGroups: linkSelectedGroups });
 
   const saveDataSource = async (value: DataSourceFormValue) => {
     setSaving(true);
@@ -832,49 +284,6 @@ export function DataSourceDetailScreen({
       setOperationError(reason instanceof Error ? reason.message : '音频上传失败。');
     } finally {
       setUploading(false);
-    }
-  };
-
-  const loadAvailableGroups = useCallback(async () => {
-    setPickerLoading(true);
-    setPickerError('');
-    setAvailableGroups([]);
-    try {
-      setAvailableGroups((await listGroups()).items);
-    } catch (reason) {
-      setPickerError(reason instanceof Error ? reason.message : '分组加载失败。');
-    } finally {
-      setPickerLoading(false);
-    }
-  }, []);
-
-  const openGroupPicker = () => {
-    setSelectedGroupIds(new Set());
-    setPickerVisible(true);
-    void loadAvailableGroups();
-  };
-
-  const toggleGroup = (groupId: string) => {
-    setSelectedGroupIds((current) => {
-      const next = new Set(current);
-      if (next.has(groupId)) next.delete(groupId);
-      else next.add(groupId);
-      return next;
-    });
-  };
-
-  const confirmLinks = async () => {
-    if (linking || selectedGroupIds.size === 0) return;
-    setLinking(true);
-    setPickerError('');
-    try {
-      await linkDataSourceGroups(sourceId, { groupIds: [...selectedGroupIds] });
-      await load(false);
-      setPickerVisible(false);
-    } catch (reason) {
-      setPickerError(reason instanceof Error ? reason.message : '关联分组失败。');
-    } finally {
-      setLinking(false);
     }
   };
 
@@ -1327,224 +736,25 @@ export function DataSourceDetailScreen({
 
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.background, flex: 1 },
-  pager: { flex: 1 },
-  page: { backgroundColor: colors.card, height: '100%' },
-  pageContent: { paddingBottom: spacing.lg },
-  tabsSurface: {
-    backgroundColor: colors.card,
-    borderBottomColor: colors.divider,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingTop: spacing.sm,
-  },
-  hero: {
-    backgroundColor: colors.canvas,
-    gap: spacing.md,
-    paddingBottom: spacing.xl,
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.xl,
-  },
-  heroTitle: {
-    ...typography.contentDisplay,
-    color: textColors.primary,
-    fontFamily: fontFamilies.sansBold,
-    fontWeight: 'bold',
-  },
-  heroDescription: {
-    ...typography.body,
-    color: textColors.primary,
-    fontFamily: fontFamilies.sans,
-    minHeight: typography.body.lineHeight * 2,
-  },
-  heroMeta: {
-    ...typography.body,
-    color: textColors.secondary,
-    fontFamily: fontFamilies.sans,
-  },
-  overviewContent: {
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.lg,
-  },
-  sectionTitle: {
-    ...typography.heading2,
-    color: textColors.primary,
-    fontFamily: fontFamilies.sansBold,
-    fontWeight: 'bold',
-  },
-  recentUpload: {
-    ...typography.description,
-    color: textColors.tertiary,
-    fontFamily: fontFamilies.sans,
-    marginTop: spacing.md,
-  },
-  metrics: { flexDirection: 'row', marginTop: spacing.lg },
-  metric: { alignItems: 'center', flex: 1, gap: spacing.sm },
-  metricDivider: {
-    borderLeftColor: colors.divider,
-    borderLeftWidth: StyleSheet.hairlineWidth,
-  },
-  metricValue: {
-    ...typography.heading2,
-    color: textColors.primary,
-    fontFamily: fontFamilies.sansBold,
-    fontWeight: 'bold',
-  },
-  metricLabel: {
-    ...typography.description,
-    color: textColors.secondary,
-    fontFamily: fontFamilies.sans,
-  },
-  infoSection: { gap: spacing.base, marginTop: spacing.xl },
-  infoRow: {
+  loading: { marginTop: spacing.xxl },
+  emptyState: {
     alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  infoLabelRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
-  infoLabel: {
-    ...typography.description,
-    color: textColors.secondary,
-    fontFamily: fontFamilies.sans,
-  },
-  infoValue: {
-    ...typography.description,
-    color: textColors.secondary,
-    flexShrink: 1,
-    fontFamily: fontFamilies.sans,
-    marginLeft: spacing.md,
-    textAlign: 'right',
-  },
-  recentAudioSection: { gap: spacing.sm, marginTop: spacing.xl },
-  audioList: { paddingHorizontal: spacing.md, paddingTop: spacing.lg },
-  audioRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    minHeight: 84,
-  },
-  playButton: {
-    alignItems: 'center',
-    backgroundColor: colors.background,
-    borderRadius: radii.round,
-    height: 44,
-    justifyContent: 'center',
-    width: 44,
-  },
-  disabledButton: { opacity: 0.4 },
-  audioMain: { flex: 1, gap: spacing.xs, marginLeft: spacing.base },
-  audioTitle: {
-    ...typography.heading3,
-    color: textColors.primary,
-    fontFamily: fontFamilies.sansBold,
-    fontWeight: 'bold',
-  },
-  audioMeta: {
-    ...typography.description,
-    color: textColors.secondary,
-    fontFamily: fontFamilies.sans,
-  },
-  processingStatus: {
-    gap: spacing.xs,
-    marginTop: spacing.xs,
-    paddingVertical: spacing.xs,
-  },
-  processingTitleRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.sm,
-    justifyContent: 'space-between',
-  },
-  processingTitle: {
-    ...typography.description,
-    color: textColors.primary,
     flex: 1,
-    fontFamily: fontFamilies.sansBold,
-  },
-  processingPercent: {
-    ...typography.label,
-    color: textColors.primary,
-    fontFamily: fontFamilies.sansBold,
-  },
-  processingProgressTrack: {
-    backgroundColor: colors.divider,
-    borderRadius: radii.round,
-    height: 4,
-    overflow: 'hidden',
-  },
-  processingProgressFill: {
-    backgroundColor: colors.ink,
-    borderRadius: radii.round,
-    height: '100%',
-  },
-  processingAttempts: {
-    ...typography.label,
-    color: textColors.secondary,
-    fontFamily: fontFamilies.sans,
-  },
-  inlineStatus: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.xs,
-    marginLeft: spacing.sm,
-  },
-  statusText: {
-    ...typography.body,
-    color: textColors.primary,
-    fontFamily: fontFamilies.sans,
-  },
-  failureStatusText: {
-    ...typography.body,
-    color: textColors.primary,
-    fontFamily: fontFamilies.sansBold,
-    fontWeight: 'bold',
-  },
-  moreButton: {
-    alignItems: 'center',
-    height: 44,
+    gap: spacing.sm,
     justifyContent: 'center',
-    marginLeft: spacing.sm,
-    width: 28,
+    paddingHorizontal: spacing.md,
   },
-  pressed: { backgroundColor: colors.divider, borderRadius: radii.default },
-  recordsList: { paddingHorizontal: spacing.md },
-  recordGroup: { paddingBottom: spacing.md, paddingTop: spacing.lg },
-  recordGroupDivider: { borderTopColor: colors.divider, borderTopWidth: 1 },
-  recordDate: {
-    ...typography.body,
-    color: textColors.secondary,
-    fontFamily: fontFamilies.sans,
-    marginBottom: spacing.md,
-  },
-  recordRow: { flexDirection: 'row', minHeight: 116 },
-  recordTime: {
-    ...typography.body,
-    color: textColors.secondary,
-    fontFamily: fontFamilies.sans,
-    paddingTop: spacing.xs,
-    width: 84,
-  },
-  timelineMarker: { alignItems: 'center', width: 28 },
-  timelineLine: {
-    backgroundColor: colors.divider,
-    bottom: 0,
-    position: 'absolute',
-    top: typography.body.lineHeight,
-    width: 2,
-  },
-  recordContent: { flex: 1, gap: spacing.xs, paddingBottom: spacing.md },
-  failedRecordContent: {
-    borderLeftColor: colors.ink,
-    borderLeftWidth: 2,
-    paddingLeft: spacing.sm,
-  },
-  recordTitle: {
+  emptyTitle: {
     ...typography.heading2,
     color: textColors.primary,
     fontFamily: fontFamilies.sansBold,
     fontWeight: 'bold',
   },
-  recordDescription: {
+  emptyDescription: {
     ...typography.description,
     color: textColors.secondary,
     fontFamily: fontFamilies.sans,
+    textAlign: 'center',
   },
   retryButton: {
     alignItems: 'center',
@@ -1561,88 +771,11 @@ const styles = StyleSheet.create({
     color: textColors.primary,
     fontFamily: fontFamilies.sans,
   },
-  recordMoreButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 40 },
-  groupList: { gap: spacing.sm, paddingHorizontal: spacing.md, paddingTop: spacing.lg },
-  groupCard: {
-    backgroundColor: colors.background,
-    borderRadius: radii.default,
-    gap: spacing.lg,
-    paddingTop: spacing.base,
-    paddingBottom: spacing.base,
-    paddingLeft: spacing.md,
-    paddingRight: spacing.md,
-  },
-  groupTitleRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
-  groupTitle: {
-    ...typography.heading2,
-    color: textColors.primary,
-    flex: 1,
-    fontFamily: fontFamilies.sansBold,
-    fontWeight: 'bold',
-  },
-  groupActions: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
-  groupIconButton: {
-    alignItems: 'center',
-    height: 40,
-    justifyContent: 'center',
-    width: 40,
-  },
-  groupMetrics: { flexDirection: 'row' },
-  fixedActions: {
+  tabsSurface: {
     backgroundColor: colors.card,
-    borderTopColor: colors.divider,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    gap: spacing.sm,
-    padding: spacing.md,
-  },
-  actionButton: {
-    alignItems: 'center',
-    backgroundColor: colors.card,
-    borderColor: colors.divider,
-    borderRadius: radii.default,
-    borderWidth: 1,
-    flex: 1,
-    flexDirection: 'row',
-    gap: spacing.sm,
-    justifyContent: 'center',
-    minHeight: 56,
-    paddingHorizontal: spacing.md,
-  },
-  emphasizedActionButton: { borderColor: colors.ink, borderWidth: 2 },
-  disabledActionButton: { opacity: 0.5 },
-  actionButtonText: {
-    ...typography.body,
-    color: textColors.primary,
-    fontFamily: fontFamilies.sansBold,
-    fontWeight: 'bold',
-  },
-  emptyState: {
-    alignItems: 'center',
-    flex: 1,
-    gap: spacing.sm,
-    justifyContent: 'center',
-    paddingHorizontal: spacing.md,
-  },
-  loading: { marginTop: spacing.xxl },
-  emptyTitle: {
-    ...typography.heading2,
-    color: textColors.primary,
-    fontFamily: fontFamilies.sansBold,
-    fontWeight: 'bold',
-  },
-  emptyDescription: {
-    ...typography.description,
-    color: textColors.secondary,
-    fontFamily: fontFamilies.sans,
-    textAlign: 'center',
-  },
-  listEmptyText: {
-    ...typography.body,
-    color: textColors.secondary,
-    fontFamily: fontFamilies.sans,
-    paddingVertical: spacing.xl,
-    textAlign: 'center',
+    borderBottomColor: colors.divider,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingTop: spacing.sm,
   },
   operationError: {
     backgroundColor: colors.background,
@@ -1679,4 +812,49 @@ const styles = StyleSheet.create({
     color: textColors.primary,
     fontFamily: fontFamilies.sansBold,
   },
+  pager: { flex: 1 },
+  pageContent: { paddingBottom: spacing.lg },
+  page: { backgroundColor: colors.card, height: '100%' },
+  hero: {
+    backgroundColor: colors.canvas,
+    gap: spacing.md,
+    paddingBottom: spacing.xl,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.xl,
+  },
+  heroTitle: {
+    ...typography.contentDisplay,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  heroDescription: {
+    ...typography.body,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sans,
+    minHeight: typography.body.lineHeight * 2,
+  },
+  heroMeta: {
+    ...typography.body,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+  },
+  audioList: { paddingHorizontal: spacing.md, paddingTop: spacing.lg },
+  listEmptyText: {
+    ...typography.body,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    paddingVertical: spacing.xl,
+    textAlign: 'center',
+  },
+  recordsList: { paddingHorizontal: spacing.md },
+  recordGroup: { paddingBottom: spacing.md, paddingTop: spacing.lg },
+  recordGroupDivider: { borderTopColor: colors.divider, borderTopWidth: 1 },
+  recordDate: {
+    ...typography.body,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    marginBottom: spacing.md,
+  },
+  groupList: { gap: spacing.sm, paddingHorizontal: spacing.md, paddingTop: spacing.lg },
 });

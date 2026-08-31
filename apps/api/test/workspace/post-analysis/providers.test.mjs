@@ -6,8 +6,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { DeepSeekRoleRecognizer } from '../../../dist/workspace/post-analysis/deepSeekRoleRecognizer.js';
-import { QwenEmotionAnalyzer } from '../../../dist/workspace/post-analysis/qwenEmotionAnalyzer.js';
+import { DeepSeekRoleRecognizer } from '../../../dist/workspace/audio/post-analysis/deepSeekRoleRecognizer.js';
+import { QwenEmotionAnalyzer } from '../../../dist/workspace/audio/post-analysis/qwenEmotionAnalyzer.js';
 
 const firstId = '11111111-1111-4111-8111-111111111111';
 const secondId = '22222222-2222-4222-8222-222222222222';

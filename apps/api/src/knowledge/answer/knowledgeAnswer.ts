@@ -25,14 +25,15 @@ import {
   noOpAiExecutionReporter,
   type AiExecutionReporter,
 } from '../../ai-observability/executionReporter.ts';
-import type { ApiConfig } from '../../config/env.ts';
+import type { RagConfig } from '../../config/workspace.ts';
 import {
   EmbeddingProviderError,
   type DashScopeEmbeddings,
 } from '../embeddings/dashScopeEmbeddings.ts';
 import type { ConversationRepository } from '../persistence/conversationRepository.ts';
 import { RagRepositoryError } from '../persistence/errors.ts';
-import type { KnowledgeRepository, RetrievalChunk } from '../persistence/knowledgeRepository.ts';
+import type { KnowledgeSearchPort } from '../retrieval/port.ts';
+import type { RetrievalChunk } from '../retrieval/types.ts';
 import type { DeepSeekQueryAgent } from './deepSeekQueryAgent.ts';
 
 const INSUFFICIENT_EVIDENCE = '知识库中没有足够依据回答这个问题。';
@@ -74,12 +75,12 @@ type KnowledgeAnswerCheckpointer = {
 type ScheduleCleanup = (task: () => void, intervalMs: number) => () => void;
 
 type KnowledgeAnswerOptions = {
-  knowledgeRepository: Pick<KnowledgeRepository, 'search'>;
+  knowledgeRepository: KnowledgeSearchPort;
   conversationRepository: ConversationRepository;
   embeddings: KnowledgeAnswerEmbeddings;
   agent: KnowledgeAnswerAgent;
   checkpointer: KnowledgeAnswerCheckpointer;
-  ragConfig: Pick<ApiConfig['rag'], 'embeddingModel' | 'deepSeekChatModel'>;
+  ragConfig: Pick<RagConfig, 'embeddingModel' | 'deepSeekChatModel'>;
   reporter?: AiExecutionReporter;
   scheduleCleanup?: ScheduleCleanup;
   now?: () => number;

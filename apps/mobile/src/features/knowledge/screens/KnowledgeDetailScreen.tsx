@@ -31,12 +31,9 @@ import type {
   KnowledgeDocument,
 } from '@echowave/contracts';
 
-import {
-  linkKnowledgeBaseGroups,
-  listGroups,
-  listKnowledgeBaseGroups,
-} from '@/shared/api/workspaceApi';
+import { linkKnowledgeBaseGroups, listKnowledgeBaseGroups } from '@/shared/api/knowledgeBasesApi';
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
+import { useGroupAssociationEditor } from '@/shared/hooks/useGroupAssociationEditor';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { PageTabs } from '@/shared/ui/PageTabs';
 import {
@@ -56,7 +53,7 @@ import {
 import { SearchAndFilter } from '../components/SearchAndFilter';
 import { showComingSoon } from '../components/feedback';
 import { getKnowledgeBase, listDocuments, retryDocument, uploadDocument } from '../apiClient';
-import { streamKnowledgeDocuments } from '@/shared/api/liveUpdateStreams';
+import { useKnowledgeDocumentUpdates } from '../hooks/useKnowledgeDocumentUpdates';
 
 const detailTabs = [
   { key: 'overview', label: '概览' },
@@ -297,12 +294,6 @@ export function KnowledgeDetailScreen({
   const [appActive, setAppActive] = useState(AppState.currentState !== 'background');
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
   const [query, setQuery] = useState('');
-  const [pickerVisible, setPickerVisible] = useState(false);
-  const [availableGroups, setAvailableGroups] = useState<GroupSummary[]>([]);
-  const [pickerLoading, setPickerLoading] = useState(false);
-  const [pickerError, setPickerError] = useState('');
-  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(() => new Set());
-  const [linking, setLinking] = useState(false);
   const [switchTarget, setSwitchTarget] = useState<GroupSummary>();
   const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } = useSwipePager({
     activeTab,
@@ -347,77 +338,15 @@ export function KnowledgeDetailScreen({
   const processingDocuments = documents.some((document) =>
     ['queued', 'validating', 'parsing', 'chunking', 'embedding'].includes(document.status.kind),
   );
-  useEffect(() => {
-    if (!processingDocuments || !appActive) return undefined;
-    let disposed = false;
-    let controller: AbortController | undefined;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    let fallbackTimer: ReturnType<typeof setInterval> | undefined;
-    let failures = 0;
-    const retryDelays = [1_000, 2_000, 5_000, 10_000];
-    const stopFallback = () => {
-      if (fallbackTimer) clearInterval(fallbackTimer);
-      fallbackTimer = undefined;
-    };
-    const startFallback = () => {
-      if (fallbackTimer) return;
-      void load(false);
-      fallbackTimer = setInterval(() => void load(false), 5_000);
-    };
-    const connect = async () => {
-      controller = new AbortController();
-      try {
-        await streamKnowledgeDocuments({
-          knowledgeBaseId: knowledgeId,
-          signal: controller.signal,
-          onEvent: (event) => {
-            if (event.type === 'error') {
-              setError(event.error.message);
-              return;
-            }
-            failures = 0;
-            stopFallback();
-            if (event.type === 'snapshot') {
-              setError('');
-              setDocuments(event.items);
-              return;
-            }
-            if (event.type !== 'document') return;
-            setError('');
-            setDocuments((items) => {
-              if (!event.item) return items;
-              const next = event.item;
-              const exists = items.some((item) => item.id === next.id);
-              return exists
-                ? items.map((item) => (item.id === next.id ? next : item))
-                : [next, ...items];
-            });
-            if (event.terminal) {
-              void getKnowledgeBase(knowledgeId)
-                .then(setKnowledge)
-                .catch(() => undefined);
-            }
-          },
-        });
-        if (!disposed) throw new Error('文档实时状态连接已关闭。');
-      } catch {
-        if (disposed || controller.signal.aborted) return;
-        failures += 1;
-        if (failures >= 5) startFallback();
-        retryTimer = setTimeout(
-          () => void connect(),
-          failures >= 5 ? 30_000 : retryDelays[Math.min(failures - 1, retryDelays.length - 1)],
-        );
-      }
-    };
-    void connect();
-    return () => {
-      disposed = true;
-      controller?.abort();
-      if (retryTimer) clearTimeout(retryTimer);
-      stopFallback();
-    };
-  }, [appActive, knowledgeId, load, processingDocuments]);
+  useKnowledgeDocumentUpdates({
+    active: appActive,
+    hasProcessingDocuments: processingDocuments,
+    knowledgeBaseId: knowledgeId,
+    load,
+    setDocuments,
+    setError,
+    setKnowledge,
+  });
 
   const filteredDocuments = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
@@ -432,6 +361,28 @@ export function KnowledgeDetailScreen({
     () => new Set(linkedGroups.map((group) => group.id)),
     [linkedGroups],
   );
+
+  const linkSelectedGroups = useCallback(
+    async (groupIds: string[]) => {
+      const response = await linkKnowledgeBaseGroups(knowledgeId, { groupIds });
+      setLinkedGroups(response.items);
+      setKnowledge(await getKnowledgeBase(knowledgeId));
+    },
+    [knowledgeId],
+  );
+  const {
+    availableGroups,
+    confirmLinks,
+    linking,
+    loadAvailableGroups,
+    openGroupPicker,
+    pickerError,
+    pickerLoading,
+    pickerVisible,
+    selectedGroupIds,
+    setPickerVisible,
+    toggleGroup,
+  } = useGroupAssociationEditor({ linkGroups: linkSelectedGroups });
 
   const retry = (document: KnowledgeDocument) => {
     if (
@@ -477,54 +428,6 @@ export function KnowledgeDetailScreen({
       setError(reason instanceof Error ? reason.message : '文档上传失败。');
     } finally {
       setUploading(false);
-    }
-  };
-
-  const loadAvailableGroups = useCallback(async () => {
-    setPickerLoading(true);
-    setPickerError('');
-    setAvailableGroups([]);
-    try {
-      setAvailableGroups((await listGroups()).items);
-    } catch (reason) {
-      setPickerError(reason instanceof Error ? reason.message : '分组加载失败。');
-    } finally {
-      setPickerLoading(false);
-    }
-  }, []);
-
-  const openGroupPicker = () => {
-    setSelectedGroupIds(new Set());
-    setPickerError('');
-    setPickerVisible(true);
-    void loadAvailableGroups();
-  };
-
-  const toggleGroup = (id: string) => {
-    setSelectedGroupIds((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const confirmLinks = async () => {
-    if (!selectedGroupIds.size || linking) return;
-    setLinking(true);
-    setPickerError('');
-    try {
-      const response = await linkKnowledgeBaseGroups(knowledgeId, {
-        groupIds: [...selectedGroupIds],
-      });
-      setLinkedGroups(response.items);
-      setKnowledge(await getKnowledgeBase(knowledgeId));
-      setSelectedGroupIds(new Set());
-      setPickerVisible(false);
-    } catch (reason) {
-      setPickerError(reason instanceof Error ? reason.message : '关联分组失败。');
-    } finally {
-      setLinking(false);
     }
   };
 

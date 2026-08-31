@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { OssStagingStore } from '../../../dist/workspace/transcription/ossStagingStore.js';
+import { OssStagingStore } from '../../../dist/workspace/audio/transcription/ossStagingStore.js';
 
 describe('OssStagingStore', () => {
   it('uploads under the revision prefix, signs for 24 hours and deletes the object', async () => {

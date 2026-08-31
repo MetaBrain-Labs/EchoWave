@@ -19,7 +19,9 @@ import {
 import type { DataSourceAudioStreamEvent } from '@echowave/contracts';
 
 import { DataSourceDetailScreen } from '../DataSourceDetailScreen';
-import * as workspaceApi from '@/shared/api/workspaceApi';
+import * as dataSourcesApi from '@/shared/api/dataSourcesApi';
+import * as audioAnalysisApi from '@/shared/api/audioAnalysisApi';
+import * as groupsApi from '@/shared/api/groupsApi';
 import * as liveUpdateApi from '@/shared/api/liveUpdateStreams';
 import {
   audioFixtures,
@@ -30,25 +32,28 @@ import {
 } from '@/test/workspaceFixtures';
 import { mockAudioPlayers, resetExpoAudioMock } from '@/test/ExpoAudioMock';
 
-jest.mock('@/shared/api/workspaceApi', () => ({
+jest.mock('@/shared/api/dataSourcesApi', () => ({
   archiveDataSource: jest.fn(),
   archiveDataSourceAudioFile: jest.fn(),
-  getAudioTranscriptionCapabilities: jest.fn(),
   getDataSource: jest.fn(),
   linkDataSourceGroups: jest.fn(),
   listDataSourceAudioFiles: jest.fn(),
   listDataSourceIngestionRecords: jest.fn(),
   listDataSourceGroups: jest.fn(),
-  listGroups: jest.fn(),
-  startAudioTranscription: jest.fn(),
   unlinkDataSourceGroup: jest.fn(),
   updateDataSource: jest.fn(),
   uploadDataSourceAudioFiles: jest.fn(),
 }));
+jest.mock('@/shared/api/audioAnalysisApi', () => ({
+  getAudioTranscriptionCapabilities: jest.fn(),
+  startAudioTranscription: jest.fn(),
+}));
+jest.mock('@/shared/api/groupsApi', () => ({ listGroups: jest.fn() }));
 jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
 jest.mock('@/shared/api/liveUpdateStreams', () => ({ streamDataSourceAudio: jest.fn() }));
 
 let emitDataSourceStreamEvent: ((event: DataSourceAudioStreamEvent) => void) | undefined;
+const workspaceApi = { ...dataSourcesApi, ...audioAnalysisApi, ...groupsApi };
 
 async function renderDetail(
   sourceId = dataSourceDetailFixture.id,

@@ -13,7 +13,7 @@ import { describe, it } from 'node:test';
 import {
   parseSalesAnalysisResult,
   SalesAnalysisAgent,
-} from '../../../dist/workspace/business-analysis/salesAnalysisAgent.js';
+} from '../../../dist/workspace/audio/business-analysis/salesAnalysisAgent.js';
 
 const segmentId = '11111111-1111-4111-8111-111111111111';
 

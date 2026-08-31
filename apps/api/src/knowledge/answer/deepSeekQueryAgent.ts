@@ -38,8 +38,14 @@ import {
   createModelCallReportingMiddleware,
   modelMessageForReport,
 } from '../../ai-observability/modelCallReporting.ts';
-import type { ApiConfig } from '../../config/env.ts';
-import { extractFinalMessageText, parseJsonObject } from './structuredOutput.ts';
+import { extractFinalMessageText, parseJsonObject } from '../../ai-runtime/structuredOutput.ts';
+import type { RagConfig } from '../../config/workspace.ts';
+import {
+  citationCorrectionContext,
+  citationCorrectionInput,
+  knowledgeAgentContext,
+  knowledgeFinalizationContext,
+} from './CONTEXT.ts';
 
 const AgentResponseSchema = z.object({
   answer: z.string(),
@@ -83,24 +89,6 @@ function recoverAgentCandidate(value: unknown, maxCitations: number) {
   };
 }
 
-function knowledgeAgentSystemPrompt(maxSearchCalls: number, maxCitations: number): string {
-  return [
-    "You are EchoWave's Chinese knowledge-base question-answering agent.",
-    `You must call search_knowledge before answering and may call it at most ${maxSearchCalls} times.`,
-    'Use only retrieved passages. Never answer from general knowledge or speculate.',
-    'If a tool message says the search limit was exceeded, stop calling tools and return the best supported final JSON using passages already retrieved.',
-    'Do not add a separate search-limit warning; the application adds a stable user-facing notice.',
-    'If evidence is insufficient, set grounded=false, citedChunkIds=[], and clearly say the knowledge base has insufficient evidence.',
-    'When grounded=true, every material claim must contain [1], [2], etc. markers corresponding to citedChunkIds order.',
-    `Select at most ${maxCitations} of the strongest supporting chunks and return no more than ${maxCitations} citedChunkIds.`,
-    'Never call filesystem tools. Do not delegate tasks. Do not expose hidden reasoning.',
-    'Return ONLY a single JSON object and nothing else - no markdown fences, no extra text:',
-    '{"answer": "<concise Chinese answer with [1], [2] markers when grounded>", "grounded": true|false, "citedChunkIds": ["<uuid>", ...]}',
-    'Return valid JSON: escape ASCII double quotes inside the answer string, or use Chinese quotation marks instead.',
-    'Use only real chunk IDs returned by search_knowledge; when evidence is insufficient use grounded=false and an empty citedChunkIds array.',
-  ].join('\n');
-}
-
 /** 模型生成但尚未经过本次检索白名单确认的候选回答。 */
 export type AgentAnswerCandidate = z.infer<typeof AgentResponseSchema>;
 
@@ -135,7 +123,7 @@ export type AgentGenerationResult = AgentExecutionResult & {
 
 type QueryAgentOptions = {
   ragConfig: Pick<
-    ApiConfig['rag'],
+    RagConfig,
     'deepSeekApiKey' | 'deepSeekBaseUrl' | 'deepSeekChatModel' | 'enableThinking'
   >;
   checkpointer: BaseCheckpointSaver;
@@ -242,7 +230,7 @@ export class DeepSeekQueryAgent {
     );
 
     const responseSchema = boundedAgentResponseSchema(input.maxCitations);
-    const systemPrompt = knowledgeAgentSystemPrompt(input.maxSearchCalls, input.maxCitations);
+    const systemPrompt = knowledgeAgentContext(input.maxSearchCalls, input.maxCitations);
     const agent = createDeepAgent({
       name: 'echowave-knowledge-agent',
       model: this.model,
@@ -318,18 +306,10 @@ export class DeepSeekQueryAgent {
         blockedRetrievalCalls > 0 ? 'retrieval-limit' : 'invalid-structured-output';
       const recoveryName =
         blockedRetrievalCalls > 0 ? 'retrieval-limit-finalization' : 'structured-output-recovery';
-      const finalizationPrompt = [
-        blockedRetrievalCalls > 0
-          ? 'The search limit has been reached. Do not call any tools.'
-          : 'The previous answer was not valid structured JSON. Do not call any tools or search again.',
-        'Using only the search_knowledge passages and previous answer in the current run below, repair and return the best supported final JSON.',
-        'Do not use general knowledge or add a search-limit warning; the application adds the warning.',
-        'Return ONLY a single JSON object and nothing else:',
-        '{"answer": "<concise Chinese answer with citation markers when grounded>", "grounded": true|false, "citedChunkIds": ["<retrieved chunk uuid>", ...]}',
-        `Select at most ${input.maxCitations} of the strongest supporting chunks and return no more than ${input.maxCitations} citedChunkIds.`,
-        'Return valid JSON: escape ASCII double quotes inside the answer string, or use Chinese quotation marks instead.',
-        'Use only chunk IDs already returned in this run. If evidence is insufficient, use grounded=false and an empty citedChunkIds array.',
-      ].join('\n');
+      const finalizationPrompt = knowledgeFinalizationContext(
+        blockedRetrievalCalls > 0,
+        input.maxCitations,
+      );
       input.diagnostics?.recordContext({
         systemPrompt: finalizationPrompt,
         reason: recoveryReason,
@@ -423,10 +403,10 @@ export class DeepSeekQueryAgent {
     signal?: AbortSignal,
     diagnostics?: AiExecutionRecorder,
   ): Promise<AgentExecutionResult> {
-    const systemPrompt = `Correct and compact citations only. Do not add facts. Keep at most ${maxCitations} of the strongest allowed citation IDs, update citation markers to match their order, and return only the required valid JSON object with no markdown or extra text. Escape ASCII double quotes inside the answer string, or use Chinese quotation marks instead.`;
+    const systemPrompt = citationCorrectionContext(maxCitations);
     diagnostics?.recordContext({ systemPrompt, candidate, allowedIds });
     const modelStartedAt = Date.now();
-    const correctionUserPrompt = `Previous output: ${JSON.stringify(candidate)}\nAllowed IDs: ${JSON.stringify(allowedIds)}`;
+    const correctionUserPrompt = citationCorrectionInput(candidate, allowedIds);
     const correctionInput = {
       kind: 'chat',
       messages: [
