@@ -115,16 +115,16 @@ export function AudioContent({
   emptyMessage,
   items,
   loading,
-  onOpenFilter,
   onOpenAudio,
+  onOpenFilter,
   onRetry,
 }: {
   error: string;
   emptyMessage: string;
   items: AudioFileSummary[];
   loading: boolean;
-  onOpenFilter: () => void;
   onOpenAudio?: (id: string) => void;
+  onOpenFilter: () => void;
   onRetry: () => void;
 }) {
   if (loading) {
@@ -147,7 +147,7 @@ export function AudioContent({
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>共 {items.length} 份音频</Text>
         <Pressable
-          accessibilityLabel="排序筛选"
+          accessibilityLabel="音频排序筛选"
           accessibilityRole="button"
           onPress={onOpenFilter}
           style={({ pressed }) => [styles.filterButton, pressed && styles.pressed]}
@@ -205,12 +205,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.default,
     borderWidth: StyleSheet.hairlineWidth,
     marginBottom: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.base,
-    shadowColor: colors.ink,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.035,
-    shadowRadius: 5,
+    padding: spacing.md,
   },
   emptyState: {
     alignItems: 'center',

@@ -22,6 +22,10 @@ const completeValues = {
   REDIS_USERNAME: 'echowave',
   REDIS_DB: '2',
   REDIS_TLS: 'true',
+  CREDENTIAL_MASTER_KEY: 'BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=',
+  CONFIGURATION_ADMIN_TOKEN: 'configuration-admin-token-for-tests',
+  LOCAL_CREDENTIALS_FILE: '.data/secrets/credentials.yaml',
+  TRUSTED_PROXY_CIDRS: '127.0.0.1/32, ::1/128',
   DEV_TENANT_ID: '00000000-0000-4000-8000-000000000001',
   DASHSCOPE_API_KEY: 'dashscope-test-key',
   DASHSCOPE_BASE_URL: 'https://workspace.example.com/api/v1/',
@@ -97,6 +101,8 @@ describe('API environment', () => {
     assert.equal(config.rag.audioTranscriptionMaxInFlight, 1);
     assert.equal(config.rag.ffmpegPath, 'C:\\ffmpeg\\ffmpeg.exe');
     assert.deepEqual(config.corsOrigins, ['http://localhost:8081', 'http://localhost:19006']);
+    assert.deepEqual(config.settingsSecurity.trustedProxyCidrs, ['127.0.0.1/32', '::1/128']);
+    assert.equal(config.settingsSecurity.credentialMasterKey.byteLength, 32);
   });
 
   it('allows OSS and FFmpeg to be omitted while embeddings remain configured', () => {
@@ -106,8 +112,10 @@ describe('API environment', () => {
     assert.equal(config.rag.dashScope.oss, undefined);
   });
 
-  it('accepts OSS only as a complete optional group', () => {
-    assert.throws(() => readApiConfig({ ...completeValues, ALIYUN_OSS_REGION: 'oss-cn-beijing' }));
+  it('marks partial legacy OSS as incomplete without blocking API startup', () => {
+    const partial = readApiConfig({ ...completeValues, ALIYUN_OSS_REGION: 'oss-cn-beijing' });
+    assert.equal(partial.rag.dashScope.oss, undefined);
+    assert.ok(partial.legacyProviders.missingVariables.includes('ALIYUN_OSS_BUCKET'));
     const config = readApiConfig({
       ...completeValues,
       ALIYUN_OSS_REGION: 'oss-cn-beijing',
@@ -123,9 +131,12 @@ describe('API environment', () => {
     });
   });
 
-  it('requires mode-specific EventBridge callback configuration', () => {
+  it('reports incomplete EventBridge legacy configuration without importing it', () => {
     const { DASHSCOPE_EVENTBRIDGE_CALLBACK_TOKEN: _token, ...withoutToken } = completeValues;
-    assert.throws(() => readApiConfig(withoutToken));
+    const incomplete = readApiConfig(withoutToken);
+    assert.ok(
+      incomplete.legacyProviders.missingVariables.includes('DASHSCOPE_EVENTBRIDGE_CALLBACK_TOKEN'),
+    );
     const {
       DASHSCOPE_EVENTBRIDGE_CALLBACK_URL: _url,
       DASHSCOPE_EVENTBRIDGE_CALLBACK_TOKEN: _callbackToken,
@@ -159,15 +170,41 @@ describe('API environment', () => {
     assert.throws(() =>
       readApiConfig({ ...completeValues, AUDIO_TRANSCRIPTION_MODEL: 'openai/gpt-4o-transcribe' }),
     );
+    assert.throws(() => readApiConfig({ ...completeValues, TRUSTED_PROXY_CIDRS: '10.0.0.0/33' }));
   });
 
-  it('requires the official DashScope key and base URL', () => {
+  it('starts without legacy provider variables and exposes their import completeness', () => {
     const { DASHSCOPE_API_KEY: _apiKey, ...withoutKey } = completeValues;
     const { DASHSCOPE_BASE_URL: _baseUrl, ...withoutBaseUrl } = completeValues;
     const { DASHSCOPE_COMPATIBLE_BASE_URL: _compatibleBaseUrl, ...withoutCompatibleBaseUrl } =
       completeValues;
-    assert.throws(() => readApiConfig(withoutKey));
-    assert.throws(() => readApiConfig(withoutBaseUrl));
-    assert.throws(() => readApiConfig(withoutCompatibleBaseUrl));
+    assert.ok(
+      readApiConfig(withoutKey).legacyProviders.missingVariables.includes('DASHSCOPE_API_KEY'),
+    );
+    assert.ok(
+      readApiConfig(withoutBaseUrl).legacyProviders.missingVariables.includes('DASHSCOPE_BASE_URL'),
+    );
+    assert.ok(
+      readApiConfig(withoutCompatibleBaseUrl).legacyProviders.missingVariables.includes(
+        'DASHSCOPE_COMPATIBLE_BASE_URL',
+      ),
+    );
+    const bootstrapOnly = { ...completeValues };
+    for (const key of Object.keys(bootstrapOnly)) {
+      if (
+        key.startsWith('DASHSCOPE_') ||
+        key.startsWith('DEEPSEEK_') ||
+        key.startsWith('ALIYUN_OSS_') ||
+        key === 'RAG_EMBEDDING_MODEL' ||
+        key === 'RAG_EMBEDDING_DIMENSIONS' ||
+        key === 'AUDIO_TRANSCRIPTION_MODEL' ||
+        key === 'AUDIO_EMOTION_MODEL'
+      ) {
+        delete bootstrapOnly[key];
+      }
+    }
+    const config = readApiConfig(bootstrapOnly);
+    assert.equal(config.legacyProviders.detectedVariables.length, 0);
+    assert.equal(config.rag.embeddingModel, 'qwen3.7-text-embedding');
   });
 });

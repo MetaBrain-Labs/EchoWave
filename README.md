@@ -80,11 +80,11 @@ Copy-Item apps/mobile/.env.example apps/mobile/.env
 
 FFmpeg 是整文件转写的必需能力。配置 `FFMPEG_PATH` 后，API 启动时会非致命探测可执行文件；缺失或检查失败不会阻止知识库嵌入和 API 启动，但会禁用音频转写。临时单声道 MP3 写入 `AUDIO_TRANSCRIPTION_TEMP_DIR`，转写模型固定为 `qwen-audio-3.0-asr-flash-filetrans`，失败时不会自动切换模型。API 还会校验仓库内固定的 Silero VAD v6.2.1 ONNX 模型；VAD 不可用时仍可由用户明确选择整文件模式，服务端不会静默回退。
 
-按说话轮次分段使用北京地域 `qwen-audio-3.0-asr-flash-filetrans`。`DASHSCOPE_API_KEY` 和 `DASHSCOPE_BASE_URL` 始终必填，供知识库嵌入和转写复用；四项 `ALIYUN_OSS_*` 配置必须全部为空或全部配置。`DASHSCOPE_ASYNC_NOTIFY_MODE` 必须显式选择 `polling` 或 `eventbridge`：本地与测试建议使用 `polling`，并保持两个回调变量为空；生产可使用 `eventbridge`，此时必须成对配置 `DASHSCOPE_EVENTBRIDGE_CALLBACK_URL` 与 `DASHSCOPE_EVENTBRIDGE_CALLBACK_TOKEN`。服务端把本地权威音频转成单声道整文件后，临时上传到 `echowave/asr-staging/<tenant>/<revision>/`，使用 24 小时签名 GET URL 提交任务，并在成功或失败后尽力删除。OSS Bucket 必须另外配置该前缀的一天生命周期规则作为清理兜底。
+按说话轮次分段使用北京地域 `qwen-audio-3.0-asr-flash-filetrans`。供应商端点、模型、通知方式和能力绑定由 PostgreSQL 配置中心管理；Credential 可选择 AES-256-GCM 加密入库，或由服务器本地只读 `credentials.yaml` 提供。服务端把本地权威音频转成单声道整文件后，临时上传到 `echowave/asr-staging/<tenant>/<revision>/`，使用 24 小时签名 GET URL 提交任务，并在成功或失败后尽力删除。OSS Bucket 必须另外配置该前缀的一天生命周期规则作为清理兜底。
 
 `polling` 模式每次只查询一次 DashScope 任务状态，按 2/5/10/15 秒递增间隔把下次查询时间写入数据库并释放 worker，worker 按最近持久化截止时间精确唤醒，六小时后停止查询。所有后台任务在事务提交后通过 PostgreSQL `LISTEN/NOTIFY` 低延迟唤醒，15 秒扫描只作为通知丢失、监听重连和进程恢复的安全兜底；任务表与 `FOR UPDATE SKIP LOCKED` 仍是权威事实和领取机制。该监听固定占用连接池中的一个连接。`eventbridge` 模式的回调地址固定指向 `POST /api/webhooks/dashscope/async-task-finished`；在华北 2（北京）地域 default 事件总线创建规则，筛选 `source=acs.dashscope`、`type=dashscope:System:AsyncTaskFinish` 和模型后缀 `:qwen-audio-3.0-asr-flash-filetrans`，HTTP 目标选择“完整事件”并填写相同 Token。回调 URL 必须可由 EventBridge 通过公网或已配置 VPC 访问；反向代理后的外部完整 URL 必须与环境变量和 EventBridge 目标完全一致。`AUDIO_TRANSCRIPTION_MAX_IN_FLIGHT` 同时约束两种模式中等待供应商终态的任务数，首次部署建议保持 `1`。
 
-转写发布后，供应商正文作为不可变 Raw Transcript 保存，移动端允许用户逐片段修正并确认；每次确认生成完整、不可变的 Confirmed Transcript 版本。只有完成确认后才能独立启动情绪分析和角色识别，任务会固化排队时使用的确认版本。再次修正不会清除或自动重跑既有情绪、角色结果，用户可按需手动重跑。情绪分析固定使用北京地域 `qwen3.5-omni-flash`，通过 `DASHSCOPE_COMPATIBLE_BASE_URL` 的 OpenAI-compatible Chat Completions 接收短期 OSS 音频窗口；角色识别复用官方 DeepSeek `deepseek-v4-flash`。两类任务各自单并发运行并按 ASR revision 发布，情绪窗口使用 `echowave/emotion-staging/` 前缀，同样需要 Bucket 一天生命周期规则兜底。
+转写发布后，供应商正文作为不可变 Raw Transcript 保存，移动端允许用户逐片段修正并确认；每次确认生成完整、不可变的 Confirmed Transcript 版本。只有完成确认后才能独立启动情绪分析和角色识别，任务会固化排队时使用的确认版本和能力配置 revision。再次修正不会清除或自动重跑既有情绪、角色结果，用户可按需手动重跑。情绪窗口使用 `echowave/emotion-staging/` 前缀，同样需要 Bucket 一天生命周期规则兜底。
 
 分析详情和数据源音频列表使用 `expo-audio` 播放原始上传文件。API 通过租户隔离的 `GET/HEAD /api/audio-files/:audioFileId/content` 提供媒体流并支持单段 HTTP Range；客户端不会接收 `storage_key` 或服务器路径。详情页顶部播放器提供真实进度、倍速和跳转，正文片段按钮只播放对应时间范围并在片段结束时自动暂停。播放器仅在当前页面前台运行，离页即停止，不启用后台或锁屏播放。
 
@@ -94,7 +94,7 @@ FFmpeg 是整文件转写的必需能力。配置 `FFMPEG_PATH` 后，API 启动
 
 原音频直传支持 MP3、WAV、M4A、AAC、FLAC、OGG 和 WebM，但仅允许不超过 45 秒且不超过 200 MB 的音频；长音频必须启用 FFmpeg。base64 会使请求体增大约三分之一，供应商拒绝时应重新转写并勾选 FFmpeg，不会自动回退或覆盖旧结果。
 
-`apps/api/.env` 是 API 的唯一配置来源：启动时会直接读取并校验该文件，不合并系统环境变量，也不使用隐式默认值。移动端由 Expo CLI 自动加载 `apps/mobile/.env`，其中客户端可用变量必须以 `EXPO_PUBLIC_` 开头：
+`apps/api/.env` 只保存启动、基础设施、路径、运维开关和根安全配置；供应商普通配置与能力绑定保存在 PostgreSQL，Secret 由 Database 或 Local Credential Provider 提供。API 仍只直接读取该 `.env` 文件，不合并 `process.env`。完整边界、HTTPS/localhost 判定、`credentials.yaml`、Docker 只读挂载和旧变量导入见 [配置与 Credential 指南](docs/configuration.md)。移动端由 Expo CLI 自动加载 `apps/mobile/.env`，其中客户端可用变量必须以 `EXPO_PUBLIC_` 开头：
 
 ```dotenv
 EXPO_PUBLIC_API_URL=http://localhost:3001
@@ -102,7 +102,7 @@ EXPO_PUBLIC_API_URL=http://localhost:3001
 
 `EXPO_PUBLIC_*` 会被写入客户端 bundle，不得放置密码、令牌或其他秘密。修改该文件后，需要在 Expo Go 中执行完整 Reload 才能确认新值已生效。详见 [Expo 环境变量文档](https://docs.expo.dev/guides/environment-variables/)。
 
-API 的 PostgreSQL 配置使用 `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_USER` 等分字段变量。RAG 嵌入要求 `DASHSCOPE_API_KEY`、北京地域业务空间 `DASHSCOPE_BASE_URL`、DeepSeek、固定开发租户与临时上传目录配置；音频转写额外要求完整 OSS、显式通知模式、在途上限与 FFmpeg 配置，只有 `eventbridge` 模式要求回调 URL 和 Token。情绪分析还要求 `DASHSCOPE_COMPATIBLE_BASE_URL` 和固定的 `AUDIO_EMOTION_MODEL=qwen3.5-omni-flash`，字段清单见 `apps/api/.env.example`。Redis 字段仍仅作未来边界预留。
+API 的 PostgreSQL 配置继续使用 `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_USER` 等分字段变量。首次启动还必须设置 `CREDENTIAL_MASTER_KEY`、`CONFIGURATION_ADMIN_TOKEN`、`LOCAL_CREDENTIALS_FILE` 和 `TRUSTED_PROXY_CIDRS`。缺少供应商连接、Credential alias 或能力绑定只会禁用对应 AI 能力并返回 `CONFIGURATION_REQUIRED`，健康检查和“更多”页仍可使用。Redis 字段仍仅作未来边界预留。
 
 ### 可选 AI 执行报告
 

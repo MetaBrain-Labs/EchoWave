@@ -4,7 +4,7 @@
  * 为尚未实现的产品区域提供一致、可访问且不会误示为真实功能的说明界面。
  *
  * Responsibilities:
- * - 展示标题、说明与可选图标。
+ * - 展示固定一级页标题、说明与可选图标。
  * - 保持原生和 Web 布局一致。
  *
  * Notes:
@@ -22,6 +22,7 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
 
 type PlaceholderScreenProps = {
   title: string;
@@ -33,11 +34,11 @@ type PlaceholderScreenProps = {
 export function PlaceholderScreen({ title, description, icon }: PlaceholderScreenProps) {
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
-      <View style={styles.content}>
+      <TopLevelPageHeader title={title} />
+      <View style={styles.content} testID="placeholder-content">
         <View style={styles.iconCircle}>
           <Ionicons color={colors.ink} name={icon} size={34} />
         </View>
-        <Text style={styles.title}>{title}</Text>
         <Text style={styles.description}>{description}</Text>
         <View style={styles.badge}>
           <Text style={styles.badgeText}>功能建设中</Text>
@@ -67,13 +68,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: spacing.lg,
     width: 76,
-  },
-  title: {
-    ...typography.heading2,
-    color: textColors.primary,
-    fontFamily: fontFamilies.sansBold,
-    fontWeight: 'bold',
-    marginBottom: spacing.sm,
   },
   description: {
     ...typography.description,

@@ -37,7 +37,7 @@ export default function DataSourcesRoute() {
       onOpenSource={(sourceId) => {
         router.push({
           pathname: '/sources/[sourceId]',
-          params: { sourceId },
+          params: { sourceId, origin: 'source-list' },
         });
       }}
     />

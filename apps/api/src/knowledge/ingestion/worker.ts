@@ -33,8 +33,9 @@ const SAFETY_POLL_INTERVAL_MS = 15_000;
 
 type WorkerOptions = {
   repository: IngestionRepository;
-  embeddings: DashScopeEmbeddings;
-  embeddingModel: string;
+  createEmbeddings?(job: ClaimedIngestionJob): Promise<DashScopeEmbeddings>;
+  embeddings?: DashScopeEmbeddings;
+  embeddingModel?: string;
   uploadTempDirectory: string;
   concurrency?: number;
   reporter?: AiExecutionReporter;
@@ -49,11 +50,8 @@ export class IngestionWorker {
   private unsubscribeWakeup?: () => void;
   private stopping = false;
   private pumping = false;
-  private readonly graph;
-
   constructor(private readonly options: WorkerOptions) {
     this.concurrency = options.concurrency ?? 2;
-    this.graph = createIngestionGraph(options);
   }
 
   /** 启动通知订阅、孤立文件清理和低频安全扫描；重复调用不会创建第二个 timer。 */
@@ -105,6 +103,8 @@ export class IngestionWorker {
   }
 
   private async execute(job: ClaimedIngestionJob): Promise<void> {
+    const embeddingModel = job.embeddingModel ?? this.options.embeddingModel;
+    if (!embeddingModel) throw new Error('Ingestion embedding model is unavailable.');
     const startedAt = Date.now();
     const report = (this.options.reporter ?? noOpAiExecutionReporter).start({
       kind: 'knowledge-ingestion',
@@ -117,11 +117,20 @@ export class IngestionWorker {
         format: job.format,
         sizeBytes: job.sizeBytes,
         attempt: job.attempts,
-        embeddingModel: this.options.embeddingModel,
+        embeddingModel,
       },
     });
     try {
-      await this.graph.invoke({ job, report });
+      const embeddings = this.options.createEmbeddings
+        ? await this.options.createEmbeddings(job)
+        : this.options.embeddings;
+      if (!embeddings) throw new Error('Ingestion embeddings are unavailable.');
+      const graph = createIngestionGraph({
+        repository: this.options.repository,
+        embeddings,
+        embeddingModel,
+      });
+      await graph.invoke({ job, report });
       const durationMs = Date.now() - startedAt;
       report.recordOutput({ status: 'completed', documentId: job.documentId });
       await report.finish({

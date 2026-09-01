@@ -10,29 +10,56 @@
  * Notes:
  * - 数据加载由知识库 feature 页面负责。
  */
-import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { KnowledgeDetailScreen } from '@/features/knowledge/screens/KnowledgeDetailScreen';
+import { parseResourceOrigin } from '@/shared/navigation/resourceOrigin';
+import { backOrReplace } from '@/shared/navigation/routeBack';
 import { firstRouteParam } from '@/shared/navigation/routeParams';
 
 /** 读取知识库 ID 并连接详情、文档与问答路由。 */
 export default function KnowledgeDetailRoute() {
   const router = useRouter();
-  const { knowledgeId } = useLocalSearchParams<{ knowledgeId?: string | string[] }>();
+  const params = useLocalSearchParams<{
+    groupId?: string | string[];
+    knowledgeId?: string | string[];
+    origin?: string | string[];
+  }>();
+  const { knowledgeId } = params;
   const id = firstRouteParam(knowledgeId);
+  const groupId = firstRouteParam(params.groupId);
+  const origin = parseResourceOrigin(params.origin);
   const goBack = () => {
-    router.replace('/knowledge');
+    if (origin === 'group' && groupId) {
+      backOrReplace(router, { pathname: '/', params: { groupId, tab: 'knowledge' } });
+    } else {
+      backOrReplace(router, '/(tabs)/knowledge');
+    }
   };
 
   return (
     <KnowledgeDetailScreen
       knowledgeId={id}
       onBack={goBack}
-      onAsk={() => router.push(`/knowledge/${id}/ask` as Href)}
+      onAsk={() =>
+        router.push({
+          pathname: '/knowledge/[knowledgeId]/ask',
+          params: {
+            knowledgeId: id,
+            origin: origin ?? 'knowledge-list',
+            ...(groupId ? { groupId } : {}),
+          },
+        })
+      }
       onOpenDocument={(documentId) => {
         router.push({
           pathname: '/knowledge/[knowledgeId]/files/[fileId]',
-          params: { fileId: documentId, knowledgeId: id },
+          params: {
+            fileId: documentId,
+            knowledgeId: id,
+            origin: origin ?? 'knowledge-list',
+            ...(groupId ? { groupId } : {}),
+          },
         });
       }}
       onSwitchGroup={(groupId) => {

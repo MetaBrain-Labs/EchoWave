@@ -74,18 +74,37 @@ type KnowledgeAnswerCheckpointer = {
 };
 type ScheduleCleanup = (task: () => void, intervalMs: number) => () => void;
 
+type KnowledgeAnswerRuntime = {
+  embeddings: KnowledgeAnswerEmbeddings;
+  agent: KnowledgeAnswerAgent;
+  ragConfig: Pick<RagConfig, 'embeddingModel' | 'deepSeekChatModel'>;
+  embeddingBindingRevisionId: string | null;
+  chatBindingRevisionId: string | null;
+};
+
+type KnowledgeAnswerStaticRuntimeOptions = {
+  embeddings: KnowledgeAnswerEmbeddings;
+  agent: KnowledgeAnswerAgent;
+  ragConfig: Pick<RagConfig, 'embeddingModel' | 'deepSeekChatModel'>;
+  resolveRuntime?: never;
+};
+
+type KnowledgeAnswerDynamicRuntimeOptions = {
+  resolveRuntime: () => Promise<KnowledgeAnswerRuntime>;
+  embeddings?: never;
+  agent?: never;
+  ragConfig?: never;
+};
+
 type KnowledgeAnswerOptions = {
   knowledgeRepository: KnowledgeSearchPort;
   conversationRepository: ConversationRepository;
-  embeddings: KnowledgeAnswerEmbeddings;
-  agent: KnowledgeAnswerAgent;
   checkpointer: KnowledgeAnswerCheckpointer;
-  ragConfig: Pick<RagConfig, 'embeddingModel' | 'deepSeekChatModel'>;
   reporter?: AiExecutionReporter;
   scheduleCleanup?: ScheduleCleanup;
   now?: () => number;
   createAbortSignal?: (timeoutMs: number) => AbortSignal;
-};
+} & (KnowledgeAnswerStaticRuntimeOptions | KnowledgeAnswerDynamicRuntimeOptions);
 
 const scheduleCleanup: ScheduleCleanup = (task, intervalMs) => {
   const timer = setInterval(task, intervalMs);
@@ -136,6 +155,15 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
     if (this.disposed) throw new Error('Knowledge answer module is disposed.');
 
     const request = RagQueryRequestSchema.parse(command.request);
+    const runtime = this.options.resolveRuntime
+      ? await this.options.resolveRuntime()
+      : {
+          embeddings: this.options.embeddings,
+          agent: this.options.agent,
+          ragConfig: this.options.ragConfig,
+          embeddingBindingRevisionId: null,
+          chatBindingRevisionId: null,
+        };
     const now = this.options.now ?? Date.now;
     const startedAt = now();
     const report = (this.options.reporter ?? noOpAiExecutionReporter).start({
@@ -145,9 +173,11 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         knowledgeBaseId: command.knowledgeBaseId,
         requestedConversationId: request.conversationId,
         questionLength: request.question.length,
-        embeddingModel: this.options.ragConfig.embeddingModel,
-        chatModel: this.options.ragConfig.deepSeekChatModel,
+        embeddingModel: runtime.ragConfig.embeddingModel,
+        chatModel: runtime.ragConfig.deepSeekChatModel,
         chatProvider: 'deepseek',
+        embeddingBindingRevisionId: runtime.embeddingBindingRevisionId,
+        chatBindingRevisionId: runtime.chatBindingRevisionId,
       },
     });
     report.recordContext({ question: request.question });
@@ -187,9 +217,11 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         knowledgeBaseId: command.knowledgeBaseId,
         conversationId: conversation.id,
         question: request.question,
-        embeddingModel: this.options.ragConfig.embeddingModel,
-        chatModel: this.options.ragConfig.deepSeekChatModel,
+        embeddingModel: runtime.ragConfig.embeddingModel,
+        chatModel: runtime.ragConfig.deepSeekChatModel,
         chatProvider: 'deepseek',
+        embeddingBindingRevisionId: runtime.embeddingBindingRevisionId,
+        chatBindingRevisionId: runtime.chatBindingRevisionId,
       });
       report.recordMetadata({ ragRunId: runId });
       report.recordStep({
@@ -220,7 +252,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
       report.recordStep({ name: 'agent-generate', status: 'started' });
       let generated;
       try {
-        generated = await this.options.agent.generate({
+        generated = await runtime.agent.generate({
           question: request.question,
           threadId: conversation.threadId,
           signal,
@@ -263,7 +295,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
               const embeddingStartedAt = now();
               let embedded;
               try {
-                embedded = await this.options.embeddings.embedQueryWithUsage(query, signal);
+                embedded = await runtime.embeddings.embedQueryWithUsage(query, signal);
                 report.recordModelCall({
                   name: 'query-embedding',
                   provider: embedded.provider,
@@ -287,7 +319,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
                 report.recordModelCall({
                   name: 'query-embedding',
                   provider: 'dashscope',
-                  model: this.options.ragConfig.embeddingModel,
+                  model: runtime.ragConfig.embeddingModel,
                   status: 'failed',
                   attempt: 1,
                   durationMs: now() - embeddingStartedAt,
@@ -302,7 +334,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
               const chunks = await this.options.knowledgeRepository.search(
                 command.knowledgeBaseId,
                 embedded.vectors[0] ?? [],
-                this.options.ragConfig.embeddingModel,
+                runtime.ragConfig.embeddingModel,
               );
               for (const chunk of chunks) retrieved.set(chunk.id, chunk);
               const output = {
@@ -395,7 +427,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         report.recordStep({ name: 'citation-correction', status: 'started' });
         let corrected;
         try {
-          corrected = await this.options.agent.correctCitations(
+          corrected = await runtime.agent.correctCitations(
             candidate,
             [...retrieved.keys()],
             MAX_CITATIONS,

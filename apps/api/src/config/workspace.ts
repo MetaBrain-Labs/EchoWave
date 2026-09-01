@@ -18,16 +18,17 @@ import { OptionalStringSchema } from './schema.ts';
 
 export const WorkspaceEnvironmentSchema = z.object({
   DEV_TENANT_ID: z.string().uuid(),
-  RAG_EMBEDDING_MODEL: z.literal('qwen3.7-text-embedding'),
+  RAG_EMBEDDING_MODEL: z.literal('qwen3.7-text-embedding').optional(),
   RAG_EMBEDDING_DIMENSIONS: z.coerce
     .number()
     .int()
-    .refine((value) => value === 1024),
+    .refine((value) => value === 1024)
+    .optional(),
   LANGGRAPH_SCHEMA: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
   UPLOAD_TEMP_DIR: z.string().min(1),
   AUDIO_STORAGE_DIR: z.string().min(1),
-  AUDIO_TRANSCRIPTION_MODEL: AudioTranscriptionModelSchema,
-  AUDIO_EMOTION_MODEL: z.literal('qwen3.5-omni-flash'),
+  AUDIO_TRANSCRIPTION_MODEL: AudioTranscriptionModelSchema.optional(),
+  AUDIO_EMOTION_MODEL: z.literal('qwen3.5-omni-flash').optional(),
   AUDIO_TRANSCRIPTION_TEMP_DIR: z.string().min(1),
   AUDIO_TRANSCRIPTION_MAX_IN_FLIGHT: z.coerce.number().int().min(1).max(100),
   FFMPEG_PATH: OptionalStringSchema,
@@ -60,8 +61,8 @@ export function createRagConfig(
   return {
     tenantId: values.DEV_TENANT_ID,
     dashScope: providers.dashScope,
-    embeddingModel: values.RAG_EMBEDDING_MODEL,
-    embeddingDimensions: values.RAG_EMBEDDING_DIMENSIONS,
+    embeddingModel: values.RAG_EMBEDDING_MODEL ?? 'qwen3.7-text-embedding',
+    embeddingDimensions: values.RAG_EMBEDDING_DIMENSIONS ?? 1024,
     deepSeekApiKey: providers.deepSeek.apiKey,
     deepSeekBaseUrl: providers.deepSeek.baseUrl,
     deepSeekChatModel: providers.deepSeek.chatModel,
@@ -69,8 +70,9 @@ export function createRagConfig(
     langGraphSchema: values.LANGGRAPH_SCHEMA,
     uploadTempDir: values.UPLOAD_TEMP_DIR,
     audioStorageDir: values.AUDIO_STORAGE_DIR,
-    audioTranscriptionModel: values.AUDIO_TRANSCRIPTION_MODEL,
-    audioEmotionModel: values.AUDIO_EMOTION_MODEL,
+    audioTranscriptionModel:
+      values.AUDIO_TRANSCRIPTION_MODEL ?? 'qwen-audio-3.0-asr-flash-filetrans',
+    audioEmotionModel: values.AUDIO_EMOTION_MODEL ?? 'qwen3.5-omni-flash',
     audioTranscriptionTempDir: values.AUDIO_TRANSCRIPTION_TEMP_DIR,
     audioTranscriptionMaxInFlight: values.AUDIO_TRANSCRIPTION_MAX_IN_FLIGHT,
     ...(values.FFMPEG_PATH ? { ffmpegPath: values.FFMPEG_PATH } : {}),

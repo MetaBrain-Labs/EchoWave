@@ -13,6 +13,8 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { DataSourceDetailScreen } from '@/features/data-sources/screens/DataSourceDetailScreen';
+import { parseResourceOrigin } from '@/shared/navigation/resourceOrigin';
+import { backOrReplace } from '@/shared/navigation/routeBack';
 import { firstRouteParam } from '@/shared/navigation/routeParams';
 
 /** 渲染路由参数指定的数据源详情。 */
@@ -21,27 +23,39 @@ export default function DataSourceDetailRoute() {
   const params = useLocalSearchParams<{
     sourceId?: string | string[];
     groupId?: string | string[];
+    origin?: string | string[];
   }>();
   const groupId = firstRouteParam(params.groupId);
+  const origin = parseResourceOrigin(params.origin);
+  const sourceId = firstRouteParam(params.sourceId);
+  const goBack = () => {
+    if (origin === 'group' && groupId) {
+      backOrReplace(router, { pathname: '/', params: { groupId, tab: 'sources' } });
+    } else {
+      backOrReplace(router, '/(tabs)/sources');
+    }
+  };
 
   return (
     <DataSourceDetailScreen
-      onBack={() => router.back()}
-      onArchived={() => router.replace('/(tabs)/sources')}
+      onBack={goBack}
+      onArchived={goBack}
       onOpenAudio={(id, analysisGroupId) =>
         router.push({
           pathname: '/analysis/[id]',
           params: {
             id,
             groupId: analysisGroupId,
-            returnSourceId: firstRouteParam(params.sourceId),
+            origin: origin ?? 'source-list',
+            ...(origin === 'group' && groupId ? { originGroupId: groupId } : {}),
+            returnSourceId: sourceId,
           },
         })
       }
       onSwitchGroup={(groupId) =>
         router.replace({ pathname: '/', params: { groupId, tab: 'sources' } })
       }
-      sourceId={firstRouteParam(params.sourceId)}
+      sourceId={sourceId}
       preferredGroupId={groupId || undefined}
     />
   );

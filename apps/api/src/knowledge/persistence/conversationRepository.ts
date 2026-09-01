@@ -92,11 +92,14 @@ export class ConversationRepository {
     embeddingModel: string;
     chatModel: string;
     chatProvider: string;
+    embeddingBindingRevisionId: string | null;
+    chatBindingRevisionId: string | null;
   }): Promise<string> {
     const result = await this.pool.query(
       `INSERT INTO ${this.table('rag_runs')}
-         (tenant_id, knowledge_base_id, conversation_id, question, embedding_model, chat_model, chat_provider, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,'running') RETURNING id`,
+         (tenant_id, knowledge_base_id, conversation_id, question, embedding_model, chat_model,
+          chat_provider, status, embedding_binding_revision_id, chat_binding_revision_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'running',$8,$9) RETURNING id`,
       [
         this.tenantId,
         input.knowledgeBaseId,
@@ -105,6 +108,8 @@ export class ConversationRepository {
         input.embeddingModel,
         input.chatModel,
         input.chatProvider,
+        input.embeddingBindingRevisionId,
+        input.chatBindingRevisionId,
       ],
     );
     return result.rows[0].id as string;

@@ -35,15 +35,17 @@ export function useSwipePager<Tab extends string>({
   const pageWidth = Math.min(width, desktopCanvasWidth);
   const activeIndex = tabs.indexOf(activeTab);
   const previousPageWidth = useRef(0);
+  const previousActiveIndex = useRef(-1);
 
   useEffect(() => {
-    if (previousPageWidth.current !== pageWidth) {
+    if (previousPageWidth.current !== pageWidth || previousActiveIndex.current !== activeIndex) {
       pagerRef.current?.scrollTo?.({
         animated: false,
         x: Math.max(activeIndex, 0) * pageWidth,
         y: 0,
       });
       previousPageWidth.current = pageWidth;
+      previousActiveIndex.current = activeIndex;
     }
   }, [activeIndex, pageWidth]);
 
@@ -53,6 +55,7 @@ export function useSwipePager<Tab extends string>({
       return;
     }
 
+    previousActiveIndex.current = index;
     pagerRef.current?.scrollTo?.({ animated: true, x: index * pageWidth, y: 0 });
     onTabChange(tab);
   };
@@ -62,6 +65,7 @@ export function useSwipePager<Tab extends string>({
     const tab = tabs[index];
 
     if (tab !== undefined && tab !== activeTab) {
+      previousActiveIndex.current = index;
       onTabChange(tab);
     }
   };

@@ -26,22 +26,34 @@ import {
   type DatabaseConfig,
 } from './database.ts';
 import { createHttpConfig, HttpEnvironmentSchema, type HttpConfig } from './http.ts';
-import { createProviderConfig, ProviderEnvironmentSchema } from './providers.ts';
+import {
+  createProviderConfig,
+  ProviderEnvironmentSchema,
+  type ProviderConfig,
+} from './providers.ts';
 import { createRedisConfig, RedisEnvironmentSchema, type RedisConfig } from './redis.ts';
+import {
+  createSettingsSecurityConfig,
+  SettingsSecurityEnvironmentSchema,
+  type SettingsSecurityConfig,
+} from './settings.ts';
 import { createRagConfig, type RagConfig, WorkspaceEnvironmentSchema } from './workspace.ts';
 
 const EnvironmentSchema = HttpEnvironmentSchema.merge(DatabaseEnvironmentSchema)
   .merge(RedisEnvironmentSchema)
   .merge(ProviderEnvironmentSchema)
   .merge(WorkspaceEnvironmentSchema)
+  .merge(SettingsSecurityEnvironmentSchema)
   .merge(AiExecutionEnvironmentSchema);
 
 /** API 进程通过校验后可使用的完整运行时配置。 */
 export type ApiConfig = HttpConfig & {
   database: DatabaseConfig;
   redis: RedisConfig;
+  settingsSecurity: SettingsSecurityConfig;
   rag: RagConfig;
   aiExecutionReports: AiExecutionReportConfig;
+  legacyProviders: ProviderConfig['legacy'];
 };
 
 /** 将显式键值集合解析为无默认值的强类型 API 配置。 */
@@ -53,7 +65,9 @@ export function readApiConfig(values: Record<string, string | undefined>): ApiCo
     ...http,
     database: createDatabaseConfig(parsed),
     redis: createRedisConfig(parsed),
+    settingsSecurity: createSettingsSecurityConfig(parsed),
     rag: createRagConfig(parsed, providers),
+    legacyProviders: providers.legacy,
     aiExecutionReports: createAiExecutionReportConfig(parsed),
   };
 }

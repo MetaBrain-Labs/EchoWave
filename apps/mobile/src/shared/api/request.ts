@@ -32,6 +32,7 @@ type RuntimeSchema<T> = {
 
 type RequestOptions = {
   body?: unknown | FormData;
+  headers?: Record<string, string>;
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   timeoutMs?: number;
 };
@@ -61,6 +62,7 @@ export async function request<T>(
       headers: {
         Accept: 'application/json',
         ...(options.body === undefined || multipart ? {} : { 'Content-Type': 'application/json' }),
+        ...options.headers,
       },
       method: options.method ?? 'GET',
       signal: controller.signal,

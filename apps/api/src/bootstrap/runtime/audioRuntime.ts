@@ -18,11 +18,15 @@ import type { ApiConfig } from '../../config/env.ts';
 import type { LiveUpdateBroker } from '../../infrastructure/liveUpdateBroker.ts';
 import type { DatabasePool } from '../../infrastructure/postgres.ts';
 import type { WorkerWakeupSource } from '../../infrastructure/workerWakeup.ts';
-import type { DashScopeEmbeddings } from '../../knowledge/embeddings/dashScopeEmbeddings.ts';
+import { DashScopeEmbeddings } from '../../knowledge/embeddings/dashScopeEmbeddings.ts';
 import type { KnowledgeSearchPort } from '../../knowledge/retrieval/port.ts';
+import type { SettingsService } from '../../settings/service.ts';
 import { BusinessAnalysisWorker } from '../../workspace/audio/business-analysis/worker.ts';
 import { SalesAnalysisAgent } from '../../workspace/audio/business-analysis/salesAnalysisAgent.ts';
-import { BusinessAnalysisWorkflow } from '../../workspace/audio/business-analysis/workflow.ts';
+import {
+  BusinessAnalysisWorkflow,
+  businessAnalysisThreadId,
+} from '../../workspace/audio/business-analysis/workflow.ts';
 import type { AudioCoreRepository } from '../../workspace/audio/core/repository.ts';
 import { DefaultAudioService } from '../../workspace/audio/core/service.ts';
 import type { PostgresAudioExecutionRepository } from '../../workspace/audio/execution/postgresAudioExecutionRepository.ts';
@@ -35,7 +39,10 @@ import { DeepSeekRoleRecognizer } from '../../workspace/audio/post-analysis/deep
 import { QwenEmotionAnalyzer } from '../../workspace/audio/post-analysis/qwenEmotionAnalyzer.ts';
 import { AudioPostAnalysisWorker } from '../../workspace/audio/post-analysis/worker.ts';
 import { AudioInputPreprocessor } from '../../workspace/audio/transcription/audioPreprocessor.ts';
-import { DashScopeCallbackService } from '../../workspace/audio/transcription/dashScopeCallback.ts';
+import {
+  DashScopeCallbackError,
+  DashScopeCallbackService,
+} from '../../workspace/audio/transcription/dashScopeCallback.ts';
 import { DashScopeFileTranscription } from '../../workspace/audio/transcription/dashScopeFileTranscription.ts';
 import { EventBridgeSignatureVerifier } from '../../workspace/audio/transcription/eventBridgeSignature.ts';
 import { OssStagingStore } from '../../workspace/audio/transcription/ossStagingStore.ts';
@@ -46,13 +53,13 @@ type AudioRuntimeOptions = {
   pool: DatabasePool;
   liveUpdates: LiveUpdateBroker;
   workerWakeup: WorkerWakeupSource;
-  embeddings: DashScopeEmbeddings;
   checkpointer: PostgresSaver;
   knowledgeSearch: KnowledgeSearchPort;
   audioCoreRepository: AudioCoreRepository;
   audioExecutionRepository: PostgresAudioExecutionRepository;
   reporter: AiExecutionReporter;
   sttRawResponseReporter: SttRawResponseReporter;
+  settingsService: SettingsService;
 };
 
 /** 创建音频应用服务、供应商适配器与全部音频 Worker。 */
@@ -62,13 +69,13 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
     pool,
     liveUpdates,
     workerWakeup,
-    embeddings,
     checkpointer,
     knowledgeSearch,
     audioCoreRepository,
     audioExecutionRepository,
     reporter,
     sttRawResponseReporter,
+    settingsService,
   } = options;
   const audioAnalysisRepository = new AudioAnalysisRepository(
     pool,
@@ -94,8 +101,6 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
     audioStorageDirectory: config.rag.audioStorageDir,
     tempDirectory: config.rag.audioTranscriptionTempDir,
     ...(config.rag.ffmpegPath ? { ffmpegPath: config.rag.ffmpegPath } : {}),
-    defaultModel: config.rag.audioTranscriptionModel,
-    transcriptionConfigured: Boolean(config.rag.dashScope.oss),
   });
   const audioService = new DefaultAudioService(
     audioCoreRepository,
@@ -105,51 +110,89 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
     audioInputPreprocessor,
     postAnalysisRepository,
     transcriptConfirmationRepository,
-    config.rag.audioEmotionModel,
-    config.rag.deepSeekChatModel,
-    Boolean(config.rag.dashScope.oss),
+    settingsService,
     businessAnalysisRepository,
     audioExecutionRepository,
   );
-  const dashScope = new DashScopeFileTranscription(
-    config.rag.dashScope.apiKey,
-    config.rag.dashScope.baseUrl,
-    fetch,
-    (durationMs) => new Promise((resolve) => setTimeout(resolve, durationMs)),
-    sttRawResponseReporter,
-  );
-  const ossStaging = config.rag.dashScope.oss
-    ? new OssStagingStore({
-        region: config.rag.dashScope.oss.region,
-        bucket: config.rag.dashScope.oss.bucket,
-        accessKeyId: config.rag.dashScope.oss.accessKeyId,
-        accessKeySecret: config.rag.dashScope.oss.accessKeySecret,
-        tenantId: config.rag.tenantId,
-      })
-    : undefined;
   const transcriptionWorker = new AudioTranscriptionWorker({
     repository: audioAnalysisRepository,
-    dashScope,
     maxInFlight: config.rag.audioTranscriptionMaxInFlight,
-    notifyMode: config.rag.dashScope.asyncNotifyMode,
+    resolveProviders: async (job) => {
+      const [transcription, staging] = await Promise.all([
+        settingsService.resolveCapability(
+          'audio_transcription',
+          job.transcriptionBindingRevisionId ?? undefined,
+        ),
+        settingsService.resolveCapability(
+          'audio_staging',
+          job.stagingBindingRevisionId ?? undefined,
+        ),
+      ]);
+      if (
+        transcription.provider.type !== 'dashscope' ||
+        !('apiKey' in transcription.provider.credential) ||
+        staging.provider.type !== 'aliyun_oss' ||
+        !('accessKeyId' in staging.provider.credential)
+      ) {
+        throw new Error('Resolved audio transcription providers are incompatible.');
+      }
+      const transcriptionConfig = transcription.provider.config as {
+        baseUrl: string;
+        asyncNotifyMode: 'polling' | 'eventbridge';
+      };
+      const stagingConfig = staging.provider.config as { region: string; bucket: string };
+      return {
+        dashScope: new DashScopeFileTranscription(
+          transcription.provider.credential.apiKey,
+          transcriptionConfig.baseUrl,
+          fetch,
+          (durationMs) => new Promise((resolve) => setTimeout(resolve, durationMs)),
+          sttRawResponseReporter,
+        ),
+        notifyMode: transcriptionConfig.asyncNotifyMode,
+        ossStaging: new OssStagingStore({
+          region: stagingConfig.region,
+          bucket: stagingConfig.bucket,
+          accessKeyId: staging.provider.credential.accessKeyId,
+          accessKeySecret: staging.provider.credential.accessKeySecret,
+          tenantId: config.rag.tenantId,
+        }),
+      };
+    },
     preprocessor: audioInputPreprocessor,
     reporter,
     liveUpdates,
     wakeup: workerWakeup,
-    ...(ossStaging ? { ossStaging } : {}),
   });
-  const dashScopeCallbackService =
-    config.rag.dashScope.asyncNotifyMode === 'eventbridge' &&
-    config.rag.dashScope.eventBridgeCallback
-      ? new DashScopeCallbackService({
-          repository: audioAnalysisRepository,
-          signatureVerifier: new EventBridgeSignatureVerifier({
-            callbackUrl: config.rag.dashScope.eventBridgeCallback.url,
-            token: config.rag.dashScope.eventBridgeCallback.token,
-          }),
-          rawResponseReporter: sttRawResponseReporter,
-        })
-      : undefined;
+  const dashScopeCallbackService = new DashScopeCallbackService({
+    repository: audioAnalysisRepository,
+    resolveSignatureVerifier: async (taskId) => {
+      const revisionId = await audioAnalysisRepository.findTranscriptionBindingByTaskId(taskId);
+      if (revisionId === undefined) {
+        throw new DashScopeCallbackError('unauthorized', 'Unknown callback task.');
+      }
+      const resolved = await settingsService.resolveCapability(
+        'audio_transcription',
+        revisionId ?? undefined,
+      );
+      if (
+        resolved.provider.type !== 'dashscope' ||
+        !('eventBridgeCallbackToken' in resolved.provider.credential) ||
+        !resolved.provider.credential.eventBridgeCallbackToken
+      ) {
+        throw new DashScopeCallbackError('temporary_unavailable', 'Callback token unavailable.');
+      }
+      const providerConfig = resolved.provider.config as { eventBridgeCallbackUrl: string | null };
+      if (!providerConfig.eventBridgeCallbackUrl) {
+        throw new DashScopeCallbackError('temporary_unavailable', 'Callback URL unavailable.');
+      }
+      return new EventBridgeSignatureVerifier({
+        callbackUrl: providerConfig.eventBridgeCallbackUrl,
+        token: resolved.provider.credential.eventBridgeCallbackToken,
+      });
+    },
+    rawResponseReporter: sttRawResponseReporter,
+  });
   const audioWindowPreprocessor = new AudioWindowPreprocessor({
     audioStorageDirectory: config.rag.audioStorageDir,
     tempDirectory: config.rag.audioTranscriptionTempDir,
@@ -162,12 +205,41 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
     reporter,
     liveUpdates,
     wakeup: workerWakeup,
-    emotionAnalyzer: new QwenEmotionAnalyzer({
-      apiKey: config.rag.dashScope.apiKey,
-      baseUrl: config.rag.dashScope.compatibleBaseUrl,
-      model: config.rag.audioEmotionModel,
-    }),
-    ...(ossStaging ? { ossStaging } : {}),
+    resolveRuntime: async (job) => {
+      const [emotion, staging] = await Promise.all([
+        settingsService.resolveCapability(
+          'audio_emotion',
+          job.capabilityBindingRevisionId ?? undefined,
+        ),
+        settingsService.resolveCapability(
+          'audio_staging',
+          job.stagingBindingRevisionId ?? undefined,
+        ),
+      ]);
+      if (
+        emotion.provider.type !== 'dashscope' ||
+        !('apiKey' in emotion.provider.credential) ||
+        staging.provider.type !== 'aliyun_oss' ||
+        !('accessKeyId' in staging.provider.credential)
+      ) {
+        throw new Error('Resolved emotion analysis providers are incompatible.');
+      }
+      const stagingConfig = staging.provider.config as { region: string; bucket: string };
+      return {
+        emotionAnalyzer: new QwenEmotionAnalyzer({
+          apiKey: emotion.provider.credential.apiKey,
+          baseUrl: (emotion.provider.config as { compatibleBaseUrl: string }).compatibleBaseUrl,
+          model: job.model,
+        }),
+        ossStaging: new OssStagingStore({
+          region: stagingConfig.region,
+          bucket: stagingConfig.bucket,
+          accessKeyId: staging.provider.credential.accessKeyId,
+          accessKeySecret: staging.provider.credential.accessKeySecret,
+          tenantId: config.rag.tenantId,
+        }),
+      };
+    },
   });
   const roleWorker = new AudioPostAnalysisWorker({
     type: 'role',
@@ -175,23 +247,67 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
     reporter,
     liveUpdates,
     wakeup: workerWakeup,
-    roleRecognizer: new DeepSeekRoleRecognizer({
-      apiKey: config.rag.deepSeekApiKey,
-      baseUrl: config.rag.deepSeekBaseUrl,
-      model: config.rag.deepSeekChatModel,
-    }),
-  });
-  const businessAnalysisWorkflow = new BusinessAnalysisWorkflow({
-    repository: businessAnalysisRepository,
-    knowledgeRepository: knowledgeSearch,
-    embeddings,
-    embeddingModel: config.rag.embeddingModel,
-    agent: new SalesAnalysisAgent({ ragConfig: config.rag }),
-    checkpointer,
+    resolveRuntime: async (job) => {
+      const role = await settingsService.resolveCapability(
+        'audio_role',
+        job.capabilityBindingRevisionId ?? undefined,
+      );
+      if (role.provider.type !== 'deepseek' || !('apiKey' in role.provider.credential)) {
+        throw new Error('Resolved role analysis provider is incompatible.');
+      }
+      return {
+        roleRecognizer: new DeepSeekRoleRecognizer({
+          apiKey: role.provider.credential.apiKey,
+          baseUrl: (role.provider.config as { baseUrl: string }).baseUrl,
+          model: job.model,
+        }),
+      };
+    },
   });
   const businessAnalysisWorker = new BusinessAnalysisWorker({
     repository: businessAnalysisRepository,
-    workflow: businessAnalysisWorkflow,
+    deleteCheckpoint: (job) => checkpointer.deleteThread(businessAnalysisThreadId(job)),
+    createWorkflow: async (job) => {
+      const [chat, embedding] = await Promise.all([
+        settingsService.resolveCapability(
+          'business_analysis',
+          job.chatBindingRevisionId ?? undefined,
+        ),
+        settingsService.resolveCapability(
+          'knowledge_embedding',
+          job.embeddingBindingRevisionId ?? undefined,
+        ),
+      ]);
+      if (
+        chat.provider.type !== 'deepseek' ||
+        !('apiKey' in chat.provider.credential) ||
+        embedding.provider.type !== 'dashscope' ||
+        !('apiKey' in embedding.provider.credential)
+      ) {
+        throw new Error('Resolved business analysis providers are incompatible.');
+      }
+      const dynamicRagConfig = {
+        ...config.rag,
+        deepSeekApiKey: chat.provider.credential.apiKey,
+        deepSeekBaseUrl: (chat.provider.config as { baseUrl: string }).baseUrl,
+        deepSeekChatModel: job.model as typeof config.rag.deepSeekChatModel,
+        enableThinking: chat.settings.enableThinking === true,
+        embeddingModel: embedding.model as typeof config.rag.embeddingModel,
+      };
+      return new BusinessAnalysisWorkflow({
+        repository: businessAnalysisRepository,
+        knowledgeRepository: knowledgeSearch,
+        embeddings: new DashScopeEmbeddings({
+          apiKey: embedding.provider.credential.apiKey,
+          baseUrl: (embedding.provider.config as { baseUrl: string }).baseUrl,
+          model: embedding.model,
+          dimensions: 1024,
+        }),
+        embeddingModel: embedding.model,
+        agent: new SalesAnalysisAgent({ ragConfig: dynamicRagConfig }),
+        checkpointer,
+      });
+    },
     reporter,
     liveUpdates,
     wakeup: workerWakeup,

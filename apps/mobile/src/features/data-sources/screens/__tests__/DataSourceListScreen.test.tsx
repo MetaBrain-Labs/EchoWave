@@ -10,10 +10,11 @@
  * - 服务端响应通过工作区传输适配器 mock 注入。
  */
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
-import { Alert, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 
 import { DataSourceListScreen } from '../DataSourceListScreen';
 import * as workspaceApi from '@/shared/api/dataSourcesApi';
+import { colors, radii, spacing } from '@/shared/theme/tokens';
 import { dataSourceDetailFixture, sourceFixtures } from '@/test/workspaceFixtures';
 
 jest.mock('@/shared/api/dataSourcesApi', () => ({
@@ -48,6 +49,38 @@ describe('DataSourceListScreen', () => {
     expect(StyleSheet.flatten(screen.getByText('团队录音空间').props.style)).toEqual(
       expect.objectContaining({ fontSize: 16, lineHeight: 24, fontWeight: 'bold' }),
     );
+    expect(StyleSheet.flatten(screen.getByTestId('top-level-page-header').props.style)).toEqual(
+      expect.objectContaining({
+        paddingBottom: spacing.lg,
+        paddingHorizontal: spacing.md,
+        paddingTop: spacing.lg,
+      }),
+    );
+    expect(
+      screen
+        .getByTestId('data-source-list-scroll')
+        .findAllByProps({ testID: 'top-level-page-header' }),
+    ).toHaveLength(0);
+    expect(StyleSheet.flatten(screen.getByLabelText('新建数据源').props.style)).toEqual(
+      expect.objectContaining({
+        backgroundColor: colors.card,
+        borderColor: colors.divider,
+        borderRadius: radii.default,
+        minHeight: 44,
+      }),
+    );
+    const cardStyle = StyleSheet.flatten(
+      screen.getByLabelText('打开数据源：团队录音空间').props.style,
+    );
+    expect(cardStyle).toEqual(
+      expect.objectContaining({
+        backgroundColor: colors.card,
+        borderColor: colors.divider,
+        borderRadius: radii.default,
+        padding: spacing.md,
+      }),
+    );
+    expect(cardStyle).not.toHaveProperty('shadowOpacity');
   });
 
   it('opens the selected source using its stable identifier', async () => {
@@ -59,18 +92,21 @@ describe('DataSourceListScreen', () => {
     expect(onOpenSource).toHaveBeenCalledWith(sourceFixtures[0].id);
   });
 
-  it('keeps search feedback and creates a trimmed local data source', async () => {
-    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  it('searches source metadata and creates a trimmed local data source', async () => {
     const onOpenSource = jest.fn();
     const screen = await renderList(onOpenSource);
 
     fireEvent.press(screen.getByLabelText('搜索数据源'));
-    fireEvent.press(screen.getByLabelText('新增数据源'));
+    fireEvent.changeText(screen.getByLabelText('输入数据源搜索关键词'), '  云端  ');
+    fireEvent(screen.getByLabelText('输入数据源搜索关键词'), 'submitEditing');
+    expect(screen.getByText('用户研究云盘')).toBeTruthy();
+    expect(screen.queryByText('团队录音空间')).toBeNull();
+
+    fireEvent.press(screen.getByLabelText('新建数据源'));
     fireEvent.changeText(screen.getByLabelText('数据源名称'), '  本地访谈  ');
     fireEvent.changeText(screen.getByLabelText('数据源描述'), '  用户声音  ');
     fireEvent.press(screen.getByText('确认'));
 
-    expect(alert).toHaveBeenNthCalledWith(1, '功能建设中', '数据源搜索将在后续版本开放。');
     await waitFor(() =>
       expect(workspaceApi.createDataSource).toHaveBeenCalledWith({
         name: '本地访谈',
@@ -78,7 +114,17 @@ describe('DataSourceListScreen', () => {
       }),
     );
     expect(onOpenSource).toHaveBeenCalledWith('20000000-0000-4000-8000-000000000099');
-    alert.mockRestore();
+  });
+
+  it('shows a distinct empty state when no source matches', async () => {
+    const screen = await renderList();
+
+    fireEvent.press(screen.getByLabelText('搜索数据源'));
+    fireEvent.changeText(screen.getByLabelText('输入数据源搜索关键词'), '不存在');
+    fireEvent(screen.getByLabelText('输入数据源搜索关键词'), 'submitEditing');
+
+    expect(screen.getByText('没有匹配“不存在”的数据源。')).toBeTruthy();
+    expect(screen.queryByText('暂无数据源。')).toBeNull();
   });
 
   it('shows an API failure and reloads the list on request', async () => {

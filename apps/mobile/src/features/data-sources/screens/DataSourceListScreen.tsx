@@ -5,23 +5,15 @@
  *
  * Responsibilities:
  * - 呈现数据源名称、说明、连接方式、分组数和最近上传时间。
- * - 提供搜索、新增数据源和详情导航入口。
+ * - 提供搜索、新建数据源和详情导航入口。
  *
  * Notes:
  * - 所有响应均由共享契约在客户端边界校验。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { DataSourceSummary } from '@echowave/contracts';
-import { useCallback, useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -34,12 +26,22 @@ import {
 } from '@/shared/theme/tokens';
 import { createDataSource, listDataSources } from '@/shared/api/dataSourcesApi';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { SearchSheet } from '@/shared/ui/SearchSheet';
+import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
 
 import { DataSourceFormSheet, type DataSourceFormValue } from '../components/DataSourceDialogs';
 
-function showComingSoon(feature: string) {
-  Alert.alert('功能建设中', `${feature}将在后续版本开放。`);
-}
+const connectionStatusLabels: Record<DataSourceSummary['connectionStatus'], string> = {
+  connected: '已连接',
+  disconnected: '已断开',
+  error: '连接错误',
+  disabled: '已停用',
+};
+
+const locationLabels: Record<DataSourceSummary['location'], string> = {
+  local: '本地',
+  cloud: '云端',
+};
 
 function DataSourceCard({ onOpen, source }: { onOpen: () => void; source: DataSourceSummary }) {
   return (
@@ -96,6 +98,8 @@ export function DataSourceListScreen({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [formVisible, setFormVisible] = useState(false);
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [formError, setFormError] = useState('');
   const [creating, setCreating] = useState(false);
   const runInitialRequest = useInitialRequestLoading();
@@ -130,8 +134,36 @@ export function DataSourceListScreen({
     }
   };
 
+  const visibleDataSources = useMemo(() => {
+    const normalized = searchQuery.trim().toLocaleLowerCase();
+    if (!normalized) return dataSources;
+    return dataSources.filter((source) =>
+      [
+        source.name,
+        source.description,
+        source.connectionLabel,
+        connectionStatusLabels[source.connectionStatus],
+        locationLabels[source.location],
+      ].some((value) => value.toLocaleLowerCase().includes(normalized)),
+    );
+  }, [dataSources, searchQuery]);
+
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
+      {searchVisible ? (
+        <SearchSheet
+          appliedQuery={searchQuery}
+          inputLabel="输入数据源搜索关键词"
+          onApply={(query) => {
+            setSearchQuery(query);
+            setSearchVisible(false);
+          }}
+          onClose={() => setSearchVisible(false)}
+          placeholder="搜索名称、描述、位置或连接状态"
+          title="搜索数据源"
+          visible
+        />
+      ) : null}
       <DataSourceFormSheet
         error={formError}
         initialValue={{ name: '', description: '' }}
@@ -145,39 +177,30 @@ export function DataSourceListScreen({
         pending={creating}
         visible={formVisible}
       />
+      <TopLevelPageHeader
+        actions={[
+          {
+            accessibilityLabel: '搜索数据源',
+            icon: 'search-outline',
+            onPress: () => setSearchVisible(true),
+          },
+          {
+            accessibilityLabel: '新建数据源',
+            icon: 'add',
+            label: '新建',
+            onPress: () => {
+              setFormError('');
+              setFormVisible(true);
+            },
+          },
+        ]}
+        title="数据源"
+      />
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
         testID="data-source-list-scroll"
       >
-        <View style={styles.header}>
-          <Text accessibilityRole="header" style={styles.pageTitle}>
-            数据源
-          </Text>
-          <View style={styles.headerActions}>
-            <Pressable
-              accessibilityLabel="搜索数据源"
-              accessibilityRole="button"
-              hitSlop={8}
-              onPress={() => showComingSoon('数据源搜索')}
-              style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
-            >
-              <Ionicons color={colors.ink} name="search-outline" size={30} />
-            </Pressable>
-            <Pressable
-              accessibilityLabel="新增数据源"
-              accessibilityRole="button"
-              onPress={() => {
-                setFormError('');
-                setFormVisible(true);
-              }}
-              style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}
-            >
-              <Ionicons color={colors.ink} name="add" size={typography.heading3.lineHeight} />
-              <Text style={styles.addButtonText}>新增</Text>
-            </Pressable>
-          </View>
-        </View>
         <View style={styles.list}>
           {loading ? (
             <ActivityIndicator accessibilityLabel="正在加载数据源" color={colors.ink} />
@@ -195,8 +218,11 @@ export function DataSourceListScreen({
           {!loading && !error && dataSources.length === 0 ? (
             <Text style={styles.description}>暂无数据源。</Text>
           ) : null}
+          {!loading && !error && dataSources.length > 0 && visibleDataSources.length === 0 ? (
+            <Text style={styles.description}>没有匹配“{searchQuery}”的数据源。</Text>
+          ) : null}
           {!loading && !error
-            ? dataSources.map((source) => (
+            ? visibleDataSources.map((source) => (
                 <DataSourceCard
                   key={source.id}
                   onOpen={() => onOpenSource(source.id)}
@@ -219,57 +245,15 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl,
     paddingHorizontal: spacing.md,
   },
-  header: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    minHeight: 112,
-  },
-  pageTitle: {
-    ...typography.heading1,
-    color: textColors.primary,
-    fontFamily: fontFamilies.sansBold,
-    fontWeight: 'bold',
-  },
-  headerActions: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  iconButton: {
-    alignItems: 'center',
-    height: 44,
-    justifyContent: 'center',
-    width: 44,
-  },
-  addButton: {
-    alignItems: 'center',
-    backgroundColor: colors.card,
-    borderColor: colors.ink,
-    borderRadius: radii.default,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.sm,
-    minHeight: 44,
-    paddingHorizontal: spacing.md,
-  },
-  addButtonText: {
-    ...typography.heading3,
-    color: textColors.primary,
-    fontFamily: fontFamilies.sansBold,
-    fontWeight: 'bold',
-  },
-  pressed: {
-    backgroundColor: colors.divider,
-    borderRadius: radii.default,
-  },
   list: {
     gap: spacing.sm,
   },
   errorCard: {
     backgroundColor: colors.card,
+    borderColor: colors.divider,
     borderRadius: radii.default,
-    padding: spacing.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: spacing.md,
   },
   retryText: {
     ...typography.heading5,
@@ -282,13 +266,7 @@ const styles = StyleSheet.create({
     borderColor: colors.divider,
     borderRadius: radii.default,
     borderWidth: StyleSheet.hairlineWidth,
-    minHeight: 188,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-    shadowColor: colors.ink,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.035,
-    shadowRadius: 5,
+    padding: spacing.md,
   },
   pressedCard: {
     backgroundColor: colors.background,

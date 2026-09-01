@@ -19,6 +19,7 @@ import type { KnowledgeService } from '../knowledge/service.ts';
 import type { AudioService } from '../workspace/audio/core/service.ts';
 import type { DataSourceService } from '../workspace/data-sources/service.ts';
 import type { GroupService } from '../workspace/groups/service.ts';
+import type { SettingsService } from '../settings/service.ts';
 import type { DashScopeCallbackService } from '../workspace/audio/transcription/dashScopeCallback.ts';
 import { installErrorHandlers } from './errorHandler.ts';
 import { registerAudioRoutes } from './routes/audio.ts';
@@ -27,6 +28,7 @@ import { registerDataSourceRoutes } from './routes/dataSources.ts';
 import { registerGroupRoutes } from './routes/groups.ts';
 import { registerHealthRoutes } from './routes/health.ts';
 import { registerKnowledgeRoutes } from './routes/knowledge.ts';
+import { registerSettingsRoutes } from './routes/settings.ts';
 
 export type AppDependencies = {
   dashScopeCallbackService?: DashScopeCallbackService;
@@ -35,6 +37,8 @@ export type AppDependencies = {
   dataSourceService?: DataSourceService;
   audioService?: AudioService;
   liveUpdateBroker?: LiveUpdateBroker;
+  settingsService?: SettingsService;
+  trustedProxyCidrs?: string[];
 };
 
 /** 创建不启动监听器的 Hono 应用，使生产服务器和测试共享传输入口。 */
@@ -50,12 +54,15 @@ export function createApp(
     cors({
       origin: config.corsOrigins,
       allowMethods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowHeaders: ['Content-Type', 'Range'],
+      allowHeaders: ['Authorization', 'Content-Type', 'Range'],
       exposeHeaders: ['Accept-Ranges', 'Content-Length', 'Content-Range', 'Last-Modified'],
     }),
   );
 
   registerHealthRoutes(app);
+  if (dependencies.settingsService) {
+    registerSettingsRoutes(app, dependencies.settingsService, dependencies.trustedProxyCidrs ?? []);
+  }
   if (dependencies.dashScopeCallbackService) {
     registerDashScopeWebhookRoutes(app, dependencies.dashScopeCallbackService);
   }

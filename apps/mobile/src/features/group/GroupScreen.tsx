@@ -33,7 +33,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
-  archiveGroup,
   createGroup,
   listGroupAudioFiles,
   listGroupDataSources,
@@ -51,11 +50,11 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 import { PageTabs } from '@/shared/ui/PageTabs';
+import { SearchSheet } from '@/shared/ui/SearchSheet';
 import { AudioContent } from './components/AudioContent';
-import { AudioFilterSheet } from './components/AudioFilterSheet';
 import { DataSourcesContent } from './components/DataSourcesContent';
-import { GroupArchiveDialog, GroupDrawer } from './components/GroupDrawer';
-import { GroupSearchSheet } from './components/GroupSearchSheet';
+import { GroupDrawer } from './components/GroupDrawer';
+import { GroupFilterSheet } from './components/GroupFilterSheet';
 import { KnowledgeContent } from './components/KnowledgeContent';
 import {
   selectAudioItems,
@@ -63,6 +62,10 @@ import {
   selectKnowledgeBases,
   type AudioSortOrder,
   type AudioStatusKind,
+  type DataSourceLocationKind,
+  type DataSourceStatusKind,
+  type KnowledgeDocumentFilter,
+  type ResourceSortOrder,
 } from './model';
 
 const tabs = [
@@ -71,7 +74,7 @@ const tabs = [
   { key: 'sources', label: '连接数据源' },
 ] as const;
 
-type TabKey = (typeof tabs)[number]['key'];
+export type TabKey = (typeof tabs)[number]['key'];
 const tabKeys = tabs.map((tab) => tab.key);
 const headerCollapseGuardMs = 250;
 
@@ -112,13 +115,17 @@ export function GroupScreen({
   onOpenKnowledge,
   onOpenSource,
   onOpenSettings,
+  onGroupChange,
+  onTabChange,
 }: {
   initialGroupId?: string;
   initialTab?: TabKey;
   onOpenAudio?: (id: string, groupId: string) => void;
-  onOpenKnowledge?: (id: string) => void;
+  onOpenKnowledge?: (id: string, groupId: string) => void;
   onOpenSource?: (id: string, groupId: string) => void;
   onOpenSettings?: (id: string) => void;
+  onGroupChange?: (groupId?: string) => void;
+  onTabChange?: (tab: TabKey) => void;
 }) {
   const runInitialRequest = useInitialRequestLoading();
   const [activeTab, setActiveTab] = useState<TabKey>(initialTab ?? 'audio');
@@ -129,14 +136,19 @@ export function GroupScreen({
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
-  const [archiveTarget, setArchiveTarget] = useState<GroupSummary>();
-  const [archiving, setArchiving] = useState(false);
-  const [archiveError, setArchiveError] = useState('');
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterVisible, setFilterVisible] = useState(false);
   const [audioSortOrder, setAudioSortOrder] = useState<AudioSortOrder>('newest');
   const [audioStatuses, setAudioStatuses] = useState<Set<AudioStatusKind>>(() => new Set());
+  const [knowledgeSortOrder, setKnowledgeSortOrder] = useState<ResourceSortOrder>('newest');
+  const [knowledgeDocumentFilter, setKnowledgeDocumentFilter] =
+    useState<KnowledgeDocumentFilter>('all');
+  const [sourceSortOrder, setSourceSortOrder] = useState<ResourceSortOrder>('newest');
+  const [sourceLocations, setSourceLocations] = useState<Set<DataSourceLocationKind>>(
+    () => new Set(),
+  );
+  const [sourceStatuses, setSourceStatuses] = useState<Set<DataSourceStatusKind>>(() => new Set());
   const [audioItems, setAudioItems] = useState<AudioFileSummary[]>([]);
   const [audioLoading, setAudioLoading] = useState(true);
   const [audioError, setAudioError] = useState('');
@@ -152,6 +164,11 @@ export function GroupScreen({
     sources: false,
   });
   const selectedGroupId = useRef<string | undefined>(undefined);
+  const requestedGroupId = useRef(initialGroupId);
+  const previousRoutedGroupId = useRef(initialGroupId);
+  const previousRoutedTab = useRef(initialTab);
+  const onGroupChangeRef = useRef(onGroupChange);
+  const onTabChangeRef = useRef(onTabChange);
   const collapsedAt = useRef<Record<TabKey, number>>({
     audio: 0,
     knowledge: 0,
@@ -159,6 +176,12 @@ export function GroupScreen({
   });
 
   const headerCollapsed = Boolean(group) && collapsedTabs[activeTab];
+
+  useEffect(() => {
+    requestedGroupId.current = initialGroupId;
+    onGroupChangeRef.current = onGroupChange;
+    onTabChangeRef.current = onTabChange;
+  }, [initialGroupId, onGroupChange, onTabChange]);
 
   const loadKnowledgeBases = useCallback(async (groupId: string) => {
     setKnowledgeLoading(true);
@@ -211,6 +234,11 @@ export function GroupScreen({
     setSearchQuery('');
     setAudioSortOrder('newest');
     setAudioStatuses(new Set());
+    setKnowledgeSortOrder('newest');
+    setKnowledgeDocumentFilter('all');
+    setSourceSortOrder('newest');
+    setSourceLocations(new Set());
+    setSourceStatuses(new Set());
     setAudioItems([]);
     setKnowledgeBases([]);
     setDataSources([]);
@@ -224,15 +252,23 @@ export function GroupScreen({
   }, []);
 
   const selectGroup = useCallback(
-    async (nextGroup: GroupSummary) => {
+    async (nextGroup: GroupSummary, syncRoute = false) => {
       if (selectedGroupId.current === nextGroup.id) {
+        setGroup(nextGroup);
+        if (syncRoute) onGroupChangeRef.current?.(nextGroup.id);
         return;
       }
       selectedGroupId.current = nextGroup.id;
       setGroup(nextGroup);
+      if (syncRoute) onGroupChangeRef.current?.(nextGroup.id);
       setSearchQuery('');
       setAudioSortOrder('newest');
       setAudioStatuses(new Set());
+      setKnowledgeSortOrder('newest');
+      setKnowledgeDocumentFilter('all');
+      setSourceSortOrder('newest');
+      setSourceLocations(new Set());
+      setSourceStatuses(new Set());
       setAudioItems([]);
       setKnowledgeBases([]);
       setDataSources([]);
@@ -252,17 +288,23 @@ export function GroupScreen({
     try {
       const response = await listGroups();
       setGroups(response.items);
-      const firstGroup =
-        response.items.find((item) => item.id === initialGroupId) ?? response.items[0];
-      if (firstGroup) await selectGroup(firstGroup);
-      else clearSelection();
+      const routedGroup = response.items.find((item) => item.id === requestedGroupId.current);
+      const firstGroup = routedGroup ?? response.items[0];
+      if (firstGroup) {
+        await selectGroup(firstGroup);
+        if (!routedGroup) onGroupChangeRef.current?.(firstGroup.id);
+      } else {
+        clearSelection();
+        onGroupChangeRef.current?.(undefined);
+      }
     } catch (reason) {
       setDirectoryError(reason instanceof Error ? reason.message : '分组加载失败。');
+      setGroups([]);
       clearSelection();
     } finally {
       setDirectoryLoading(false);
     }
-  }, [clearSelection, initialGroupId, selectGroup]);
+  }, [clearSelection, selectGroup]);
 
   useEffect(() => {
     const task = setTimeout(() => {
@@ -271,13 +313,37 @@ export function GroupScreen({
     return () => clearTimeout(task);
   }, [loadDirectory, runInitialRequest]);
 
+  useEffect(() => {
+    if (
+      directoryLoading ||
+      groups.length === 0 ||
+      previousRoutedGroupId.current === initialGroupId
+    ) {
+      return;
+    }
+    previousRoutedGroupId.current = initialGroupId;
+    const routedGroup = groups.find((item) => item.id === initialGroupId);
+    const nextGroup = routedGroup ?? groups[0];
+    if (!nextGroup) return;
+    void selectGroup(nextGroup);
+    if (!routedGroup) onGroupChangeRef.current?.(nextGroup.id);
+  }, [directoryLoading, groups, initialGroupId, selectGroup]);
+
+  useEffect(() => {
+    if (previousRoutedTab.current === initialTab) return;
+    previousRoutedTab.current = initialTab;
+    if (!initialTab) return;
+    const task = setTimeout(() => setActiveTab(initialTab), 0);
+    return () => clearTimeout(task);
+  }, [initialTab]);
+
   const handleCreateGroup = async (name: string) => {
     setCreating(true);
     setCreateError('');
     try {
       const created = await createGroup({ name });
       setGroups((current) => [created, ...current]);
-      selectGroup(created);
+      void selectGroup(created, true);
       return true;
     } catch (reason) {
       setCreateError(reason instanceof Error ? reason.message : '创建分组失败。');
@@ -287,55 +353,34 @@ export function GroupScreen({
     }
   };
 
-  const requestArchive = (target: GroupSummary) => {
-    setArchiveError('');
-    setDrawerVisible(false);
-    setArchiveTarget(target);
-  };
-
-  const confirmArchive = async () => {
-    if (!archiveTarget || archiving) return;
-    const target = archiveTarget;
-    setArchiving(true);
-    setArchiveError('');
-    try {
-      await archiveGroup(target.id);
-      const remaining = groups.filter((item) => item.id !== target.id);
-      setGroups(remaining);
-      setArchiveTarget(undefined);
-      if (group?.id === target.id) {
-        const nextGroup = remaining[0];
-        if (nextGroup) selectGroup(nextGroup);
-        else {
-          clearSelection();
-          setDrawerVisible(false);
-        }
-      } else {
-        setDrawerVisible(true);
-      }
-    } catch (reason) {
-      setArchiveError(reason instanceof Error ? reason.message : '归档分组失败。');
-    } finally {
-      setArchiving(false);
-    }
-  };
-
   const visibleAudio = useMemo(
     () => selectAudioItems(audioItems, searchQuery, audioStatuses, audioSortOrder),
     [audioItems, audioSortOrder, audioStatuses, searchQuery],
   );
   const visibleKnowledge = useMemo(
-    () => selectKnowledgeBases(knowledgeBases, searchQuery),
-    [knowledgeBases, searchQuery],
+    () =>
+      selectKnowledgeBases(
+        knowledgeBases,
+        searchQuery,
+        knowledgeSortOrder,
+        knowledgeDocumentFilter,
+      ),
+    [knowledgeBases, knowledgeDocumentFilter, knowledgeSortOrder, searchQuery],
   );
   const visibleSources = useMemo(
-    () => selectDataSources(dataSources, searchQuery),
-    [dataSources, searchQuery],
+    () =>
+      selectDataSources(dataSources, searchQuery, sourceSortOrder, sourceLocations, sourceStatuses),
+    [dataSources, searchQuery, sourceLocations, sourceSortOrder, sourceStatuses],
   );
+
+  const handleTabChange = useCallback((tab: TabKey) => {
+    setActiveTab(tab);
+    onTabChangeRef.current?.(tab);
+  }, []);
 
   const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } = useSwipePager({
     activeTab,
-    onTabChange: setActiveTab,
+    onTabChange: handleTabChange,
     tabs: tabKeys,
   });
 
@@ -369,52 +414,59 @@ export function GroupScreen({
           groups={groups}
           onClose={() => setDrawerVisible(false)}
           onCreate={handleCreateGroup}
-          onRequestArchive={requestArchive}
-          onSelect={selectGroup}
+          onOpenSettings={(target) => onOpenSettings?.(target.id)}
+          onSelect={(target) => {
+            void selectGroup(target, true);
+          }}
           selectedGroupId={group?.id}
           visible
         />
       ) : null}
-      <GroupArchiveDialog
-        error={archiveError}
-        group={archiveTarget}
-        onCancel={() => {
-          if (!archiving) {
-            setArchiveTarget(undefined);
-            setDrawerVisible(true);
-          }
-        }}
-        onConfirm={() => {
-          void confirmArchive();
-        }}
-        pending={archiving}
-      />
       {searchVisible ? (
-        <GroupSearchSheet
+        <SearchSheet
           appliedQuery={searchQuery}
+          inputLabel="输入搜索关键词"
           onApply={(query) => {
             setSearchQuery(query);
             setSearchVisible(false);
           }}
           onClose={() => setSearchVisible(false)}
+          placeholder="搜索音频、知识库或数据源"
+          subtitle="查询会同时作用于三个标签页"
+          title="搜索当前分组"
           visible
         />
       ) : null}
       {filterVisible ? (
-        <AudioFilterSheet
-          onApply={(sortOrder, statuses) => {
-            setAudioSortOrder(sortOrder);
-            setAudioStatuses(statuses);
+        <GroupFilterSheet
+          activeTab={activeTab}
+          audioSortOrder={audioSortOrder}
+          audioStatuses={audioStatuses}
+          knowledgeDocumentFilter={knowledgeDocumentFilter}
+          knowledgeSortOrder={knowledgeSortOrder}
+          onApply={(value) => {
+            if (value.tab === 'audio') {
+              setAudioSortOrder(value.sortOrder);
+              setAudioStatuses(value.statuses);
+            } else if (value.tab === 'knowledge') {
+              setKnowledgeSortOrder(value.sortOrder);
+              setKnowledgeDocumentFilter(value.documentFilter);
+            } else {
+              setSourceSortOrder(value.sortOrder);
+              setSourceLocations(value.locations);
+              setSourceStatuses(value.statuses);
+            }
             setFilterVisible(false);
           }}
           onClose={() => setFilterVisible(false)}
-          selectedStatuses={audioStatuses}
-          sortOrder={audioSortOrder}
+          sourceLocations={sourceLocations}
+          sourceSortOrder={sourceSortOrder}
+          sourceStatuses={sourceStatuses}
           visible
         />
       ) : null}
 
-      <View style={styles.topBar}>
+      <View style={styles.topBar} testID="group-top-bar">
         <View style={styles.topLeft}>
           <IconButton
             icon="menu"
@@ -430,24 +482,22 @@ export function GroupScreen({
             </Text>
           ) : null}
         </View>
-        {!headerCollapsed ? (
-          <View style={styles.topActions}>
-            <IconButton
-              disabled={!group}
-              icon="search"
-              label="搜索"
-              onPress={() => setSearchVisible(true)}
-            />
-            <IconButton
-              disabled={!group}
-              icon="options-outline"
-              label="设置筛选"
-              onPress={() => {
-                if (group) onOpenSettings?.(group.id);
-              }}
-            />
-          </View>
-        ) : null}
+        <View style={styles.topActions}>
+          <IconButton
+            disabled={!group}
+            icon="search"
+            label="搜索"
+            onPress={() => setSearchVisible(true)}
+          />
+          <IconButton
+            disabled={!group}
+            icon="options-outline"
+            label="分组设置"
+            onPress={() => {
+              if (group) onOpenSettings?.(group.id);
+            }}
+          />
+        </View>
       </View>
 
       {!headerCollapsed ? (
@@ -536,11 +586,17 @@ export function GroupScreen({
                 testID="group-knowledge-scroll"
               >
                 <KnowledgeContent
-                  emptyMessage={searchEmpty || '当前分组还没有关联知识库'}
+                  emptyMessage={
+                    searchEmpty ||
+                    (knowledgeDocumentFilter !== 'all'
+                      ? '没有符合当前文档筛选的知识库'
+                      : '当前分组还没有关联知识库')
+                  }
                   error={knowledgeError}
                   knowledgeBases={visibleKnowledge}
                   loading={knowledgeLoading}
-                  onOpenKnowledge={(id) => onOpenKnowledge?.(id)}
+                  onOpenFilter={() => setFilterVisible(true)}
+                  onOpenKnowledge={(id) => onOpenKnowledge?.(id, group.id)}
                   onRetry={() => {
                     void loadKnowledgeBases(group.id);
                   }}
@@ -558,9 +614,15 @@ export function GroupScreen({
                 testID="group-sources-scroll"
               >
                 <DataSourcesContent
-                  emptyMessage={searchEmpty || '当前分组还没有连接数据源'}
+                  emptyMessage={
+                    searchEmpty ||
+                    (sourceLocations.size || sourceStatuses.size
+                      ? '没有符合当前筛选的数据源'
+                      : '当前分组还没有连接数据源')
+                  }
                   error={sourcesError}
                   loading={sourcesLoading}
+                  onOpenFilter={() => setFilterVisible(true)}
                   onOpenSource={(id) => {
                     if (group) onOpenSource?.(id, group.id);
                   }}
@@ -584,10 +646,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
+    paddingBottom: spacing.lg,
     paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
+    paddingTop: spacing.lg,
   },
-  topActions: { flexDirection: 'row', gap: spacing.md },
+  topActions: { flexDirection: 'row', gap: spacing.sm },
   topLeft: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
   inlineTitle: {
     ...typography.heading2,
@@ -606,7 +669,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: spacing.xl,
     marginHorizontal: spacing.md,
-    marginTop: spacing.xxl,
+    marginTop: spacing.sm,
   },
   pager: { flex: 1 },
   page: { height: '100%' },

@@ -42,15 +42,22 @@ const SAFETY_POLL_INTERVAL_MS = 15_000;
 const MIN_DEADLINE_DELAY_MS = 50;
 
 type WorkerOptions = {
-  dashScope: DashScopeFileTranscription;
+  dashScope?: DashScopeFileTranscription;
   maxInFlight: number;
-  notifyMode: 'polling' | 'eventbridge';
+  notifyMode?: 'polling' | 'eventbridge';
   ossStaging?: OssStagingStore;
+  resolveProviders?: (job: ClaimedAudioTranscription) => Promise<TranscriptionProviders>;
   preprocessor: AudioInputPreprocessor;
   repository: AudioAnalysisRepository;
   reporter?: AiExecutionReporter;
   liveUpdates?: LiveUpdateBroker;
   wakeup?: WorkerWakeupSource;
+};
+
+type TranscriptionProviders = {
+  dashScope: DashScopeFileTranscription;
+  notifyMode: 'polling' | 'eventbridge';
+  ossStaging?: OssStagingStore;
 };
 
 type WorkItem =
@@ -95,11 +102,29 @@ export class AudioTranscriptionWorker {
 
   constructor(private readonly options: WorkerOptions) {}
 
+  private async providers(job: ClaimedAudioTranscription): Promise<TranscriptionProviders> {
+    if (this.options.resolveProviders) return this.options.resolveProviders(job);
+    if (!this.options.dashScope) {
+      throw new AudioTranscriptionProviderError(
+        'MODEL_UNAVAILABLE',
+        'DashScope 转写尚未配置。',
+        false,
+      );
+    }
+    return {
+      dashScope: this.options.dashScope,
+      notifyMode: this.options.notifyMode ?? 'polling',
+      ...(this.options.ossStaging ? { ossStaging: this.options.ossStaging } : {}),
+    };
+  }
+
   /** 恢复中断阶段并启动通知订阅、精确截止时间调度与低频安全扫描。 */
   async start(): Promise<void> {
     if (this.timer) return;
     this.stopping = false;
-    await this.options.repository.resetInterruptedTranscriptions(this.options.notifyMode);
+    await this.options.repository.resetInterruptedTranscriptions(
+      this.options.notifyMode ?? 'polling',
+    );
     this.unsubscribeWakeup = this.options.wakeup?.subscribe(
       'audio-transcription',
       () => void this.pump(),
@@ -158,7 +183,9 @@ export class AudioTranscriptionWorker {
     // 测试替身和旧的运行时装配可能尚未实现截止时间查询；此时仍由安全扫描兜底。
     if (typeof this.options.repository.nextWorkerWakeAt !== 'function') return;
     try {
-      const wakeAt = await this.options.repository.nextWorkerWakeAt(this.options.notifyMode);
+      const wakeAt = await this.options.repository.nextWorkerWakeAt(
+        this.options.notifyMode ?? 'polling',
+      );
       if (deadlineVersion !== this.deadlineVersion || !wakeAt || this.stopping || this.active) {
         return;
       }
@@ -190,7 +217,7 @@ export class AudioTranscriptionWorker {
     if (terminal) return { kind: 'complete', job: terminal };
     const timeout = await this.options.repository.claimExpiredTranscription();
     if (timeout) return { kind: 'timeout', job: timeout };
-    if (this.options.notifyMode === 'polling') {
+    if (this.options.resolveProviders || this.options.notifyMode !== 'eventbridge') {
       const poll = await this.options.repository.claimPollingDiscovery();
       if (poll) return { kind: 'poll', job: poll };
     }
@@ -205,9 +232,11 @@ export class AudioTranscriptionWorker {
     }
     const report = this.startReport(work.job, work.kind);
     const startedAt = Date.now();
+    let providers: TranscriptionProviders | undefined;
     try {
+      providers = await this.providers(work.job);
       if (work.kind === 'submit') {
-        await this.submit(work.job, report);
+        await this.submit(work.job, report, providers);
         await report.finish({
           status: 'completed',
           metadata: { phase: 'submit', durationMs: Date.now() - startedAt },
@@ -221,7 +250,7 @@ export class AudioTranscriptionWorker {
           true,
         );
       }
-      const segments = await this.handleDashScopeTaskResult(work.job, report);
+      const segments = await this.handleDashScopeTaskResult(work.job, report, providers);
       await report.finish({
         status: 'completed',
         metadata: {
@@ -236,7 +265,7 @@ export class AudioTranscriptionWorker {
         revisionId: work.job.revisionId,
       });
     } catch (error) {
-      await this.finishFailure(work.job, report, error, startedAt);
+      await this.finishFailure(work.job, report, error, startedAt, providers);
     }
   }
 
@@ -271,8 +300,13 @@ export class AudioTranscriptionWorker {
   }
 
   /** 完成音频准备和任务提交，持久化 task ID 后立即释放 worker。 */
-  private async submit(job: ClaimedAudioTranscription, report: AiExecutionRecorder): Promise<void> {
-    const { dashScope, ossStaging, repository, preprocessor } = this.options;
+  private async submit(
+    job: ClaimedAudioTranscription,
+    report: AiExecutionRecorder,
+    providers: TranscriptionProviders,
+  ): Promise<void> {
+    const { repository, preprocessor } = this.options;
+    const { dashScope, ossStaging } = providers;
     if (!ossStaging) {
       throw new AudioTranscriptionProviderError(
         'MODEL_UNAVAILABLE',
@@ -307,7 +341,7 @@ export class AudioTranscriptionWorker {
       }),
     );
     const submittedAt = new Date();
-    await repository.recordProviderTask(job, taskId, submittedAt, this.options.notifyMode);
+    await repository.recordProviderTask(job, taskId, submittedAt, providers.notifyMode);
     job.providerTaskId = taskId;
     job.providerSubmittedAt = submittedAt;
     await repository.updateActivity(job, { stage: 'awaiting_result', progress: 35 });
@@ -317,6 +351,7 @@ export class AudioTranscriptionWorker {
   /** 执行一次供应商状态查询；未完成或瞬时失败只安排下一次查询。 */
   private async discoverByPolling(job: ClaimedAudioTranscription): Promise<void> {
     const startedAt = Date.now();
+    let providers: TranscriptionProviders | undefined;
     const taskId = job.providerTaskId;
     if (!taskId) {
       await this.finishFailure(
@@ -328,6 +363,7 @@ export class AudioTranscriptionWorker {
           true,
         ),
         startedAt,
+        providers,
       );
       return;
     }
@@ -335,7 +371,8 @@ export class AudioTranscriptionWorker {
     const attempt = job.providerPollAttempt + 1;
     const delayMs = POLL_DELAYS_MS[Math.min(attempt - 1, POLL_DELAYS_MS.length - 1)]!;
     try {
-      const status = await this.options.dashScope.queryTask(taskId, attempt, {
+      providers = await this.providers(job);
+      const status = await providers.dashScope.queryTask(taskId, attempt, {
         revisionId: job.revisionId,
         durationMs: job.preprocessingManifest?.processedDurationMs ?? job.durationMs,
         preprocessing: job.preprocessingMode,
@@ -363,7 +400,7 @@ export class AudioTranscriptionWorker {
         await this.options.repository.scheduleNextPoll(job, attempt, delayMs);
         return;
       }
-      await this.finishFailure(job, noOpAiExecutionRecorder, error, startedAt);
+      await this.finishFailure(job, noOpAiExecutionRecorder, error, startedAt, providers);
     }
   }
 
@@ -371,6 +408,7 @@ export class AudioTranscriptionWorker {
   private async handleDashScopeTaskResult(
     job: ClaimedAudioTranscription,
     report: AiExecutionRecorder,
+    providers: TranscriptionProviders,
   ): Promise<TranscriptDraft[]> {
     if (job.providerTerminalStatus !== 'SUCCEEDED') {
       throw new AudioTranscriptionProviderError(
@@ -389,7 +427,7 @@ export class AudioTranscriptionWorker {
 
     const providerDurationMs = job.preprocessingManifest?.processedDurationMs ?? job.durationMs;
     const result = await runReportedStep(report, 'dashscope-terminal-result', () =>
-      this.options.dashScope.fetchResult(job.providerTaskId!, job.providerTerminalResultUrl!, {
+      providers.dashScope.fetchResult(job.providerTaskId!, job.providerTerminalResultUrl!, {
         revisionId: job.revisionId,
         durationMs: providerDurationMs,
         preprocessing: job.preprocessingMode,
@@ -446,7 +484,7 @@ export class AudioTranscriptionWorker {
       }),
     );
     this.notify(job, true);
-    await this.cleanupProviderArtifact(job, report);
+    await this.cleanupProviderArtifact(job, report, providers.ossStaging);
     await this.options.preprocessor.cleanup(job);
     report.recordOutput(segments);
     return segments;
@@ -457,6 +495,7 @@ export class AudioTranscriptionWorker {
     report: AiExecutionRecorder,
     error: unknown,
     startedAt: number,
+    providers?: TranscriptionProviders,
   ): Promise<void> {
     const known =
       error instanceof AudioPreprocessingError ||
@@ -483,7 +522,7 @@ export class AudioTranscriptionWorker {
     } catch {
       report.recordStep({ name: 'cleanup-failure', status: 'failed' });
     }
-    await this.cleanupProviderArtifact(job, report);
+    await this.cleanupProviderArtifact(job, report, providers?.ossStaging);
     await report.finish({
       status: 'failed',
       error,
@@ -514,10 +553,11 @@ export class AudioTranscriptionWorker {
   private async cleanupProviderArtifact(
     job: ClaimedAudioTranscription,
     report: AiExecutionRecorder,
+    ossStaging?: OssStagingStore,
   ): Promise<void> {
-    if (!job.providerArtifactKey || !this.options.ossStaging) return;
+    if (!job.providerArtifactKey || !ossStaging) return;
     try {
-      await this.options.ossStaging.delete(job.providerArtifactKey);
+      await ossStaging.delete(job.providerArtifactKey);
       await this.options.repository.clearProviderArtifact(job);
       job.providerArtifactKey = null;
       report.recordStep({ name: 'oss-staging-cleanup', status: 'completed' });

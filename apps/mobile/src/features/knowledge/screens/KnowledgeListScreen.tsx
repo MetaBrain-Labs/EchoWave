@@ -11,7 +11,7 @@
  * - 列表数据不写入本地存储。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -24,6 +24,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { KnowledgeBaseSummary } from '@echowave/contracts';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { SearchSheet } from '@/shared/ui/SearchSheet';
+import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
 
 import {
   colors,
@@ -33,7 +35,6 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
-import { showComingSoon } from '../components/feedback';
 import { createKnowledgeBase, listKnowledgeBases } from '../apiClient';
 
 /** 展示创建知识库时由服务端默认值锁定的配置项。 */
@@ -63,6 +64,8 @@ export function KnowledgeListScreen({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [createName, setCreateName] = useState('');
   const [createDescription, setCreateDescription] = useState('');
   const [creating, setCreating] = useState(false);
@@ -101,40 +104,53 @@ export function KnowledgeListScreen({
     return () => clearTimeout(task);
   }, [load, runInitialRequest]);
 
+  const visibleKnowledgeBases = useMemo(() => {
+    const normalized = searchQuery.trim().toLocaleLowerCase();
+    if (!normalized) return knowledgeBases;
+    return knowledgeBases.filter((item) =>
+      [item.name, item.description].some((value) => value.toLocaleLowerCase().includes(normalized)),
+    );
+  }, [knowledgeBases, searchQuery]);
+
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
-      <View style={styles.header}>
-        <Text accessibilityRole="header" style={styles.title}>
-          知识库
-        </Text>
-        <View style={styles.headerActions}>
-          <Pressable
-            accessibilityLabel="搜索知识库"
-            accessibilityRole="button"
-            hitSlop={8}
-            onPress={() => showComingSoon('知识库搜索')}
-            style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
-          >
-            <Ionicons color={colors.ink} name="search-outline" size={30} />
-          </Pressable>
-          <Pressable
-            accessibilityLabel="新建知识库"
-            accessibilityRole="button"
-            disabled={loading || creating}
-            onPress={() => setShowCreate((current) => !current)}
-            style={({ pressed }) => [
-              styles.createButton,
-              (loading || creating) && styles.disabled,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Ionicons color={colors.ink} name="add" size={24} />
-            <Text style={styles.createText}>新建</Text>
-          </Pressable>
-        </View>
-      </View>
+      {searchVisible ? (
+        <SearchSheet
+          appliedQuery={searchQuery}
+          inputLabel="输入知识库搜索关键词"
+          onApply={(query) => {
+            setSearchQuery(query);
+            setSearchVisible(false);
+          }}
+          onClose={() => setSearchVisible(false)}
+          placeholder="搜索知识库名称或描述"
+          title="搜索知识库"
+          visible
+        />
+      ) : null}
+      <TopLevelPageHeader
+        actions={[
+          {
+            accessibilityLabel: '搜索知识库',
+            icon: 'search-outline',
+            onPress: () => setSearchVisible(true),
+          },
+          {
+            accessibilityLabel: '新建知识库',
+            disabled: loading || creating,
+            icon: 'add',
+            label: '新建',
+            onPress: () => setShowCreate((current) => !current),
+          },
+        ]}
+        title="知识库"
+      />
 
-      <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+        testID="knowledge-list-scroll"
+      >
         {showCreate ? (
           <View accessibilityLabel="新建知识库表单" style={styles.createPanel}>
             <TextInput
@@ -192,7 +208,13 @@ export function KnowledgeListScreen({
             <Text style={styles.retry}>点击重试</Text>
           </Pressable>
         ) : null}
-        {knowledgeBases.map((knowledge) => (
+        {!loading && !error && knowledgeBases.length === 0 ? (
+          <Text style={styles.description}>暂无知识库。</Text>
+        ) : null}
+        {!loading && !error && knowledgeBases.length > 0 && visibleKnowledgeBases.length === 0 ? (
+          <Text style={styles.description}>没有匹配“{searchQuery}”的知识库。</Text>
+        ) : null}
+        {visibleKnowledgeBases.map((knowledge) => (
           <Pressable
             key={knowledge.id}
             accessibilityLabel={`打开知识库：${knowledge.name}`}
@@ -229,41 +251,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.canvas,
     flex: 1,
   },
-  header: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    minHeight: 92,
-    paddingHorizontal: spacing.md,
-  },
-  title: {
-    ...typography.heading1,
-    color: textColors.primary,
-    fontFamily: fontFamilies.sansBold,
-    fontWeight: 'bold',
-  },
-  headerActions: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  iconButton: {
-    alignItems: 'center',
-    height: 44,
-    justifyContent: 'center',
-    width: 44,
-  },
-  createButton: {
-    alignItems: 'center',
-    backgroundColor: colors.background,
-    borderColor: colors.divider,
-    borderRadius: radii.default,
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    gap: spacing.xs,
-    minHeight: 44,
-    paddingHorizontal: spacing.base,
-  },
   createText: {
     ...typography.body,
     color: textColors.primary,
@@ -272,7 +259,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     gap: spacing.sm,
-    paddingBottom: spacing.lg,
+    paddingBottom: spacing.xxl,
     paddingHorizontal: spacing.md,
   },
   card: {
@@ -281,7 +268,6 @@ const styles = StyleSheet.create({
     borderRadius: radii.default,
     borderWidth: StyleSheet.hairlineWidth,
     gap: spacing.sm,
-    minHeight: 166,
     padding: spacing.md,
   },
   feedback: { alignItems: 'center', gap: spacing.sm, padding: spacing.lg },

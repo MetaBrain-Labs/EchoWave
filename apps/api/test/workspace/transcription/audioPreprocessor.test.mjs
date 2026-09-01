@@ -84,16 +84,14 @@ describe('FfmpegAudioPreprocessor', () => {
     }
   });
 
-  it('requires DashScope OSS configuration and available FFmpeg together', async () => {
+  it('reports FFmpeg and Silero independently from provider configuration', async () => {
     const unavailable = new AudioInputPreprocessor({
       audioStorageDirectory: '.data/audio',
       tempDirectory: '.tmp/audio-transcription',
-      defaultModel: 'qwen-audio-3.0-asr-flash-filetrans',
-      transcriptionConfigured: false,
     });
     const unavailableCapabilities = await unavailable.probeFfmpeg();
-    assert.equal(unavailableCapabilities.transcriptionConfigured, false);
-    assert.equal(unavailableCapabilities.models[0].available, false);
+    assert.deepEqual(unavailableCapabilities.ffmpeg, { configured: false, available: false });
+    assert.equal(unavailableCapabilities.sileroVad.available, false);
 
     const available = new AudioInputPreprocessor({
       audioStorageDirectory: '.data/audio',
@@ -101,14 +99,9 @@ describe('FfmpegAudioPreprocessor', () => {
       tempDirectory: '.tmp/audio-transcription',
       processRunner: async () => undefined,
       voiceActivityDetector: { verify: async () => undefined, detect: async () => manifest },
-      defaultModel: 'qwen-audio-3.0-asr-flash-filetrans',
-      transcriptionConfigured: true,
     });
     const capabilities = await available.probeFfmpeg();
     assert.deepEqual(capabilities.ffmpeg, { configured: true, available: true });
-    assert.equal(capabilities.transcriptionConfigured, true);
-    assert.equal(capabilities.models.length, 1);
-    assert.equal(capabilities.models[0].available, true);
     assert.equal(capabilities.sileroVad.available, true);
   });
 

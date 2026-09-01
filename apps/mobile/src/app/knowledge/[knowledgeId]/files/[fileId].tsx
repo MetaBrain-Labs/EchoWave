@@ -13,6 +13,8 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { DocumentDetailScreen } from '@/features/knowledge/screens/DocumentDetailScreen';
+import { parseResourceOrigin } from '@/shared/navigation/resourceOrigin';
+import { backOrReplace } from '@/shared/navigation/routeBack';
 import { firstRouteParam } from '@/shared/navigation/routeParams';
 
 /** 渲染指定知识文档并连接文档块详情导航。 */
@@ -21,24 +23,24 @@ export default function DocumentDetailRoute() {
   const params = useLocalSearchParams<{
     block?: string | string[];
     fileId?: string | string[];
+    groupId?: string | string[];
     knowledgeId?: string | string[];
+    origin?: string | string[];
     returnTo?: string | string[];
     tab?: string | string[];
   }>();
   const knowledgeId = firstRouteParam(params.knowledgeId);
   const documentId = firstRouteParam(params.fileId);
+  const groupId = firstRouteParam(params.groupId);
+  const origin = parseResourceOrigin(params.origin) ?? 'knowledge-list';
   const blockId = firstRouteParam(params.block);
   const initialTab = firstRouteParam(params.tab) === 'original' ? 'original' : 'parsed';
   const returnsToQuery = firstRouteParam(params.returnTo) === 'knowledge-query';
   const goBack = () => {
-    if (returnsToQuery && router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace({
-        pathname: '/knowledge/[knowledgeId]',
-        params: { knowledgeId },
-      });
-    }
+    backOrReplace(router, {
+      pathname: '/knowledge/[knowledgeId]',
+      params: { knowledgeId, origin, ...(groupId ? { groupId } : {}) },
+    });
   };
 
   return (
@@ -55,6 +57,8 @@ export default function DocumentDetailRoute() {
             blockId: nextBlockId,
             fileId: documentId,
             knowledgeId,
+            origin,
+            ...(groupId ? { groupId } : {}),
             ...(returnsToQuery ? { returnTo: 'knowledge-query' } : {}),
           },
         });

@@ -143,6 +143,47 @@ describe('DataSourceDetailScreen', () => {
     });
   });
 
+  it('searches audio, upload records, and linked groups from the detail header', async () => {
+    const screen = await renderDetail();
+
+    fireEvent.press(screen.getByLabelText('搜索数据源内容'));
+    fireEvent.changeText(screen.getByLabelText('输入数据源内容搜索关键词'), '  用户研究周会  ');
+    fireEvent(screen.getByLabelText('输入数据源内容搜索关键词'), 'submitEditing');
+
+    const audio = within(screen.getByTestId('data-source-audio-scroll'));
+    expect(audio.getByRole('tab', { name: '音频文件' }).props.accessibilityState).toEqual({
+      selected: true,
+    });
+    expect(audio.getByText('用户研究周会')).toBeTruthy();
+    expect(audio.queryByText('产品访谈分析')).toBeNull();
+
+    fireEvent.press(screen.getByLabelText('搜索数据源内容'));
+    fireEvent.changeText(screen.getByLabelText('输入数据源内容搜索关键词'), '文件连接');
+    fireEvent.press(screen.getByLabelText('执行搜索'));
+    fireEvent.press(screen.getAllByRole('tab', { name: '上传记录' })[0]!);
+    const uploads = within(screen.getByTestId('data-source-uploads-scroll'));
+    expect(uploads.getByText('文件连接已中断')).toBeTruthy();
+    expect(uploads.queryByText('收到 3 条音频，共 1h 22m')).toBeNull();
+
+    fireEvent.press(screen.getByLabelText('搜索数据源内容'));
+    fireEvent.changeText(screen.getByLabelText('输入数据源内容搜索关键词'), '不存在');
+    fireEvent.press(screen.getByLabelText('执行搜索'));
+    expect(uploads.getByText('没有匹配“不存在”的上传记录。')).toBeTruthy();
+
+    fireEvent.press(screen.getByLabelText('搜索数据源内容'));
+    fireEvent.press(screen.getByLabelText('清除搜索'));
+    fireEvent.press(screen.getByLabelText('执行搜索'));
+    expect(uploads.getByText('文件连接已中断')).toBeTruthy();
+
+    fireEvent.press(screen.getByLabelText('搜索数据源内容'));
+    fireEvent.changeText(screen.getByLabelText('输入数据源内容搜索关键词'), '客户体验');
+    fireEvent.press(screen.getByLabelText('执行搜索'));
+    fireEvent.press(screen.getAllByRole('tab', { name: '关联分组' })[0]!);
+    const groups = within(screen.getByTestId('data-source-groups-scroll'));
+    expect(groups.getByText('客户体验组')).toBeTruthy();
+    expect(groups.queryByText(groupFixture.name)).toBeNull();
+  });
+
   it('plays one uploaded audio at a time and switches the active row', async () => {
     const screen = await renderDetail();
     const player = mockAudioPlayers.at(-1)!;

@@ -35,6 +35,8 @@ const app = createApp(config, {
   dataSourceService: ragRuntime.dataSourceService,
   audioService: ragRuntime.audioService,
   liveUpdateBroker: ragRuntime.liveUpdates,
+  settingsService: ragRuntime.settingsService,
+  trustedProxyCidrs: config.settingsSecurity.trustedProxyCidrs,
   ...(ragRuntime.dashScopeCallbackService
     ? { dashScopeCallbackService: ragRuntime.dashScopeCallbackService }
     : {}),

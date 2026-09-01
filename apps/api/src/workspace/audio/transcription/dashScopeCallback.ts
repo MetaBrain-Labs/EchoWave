@@ -81,22 +81,14 @@ export class DashScopeCallbackService {
   constructor(
     private readonly options: {
       repository: AudioAnalysisRepository;
-      signatureVerifier: EventBridgeSignatureVerifier;
+      signatureVerifier?: EventBridgeSignatureVerifier;
+      resolveSignatureVerifier?: (taskId: string) => Promise<EventBridgeSignatureVerifier>;
       rawResponseReporter: SttRawResponseReporter;
     },
   ) {}
 
   /** 接受一个原始 EventBridge HTTP 请求并返回是否关联到当前 revision。 */
   async receive(rawBody: string, headers: Headers): Promise<'accepted' | 'ignored'> {
-    try {
-      await this.options.signatureVerifier.verify(rawBody, headers);
-    } catch (error) {
-      if (error instanceof EventBridgeSignatureError) {
-        throw new DashScopeCallbackError(error.kind, error.message);
-      }
-      throw error;
-    }
-
     let payload: unknown;
     try {
       payload = JSON.parse(rawBody);
@@ -108,6 +100,21 @@ export class DashScopeCallbackService {
       throw new DashScopeCallbackError('bad_request', 'EventBridge callback structure is invalid.');
     }
     const { data, id: eventId } = parsed.data;
+    let signatureVerifier = this.options.signatureVerifier;
+    if (!signatureVerifier && this.options.resolveSignatureVerifier) {
+      signatureVerifier = await this.options.resolveSignatureVerifier(data.task_id);
+    }
+    if (!signatureVerifier) {
+      throw new DashScopeCallbackError('temporary_unavailable', 'Callback verifier unavailable.');
+    }
+    try {
+      await signatureVerifier.verify(rawBody, headers);
+    } catch (error) {
+      if (error instanceof EventBridgeSignatureError) {
+        throw new DashScopeCallbackError(error.kind, error.message);
+      }
+      throw error;
+    }
     if (!data.user_api_unique_key.endsWith(`:${MODEL}`)) {
       throw new DashScopeCallbackError('bad_request', 'EventBridge callback model mismatch.');
     }

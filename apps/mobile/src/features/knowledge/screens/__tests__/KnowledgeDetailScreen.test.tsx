@@ -82,6 +82,38 @@ describe('KnowledgeDetailScreen', () => {
     expect(onOpenDocument).toHaveBeenCalledWith(document.id);
   });
 
+  it('searches detail documents from the header and supports no-match clearing', async () => {
+    const secondDocument = {
+      ...document,
+      id: 'd0000000-0000-4000-8000-000000000002',
+      title: '竞品资料汇总',
+    };
+    jest.mocked(listDocuments).mockResolvedValue({ items: [document, secondDocument] });
+    const screen = await renderDetail();
+
+    fireEvent.press(screen.getByLabelText('搜索知识库内容'));
+    fireEvent.changeText(screen.getByLabelText('输入知识库内容搜索关键词'), '  执行计划  ');
+    fireEvent(screen.getByLabelText('输入知识库内容搜索关键词'), 'submitEditing');
+
+    const files = within(screen.getByTestId('knowledge-files-scroll'));
+    expect(files.getByRole('tab', { name: '库文件' }).props.accessibilityState).toEqual({
+      selected: true,
+    });
+    expect(files.getByText(document.title)).toBeTruthy();
+    expect(files.queryByText(secondDocument.title)).toBeNull();
+
+    fireEvent.press(screen.getByLabelText('搜索知识库内容'));
+    fireEvent.changeText(screen.getByLabelText('输入知识库内容搜索关键词'), '不存在');
+    fireEvent.press(screen.getByLabelText('执行搜索'));
+    expect(files.getByText('没有匹配“不存在”的文档')).toBeTruthy();
+
+    fireEvent.press(screen.getByLabelText('搜索知识库内容'));
+    fireEvent.press(screen.getByLabelText('清除搜索'));
+    fireEvent.press(screen.getByLabelText('执行搜索'));
+    expect(files.getByText(document.title)).toBeTruthy();
+    expect(files.getByText(secondDocument.title)).toBeTruthy();
+  });
+
   it('opens the grounded query page from the files action bar', async () => {
     const onAsk = jest.fn();
     const screen = await renderDetail({ onAsk });

@@ -13,22 +13,49 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { AnalysisDetailScreen } from '@/features/analysis-detail/AnalysisDetailScreen';
+import { parseResourceOrigin } from '@/shared/navigation/resourceOrigin';
+import { backOrReplace } from '@/shared/navigation/routeBack';
 import { firstRouteParam } from '@/shared/navigation/routeParams';
 
 /** 读取分析 ID 并渲染对应分析详情页面。 */
 export default function AnalysisDetailRoute() {
   const router = useRouter();
-  const { groupId, id, returnSourceId } = useLocalSearchParams<{
+  const {
+    groupId,
+    id,
+    origin: originParam,
+    originGroupId,
+    returnSourceId,
+  } = useLocalSearchParams<{
     groupId?: string | string[];
     id?: string | string[];
+    origin?: string | string[];
+    originGroupId?: string | string[];
     returnSourceId?: string | string[];
   }>();
   const detailId = firstRouteParam(id);
   const sourceId = firstRouteParam(returnSourceId);
   const analysisGroupId = firstRouteParam(groupId);
+  const sourceOriginGroupId = firstRouteParam(originGroupId);
+  const origin = parseResourceOrigin(originParam);
   const goBack = () => {
-    if (sourceId) router.replace({ pathname: '/sources/[sourceId]', params: { sourceId } });
-    else router.replace('/');
+    if (sourceId) {
+      backOrReplace(router, {
+        pathname: '/sources/[sourceId]',
+        params: {
+          sourceId,
+          origin: origin ?? 'source-list',
+          ...(sourceOriginGroupId ? { groupId: sourceOriginGroupId } : {}),
+        },
+      });
+    } else if (analysisGroupId) {
+      backOrReplace(router, {
+        pathname: '/',
+        params: { groupId: analysisGroupId, tab: 'audio' },
+      });
+    } else {
+      backOrReplace(router, '/');
+    }
   };
 
   return (

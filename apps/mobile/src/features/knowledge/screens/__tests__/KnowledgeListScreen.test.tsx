@@ -10,10 +10,12 @@
  * - 不依赖真实 API。
  */
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 
 import { KnowledgeListScreen } from '../KnowledgeListScreen';
 import { createKnowledgeBase, listKnowledgeBases } from '../../apiClient';
 import { knowledge, knowledgeSummary } from '../../testing/fixtures';
+import { colors, radii, spacing } from '@/shared/theme/tokens';
 
 jest.mock('../../apiClient');
 
@@ -23,6 +25,38 @@ describe('KnowledgeListScreen', () => {
     const onOpenKnowledge = jest.fn();
     const screen = render(<KnowledgeListScreen onOpenKnowledge={onOpenKnowledge} />);
     expect(await screen.findByText('产品研究知识库')).toBeTruthy();
+    expect(StyleSheet.flatten(screen.getByTestId('top-level-page-header').props.style)).toEqual(
+      expect.objectContaining({
+        paddingBottom: spacing.lg,
+        paddingHorizontal: spacing.md,
+        paddingTop: spacing.lg,
+      }),
+    );
+    expect(
+      screen
+        .getByTestId('knowledge-list-scroll')
+        .findAllByProps({ testID: 'top-level-page-header' }),
+    ).toHaveLength(0);
+    expect(StyleSheet.flatten(screen.getByLabelText('新建知识库').props.style)).toEqual(
+      expect.objectContaining({
+        backgroundColor: colors.card,
+        borderColor: colors.divider,
+        borderRadius: radii.default,
+        minHeight: 44,
+      }),
+    );
+    const cardStyle = StyleSheet.flatten(
+      screen.getByLabelText('打开知识库：产品研究知识库').props.style,
+    );
+    expect(cardStyle).toEqual(
+      expect.objectContaining({
+        backgroundColor: colors.card,
+        borderColor: colors.divider,
+        borderRadius: radii.default,
+        padding: spacing.md,
+      }),
+    );
+    expect(cardStyle).not.toHaveProperty('minHeight');
     fireEvent.press(screen.getByLabelText('打开知识库：产品研究知识库'));
     expect(onOpenKnowledge).toHaveBeenCalledWith(knowledgeSummary.id);
   });
@@ -53,5 +87,30 @@ describe('KnowledgeListScreen', () => {
     await screen.findByText('产品研究知识库');
     expect(createKnowledgeBase).toHaveBeenCalledWith('产品研究知识库', '真实 API 知识库');
     expect(onOpenKnowledge).toHaveBeenCalledWith(knowledgeSummary.id);
+  });
+
+  it('searches by name or description and distinguishes no matches', async () => {
+    const secondKnowledge = {
+      ...knowledgeSummary,
+      id: 'b0000000-0000-4000-8000-000000000099',
+      name: '销售知识库',
+      description: '成交话术',
+    };
+    jest.mocked(listKnowledgeBases).mockResolvedValue({
+      items: [knowledgeSummary, secondKnowledge],
+    });
+    const screen = render(<KnowledgeListScreen onOpenKnowledge={jest.fn()} />);
+    await screen.findByText('销售知识库');
+
+    fireEvent.press(screen.getByLabelText('搜索知识库'));
+    fireEvent.changeText(screen.getByLabelText('输入知识库搜索关键词'), '  成交  ');
+    fireEvent(screen.getByLabelText('输入知识库搜索关键词'), 'submitEditing');
+    expect(screen.getByText('销售知识库')).toBeTruthy();
+    expect(screen.queryByText('产品研究知识库')).toBeNull();
+
+    fireEvent.press(screen.getByLabelText('搜索知识库'));
+    fireEvent.changeText(screen.getByLabelText('输入知识库搜索关键词'), '不存在');
+    fireEvent(screen.getByLabelText('输入知识库搜索关键词'), 'submitEditing');
+    expect(screen.getByText('没有匹配“不存在”的知识库。')).toBeTruthy();
   });
 });

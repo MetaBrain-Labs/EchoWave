@@ -21,8 +21,11 @@ import type { ApiConfig } from '../config/env.ts';
 import { LiveUpdateBroker } from '../infrastructure/liveUpdateBroker.ts';
 import { createDatabasePool, createPostgresConnectionString } from '../infrastructure/postgres.ts';
 import { PostgresWorkerWakeup } from '../infrastructure/workerWakeup.ts';
-import { DashScopeEmbeddings } from '../knowledge/embeddings/dashScopeEmbeddings.ts';
 import { PostgresAudioExecutionRepository } from '../workspace/audio/execution/postgresAudioExecutionRepository.ts';
+import { DatabaseCredentialProvider } from '../settings/credentials/databaseCredentialProvider.ts';
+import { LocalCredentialProvider } from '../settings/credentials/localCredentialProvider.ts';
+import { SettingsRepository } from '../settings/repository.ts';
+import { SettingsService, type LegacyAiConfiguration } from '../settings/service.ts';
 import { createAudioRuntime } from './runtime/audioRuntime.ts';
 import { createKnowledgeRuntime } from './runtime/knowledgeRuntime.ts';
 import { createWorkspaceRuntime } from './runtime/workspaceRuntime.ts';
@@ -35,6 +38,77 @@ export function createRagRuntime(config: ApiConfig) {
     outputDirectory: config.aiExecutionReports.outputDirectory,
   });
   const pool = createDatabasePool(config.database);
+  const settingsRepository = new SettingsRepository(
+    pool,
+    config.database.schema,
+    config.rag.tenantId,
+  );
+  const localCredentials = new LocalCredentialProvider(
+    config.settingsSecurity.localCredentialsFile,
+  );
+  const databaseCredentials = new DatabaseCredentialProvider(
+    settingsRepository,
+    config.rag.tenantId,
+    config.settingsSecurity.credentialMasterKey,
+  );
+  const legacyConfiguration: LegacyAiConfiguration = {
+    detectedVariables: config.legacyProviders.detectedVariables,
+    missingVariables: config.legacyProviders.missingVariables,
+    ...(config.legacyProviders.dashScope
+      ? {
+          dashScope: {
+            config: {
+              baseUrl: config.legacyProviders.dashScope.baseUrl,
+              compatibleBaseUrl: config.legacyProviders.dashScope.compatibleBaseUrl,
+              asyncNotifyMode: config.legacyProviders.dashScope.asyncNotifyMode,
+              eventBridgeCallbackUrl:
+                config.legacyProviders.dashScope.eventBridgeCallback?.url ?? null,
+            },
+            credential: {
+              apiKey: config.legacyProviders.dashScope.apiKey,
+              ...(config.legacyProviders.dashScope.eventBridgeCallback
+                ? {
+                    eventBridgeCallbackToken:
+                      config.legacyProviders.dashScope.eventBridgeCallback.token,
+                  }
+                : {}),
+            },
+          },
+        }
+      : {}),
+    ...(config.legacyProviders.deepSeek
+      ? {
+          deepSeek: {
+            config: { baseUrl: config.legacyProviders.deepSeek.baseUrl },
+            credential: { apiKey: config.legacyProviders.deepSeek.apiKey },
+            enableThinking: config.legacyProviders.deepSeek.enableThinking,
+          },
+        }
+      : {}),
+    ...(config.rag.dashScope.oss
+      ? {
+          oss: {
+            config: {
+              region: config.rag.dashScope.oss.region,
+              bucket: config.rag.dashScope.oss.bucket,
+            },
+            credential: {
+              accessKeyId: config.rag.dashScope.oss.accessKeyId,
+              accessKeySecret: config.rag.dashScope.oss.accessKeySecret,
+            },
+          },
+        }
+      : {}),
+  };
+  const settingsService = new SettingsService(
+    settingsRepository,
+    databaseCredentials,
+    localCredentials,
+    config.rag.tenantId,
+    config.settingsSecurity.credentialMasterKey,
+    config.settingsSecurity.configurationAdminToken,
+    legacyConfiguration,
+  );
   const liveUpdates = new LiveUpdateBroker();
   const workerWakeup = new PostgresWorkerWakeup(pool, config.database.schema, config.rag.tenantId);
   const audioExecutionRepository = new PostgresAudioExecutionRepository(
@@ -47,12 +121,6 @@ export function createRagRuntime(config: ApiConfig) {
     executionReporter,
     audioExecutionRepository.createReporter(),
   ]);
-  const embeddings = new DashScopeEmbeddings({
-    apiKey: config.rag.dashScope.apiKey,
-    baseUrl: config.rag.dashScope.baseUrl,
-    model: config.rag.embeddingModel,
-    dimensions: config.rag.embeddingDimensions,
-  });
   const checkpointer = PostgresSaver.fromConnString(
     createPostgresConnectionString(config.database),
     { schema: config.rag.langGraphSchema },
@@ -62,9 +130,9 @@ export function createRagRuntime(config: ApiConfig) {
     pool,
     liveUpdates,
     workerWakeup,
-    embeddings,
     checkpointer,
     reporter: executionReporter,
+    settingsService,
   });
   const workspace = createWorkspaceRuntime({ config, pool });
   const audio = createAudioRuntime({
@@ -72,13 +140,13 @@ export function createRagRuntime(config: ApiConfig) {
     pool,
     liveUpdates,
     workerWakeup,
-    embeddings,
     checkpointer,
     knowledgeSearch: knowledge.knowledgeSearch,
     audioCoreRepository: workspace.audioCoreRepository,
     audioExecutionRepository,
     reporter: audioExecutionReporter,
     sttRawResponseReporter,
+    settingsService,
   });
 
   return {
@@ -95,6 +163,7 @@ export function createRagRuntime(config: ApiConfig) {
     audioInputPreprocessor: audio.audioInputPreprocessor,
     liveUpdates,
     workerWakeup,
+    settingsService,
     async close(): Promise<void> {
       await knowledge.disposeAnswers();
       await audio.stop();

@@ -105,8 +105,8 @@ export function registerAudioRoutes(
       201,
     );
   });
-  app.get('/api/audio-transcription/capabilities', (context) =>
-    context.json(service.getAudioTranscriptionCapabilities()),
+  app.get('/api/audio-transcription/capabilities', async (context) =>
+    context.json(await service.getAudioTranscriptionCapabilities()),
   );
   app.post('/api/audio-files/:audioFileId/transcriptions', async (context) => {
     const input = AudioTranscriptionStartRequestSchema.parse(await context.req.json());
