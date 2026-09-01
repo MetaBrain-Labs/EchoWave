@@ -10,9 +10,11 @@
  * - 健康检查请求使用 mock 实现。
  */
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 
 import { fetchHello } from '../apiClient';
 import { ServiceStatusCard } from '../ServiceStatusCard';
+import { colors, radii, spacing } from '@/shared/theme/tokens';
 
 jest.mock('../apiClient', () => ({
   apiUrl: 'http://localhost:3001',
@@ -37,6 +39,14 @@ describe('ServiceStatusCard', () => {
 
     await waitFor(() => expect(screen.getByText('HelloWorld')).toBeTruthy());
     expect(screen.getByLabelText('在线')).toBeTruthy();
+    expect(StyleSheet.flatten(screen.getByTestId('service-status-card').props.style)).toEqual(
+      expect.objectContaining({
+        backgroundColor: colors.card,
+        borderColor: colors.divider,
+        borderRadius: radii.default,
+        padding: spacing.md,
+      }),
+    );
   });
 
   it('shows an offline state and retries the request', async () => {

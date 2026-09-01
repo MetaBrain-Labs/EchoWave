@@ -136,12 +136,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.default,
     borderWidth: StyleSheet.hairlineWidth,
     marginBottom: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.base,
-    shadowColor: colors.ink,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.035,
-    shadowRadius: 5,
+    padding: spacing.md,
   },
   emptyState: {
     alignItems: 'center',

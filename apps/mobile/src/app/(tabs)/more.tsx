@@ -25,6 +25,7 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
 
 /** 组合更多页面说明与 API 服务状态。 */
 export default function MoreScreen() {
@@ -46,9 +47,8 @@ export default function MoreScreen() {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.title}>更多</Text>
-        <Text style={styles.subtitle}>查看服务连接状态和即将开放的能力。</Text>
+      <TopLevelPageHeader subtitle="查看服务连接状态和即将开放的能力。" title="更多" />
+      <ScrollView contentContainerStyle={styles.content} testID="more-scroll">
         <ServiceStatusCard />
         <Pressable
           accessibilityLabel="打开 AI 配置"
@@ -65,7 +65,7 @@ export default function MoreScreen() {
           </View>
           <Ionicons color={textColors.tertiary} name="chevron-forward" size={22} />
         </Pressable>
-        <View style={styles.roadmapCard}>
+        <View style={styles.roadmapCard} testID="more-roadmap-card">
           <Text style={styles.roadmapTitle}>后续接入</Text>
           <Text style={styles.roadmapText}>
             PostgreSQL 已承载知识库与音频工作区数据；Redis 仍保留为未来协调边界。
@@ -82,38 +82,26 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
+    gap: spacing.sm,
     paddingBottom: spacing.xxl,
     paddingHorizontal: spacing.md,
-    paddingTop: spacing.lg,
-  },
-  title: {
-    ...typography.heading1,
-    color: textColors.primary,
-    fontFamily: fontFamilies.sansBold,
-    fontWeight: 'bold',
-    marginTop: spacing.xl,
-  },
-  subtitle: {
-    ...typography.description,
-    color: textColors.secondary,
-    fontFamily: fontFamilies.sans,
-    marginBottom: spacing.xl,
-    marginTop: spacing.sm,
   },
   roadmapCard: {
-    backgroundColor: colors.background,
+    backgroundColor: colors.card,
+    borderColor: colors.divider,
     borderRadius: radii.default,
-    marginTop: spacing.md,
-    padding: spacing.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: spacing.md,
   },
   settingsCard: {
     alignItems: 'center',
     backgroundColor: colors.card,
+    borderColor: colors.divider,
     borderRadius: radii.default,
+    borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     gap: spacing.base,
-    marginTop: spacing.md,
-    padding: spacing.lg,
+    padding: spacing.md,
   },
   settingsIcon: {
     alignItems: 'center',

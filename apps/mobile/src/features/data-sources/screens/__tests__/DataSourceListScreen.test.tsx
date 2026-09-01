@@ -14,6 +14,7 @@ import { StyleSheet } from 'react-native';
 
 import { DataSourceListScreen } from '../DataSourceListScreen';
 import * as workspaceApi from '@/shared/api/dataSourcesApi';
+import { colors, radii, spacing } from '@/shared/theme/tokens';
 import { dataSourceDetailFixture, sourceFixtures } from '@/test/workspaceFixtures';
 
 jest.mock('@/shared/api/dataSourcesApi', () => ({
@@ -48,6 +49,38 @@ describe('DataSourceListScreen', () => {
     expect(StyleSheet.flatten(screen.getByText('团队录音空间').props.style)).toEqual(
       expect.objectContaining({ fontSize: 16, lineHeight: 24, fontWeight: 'bold' }),
     );
+    expect(StyleSheet.flatten(screen.getByTestId('top-level-page-header').props.style)).toEqual(
+      expect.objectContaining({
+        paddingBottom: spacing.lg,
+        paddingHorizontal: spacing.md,
+        paddingTop: spacing.lg,
+      }),
+    );
+    expect(
+      screen
+        .getByTestId('data-source-list-scroll')
+        .findAllByProps({ testID: 'top-level-page-header' }),
+    ).toHaveLength(0);
+    expect(StyleSheet.flatten(screen.getByLabelText('新建数据源').props.style)).toEqual(
+      expect.objectContaining({
+        backgroundColor: colors.card,
+        borderColor: colors.divider,
+        borderRadius: radii.default,
+        minHeight: 44,
+      }),
+    );
+    const cardStyle = StyleSheet.flatten(
+      screen.getByLabelText('打开数据源：团队录音空间').props.style,
+    );
+    expect(cardStyle).toEqual(
+      expect.objectContaining({
+        backgroundColor: colors.card,
+        borderColor: colors.divider,
+        borderRadius: radii.default,
+        padding: spacing.md,
+      }),
+    );
+    expect(cardStyle).not.toHaveProperty('shadowOpacity');
   });
 
   it('opens the selected source using its stable identifier', async () => {
@@ -69,7 +102,7 @@ describe('DataSourceListScreen', () => {
     expect(screen.getByText('用户研究云盘')).toBeTruthy();
     expect(screen.queryByText('团队录音空间')).toBeNull();
 
-    fireEvent.press(screen.getByLabelText('新增数据源'));
+    fireEvent.press(screen.getByLabelText('新建数据源'));
     fireEvent.changeText(screen.getByLabelText('数据源名称'), '  本地访谈  ');
     fireEvent.changeText(screen.getByLabelText('数据源描述'), '  用户声音  ');
     fireEvent.press(screen.getByText('确认'));

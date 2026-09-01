@@ -466,7 +466,7 @@ export function GroupScreen({
         />
       ) : null}
 
-      <View style={styles.topBar}>
+      <View style={styles.topBar} testID="group-top-bar">
         <View style={styles.topLeft}>
           <IconButton
             icon="menu"
@@ -646,10 +646,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
+    paddingBottom: spacing.lg,
     paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
+    paddingTop: spacing.lg,
   },
-  topActions: { flexDirection: 'row', gap: spacing.md },
+  topActions: { flexDirection: 'row', gap: spacing.sm },
   topLeft: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
   inlineTitle: {
     ...typography.heading2,
@@ -668,7 +669,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: spacing.xl,
     marginHorizontal: spacing.md,
-    marginTop: spacing.xxl,
+    marginTop: spacing.sm,
   },
   pager: { flex: 1 },
   page: { height: '100%' },

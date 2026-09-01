@@ -10,10 +10,12 @@
  * - 不依赖真实 API。
  */
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 
 import { KnowledgeListScreen } from '../KnowledgeListScreen';
 import { createKnowledgeBase, listKnowledgeBases } from '../../apiClient';
 import { knowledge, knowledgeSummary } from '../../testing/fixtures';
+import { colors, radii, spacing } from '@/shared/theme/tokens';
 
 jest.mock('../../apiClient');
 
@@ -23,6 +25,38 @@ describe('KnowledgeListScreen', () => {
     const onOpenKnowledge = jest.fn();
     const screen = render(<KnowledgeListScreen onOpenKnowledge={onOpenKnowledge} />);
     expect(await screen.findByText('产品研究知识库')).toBeTruthy();
+    expect(StyleSheet.flatten(screen.getByTestId('top-level-page-header').props.style)).toEqual(
+      expect.objectContaining({
+        paddingBottom: spacing.lg,
+        paddingHorizontal: spacing.md,
+        paddingTop: spacing.lg,
+      }),
+    );
+    expect(
+      screen
+        .getByTestId('knowledge-list-scroll')
+        .findAllByProps({ testID: 'top-level-page-header' }),
+    ).toHaveLength(0);
+    expect(StyleSheet.flatten(screen.getByLabelText('新建知识库').props.style)).toEqual(
+      expect.objectContaining({
+        backgroundColor: colors.card,
+        borderColor: colors.divider,
+        borderRadius: radii.default,
+        minHeight: 44,
+      }),
+    );
+    const cardStyle = StyleSheet.flatten(
+      screen.getByLabelText('打开知识库：产品研究知识库').props.style,
+    );
+    expect(cardStyle).toEqual(
+      expect.objectContaining({
+        backgroundColor: colors.card,
+        borderColor: colors.divider,
+        borderRadius: radii.default,
+        padding: spacing.md,
+      }),
+    );
+    expect(cardStyle).not.toHaveProperty('minHeight');
     fireEvent.press(screen.getByLabelText('打开知识库：产品研究知识库'));
     expect(onOpenKnowledge).toHaveBeenCalledWith(knowledgeSummary.id);
   });

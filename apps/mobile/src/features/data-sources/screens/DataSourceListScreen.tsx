@@ -5,7 +5,7 @@
  *
  * Responsibilities:
  * - 呈现数据源名称、说明、连接方式、分组数和最近上传时间。
- * - 提供搜索、新增数据源和详情导航入口。
+ * - 提供搜索、新建数据源和详情导航入口。
  *
  * Notes:
  * - 所有响应均由共享契约在客户端边界校验。
@@ -27,6 +27,7 @@ import {
 import { createDataSource, listDataSources } from '@/shared/api/dataSourcesApi';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import { SearchSheet } from '@/shared/ui/SearchSheet';
+import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
 
 import { DataSourceFormSheet, type DataSourceFormValue } from '../components/DataSourceDialogs';
 
@@ -176,39 +177,30 @@ export function DataSourceListScreen({
         pending={creating}
         visible={formVisible}
       />
+      <TopLevelPageHeader
+        actions={[
+          {
+            accessibilityLabel: '搜索数据源',
+            icon: 'search-outline',
+            onPress: () => setSearchVisible(true),
+          },
+          {
+            accessibilityLabel: '新建数据源',
+            icon: 'add',
+            label: '新建',
+            onPress: () => {
+              setFormError('');
+              setFormVisible(true);
+            },
+          },
+        ]}
+        title="数据源"
+      />
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
         testID="data-source-list-scroll"
       >
-        <View style={styles.header}>
-          <Text accessibilityRole="header" style={styles.pageTitle}>
-            数据源
-          </Text>
-          <View style={styles.headerActions}>
-            <Pressable
-              accessibilityLabel="搜索数据源"
-              accessibilityRole="button"
-              hitSlop={8}
-              onPress={() => setSearchVisible(true)}
-              style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
-            >
-              <Ionicons color={colors.ink} name="search-outline" size={30} />
-            </Pressable>
-            <Pressable
-              accessibilityLabel="新增数据源"
-              accessibilityRole="button"
-              onPress={() => {
-                setFormError('');
-                setFormVisible(true);
-              }}
-              style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}
-            >
-              <Ionicons color={colors.ink} name="add" size={typography.heading3.lineHeight} />
-              <Text style={styles.addButtonText}>新增</Text>
-            </Pressable>
-          </View>
-        </View>
         <View style={styles.list}>
           {loading ? (
             <ActivityIndicator accessibilityLabel="正在加载数据源" color={colors.ink} />
@@ -253,57 +245,15 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl,
     paddingHorizontal: spacing.md,
   },
-  header: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    minHeight: 112,
-  },
-  pageTitle: {
-    ...typography.heading1,
-    color: textColors.primary,
-    fontFamily: fontFamilies.sansBold,
-    fontWeight: 'bold',
-  },
-  headerActions: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  iconButton: {
-    alignItems: 'center',
-    height: 44,
-    justifyContent: 'center',
-    width: 44,
-  },
-  addButton: {
-    alignItems: 'center',
-    backgroundColor: colors.card,
-    borderColor: colors.ink,
-    borderRadius: radii.default,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.sm,
-    minHeight: 44,
-    paddingHorizontal: spacing.md,
-  },
-  addButtonText: {
-    ...typography.heading3,
-    color: textColors.primary,
-    fontFamily: fontFamilies.sansBold,
-    fontWeight: 'bold',
-  },
-  pressed: {
-    backgroundColor: colors.divider,
-    borderRadius: radii.default,
-  },
   list: {
     gap: spacing.sm,
   },
   errorCard: {
     backgroundColor: colors.card,
+    borderColor: colors.divider,
     borderRadius: radii.default,
-    padding: spacing.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: spacing.md,
   },
   retryText: {
     ...typography.heading5,
@@ -316,13 +266,7 @@ const styles = StyleSheet.create({
     borderColor: colors.divider,
     borderRadius: radii.default,
     borderWidth: StyleSheet.hairlineWidth,
-    minHeight: 188,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-    shadowColor: colors.ink,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.035,
-    shadowRadius: 5,
+    padding: spacing.md,
   },
   pressedCard: {
     backgroundColor: colors.background,

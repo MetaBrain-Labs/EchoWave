@@ -15,6 +15,7 @@ import { StyleSheet } from 'react-native';
 
 import { GroupScreen } from '../GroupScreen';
 import * as workspaceApi from '@/shared/api/groupsApi';
+import { colors, spacing } from '@/shared/theme/tokens';
 import {
   audioFixtures,
   groupFixture,
@@ -86,6 +87,25 @@ describe('GroupScreen', () => {
       height: 14,
       width: 14,
     });
+    expect(StyleSheet.flatten(screen.getByTestId('group-top-bar').props.style)).toEqual(
+      expect.objectContaining({
+        paddingBottom: spacing.lg,
+        paddingHorizontal: spacing.md,
+        paddingTop: spacing.lg,
+      }),
+    );
+    for (const label of ['菜单', '搜索', '分组设置']) {
+      expect(StyleSheet.flatten(screen.getByLabelText(label).props.style)).toEqual(
+        expect.objectContaining({ height: 44, width: 44 }),
+      );
+    }
+    const cardStyle = StyleSheet.flatten(
+      screen.getByLabelText('产品访谈分析，分析已完成').props.style,
+    );
+    expect(cardStyle).toEqual(
+      expect.objectContaining({ backgroundColor: colors.card, padding: spacing.md }),
+    );
+    expect(cardStyle).not.toHaveProperty('shadowOpacity');
   });
 
   it('uses 16/24 typography for analysis, knowledge, and source names', async () => {

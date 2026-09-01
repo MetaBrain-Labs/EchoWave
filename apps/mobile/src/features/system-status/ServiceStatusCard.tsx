@@ -81,7 +81,7 @@ export function ServiceStatusCard() {
   const isOnline = state.phase === 'online';
 
   return (
-    <View style={styles.card}>
+    <View style={styles.card} testID="service-status-card">
       <View style={styles.headingRow}>
         <View>
           <Text style={styles.eyebrow}>HELLOWORLD API</Text>
@@ -145,7 +145,7 @@ const styles = StyleSheet.create({
     borderColor: colors.divider,
     borderRadius: radii.default,
     borderWidth: StyleSheet.hairlineWidth,
-    padding: spacing.lg,
+    padding: spacing.md,
   },
   headingRow: {
     alignItems: 'flex-start',
