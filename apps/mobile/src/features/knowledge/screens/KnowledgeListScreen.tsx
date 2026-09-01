@@ -11,7 +11,7 @@
  * - 列表数据不写入本地存储。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -24,6 +24,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { KnowledgeBaseSummary } from '@echowave/contracts';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { SearchSheet } from '@/shared/ui/SearchSheet';
 
 import {
   colors,
@@ -33,7 +34,6 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
-import { showComingSoon } from '../components/feedback';
 import { createKnowledgeBase, listKnowledgeBases } from '../apiClient';
 
 /** 展示创建知识库时由服务端默认值锁定的配置项。 */
@@ -63,6 +63,8 @@ export function KnowledgeListScreen({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [createName, setCreateName] = useState('');
   const [createDescription, setCreateDescription] = useState('');
   const [creating, setCreating] = useState(false);
@@ -101,8 +103,30 @@ export function KnowledgeListScreen({
     return () => clearTimeout(task);
   }, [load, runInitialRequest]);
 
+  const visibleKnowledgeBases = useMemo(() => {
+    const normalized = searchQuery.trim().toLocaleLowerCase();
+    if (!normalized) return knowledgeBases;
+    return knowledgeBases.filter((item) =>
+      [item.name, item.description].some((value) => value.toLocaleLowerCase().includes(normalized)),
+    );
+  }, [knowledgeBases, searchQuery]);
+
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
+      {searchVisible ? (
+        <SearchSheet
+          appliedQuery={searchQuery}
+          inputLabel="输入知识库搜索关键词"
+          onApply={(query) => {
+            setSearchQuery(query);
+            setSearchVisible(false);
+          }}
+          onClose={() => setSearchVisible(false)}
+          placeholder="搜索知识库名称或描述"
+          title="搜索知识库"
+          visible
+        />
+      ) : null}
       <View style={styles.header}>
         <Text accessibilityRole="header" style={styles.title}>
           知识库
@@ -112,7 +136,7 @@ export function KnowledgeListScreen({
             accessibilityLabel="搜索知识库"
             accessibilityRole="button"
             hitSlop={8}
-            onPress={() => showComingSoon('知识库搜索')}
+            onPress={() => setSearchVisible(true)}
             style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
           >
             <Ionicons color={colors.ink} name="search-outline" size={30} />
@@ -192,7 +216,13 @@ export function KnowledgeListScreen({
             <Text style={styles.retry}>点击重试</Text>
           </Pressable>
         ) : null}
-        {knowledgeBases.map((knowledge) => (
+        {!loading && !error && knowledgeBases.length === 0 ? (
+          <Text style={styles.description}>暂无知识库。</Text>
+        ) : null}
+        {!loading && !error && knowledgeBases.length > 0 && visibleKnowledgeBases.length === 0 ? (
+          <Text style={styles.description}>没有匹配“{searchQuery}”的知识库。</Text>
+        ) : null}
+        {visibleKnowledgeBases.map((knowledge) => (
           <Pressable
             key={knowledge.id}
             accessibilityLabel={`打开知识库：${knowledge.name}`}

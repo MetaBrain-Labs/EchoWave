@@ -23,7 +23,6 @@ import {
 } from '@/test/workspaceFixtures';
 
 jest.mock('@/shared/api/groupsApi', () => ({
-  archiveGroup: jest.fn(),
   createGroup: jest.fn(),
   listGroups: jest.fn(),
   listGroupAudioFiles: jest.fn(),
@@ -60,7 +59,6 @@ async function finishDrawerClose() {
 describe('GroupScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.mocked(workspaceApi.archiveGroup).mockResolvedValue(undefined);
     jest.mocked(workspaceApi.createGroup).mockResolvedValue(secondGroup);
     jest.mocked(workspaceApi.listGroups).mockResolvedValue({ items: [groupFixture] });
     jest
@@ -161,7 +159,7 @@ describe('GroupScreen', () => {
 
     fireEvent.press(screen.getByText('关联知识库'));
     fireEvent.press(screen.getByLabelText(`打开知识库：${knowledgeFixtures[0].name}`));
-    expect(onOpenKnowledge).toHaveBeenCalledWith(knowledgeFixtures[0].id);
+    expect(onOpenKnowledge).toHaveBeenCalledWith(knowledgeFixtures[0].id, groupFixture.id);
 
     fireEvent.press(screen.getByText('连接数据源'));
     fireEvent.press(screen.getByLabelText(`打开数据源：${sourceFixtures[0].name}`));
@@ -180,11 +178,22 @@ describe('GroupScreen', () => {
     });
   });
 
-  it('opens the selected group settings from the header action', async () => {
+  it('opens the selected group settings from the drawer row action', async () => {
     const onOpenSettings = jest.fn();
     const screen = await renderGroup({ onOpenSettings });
 
-    fireEvent.press(screen.getByLabelText('设置筛选'));
+    fireEvent.press(screen.getByLabelText('菜单'));
+    fireEvent.press(screen.getByLabelText(`打开分组设置：${groupFixture.name}`));
+    await finishDrawerClose();
+
+    expect(onOpenSettings).toHaveBeenCalledWith(groupFixture.id);
+  });
+
+  it('keeps group settings in the header action', async () => {
+    const onOpenSettings = jest.fn();
+    const screen = await renderGroup({ onOpenSettings });
+
+    fireEvent.press(screen.getByLabelText('分组设置'));
 
     expect(onOpenSettings).toHaveBeenCalledWith(groupFixture.id);
   });
@@ -248,10 +257,10 @@ describe('GroupScreen', () => {
       }),
     );
 
-    fireEvent.press(screen.getByLabelText('关闭分组侧栏'));
-    expect(screen.getByLabelText('关闭分组侧栏')).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('关闭分组侧栏遮罩'));
+    expect(screen.getByLabelText('关闭分组侧栏遮罩')).toBeTruthy();
     await finishDrawerClose();
-    expect(screen.queryByLabelText('关闭分组侧栏')).toBeNull();
+    expect(screen.queryByLabelText('关闭分组侧栏遮罩')).toBeNull();
     fireEvent.press(screen.getByLabelText('搜索'));
     expect(StyleSheet.flatten(screen.getByLabelText('输入搜索关键词').props.style)).toEqual(
       expect.objectContaining({
@@ -276,45 +285,19 @@ describe('GroupScreen', () => {
     expect(screen.getByLabelText('分组名称')).toBeTruthy();
   });
 
-  it('archives the last group after confirmation and shows the supported empty state', async () => {
-    const screen = await renderGroup();
-
-    fireEvent.press(screen.getByLabelText('菜单'));
-    fireEvent.press(screen.getByLabelText(`归档分组：${groupFixture.name}`));
-    await waitFor(() =>
-      expect(screen.getByText(/关联的知识库、数据源和音频不会被删除/)).toBeTruthy(),
-    );
-    fireEvent.press(screen.getByLabelText('确认归档分组'));
-
-    await waitFor(() => expect(workspaceApi.archiveGroup).toHaveBeenCalledWith(groupFixture.id));
-    await waitFor(() => expect(screen.getByText('还没有可用分组')).toBeTruthy());
-    expect(screen.getByText('打开分组菜单')).toBeTruthy();
-  });
-
-  it('cancels archive confirmation without calling the server', async () => {
-    const screen = await renderGroup();
-
-    fireEvent.press(screen.getByLabelText('菜单'));
-    fireEvent.press(screen.getByLabelText(`归档分组：${groupFixture.name}`));
-    await waitFor(() => expect(screen.getByLabelText('确认归档分组')).toBeTruthy());
-    fireEvent.press(screen.getByText('取消'));
-
-    expect(workspaceApi.archiveGroup).not.toHaveBeenCalled();
-    expect(screen.queryByLabelText('确认归档分组')).toBeNull();
-  });
-
-  it('archives a non-selected group without changing the current group', async () => {
+  it('marks the current drawer row and synchronizes a selected group to routing', async () => {
     jest.mocked(workspaceApi.listGroups).mockResolvedValue({ items: [groupFixture, secondGroup] });
-    const screen = await renderGroup();
+    const onGroupChange = jest.fn();
+    const screen = await renderGroup({ onGroupChange });
 
     fireEvent.press(screen.getByLabelText('菜单'));
-    fireEvent.press(screen.getByLabelText(`归档分组：${secondGroup.name}`));
-    await waitFor(() => expect(screen.getByLabelText('确认归档分组')).toBeTruthy());
-    fireEvent.press(screen.getByLabelText('确认归档分组'));
+    expect(
+      screen.getByLabelText(`切换到分组：${groupFixture.name}`).props.accessibilityState,
+    ).toEqual({ selected: true });
+    fireEvent.press(screen.getByLabelText(`切换到分组：${secondGroup.name}`));
 
-    await waitFor(() => expect(workspaceApi.archiveGroup).toHaveBeenCalledWith(secondGroup.id));
-    expect(screen.getByTestId('group-display-title').props.children).toBe(groupFixture.name);
-    expect(screen.queryByLabelText(`切换到分组：${secondGroup.name}`)).toBeNull();
+    await waitFor(() => expect(onGroupChange).toHaveBeenCalledWith(secondGroup.id));
+    expect(screen.getByTestId('group-display-title').props.children).toBe(secondGroup.name);
   });
 
   it('applies one submitted search across all tabs and closes the search sheet', async () => {
@@ -340,7 +323,7 @@ describe('GroupScreen', () => {
     jest.mocked(workspaceApi.listGroupAudioFiles).mockResolvedValue({ items: audioFixtures });
     const screen = await renderGroup();
 
-    fireEvent.press(screen.getByLabelText('排序筛选'));
+    fireEvent.press(screen.getByLabelText('音频排序筛选'));
     fireEvent.press(screen.getByText('已完成'));
     fireEvent.press(screen.getByText('失败'));
     fireEvent.press(screen.getByLabelText('确认排序筛选'));
@@ -353,6 +336,42 @@ describe('GroupScreen', () => {
     expect(screen.getByRole('tab', { name: '音频分析' }).props.accessibilityState).toEqual({
       selected: true,
     });
+  });
+
+  it('adapts sorting and filtering controls to knowledge and source tabs', async () => {
+    const emptyKnowledge = {
+      ...knowledgeFixtures[1],
+      id: 'b0000000-0000-4000-8000-000000000099',
+      name: '空知识库',
+      documentCount: 0,
+    };
+    jest
+      .mocked(workspaceApi.listGroupKnowledgeBases)
+      .mockResolvedValue({ items: [knowledgeFixtures[0], emptyKnowledge] });
+    const screen = await renderGroup();
+
+    fireEvent.press(screen.getByText('关联知识库'));
+    fireEvent.press(screen.getByLabelText('知识库排序筛选'));
+    fireEvent.press(screen.getByRole('radio', { name: '空知识库' }));
+    fireEvent.press(screen.getByLabelText('确认排序筛选'));
+    expect(screen.getByText('共关联 1 个知识库')).toBeTruthy();
+    expect(screen.getByText('空知识库')).toBeTruthy();
+    expect(screen.queryByText(knowledgeFixtures[0].name)).toBeNull();
+
+    fireEvent.press(screen.getByText('连接数据源'));
+    fireEvent.press(screen.getByLabelText('数据源排序筛选'));
+    fireEvent.press(screen.getByText('云端'));
+    fireEvent.press(screen.getByLabelText('确认排序筛选'));
+    expect(screen.getByText('共连接 2 个数据源')).toBeTruthy();
+  });
+
+  it('synchronizes a user-selected tab to routing', async () => {
+    const onTabChange = jest.fn();
+    const screen = await renderGroup({ onTabChange });
+
+    fireEvent.press(screen.getByText('连接数据源'));
+
+    expect(onTabChange).toHaveBeenCalledWith('sources');
   });
 
   it('ignores a stale resource response after rapid group switching', async () => {
@@ -376,7 +395,7 @@ describe('GroupScreen', () => {
     fireEvent.press(screen.getByLabelText('菜单'));
     fireEvent.press(screen.getByLabelText(`切换到分组：${secondGroup.name}`));
     await finishDrawerClose();
-    expect(screen.queryByLabelText('关闭分组侧栏')).toBeNull();
+    expect(screen.queryByLabelText('关闭分组侧栏遮罩')).toBeNull();
     fireEvent.press(screen.getByLabelText('菜单'));
     fireEvent.press(screen.getByLabelText(`切换到分组：${groupFixture.name}`));
     await waitFor(() => expect(screen.getByText('共 5 份音频')).toBeTruthy());
@@ -399,5 +418,22 @@ describe('GroupScreen', () => {
       selected: true,
     });
     expect(workspaceApi.listGroupKnowledgeBases).toHaveBeenCalledWith(secondGroup.id);
+  });
+
+  it('reacts to external group and tab route parameter changes', async () => {
+    jest.mocked(workspaceApi.listGroups).mockResolvedValue({ items: [groupFixture, secondGroup] });
+    const screen = render(<GroupScreen initialGroupId={groupFixture.id} initialTab="audio" />);
+    await waitFor(() =>
+      expect(screen.getByTestId('group-display-title').props.children).toBe(groupFixture.name),
+    );
+
+    screen.rerender(<GroupScreen initialGroupId={secondGroup.id} initialTab="sources" />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('group-display-title').props.children).toBe(secondGroup.name),
+    );
+    expect(screen.getByRole('tab', { name: '连接数据源' }).props.accessibilityState).toEqual({
+      selected: true,
+    });
   });
 });

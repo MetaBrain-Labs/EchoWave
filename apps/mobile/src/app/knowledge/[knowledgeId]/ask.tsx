@@ -13,18 +13,28 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { KnowledgeQueryScreen } from '@/features/knowledge/screens/KnowledgeQueryScreen';
+import { parseResourceOrigin } from '@/shared/navigation/resourceOrigin';
 import { firstRouteParam } from '@/shared/navigation/routeParams';
 
 /** 渲染指定知识库的临时可信问答页面。 */
 export default function KnowledgeQueryRoute() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ knowledgeId?: string | string[] }>();
+  const params = useLocalSearchParams<{
+    groupId?: string | string[];
+    knowledgeId?: string | string[];
+    origin?: string | string[];
+  }>();
   const knowledgeId = firstRouteParam(params.knowledgeId);
+  const groupId = firstRouteParam(params.groupId);
+  const origin = parseResourceOrigin(params.origin) ?? 'knowledge-list';
   return (
     <KnowledgeQueryScreen
       knowledgeId={knowledgeId}
       onBack={() =>
-        router.replace({ pathname: '/knowledge/[knowledgeId]', params: { knowledgeId } })
+        router.replace({
+          pathname: '/knowledge/[knowledgeId]',
+          params: { knowledgeId, origin, ...(groupId ? { groupId } : {}) },
+        })
       }
       onOpenCitation={(documentId, chunkId) =>
         router.push({
@@ -34,6 +44,8 @@ export default function KnowledgeQueryRoute() {
             fileId: documentId,
             blockId: chunkId,
             returnTo: 'knowledge-query',
+            origin,
+            ...(groupId ? { groupId } : {}),
           },
         })
       }

@@ -115,16 +115,16 @@ export function AudioContent({
   emptyMessage,
   items,
   loading,
-  onOpenFilter,
   onOpenAudio,
+  onOpenFilter,
   onRetry,
 }: {
   error: string;
   emptyMessage: string;
   items: AudioFileSummary[];
   loading: boolean;
-  onOpenFilter: () => void;
   onOpenAudio?: (id: string) => void;
+  onOpenFilter: () => void;
   onRetry: () => void;
 }) {
   if (loading) {
@@ -147,7 +147,7 @@ export function AudioContent({
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>共 {items.length} 份音频</Text>
         <Pressable
-          accessibilityLabel="排序筛选"
+          accessibilityLabel="音频排序筛选"
           accessibilityRole="button"
           onPress={onOpenFilter}
           style={({ pressed }) => [styles.filterButton, pressed && styles.pressed]}

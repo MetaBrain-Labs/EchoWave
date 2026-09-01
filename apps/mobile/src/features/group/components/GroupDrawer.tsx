@@ -1,15 +1,15 @@
 /**
- * 分组目录侧栏与归档确认框。
+ * 分组目录侧栏。
  *
- * 提供跨平台分组切换、侧栏内联创建和无破坏性的归档确认交互。
+ * 按产品参考稿呈现品牌、分组创建入口和可滚动分组列表，并把分组设置作为独立操作保留。
  *
  * Responsibilities:
- * - 展示当前租户的分组卡片和选中状态。
+ * - 展示当前租户的分组目录与当前选中状态。
  * - 收集新分组名称并转发创建请求。
- * - 在真正归档前明确提示数据保留边界。
+ * - 区分分组切换与分组设置导航。
  *
  * Notes:
- * - 服务器数据和 pending 状态由 GroupScreen 持有。
+ * - 服务端数据、当前分组和 pending 状态由 GroupScreen 持有。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { GroupSummary } from '@echowave/contracts';
@@ -43,7 +43,7 @@ export function GroupDrawer({
   groups,
   onClose,
   onCreate,
-  onRequestArchive,
+  onOpenSettings,
   onSelect,
   selectedGroupId,
   visible,
@@ -53,7 +53,7 @@ export function GroupDrawer({
   groups: GroupSummary[];
   onClose: () => void;
   onCreate: (name: string) => Promise<boolean>;
-  onRequestArchive: (group: GroupSummary) => void;
+  onOpenSettings: (group: GroupSummary) => void;
   onSelect: (group: GroupSummary) => void;
   selectedGroupId?: string;
   visible: boolean;
@@ -85,7 +85,7 @@ export function GroupDrawer({
       toValue: -380,
       useNativeDriver: true,
     }).start();
-    // 原生动画回调在测试环境及中断场景下不稳定，因此由同周期计时器统一结束生命周期。
+    // 动画回调在测试环境和中断场景不稳定，因此用同周期计时器统一结束生命周期。
     closeTimer.current = setTimeout(() => {
       onClose();
       afterClose?.();
@@ -103,20 +103,9 @@ export function GroupDrawer({
       <View accessibilityViewIsModal style={styles.drawerOverlay}>
         <Animated.View style={[styles.drawer, { transform: [{ translateX }] }]}>
           <SafeAreaView edges={['top', 'bottom']} style={styles.drawerSafeArea}>
-            <View style={styles.drawerHeader}>
-              <Text accessibilityRole="header" style={styles.drawerTitle}>
-                分组
-              </Text>
-              <Pressable
-                accessibilityLabel="关闭分组侧栏"
-                accessibilityRole="button"
-                hitSlop={8}
-                onPress={() => closeDrawer()}
-                style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
-              >
-                <Ionicons color={colors.ink} name="close" size={26} />
-              </Pressable>
-            </View>
+            <Text accessibilityRole="header" style={styles.brandTitle}>
+              EchoWave
+            </Text>
 
             {adding ? (
               <View style={styles.createBox}>
@@ -159,7 +148,7 @@ export function GroupDrawer({
                       void submit();
                     }}
                     style={({ pressed }) => [
-                      styles.primaryButton,
+                      styles.createSubmitButton,
                       (!name.trim() || creating) && styles.disabled,
                       pressed && styles.primaryPressed,
                     ]}
@@ -167,7 +156,7 @@ export function GroupDrawer({
                     {creating ? (
                       <ActivityIndicator color={colors.white} size="small" />
                     ) : (
-                      <Text style={styles.primaryButtonText}>创建</Text>
+                      <Text style={styles.createSubmitText}>创建</Text>
                     )}
                   </Pressable>
                 </View>
@@ -177,13 +166,14 @@ export function GroupDrawer({
                 accessibilityLabel="添加分组"
                 accessibilityRole="button"
                 onPress={() => setAdding(true)}
-                style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}
+                style={({ pressed }) => [styles.addButton, pressed && styles.primaryPressed]}
               >
-                <Ionicons color={colors.ink} name="add" size={22} />
-                <Text style={styles.addButtonText}>添加分组</Text>
+                <Ionicons color={colors.white} name="add" size={32} />
+                <Text style={styles.addButtonText}>创建新分组</Text>
               </Pressable>
             )}
 
+            <Text style={styles.sectionTitle}>分组列表</Text>
             <ScrollView
               contentContainerStyle={styles.groupList}
               showsVerticalScrollIndicator={false}
@@ -199,38 +189,34 @@ export function GroupDrawer({
                   return (
                     <View
                       key={group.id}
+                      accessibilityState={{ selected }}
                       style={[styles.groupCard, selected && styles.selectedCard]}
                     >
                       <Pressable
                         accessibilityLabel={`切换到分组：${group.name}`}
                         accessibilityRole="button"
+                        accessibilityState={{ selected }}
                         onPress={() => {
                           onSelect(group);
                           closeDrawer();
                         }}
                         style={({ pressed }) => [styles.groupMain, pressed && styles.pressed]}
                       >
-                        <View style={styles.groupTitleRow}>
-                          <Text numberOfLines={1} style={styles.groupName}>
-                            {group.name}
-                          </Text>
-                          {selected ? (
-                            <Ionicons color={colors.success} name="checkmark-circle" size={20} />
-                          ) : null}
-                        </View>
+                        <Text numberOfLines={1} style={styles.groupName}>
+                          {group.name}
+                        </Text>
                         <Text style={styles.groupMetrics}>
-                          {group.metrics.audioCount} 音频 · {group.metrics.analysisCount} 分析 ·{' '}
-                          {group.metrics.knowledgeCount} 知识库 · {group.metrics.sourceCount} 数据源
+                          {group.metrics.analysisCount} 份分析{selected ? ' · 当前分组' : ''}
                         </Text>
                       </Pressable>
                       <Pressable
-                        accessibilityLabel={`归档分组：${group.name}`}
+                        accessibilityLabel={`打开分组设置：${group.name}`}
                         accessibilityRole="button"
                         hitSlop={6}
-                        onPress={() => closeDrawer(() => onRequestArchive(group))}
-                        style={({ pressed }) => [styles.archiveButton, pressed && styles.pressed]}
+                        onPress={() => closeDrawer(() => onOpenSettings(group))}
+                        style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
                       >
-                        <Ionicons color={textColors.secondary} name="archive-outline" size={20} />
+                        <Ionicons color={textColors.secondary} name="options-outline" size={24} />
                       </Pressable>
                     </View>
                   );
@@ -250,119 +236,44 @@ export function GroupDrawer({
   );
 }
 
-/** 渲染分组软归档的二次确认对话框。 */
-export function GroupArchiveDialog({
-  error,
-  group,
-  onCancel,
-  onConfirm,
-  pending,
-}: {
-  error: string;
-  group?: GroupSummary;
-  onCancel: () => void;
-  onConfirm: () => void;
-  pending: boolean;
-}) {
-  return (
-    <Modal animationType="fade" onRequestClose={onCancel} transparent visible={Boolean(group)}>
-      <View accessibilityViewIsModal style={styles.dialogOverlay}>
-        <View style={styles.dialog}>
-          <Text accessibilityRole="header" style={styles.dialogTitle}>
-            归档分组
-          </Text>
-          <Text style={styles.dialogDescription}>
-            确认归档“{group?.name}”吗？分组会从列表隐藏，但关联的知识库、数据源和音频不会被删除。
-          </Text>
-          {error ? (
-            <Text accessibilityRole="alert" style={styles.errorText}>
-              {error}
-            </Text>
-          ) : null}
-          <View style={styles.dialogActions}>
-            <Pressable
-              accessibilityRole="button"
-              disabled={pending}
-              onPress={onCancel}
-              style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
-            >
-              <Text style={styles.secondaryButtonText}>取消</Text>
-            </Pressable>
-            <Pressable
-              accessibilityLabel="确认归档分组"
-              accessibilityRole="button"
-              disabled={pending}
-              onPress={onConfirm}
-              style={({ pressed }) => [
-                styles.dangerButton,
-                pending && styles.disabled,
-                pressed && styles.dangerPressed,
-              ]}
-            >
-              {pending ? (
-                <ActivityIndicator color={colors.white} size="small" />
-              ) : (
-                <Text style={styles.primaryButtonText}>确认归档</Text>
-              )}
-            </Pressable>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
 const styles = StyleSheet.create({
-  drawerOverlay: { backgroundColor: 'rgba(16, 24, 40, 0.28)', flex: 1, flexDirection: 'row' },
-  drawer: { backgroundColor: colors.card, maxWidth: 360, width: '86%' },
-  drawerSafeArea: { flex: 1 },
+  drawerOverlay: { backgroundColor: 'rgba(16, 24, 40, 0.24)', flex: 1, flexDirection: 'row' },
+  drawer: { backgroundColor: colors.card, maxWidth: 360, width: '78%' },
+  drawerSafeArea: { flex: 1, paddingHorizontal: spacing.lg },
   drawerBackdrop: { flex: 1 },
-  drawerHeader: {
-    alignItems: 'center',
-    borderBottomColor: colors.divider,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  drawerTitle: {
-    ...typography.heading1,
+  brandTitle: {
     color: textColors.primary,
     fontFamily: fontFamilies.sansBold,
+    fontSize: 32,
     fontWeight: 'bold',
+    lineHeight: 44,
+    marginBottom: spacing.xl,
+    marginTop: spacing.lg,
   },
-  iconButton: {
-    alignItems: 'center',
-    borderRadius: radii.round,
-    height: 44,
-    justifyContent: 'center',
-    width: 44,
-  },
-  pressed: { backgroundColor: colors.background },
   addButton: {
     alignItems: 'center',
-    borderBottomColor: colors.divider,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    backgroundColor: colors.ink,
+    borderRadius: radii.default,
     flexDirection: 'row',
-    gap: spacing.sm,
-    minHeight: 52,
+    gap: spacing.md,
+    justifyContent: 'center',
+    minHeight: 58,
     paddingHorizontal: spacing.md,
   },
   addButtonText: {
-    ...typography.body,
-    color: textColors.primary,
-    fontFamily: fontFamilies.sansBold,
-    fontWeight: 'bold',
+    ...typography.heading2,
+    color: colors.white,
+    fontFamily: fontFamilies.sans,
   },
   createBox: {
-    borderBottomColor: colors.divider,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    backgroundColor: colors.background,
+    borderRadius: radii.default,
     gap: spacing.sm,
     padding: spacing.md,
   },
   input: {
     ...typography.body,
+    backgroundColor: colors.card,
     borderColor: colors.divider,
     borderRadius: radii.default,
     borderWidth: 1,
@@ -375,7 +286,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'center',
   },
   createActions: { flexDirection: 'row', gap: spacing.sm, justifyContent: 'flex-end' },
-  primaryButton: {
+  createSubmitButton: {
     alignItems: 'center',
     backgroundColor: colors.ink,
     borderRadius: radii.default,
@@ -384,8 +295,7 @@ const styles = StyleSheet.create({
     minWidth: 76,
     paddingHorizontal: spacing.md,
   },
-  primaryPressed: { opacity: 0.78 },
-  primaryButtonText: {
+  createSubmitText: {
     ...typography.description,
     color: colors.white,
     fontFamily: fontFamilies.sansBold,
@@ -407,41 +317,45 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sansBold,
     fontWeight: 'bold',
   },
-  disabled: { opacity: 0.45 },
-  errorText: { ...typography.description, color: '#b42318', fontFamily: fontFamilies.sans },
-  groupList: { gap: spacing.sm, padding: spacing.md },
+  sectionTitle: {
+    ...typography.heading3,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+    marginTop: spacing.xl,
+  },
+  groupList: { gap: spacing.sm, paddingBottom: spacing.xxl, paddingTop: spacing.md },
   groupCard: {
     alignItems: 'stretch',
-    borderColor: colors.divider,
+    backgroundColor: colors.card,
+    borderBottomColor: colors.divider,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: 'transparent',
+    borderLeftWidth: 3,
     borderRadius: radii.default,
-    borderWidth: 1,
     flexDirection: 'row',
+    minHeight: 84,
     overflow: 'hidden',
+    shadowColor: colors.ink,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
   },
-  selectedCard: { borderColor: colors.success, borderWidth: 2 },
-  groupMain: { flex: 1, gap: spacing.sm, minHeight: 84, padding: spacing.md },
-  groupTitleRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.sm,
-    justifyContent: 'space-between',
-  },
+  selectedCard: { backgroundColor: colors.background, borderLeftColor: colors.ink },
+  groupMain: { flex: 1, gap: spacing.xs, justifyContent: 'center', padding: spacing.md },
   groupName: {
     ...typography.heading2,
     color: textColors.primary,
-    flex: 1,
     fontFamily: fontFamilies.sansBold,
     fontWeight: 'bold',
   },
-  groupMetrics: { ...typography.label, color: textColors.tertiary, fontFamily: fontFamilies.sans },
-  archiveButton: {
-    alignItems: 'center',
-    borderLeftColor: colors.divider,
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    justifyContent: 'center',
-    width: 48,
+  groupMetrics: {
+    ...typography.body,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
   },
-  emptyState: { alignItems: 'center', gap: spacing.sm, padding: spacing.xl },
+  settingsButton: { alignItems: 'center', justifyContent: 'center', width: 48 },
+  emptyState: { alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xl },
   emptyTitle: {
     ...typography.heading2,
     color: textColors.primary,
@@ -454,41 +368,8 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sans,
     textAlign: 'center',
   },
-  dialogOverlay: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(16, 24, 40, 0.38)',
-    flex: 1,
-    justifyContent: 'center',
-    padding: spacing.md,
-  },
-  dialog: {
-    backgroundColor: colors.card,
-    borderRadius: spacing.md,
-    gap: spacing.md,
-    maxWidth: 420,
-    padding: spacing.lg,
-    width: '100%',
-  },
-  dialogTitle: {
-    ...typography.heading1,
-    color: textColors.primary,
-    fontFamily: fontFamilies.sansBold,
-    fontWeight: 'bold',
-  },
-  dialogDescription: {
-    ...typography.body,
-    color: textColors.secondary,
-    fontFamily: fontFamilies.sans,
-  },
-  dialogActions: { flexDirection: 'row', gap: spacing.sm, justifyContent: 'flex-end' },
-  dangerButton: {
-    alignItems: 'center',
-    backgroundColor: '#b42318',
-    borderRadius: radii.default,
-    justifyContent: 'center',
-    minHeight: 40,
-    minWidth: 96,
-    paddingHorizontal: spacing.md,
-  },
-  dangerPressed: { backgroundColor: '#8f1d13' },
+  errorText: { ...typography.description, color: '#b42318', fontFamily: fontFamilies.sans },
+  disabled: { opacity: 0.45 },
+  pressed: { backgroundColor: colors.background },
+  primaryPressed: { opacity: 0.78 },
 });

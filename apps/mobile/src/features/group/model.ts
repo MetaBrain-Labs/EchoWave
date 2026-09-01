@@ -17,10 +17,18 @@ import type {
   KnowledgeBaseSummary,
 } from '@echowave/contracts';
 
+/** 资源时间排序方向。 */
+export type ResourceSortOrder = 'newest' | 'oldest';
 /** 音频创建时间排序方向。 */
-export type AudioSortOrder = 'newest' | 'oldest';
+export type AudioSortOrder = ResourceSortOrder;
 /** 可用于多选筛选的统一音频状态。 */
 export type AudioStatusKind = AudioProcessingStatus['kind'];
+/** 知识库文档数量筛选。 */
+export type KnowledgeDocumentFilter = 'all' | 'with-documents' | 'empty';
+/** 数据源位置筛选。 */
+export type DataSourceLocationKind = DataSourceSummary['location'];
+/** 数据源连接状态筛选。 */
+export type DataSourceStatusKind = DataSourceSummary['connectionStatus'];
 
 /** 音频状态的中文查询与筛选标签。 */
 export const audioStatusLabels: Record<AudioStatusKind, string> = {
@@ -32,11 +40,17 @@ export const audioStatusLabels: Record<AudioStatusKind, string> = {
   failed: '失败',
 };
 
-const connectionStatusLabels: Record<DataSourceSummary['connectionStatus'], string> = {
+export const connectionStatusLabels: Record<DataSourceSummary['connectionStatus'], string> = {
   connected: '已连接',
   disconnected: '已断开',
   error: '连接错误',
   disabled: '已停用',
+};
+
+/** 数据源位置的中文搜索与筛选标签。 */
+export const dataSourceLocationLabels: Record<DataSourceLocationKind, string> = {
+  local: '本地',
+  cloud: '云端',
 };
 
 function includesQuery(query: string, values: (string | null | undefined)[]) {
@@ -67,19 +81,59 @@ export function selectAudioItems(
     });
 }
 
-/** 按名称和描述搜索当前分组的知识库。 */
-export function selectKnowledgeBases(items: KnowledgeBaseSummary[], query: string) {
-  return items.filter((item) => includesQuery(query, [item.name, item.description]));
+/** 按查询、文档状态和更新时间生成知识库展示列表。 */
+export function selectKnowledgeBases(
+  items: KnowledgeBaseSummary[],
+  query: string,
+  sortOrder: ResourceSortOrder = 'newest',
+  documentFilter: KnowledgeDocumentFilter = 'all',
+) {
+  return items
+    .filter((item) => includesQuery(query, [item.name, item.description]))
+    .filter((item) => {
+      if (documentFilter === 'with-documents') return item.documentCount > 0;
+      if (documentFilter === 'empty') return item.documentCount === 0;
+      return true;
+    })
+    .sort((left, right) => {
+      const difference = new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+      return sortOrder === 'newest' ? difference : -difference;
+    });
 }
 
-/** 按名称、描述、连接标签和中文连接状态搜索当前分组的数据源。 */
-export function selectDataSources(items: DataSourceSummary[], query: string) {
-  return items.filter((item) =>
-    includesQuery(query, [
-      item.name,
-      item.description,
-      item.connectionLabel,
-      connectionStatusLabels[item.connectionStatus],
-    ]),
-  );
+function compareNullableDates(
+  left: string | null,
+  right: string | null,
+  sortOrder: ResourceSortOrder,
+) {
+  // 从未上传的数据源缺少可比较时间，无论排序方向都置于已有上传记录之后。
+  if (left === null) return right === null ? 0 : 1;
+  if (right === null) return -1;
+  const difference = new Date(right).getTime() - new Date(left).getTime();
+  return sortOrder === 'newest' ? difference : -difference;
+}
+
+/** 按查询、位置、连接状态和最近上传时间生成数据源展示列表。 */
+export function selectDataSources(
+  items: DataSourceSummary[],
+  query: string,
+  sortOrder: ResourceSortOrder = 'newest',
+  locations: ReadonlySet<DataSourceLocationKind> = new Set(),
+  statuses: ReadonlySet<DataSourceStatusKind> = new Set(),
+) {
+  return items
+    .filter((item) =>
+      includesQuery(query, [
+        item.name,
+        item.description,
+        item.connectionLabel,
+        connectionStatusLabels[item.connectionStatus],
+        dataSourceLocationLabels[item.location],
+      ]),
+    )
+    .filter((item) => locations.size === 0 || locations.has(item.location))
+    .filter((item) => statuses.size === 0 || statuses.has(item.connectionStatus))
+    .sort((left, right) =>
+      compareNullableDates(left.lastUploadedAt, right.lastUploadedAt, sortOrder),
+    );
 }

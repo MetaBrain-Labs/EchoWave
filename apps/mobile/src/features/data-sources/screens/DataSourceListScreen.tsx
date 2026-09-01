@@ -12,16 +12,8 @@
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { DataSourceSummary } from '@echowave/contracts';
-import { useCallback, useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -34,12 +26,21 @@ import {
 } from '@/shared/theme/tokens';
 import { createDataSource, listDataSources } from '@/shared/api/dataSourcesApi';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { SearchSheet } from '@/shared/ui/SearchSheet';
 
 import { DataSourceFormSheet, type DataSourceFormValue } from '../components/DataSourceDialogs';
 
-function showComingSoon(feature: string) {
-  Alert.alert('功能建设中', `${feature}将在后续版本开放。`);
-}
+const connectionStatusLabels: Record<DataSourceSummary['connectionStatus'], string> = {
+  connected: '已连接',
+  disconnected: '已断开',
+  error: '连接错误',
+  disabled: '已停用',
+};
+
+const locationLabels: Record<DataSourceSummary['location'], string> = {
+  local: '本地',
+  cloud: '云端',
+};
 
 function DataSourceCard({ onOpen, source }: { onOpen: () => void; source: DataSourceSummary }) {
   return (
@@ -96,6 +97,8 @@ export function DataSourceListScreen({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [formVisible, setFormVisible] = useState(false);
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [formError, setFormError] = useState('');
   const [creating, setCreating] = useState(false);
   const runInitialRequest = useInitialRequestLoading();
@@ -130,8 +133,36 @@ export function DataSourceListScreen({
     }
   };
 
+  const visibleDataSources = useMemo(() => {
+    const normalized = searchQuery.trim().toLocaleLowerCase();
+    if (!normalized) return dataSources;
+    return dataSources.filter((source) =>
+      [
+        source.name,
+        source.description,
+        source.connectionLabel,
+        connectionStatusLabels[source.connectionStatus],
+        locationLabels[source.location],
+      ].some((value) => value.toLocaleLowerCase().includes(normalized)),
+    );
+  }, [dataSources, searchQuery]);
+
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
+      {searchVisible ? (
+        <SearchSheet
+          appliedQuery={searchQuery}
+          inputLabel="输入数据源搜索关键词"
+          onApply={(query) => {
+            setSearchQuery(query);
+            setSearchVisible(false);
+          }}
+          onClose={() => setSearchVisible(false)}
+          placeholder="搜索名称、描述、位置或连接状态"
+          title="搜索数据源"
+          visible
+        />
+      ) : null}
       <DataSourceFormSheet
         error={formError}
         initialValue={{ name: '', description: '' }}
@@ -159,7 +190,7 @@ export function DataSourceListScreen({
               accessibilityLabel="搜索数据源"
               accessibilityRole="button"
               hitSlop={8}
-              onPress={() => showComingSoon('数据源搜索')}
+              onPress={() => setSearchVisible(true)}
               style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
             >
               <Ionicons color={colors.ink} name="search-outline" size={30} />
@@ -195,8 +226,11 @@ export function DataSourceListScreen({
           {!loading && !error && dataSources.length === 0 ? (
             <Text style={styles.description}>暂无数据源。</Text>
           ) : null}
+          {!loading && !error && dataSources.length > 0 && visibleDataSources.length === 0 ? (
+            <Text style={styles.description}>没有匹配“{searchQuery}”的数据源。</Text>
+          ) : null}
           {!loading && !error
-            ? dataSources.map((source) => (
+            ? visibleDataSources.map((source) => (
                 <DataSourceCard
                   key={source.id}
                   onOpen={() => onOpenSource(source.id)}

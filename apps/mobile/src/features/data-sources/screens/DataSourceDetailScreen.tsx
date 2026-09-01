@@ -5,8 +5,9 @@
  *
  * Responsibilities:
  * - 根据数据源标识读取并组合服务端只读详情。
+ * - 提供跨音频、上传记录和关联分组的详情搜索。
  * - 协调标签点击、横向滑动、独立纵向滚动和固定操作栏。
- * - 为尚未接入的搜索、上传、转写、重试和关联操作提供明确反馈。
+ * - 为尚未接入的批量转写和记录操作提供明确反馈。
  *
  * Notes:
  * - 页面不持久化筛选、分页或操作栏交互状态。
@@ -45,6 +46,7 @@ import {
 } from '@/shared/theme/tokens';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { PageTabs } from '@/shared/ui/PageTabs';
+import { SearchSheet } from '@/shared/ui/SearchSheet';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import {
   getDataSource,
@@ -93,6 +95,31 @@ const detailTabs = [
 type DetailTab = (typeof detailTabs)[number]['key'];
 const detailTabKeys = detailTabs.map((tab) => tab.key);
 
+/** 规范化详情搜索并匹配一组可见文本。 */
+function matchesDetailSearch(query: string, values: (string | number)[]) {
+  const normalized = query.trim().toLocaleLowerCase();
+  if (!normalized) return true;
+  return values.some((value) => String(value).toLocaleLowerCase().includes(normalized));
+}
+
+/** 将音频处理状态转换为用户能够直接搜索的中文文本。 */
+function audioStatusSearchText(item: SourceAudioItem) {
+  switch (item.status.kind) {
+    case 'complete':
+      return '已完成 已转写';
+    case 'uploading':
+      return '上传中';
+    case 'waiting':
+      return '待转写';
+    case 'transcribing':
+      return '转写中 正在转写';
+    case 'upload-failed':
+      return `上传失败 ${item.status.code} ${item.status.message}`;
+    case 'transcription-failed':
+      return `转写失败 ${item.status.code} ${item.status.message}`;
+  }
+}
+
 /** 渲染数据源详情及四个可点击、可滑动的同级页面。 */
 export function DataSourceDetailScreen({
   onBack,
@@ -116,6 +143,8 @@ export function DataSourceDetailScreen({
   const [progressRefreshError, setProgressRefreshError] = useState('');
   const [appActive, setAppActive] = useState(AppState.currentState !== 'background');
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchVisible, setSearchVisible] = useState(false);
   const [editVisible, setEditVisible] = useState(false);
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -398,7 +427,31 @@ export function DataSourceDetailScreen({
       <PageTabs activeTab={activeTab} onChange={selectTab} tabs={detailTabs} />
     </View>
   );
-  const uploadDates = [...new Set(source.uploadRecords.map((record) => record.date))];
+  const filteredAudioItems = source.audioItems.filter((item) =>
+    matchesDetailSearch(searchQuery, [
+      item.title,
+      item.duration,
+      item.createdAt,
+      audioStatusSearchText(item),
+    ]),
+  );
+  const filteredUploadRecords = source.uploadRecords.filter((record) =>
+    matchesDetailSearch(searchQuery, [
+      record.date,
+      record.time,
+      record.kind === 'upload-success'
+        ? '上传成功'
+        : record.kind === 'upload-failed'
+          ? '上传失败'
+          : '转写失败',
+      record.description,
+      record.detail,
+    ]),
+  );
+  const filteredGroups = source.linkedGroups.filter((group) =>
+    matchesDetailSearch(searchQuery, [group.name]),
+  );
+  const uploadDates = [...new Set(filteredUploadRecords.map((record) => record.date))];
   const prepareTranscription = (target: SourceAudioItem) => {
     setTranscriptionPreprocessing('silero_vad');
     setTranscriptionTarget(target);
@@ -418,6 +471,22 @@ export function DataSourceDetailScreen({
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
+      {searchVisible ? (
+        <SearchSheet
+          appliedQuery={searchQuery}
+          inputLabel="输入数据源内容搜索关键词"
+          onApply={(nextQuery) => {
+            setSearchQuery(nextQuery);
+            setSearchVisible(false);
+            if (nextQuery && activeTab === 'overview') selectTab('audio');
+          }}
+          onClose={() => setSearchVisible(false)}
+          placeholder="搜索音频、上传记录或关联分组"
+          subtitle="搜索条件会应用到三个内容标签"
+          title="搜索数据源内容"
+          visible
+        />
+      ) : null}
       <AudioTranscriptionErrorDialog
         audio={transcriptionErrorTarget}
         onClose={() => setTranscriptionErrorTarget(undefined)}
@@ -566,7 +635,7 @@ export function DataSourceDetailScreen({
       <PageHeader
         onBack={onBack}
         onMore={openMoreActions}
-        onSearch={() => showComingSoon('数据源详情搜索')}
+        onSearch={() => setSearchVisible(true)}
         searchLabel="搜索数据源内容"
         title={source.name}
       />
@@ -642,10 +711,14 @@ export function DataSourceDetailScreen({
         >
           {renderTabs()}
           <View style={styles.audioList}>
-            {source.audioItems.length === 0 ? (
-              <Text style={styles.listEmptyText}>暂无音频，点击下方“上传音频”开始添加。</Text>
+            {filteredAudioItems.length === 0 ? (
+              <Text style={styles.listEmptyText}>
+                {searchQuery
+                  ? `没有匹配“${searchQuery}”的音频。`
+                  : '暂无音频，点击下方“上传音频”开始添加。'}
+              </Text>
             ) : (
-              source.audioItems.map((item) => (
+              filteredAudioItems.map((item) => (
                 <AudioRow
                   active={audioPlayback.activeAudioFileId === item.id}
                   item={item}
@@ -675,7 +748,9 @@ export function DataSourceDetailScreen({
           {renderTabs()}
           <View style={styles.recordsList}>
             {uploadDates.length === 0 ? (
-              <Text style={styles.listEmptyText}>暂无上传记录。</Text>
+              <Text style={styles.listEmptyText}>
+                {searchQuery ? `没有匹配“${searchQuery}”的上传记录。` : '暂无上传记录。'}
+              </Text>
             ) : (
               uploadDates.map((date, index) => (
                 <View
@@ -683,7 +758,7 @@ export function DataSourceDetailScreen({
                   style={[styles.recordGroup, index > 0 && styles.recordGroupDivider]}
                 >
                   <Text style={styles.recordDate}>{date}</Text>
-                  {source.uploadRecords
+                  {filteredUploadRecords
                     .filter((record) => record.date === date)
                     .map((record) => (
                       <UploadRecordRow
@@ -709,10 +784,12 @@ export function DataSourceDetailScreen({
         >
           {renderTabs()}
           <View style={styles.groupList}>
-            {source.linkedGroups.length === 0 ? (
-              <Text style={styles.listEmptyText}>暂未关联分组。</Text>
+            {filteredGroups.length === 0 ? (
+              <Text style={styles.listEmptyText}>
+                {searchQuery ? `没有匹配“${searchQuery}”的关联分组。` : '暂未关联分组。'}
+              </Text>
             ) : (
-              source.linkedGroups.map((group) => (
+              filteredGroups.map((group) => (
                 <GroupCard
                   group={group}
                   key={group.id}

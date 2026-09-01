@@ -1,14 +1,14 @@
 /**
- * 分组页面跨标签搜索抽屉。
+ * 通用列表搜索抽屉。
  *
- * 从底部收集一条共享查询，并仅在用户提交后应用到三个分组子资源列表。
+ * 以底部抽屉收集搜索草稿，并在用户明确提交后把规范化查询交给业务页面。
  *
  * Responsibilities:
- * - 管理尚未提交的搜索草稿。
- * - 支持键盘提交、显式搜索、清除和取消。
+ * - 支持键盘提交、显式搜索、清除与取消。
+ * - 为不同列表提供可配置的标题、说明和占位文案。
  *
  * Notes:
- * - 实际筛选由 GroupScreen 的纯查询模型完成。
+ * - 组件不持有业务列表，也不决定具体匹配字段。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useState } from 'react';
@@ -33,16 +33,24 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 
-/** 渲染从底部出现的当前分组搜索表单。 */
-export function GroupSearchSheet({
+/** 渲染可复用的底部搜索表单。 */
+export function SearchSheet({
   appliedQuery,
+  inputLabel,
   onApply,
   onClose,
+  placeholder,
+  subtitle,
+  title,
   visible,
 }: {
   appliedQuery: string;
+  inputLabel: string;
   onApply: (query: string) => void;
   onClose: () => void;
+  placeholder: string;
+  subtitle?: string;
+  title: string;
   visible: boolean;
 }) {
   const [draft, setDraft] = useState(appliedQuery);
@@ -66,11 +74,11 @@ export function GroupSearchSheet({
         />
         <View accessibilityViewIsModal style={styles.sheet}>
           <View style={styles.header}>
-            <View>
+            <View style={styles.heading}>
               <Text accessibilityRole="header" style={styles.title}>
-                搜索当前分组
+                {title}
               </Text>
-              <Text style={styles.subtitle}>查询会同时作用于三个标签页</Text>
+              {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
             </View>
             <Pressable
               accessibilityLabel="关闭搜索抽屉"
@@ -86,11 +94,11 @@ export function GroupSearchSheet({
             <View style={styles.inputBox}>
               <Ionicons color={textColors.tertiary} name="search" size={20} />
               <TextInput
-                accessibilityLabel="输入搜索关键词"
+                accessibilityLabel={inputLabel}
                 autoFocus
                 onChangeText={setDraft}
                 onSubmitEditing={submit}
-                placeholder="搜索音频、知识库或数据源"
+                placeholder={placeholder}
                 placeholderTextColor={textColors.tertiary}
                 returnKeyType="search"
                 style={styles.input}
@@ -141,6 +149,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: spacing.md,
   },
+  heading: { flex: 1, paddingRight: spacing.sm },
   title: {
     ...typography.heading1,
     color: textColors.primary,

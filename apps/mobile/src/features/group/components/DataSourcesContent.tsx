@@ -23,6 +23,7 @@ export function DataSourcesContent({
   error,
   emptyMessage,
   loading,
+  onOpenFilter,
   onOpenSource,
   onRetry,
   sources,
@@ -30,6 +31,7 @@ export function DataSourcesContent({
   error: string;
   emptyMessage: string;
   loading: boolean;
+  onOpenFilter: () => void;
   onOpenSource: (sourceId: string) => void;
   onRetry: () => void;
   sources: DataSourceSummary[];
@@ -51,9 +53,22 @@ export function DataSourcesContent({
   }
   return (
     <>
-      <Text style={[styles.sectionTitle, styles.sectionHeaderSolo]}>
-        共连接 {sources.length} 个数据源
-      </Text>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>共连接 {sources.length} 个数据源</Text>
+        <Pressable
+          accessibilityLabel="数据源排序筛选"
+          accessibilityRole="button"
+          onPress={onOpenFilter}
+          style={({ pressed }) => [styles.filterButton, pressed && styles.pressed]}
+        >
+          <Text style={styles.filterText}>排序筛选</Text>
+          <Ionicons
+            color={colors.secondary}
+            name="filter-outline"
+            size={typography.heading5.lineHeight}
+          />
+        </Pressable>
+      </View>
       {sources.length ? (
         sources.map((source) => (
           <Pressable
@@ -99,7 +114,10 @@ export function DataSourcesContent({
 }
 
 const styles = StyleSheet.create({
-  sectionHeaderSolo: {
+  sectionHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     marginBottom: spacing.lg,
   },
   sectionTitle: {
@@ -107,6 +125,17 @@ const styles = StyleSheet.create({
     color: textColors.primary,
     fontFamily: fontFamilies.sansBold,
     fontWeight: 'bold',
+  },
+  filterButton: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+    minHeight: 40,
+  },
+  filterText: {
+    ...typography.heading5,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
   },
   card: {
     backgroundColor: colors.card,

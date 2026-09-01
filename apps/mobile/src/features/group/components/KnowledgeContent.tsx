@@ -26,6 +26,7 @@ export function KnowledgeContent({
   knowledgeBases,
   loading,
   onOpenKnowledge,
+  onOpenFilter,
   onRetry,
 }: {
   error: string;
@@ -33,6 +34,7 @@ export function KnowledgeContent({
   knowledgeBases: KnowledgeBaseSummary[];
   loading: boolean;
   onOpenKnowledge: (knowledgeId: string) => void;
+  onOpenFilter: () => void;
   onRetry: () => void;
 }) {
   if (loading) {
@@ -52,9 +54,22 @@ export function KnowledgeContent({
   }
   return (
     <>
-      <Text style={[styles.sectionTitle, styles.sectionHeaderSolo]}>
-        共关联 {knowledgeBases.length} 个知识库
-      </Text>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>共关联 {knowledgeBases.length} 个知识库</Text>
+        <Pressable
+          accessibilityLabel="知识库排序筛选"
+          accessibilityRole="button"
+          onPress={onOpenFilter}
+          style={({ pressed }) => [styles.filterButton, pressed && styles.pressed]}
+        >
+          <Text style={styles.filterText}>排序筛选</Text>
+          <Ionicons
+            color={colors.secondary}
+            name="filter-outline"
+            size={typography.heading5.lineHeight}
+          />
+        </Pressable>
+      </View>
       {knowledgeBases.length ? (
         knowledgeBases.map((knowledgeBase) => (
           <Pressable
@@ -92,7 +107,10 @@ export function KnowledgeContent({
 }
 
 const styles = StyleSheet.create({
-  sectionHeaderSolo: {
+  sectionHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     marginBottom: spacing.lg,
   },
   sectionTitle: {
@@ -105,6 +123,12 @@ const styles = StyleSheet.create({
     ...typography.heading5,
     color: textColors.secondary,
     fontFamily: fontFamilies.sans,
+  },
+  filterButton: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+    minHeight: 40,
   },
   card: {
     backgroundColor: colors.card,

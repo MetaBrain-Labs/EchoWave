@@ -23,7 +23,7 @@ export default function KnowledgeScreen() {
       onOpenKnowledge={(knowledgeId) => {
         router.push({
           pathname: '/knowledge/[knowledgeId]',
-          params: { knowledgeId },
+          params: { knowledgeId, origin: 'knowledge-list' },
         });
       }}
     />

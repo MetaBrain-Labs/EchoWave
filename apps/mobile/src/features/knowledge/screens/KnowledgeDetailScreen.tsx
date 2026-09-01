@@ -5,6 +5,7 @@
  *
  * Responsibilities:
  * - 加载知识库概览、文档和关联分组事实。
+ * - 提供面向文档标题、格式和解析状态的详情搜索。
  * - 协调上传状态订阅、文档重试、批量关联和目标分组确认。
  * - 保持三个同级页面独立纵向滚动及固定操作栏。
  *
@@ -37,6 +38,7 @@ import { useSwipePager } from '@/shared/hooks/useSwipePager';
 import { useGroupAssociationEditor } from '@/shared/hooks/useGroupAssociationEditor';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { PageTabs } from '@/shared/ui/PageTabs';
+import { SearchSheet } from '@/shared/ui/SearchSheet';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import {
   colors,
@@ -171,30 +173,32 @@ function DocumentRow({
       <View style={styles.documentStatus}>
         <DocumentStatusView document={document} />
       </View>
+    </>
+  );
+  return (
+    <View style={styles.documentRow}>
+      {enabled ? (
+        <Pressable
+          accessibilityLabel={`打开文件：${document.title}`}
+          accessibilityRole="button"
+          onPress={onOpen}
+          style={({ pressed }) => [styles.documentOpen, pressed && styles.pressed]}
+        >
+          {content}
+        </Pressable>
+      ) : (
+        <View style={styles.documentOpen}>{content}</View>
+      )}
       <Pressable
         accessibilityLabel={`${document.title}更多操作`}
         accessibilityRole="button"
         hitSlop={8}
-        onPress={(event) => {
-          event?.stopPropagation();
-          onMore();
-        }}
+        onPress={onMore}
         style={({ pressed }) => [styles.moreButton, pressed && styles.pressed]}
       >
         <Ionicons color={colors.ink} name="ellipsis-vertical" size={24} />
       </Pressable>
-    </>
-  );
-  if (!enabled) return <View style={styles.documentRow}>{content}</View>;
-  return (
-    <Pressable
-      accessibilityLabel={`打开文件：${document.title}`}
-      accessibilityRole="button"
-      onPress={onOpen}
-      style={({ pressed }) => [styles.documentRow, pressed && styles.pressed]}
-    >
-      {content}
-    </Pressable>
+    </View>
   );
 }
 
@@ -287,6 +291,7 @@ export function KnowledgeDetailScreen({
   const [appActive, setAppActive] = useState(AppState.currentState !== 'background');
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
   const [query, setQuery] = useState('');
+  const [searchVisible, setSearchVisible] = useState(false);
   const [switchTarget, setSwitchTarget] = useState<GroupSummary>();
   const [actionDocument, setActionDocument] = useState<KnowledgeDocument>();
   const [pendingDocumentId, setPendingDocumentId] = useState<string>();
@@ -348,9 +353,12 @@ export function KnowledgeDetailScreen({
     const normalized = query.trim().toLocaleLowerCase();
     if (!normalized) return documents;
     return documents.filter((document) =>
-      [document.title, formatLabels[document.format], statusLabel(document.status)].some((value) =>
-        value.toLocaleLowerCase().includes(normalized),
-      ),
+      [
+        document.title,
+        formatLabels[document.format],
+        statusLabel(document.status),
+        document.status.kind === 'failed' ? document.status.message : '',
+      ].some((value) => value.toLocaleLowerCase().includes(normalized)),
     );
   }, [documents, query]);
   const linkedGroupIds = useMemo(
@@ -528,6 +536,22 @@ export function KnowledgeDetailScreen({
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
+      {searchVisible ? (
+        <SearchSheet
+          appliedQuery={query}
+          inputLabel="输入知识库内容搜索关键词"
+          onApply={(nextQuery) => {
+            setQuery(nextQuery);
+            setSearchVisible(false);
+            if (nextQuery) selectTab('files');
+          }}
+          onClose={() => setSearchVisible(false)}
+          placeholder="搜索文档标题、格式或解析状态"
+          subtitle="搜索结果将在库文件中展示"
+          title="搜索知识库内容"
+          visible
+        />
+      ) : null}
       <KnowledgeGroupPicker
         allGroups={availableGroups}
         error={pickerError}
@@ -585,7 +609,7 @@ export function KnowledgeDetailScreen({
       <PageHeader
         onBack={onBack}
         onMore={() => showComingSoon('知识库更多操作')}
-        onSearch={() => showComingSoon('知识库详情搜索')}
+        onSearch={() => setSearchVisible(true)}
         searchLabel="搜索知识库内容"
         title={knowledge.name}
       />
@@ -714,7 +738,9 @@ export function KnowledgeDetailScreen({
                 />
               ))
             ) : (
-              <Text style={styles.emptyText}>{query.trim() ? '没有匹配的文档' : '暂无文档'}</Text>
+              <Text style={styles.emptyText}>
+                {query.trim() ? `没有匹配“${query}”的文档` : '暂无文档'}
+              </Text>
             )}
           </View>
         </ScrollView>
@@ -822,9 +848,15 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.divider,
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
-    gap: spacing.sm,
     minHeight: 92,
     paddingVertical: spacing.base,
+  },
+  documentOpen: {
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
   },
   documentMain: { flex: 1, gap: spacing.xs },
   documentTitle: {

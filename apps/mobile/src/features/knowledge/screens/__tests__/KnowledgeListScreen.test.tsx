@@ -54,4 +54,29 @@ describe('KnowledgeListScreen', () => {
     expect(createKnowledgeBase).toHaveBeenCalledWith('产品研究知识库', '真实 API 知识库');
     expect(onOpenKnowledge).toHaveBeenCalledWith(knowledgeSummary.id);
   });
+
+  it('searches by name or description and distinguishes no matches', async () => {
+    const secondKnowledge = {
+      ...knowledgeSummary,
+      id: 'b0000000-0000-4000-8000-000000000099',
+      name: '销售知识库',
+      description: '成交话术',
+    };
+    jest.mocked(listKnowledgeBases).mockResolvedValue({
+      items: [knowledgeSummary, secondKnowledge],
+    });
+    const screen = render(<KnowledgeListScreen onOpenKnowledge={jest.fn()} />);
+    await screen.findByText('销售知识库');
+
+    fireEvent.press(screen.getByLabelText('搜索知识库'));
+    fireEvent.changeText(screen.getByLabelText('输入知识库搜索关键词'), '  成交  ');
+    fireEvent(screen.getByLabelText('输入知识库搜索关键词'), 'submitEditing');
+    expect(screen.getByText('销售知识库')).toBeTruthy();
+    expect(screen.queryByText('产品研究知识库')).toBeNull();
+
+    fireEvent.press(screen.getByLabelText('搜索知识库'));
+    fireEvent.changeText(screen.getByLabelText('输入知识库搜索关键词'), '不存在');
+    fireEvent(screen.getByLabelText('输入知识库搜索关键词'), 'submitEditing');
+    expect(screen.getByText('没有匹配“不存在”的知识库。')).toBeTruthy();
+  });
 });

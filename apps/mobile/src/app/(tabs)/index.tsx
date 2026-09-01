@@ -27,24 +27,26 @@ export default function GroupRoute() {
     <GroupScreen
       initialGroupId={initialGroupId}
       initialTab={initialTab}
+      onGroupChange={(groupId) => router.setParams({ groupId })}
       onOpenAudio={(id, groupId) => {
-        router.push({ pathname: '/analysis/[id]', params: { id, groupId } });
+        router.push({ pathname: '/analysis/[id]', params: { id, groupId, origin: 'group' } });
       }}
-      onOpenKnowledge={(knowledgeId) => {
+      onOpenKnowledge={(knowledgeId, groupId) => {
         router.push({
           pathname: '/knowledge/[knowledgeId]',
-          params: { knowledgeId },
+          params: { knowledgeId, groupId, origin: 'group' },
         });
       }}
       onOpenSource={(sourceId, groupId) => {
         router.push({
           pathname: '/sources/[sourceId]',
-          params: { sourceId, groupId },
+          params: { sourceId, groupId, origin: 'group' },
         });
       }}
       onOpenSettings={(groupId) => {
         router.push({ pathname: '/groups/[groupId]/settings', params: { groupId } });
       }}
+      onTabChange={(tab) => router.setParams({ tab })}
     />
   );
 }

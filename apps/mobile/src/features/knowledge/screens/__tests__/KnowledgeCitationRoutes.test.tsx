@@ -108,6 +108,7 @@ describe('knowledge citation routes', () => {
         knowledgeId: 'knowledge-id',
         fileId: 'document-id',
         blockId: 'chunk-id',
+        origin: 'knowledge-list',
         returnTo: 'knowledge-query',
       },
     });
