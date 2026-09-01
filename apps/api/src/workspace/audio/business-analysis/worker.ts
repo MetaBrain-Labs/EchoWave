@@ -30,11 +30,23 @@ const RECOVERY_DELAYS_MS = [15_000, 60_000] as const;
 
 type BusinessAnalysisWorkerOptions = {
   repository: BusinessAnalysisRepository;
-  workflow: BusinessAnalysisWorkflow;
   reporter?: AiExecutionReporter;
   liveUpdates?: LiveUpdateBroker;
   wakeup?: WorkerWakeupSource;
-};
+} & (
+  | {
+      workflow: BusinessAnalysisWorkflow;
+      createWorkflow?: never;
+      deleteCheckpoint?: never;
+    }
+  | {
+      workflow?: never;
+      createWorkflow: (job: ClaimedBusinessAnalysisJob) => Promise<BusinessAnalysisWorkflow>;
+      deleteCheckpoint: (
+        job: Pick<ClaimedBusinessAnalysisJob, 'id' | 'workflowVersion'>,
+      ) => Promise<void>;
+    }
+);
 
 /** 由数据库通知优先唤醒、单并发执行销售复盘任务。 */
 export class BusinessAnalysisWorker {
@@ -120,7 +132,10 @@ export class BusinessAnalysisWorker {
       },
     });
     try {
-      const result = await this.options.workflow.run(job, report, () => this.notify(job, false));
+      const workflow = this.options.createWorkflow
+        ? await this.options.createWorkflow(job)
+        : this.options.workflow;
+      const result = await workflow.run(job, report, () => this.notify(job, false));
       this.notify(job, true);
       report.recordOutput(result.publication);
       await report.finish({
@@ -202,7 +217,8 @@ export class BusinessAnalysisWorker {
     job: Pick<ClaimedBusinessAnalysisJob, 'id' | 'workflowVersion'>,
   ): Promise<void> {
     try {
-      await this.options.workflow.deleteCheckpoint(job);
+      if (this.options.createWorkflow) await this.options.deleteCheckpoint(job);
+      else await this.options.workflow.deleteCheckpoint(job);
       await this.options.repository.markCheckpointCleaned(job.id);
     } catch (error) {
       console.error('Failed to clean business analysis checkpoint', {

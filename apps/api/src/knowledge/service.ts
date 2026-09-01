@@ -27,6 +27,7 @@ import type { KnowledgeAnswerModule } from './answer/knowledgeAnswer.ts';
 import type { IngestionRepository } from './persistence/ingestionRepository.ts';
 import type { KnowledgeRepository } from './catalog/knowledgeRepository.ts';
 import type { ConversationRepository } from './persistence/conversationRepository.ts';
+import type { SettingsService } from '../settings/service.ts';
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
@@ -126,7 +127,7 @@ export class DefaultKnowledgeService implements KnowledgeService {
     private readonly conversationRepository: ConversationRepository,
     private readonly answers: Pick<KnowledgeAnswerModule, 'answer'>,
     private readonly uploadTempDirectory: string,
-    private readonly embeddingModel: string,
+    private readonly settings: Pick<SettingsService, 'resolveCapability'>,
   ) {}
 
   listKnowledgeBases() {
@@ -178,6 +179,7 @@ export class DefaultKnowledgeService implements KnowledgeService {
     const stagedPath = path.join(directory, `${randomUUID()}.upload`);
     await writeFile(stagedPath, buffer, { flag: 'wx', mode: 0o600 });
     try {
+      const embedding = await this.settings.resolveCapability('knowledge_embedding');
       const result = await this.ingestionRepository.createIngestion({
         knowledgeBaseId,
         title: path.basename(file.name),
@@ -186,7 +188,8 @@ export class DefaultKnowledgeService implements KnowledgeService {
         sourceSha256: createHash('sha256').update(buffer).digest('hex'),
         stagedPath,
         parserVersion: 'echowave-parser-v1',
-        embeddingModel: this.embeddingModel,
+        embeddingModel: embedding.model,
+        embeddingBindingRevisionId: embedding.revisionId,
       });
       const document = await this.repository.getDocument(knowledgeBaseId, result.documentId);
       return DocumentUploadResponseSchema.parse({

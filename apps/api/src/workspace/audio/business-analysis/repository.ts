@@ -59,6 +59,8 @@ export type ClaimedBusinessAnalysisJob = {
   model: string;
   workflowVersion: string;
   recoveryAttempts: number;
+  chatBindingRevisionId: string | null;
+  embeddingBindingRevisionId: string | null;
   knowledgeBaseIds: string[];
   knowledgeBases: { id: string; name: string }[];
   settings: BusinessAnalysisSettingsSnapshot;
@@ -234,7 +236,14 @@ export class BusinessAnalysisRepository {
   }
 
   /** 创建业务分析任务；相同输入默认复用，强制重跑只在无进行中任务时创建新版本。 */
-  async queue(audioFileId: string, groupId: string, model: string, force = false) {
+  async queue(
+    audioFileId: string,
+    groupId: string,
+    model: string,
+    force = false,
+    chatBindingRevisionId: string | null = null,
+    embeddingBindingRevisionId: string | null = null,
+  ) {
     const client = await this.pool.connect();
     let snapshot: SourceSnapshot | undefined;
     try {
@@ -264,9 +273,9 @@ export class BusinessAnalysisRepository {
            (tenant_id, group_id, audio_file_id, analysis_revision_id,
             transcript_confirmation_id, confirmation_version, model, input_fingerprint,
             settings_snapshot, knowledge_base_ids, emotion_job_id, role_job_id, status, progress,
-            workflow_version)
+            workflow_version, chat_binding_revision_id, embedding_binding_revision_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::uuid[], $11, $12,
-                 'queued', 0, $13)
+                 'queued', 0, $13, $14, $15)
          RETURNING id`,
         [
           this.tenantId,
@@ -282,6 +291,8 @@ export class BusinessAnalysisRepository {
           snapshot.emotionJobId,
           snapshot.roleJobId,
           BUSINESS_ANALYSIS_WORKFLOW_VERSION,
+          chatBindingRevisionId,
+          embeddingBindingRevisionId,
         ],
       );
       await client.query('COMMIT');
@@ -387,6 +398,8 @@ export class BusinessAnalysisRepository {
       model: row.model,
       workflowVersion: String(row.workflow_version),
       recoveryAttempts: Number(row.recovery_attempts),
+      chatBindingRevisionId: row.chat_binding_revision_id ?? null,
+      embeddingBindingRevisionId: row.embedding_binding_revision_id ?? null,
       knowledgeBaseIds,
       knowledgeBases: knowledgeBases.rows.map((item) => ({
         id: String(item.id),

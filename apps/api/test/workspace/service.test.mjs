@@ -19,6 +19,7 @@ import {
 } from '../../dist/workspace/data-sources/service.js';
 import { DefaultAudioService } from '../../dist/workspace/audio/core/service.js';
 import { WorkspaceRepositoryError } from '../../dist/workspace/errors.js';
+import { SettingsError } from '../../dist/settings/types.js';
 import { AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES } from '@echowave/contracts';
 
 const sourceId = '11111111-1111-4111-8111-111111111111';
@@ -194,6 +195,62 @@ describe('DefaultAudioService audio playback', () => {
 });
 
 describe('DefaultAudioService audio transcription', () => {
+  it('combines local preprocessing health with database capability bindings', async () => {
+    const preprocessor = {
+      capabilities: () => ({
+        ffmpeg: { configured: true, available: true },
+        sileroVad: { model: 'silero-vad-v6.2.1', available: true, unavailableReason: null },
+      }),
+    };
+    const resolved = {
+      audio_transcription: {
+        revisionId: '11111111-1111-4111-8111-111111111112',
+        model: 'qwen-audio-3.0-asr-flash-filetrans',
+        settings: {},
+        provider: {
+          type: 'dashscope',
+          config: { asyncNotifyMode: 'polling' },
+          credential: { apiKey: 'test-dashscope-key' },
+        },
+      },
+      audio_staging: {
+        revisionId: '11111111-1111-4111-8111-111111111113',
+        model: 'aliyun-oss',
+        settings: {},
+        provider: {
+          type: 'aliyun_oss',
+          config: { region: 'cn-beijing', bucket: 'test-bucket' },
+          credential: { accessKeyId: 'test-id', accessKeySecret: 'test-secret' },
+        },
+      },
+    };
+    const createService = (resolveCapability) =>
+      new DefaultAudioService(
+        repository(),
+        '.data/audio',
+        {},
+        'qwen-audio-3.0-asr-flash-filetrans',
+        preprocessor,
+        {},
+        {},
+        { resolveCapability },
+      );
+
+    const configured = await createService(
+      async (capability) => resolved[capability],
+    ).getAudioTranscriptionCapabilities();
+    assert.equal(configured.transcriptionConfigured, true);
+    assert.equal(configured.models[0].available, true);
+    assert.equal(configured.sileroVad.available, true);
+
+    const missing = await createService(async () => {
+      throw new SettingsError('CONFIGURATION_REQUIRED', '未配置。');
+    }).getAudioTranscriptionCapabilities();
+    assert.equal(missing.transcriptionConfigured, false);
+    assert.equal(missing.models[0].available, false);
+    assert.equal(missing.sileroVad.available, true);
+  });
+
   it('rechecks FFmpeg before queueing the fixed whole-file route', async () => {
     const queued = [];
     const audioRepository = {
@@ -280,7 +337,7 @@ describe('DefaultAudioService audio transcription', () => {
           preprocessing: 'whole_file',
           segmentationMode: 'speaker_turn',
         }),
-      (error) => error instanceof TypeError,
+      (error) => error?.name === 'ZodError',
     );
   });
 });

@@ -19,10 +19,12 @@ export const EntityIdSchema = z.string().uuid();
 export const ApiErrorCodeSchema = z.enum([
   'AUDIO_TOO_LARGE',
   'BAD_REQUEST',
+  'CONFIGURATION_REQUIRED',
   'CONFLICT',
   'DOCUMENT_TOO_LARGE',
   'DUPLICATE_DOCUMENT',
   'INTERNAL_ERROR',
+  'INSECURE_CREDENTIAL_TRANSPORT',
   'INVALID_FILE',
   'INVALID_MODEL_OUTPUT',
   'MODEL_TIMEOUT',
@@ -32,6 +34,7 @@ export const ApiErrorCodeSchema = z.enum([
   'TOO_MANY_FILES',
   'TRANSCODER_UNAVAILABLE',
   'UNSUPPORTED_FORMAT',
+  'UNAUTHORIZED',
 ]);
 
 /** 不泄露内部实现的统一 HTTP 错误响应 schema。 */

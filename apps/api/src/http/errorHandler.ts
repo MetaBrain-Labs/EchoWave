@@ -18,10 +18,11 @@ import { KnowledgeAnswerError } from '../knowledge/answer/knowledgeAnswer.ts';
 import { RagRepositoryError } from '../knowledge/persistence/errors.ts';
 import { UploadValidationError } from '../knowledge/service.ts';
 import { WorkspaceRepositoryError } from '../workspace/errors.ts';
+import { SettingsError } from '../settings/types.ts';
 import { AudioUploadValidationError } from '../workspace/data-sources/service.ts';
 import { errorBody } from './response.ts';
 
-type ErrorStatus = 400 | 404 | 409 | 413 | 500 | 503 | 504;
+type ErrorStatus = 400 | 401 | 403 | 404 | 409 | 413 | 500 | 503 | 504;
 
 /** 安装应用级 404 和异常映射。 */
 export function installErrorHandlers(app: Hono): void {
@@ -61,6 +62,19 @@ export function installErrorHandlers(app: Hono): void {
       code = error.code;
       message = error.message;
       retryable = true;
+    } else if (error instanceof SettingsError) {
+      status =
+        error.code === 'UNAUTHORIZED'
+          ? 401
+          : error.code === 'INSECURE_CREDENTIAL_TRANSPORT'
+            ? 403
+            : error.code === 'NOT_FOUND'
+              ? 404
+              : error.code === 'CONFLICT'
+                ? 409
+                : 400;
+      code = error.code;
+      message = error.message;
     } else {
       console.error('Unhandled API error', error);
     }

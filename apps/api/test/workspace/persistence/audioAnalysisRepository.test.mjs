@@ -30,7 +30,7 @@ describe('AudioAnalysisRepository', () => {
     assert.equal((await repository.nextWorkerWakeAt('polling'))?.getTime(), wakeAt.getTime());
     assert.match(calls[0].sql, /provider_submitted_at \+ interval '6 hours'/);
     assert.match(calls[0].sql, /provider_next_poll_at/);
-    assert.deepEqual(calls[0].values, [tenantId, 'polling']);
+    assert.deepEqual(calls[0].values, [tenantId]);
   });
 
   it('queues a new revision and claims it with SKIP LOCKED', async () => {
@@ -169,7 +169,7 @@ describe('AudioAnalysisRepository', () => {
     assert.match(calls[2].sql, /processing_stage = 'awaiting_result'/);
     assert.match(calls[2].sql, /provider_task_id IS NOT NULL/);
     assert.match(calls[2].sql, /provider_next_poll_at = CASE/);
-    assert.deepEqual(calls[2].values, [tenantId, 'polling']);
+    assert.deepEqual(calls[2].values, [tenantId]);
   });
 
   it('rejects a removed model before creating a revision', async () => {

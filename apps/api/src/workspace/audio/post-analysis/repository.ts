@@ -43,6 +43,8 @@ export type ClaimedPostAnalysisJob = {
   customBusinessRoles: string[];
   confirmationId: string;
   confirmationVersion: number;
+  capabilityBindingRevisionId: string | null;
+  stagingBindingRevisionId: string | null;
   segments: PostAnalysisTranscriptSegment[];
 };
 
@@ -66,7 +68,13 @@ export class PostAnalysisRepository {
   }
 
   /** 为当前已发布 ASR 修订创建独立的后置分析任务。 */
-  async queue(audioFileId: string, type: AudioPostAnalysisType, model: string) {
+  async queue(
+    audioFileId: string,
+    type: AudioPostAnalysisType,
+    model: string,
+    capabilityBindingRevisionId: string | null = null,
+    stagingBindingRevisionId: string | null = null,
+  ) {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -99,9 +107,10 @@ export class PostAnalysisRepository {
       const created = await client.query(
         `INSERT INTO ${this.table('audio_post_analysis_jobs')}
            (tenant_id, audio_file_id, analysis_revision_id, transcript_confirmation_id,
-            analysis_type, model, input_snapshot, status, progress)
+            analysis_type, model, input_snapshot, status, progress,
+            capability_binding_revision_id, staging_binding_revision_id)
          VALUES ($1, $2, $3, $4, $5, $6,
-                 jsonb_build_object('customBusinessRoles', $7::jsonb), 'queued', 0)
+                 jsonb_build_object('customBusinessRoles', $7::jsonb), 'queued', 0, $8, $9)
          RETURNING id`,
         [
           this.tenantId,
@@ -111,6 +120,8 @@ export class PostAnalysisRepository {
           type,
           model,
           JSON.stringify(customBusinessRoles),
+          capabilityBindingRevisionId,
+          stagingBindingRevisionId,
         ],
       );
       const response = AudioPostAnalysisStartResponseSchema.parse({
@@ -161,6 +172,7 @@ export class PostAnalysisRepository {
          AND tc.tenant_id = job.tenant_id AND tc.id = job.transcript_confirmation_id
        RETURNING job.id, job.analysis_type, job.model, job.audio_file_id,
                  job.analysis_revision_id, job.transcript_confirmation_id,
+                 job.capability_binding_revision_id, job.staging_binding_revision_id,
                  tc.version_no AS confirmation_version, job.input_snapshot,
                  af.storage_key, af.duration_ms, af.deleted_at`,
       [this.tenantId, type],
@@ -197,6 +209,8 @@ export class PostAnalysisRepository {
       durationMs: Number(row.duration_ms),
       confirmationId: row.transcript_confirmation_id,
       confirmationVersion: Number(row.confirmation_version),
+      capabilityBindingRevisionId: row.capability_binding_revision_id ?? null,
+      stagingBindingRevisionId: row.staging_binding_revision_id ?? null,
       customBusinessRoles: Array.isArray(snapshot.customBusinessRoles)
         ? snapshot.customBusinessRoles.filter((value): value is string => typeof value === 'string')
         : [],

@@ -69,6 +69,8 @@ export type ClaimedAudioTranscription = {
   segmentationMode: AudioTranscriptionSegmentationMode;
   storageKey: string;
   title: string;
+  transcriptionBindingRevisionId: string | null;
+  stagingBindingRevisionId: string | null;
 };
 
 /** Polling 或 EventBridge 发现并允许写入 revision 的 DashScope 终态。 */
@@ -144,6 +146,9 @@ export class AudioAnalysisRepository {
     model: AudioTranscriptionModel,
     preprocessing: AudioTranscriptionPreprocessing,
     segmentationMode: AudioTranscriptionSegmentationMode = 'speaker_turn',
+    transcriptionBindingRevisionId: string | null = null,
+    stagingBindingRevisionId: string | null = null,
+    notifyMode: 'polling' | 'eventbridge' = 'polling',
   ) {
     const client = await this.pool.connect();
     try {
@@ -167,15 +172,17 @@ export class AudioAnalysisRepository {
         `INSERT INTO ${this.table('audio_analysis_revisions')}
            (tenant_id, audio_file_id, revision_no, transcription_model, analysis_model,
             settings_snapshot, status, progress, processing_stage, processing_updated_at,
-            transcription_provider)
+            transcription_provider, transcription_binding_revision_id,
+            staging_binding_revision_id)
          SELECT $1, $2, coalesce(max(revision_no), 0) + 1, $3, $3,
                 jsonb_build_object('speakerDiarization', $5::boolean, 'businessRole', false,
                                    'emotionAnalysis', false, 'timestamps', $6::text,
                                    'preprocessingMode', $4::text, 'language', 'zh',
                                    'diarizationRequested', $5::boolean,
                                    'diarizationAvailability', $7::text,
-                                   'segmentationMode', $8::text),
-                'queued', 0, 'queued', now(), $9
+                                   'segmentationMode', $8::text,
+                                   'asyncNotifyMode', $12::text),
+                'queued', 0, 'queued', now(), $9, $10, $11
          FROM ${this.table('audio_analysis_revisions')}
          WHERE tenant_id = $1 AND audio_file_id = $2
          RETURNING id`,
@@ -189,6 +196,9 @@ export class AudioAnalysisRepository {
           capability.diarizationAvailability,
           segmentationMode,
           capability.provider,
+          transcriptionBindingRevisionId,
+          stagingBindingRevisionId,
+          notifyMode,
         ],
       );
       const response = AudioTranscriptionStartResponseSchema.parse({
@@ -210,7 +220,7 @@ export class AudioAnalysisRepository {
   }
 
   /** 启动时按当前通知模式恢复提交、终态发现和完成阶段。 */
-  async resetInterruptedTranscriptions(notifyMode: 'polling' | 'eventbridge'): Promise<void> {
+  async resetInterruptedTranscriptions(_notifyMode: 'polling' | 'eventbridge'): Promise<void> {
     await this.pool.query(
       `UPDATE ${this.table('audio_analysis_revisions')}
        SET status = 'queued', progress = 0, processing_stage = 'queued',
@@ -231,13 +241,14 @@ export class AudioAnalysisRepository {
            error_stage = NULL, error_code = NULL, error_message = NULL,
            error_retryable = NULL, error_details = NULL,
            provider_next_poll_at = CASE
-             WHEN $2 = 'polling' AND provider_terminal_received_at IS NULL
+             WHEN coalesce(settings_snapshot->>'asyncNotifyMode', 'polling') = 'polling'
+               AND provider_terminal_received_at IS NULL
                THEN coalesce(provider_next_poll_at, now())
              ELSE NULL
            END
        WHERE tenant_id = $1 AND transcription_provider = 'dashscope'
          AND status IN ('queued', 'transcribing', 'analyzing') AND provider_task_id IS NOT NULL`,
-      [this.tenantId, notifyMode],
+      [this.tenantId],
     );
   }
 
@@ -279,7 +290,8 @@ export class AudioAnalysisRepository {
                  ar.provider_terminal_event_id, ar.provider_terminal_status,
                  ar.provider_terminal_received_at, ar.provider_terminal_result_url,
                  ar.provider_terminal_error_code, ar.provider_terminal_error_message,
-                 ar.provider_poll_attempt, ar.provider_last_polled_at, ar.provider_next_poll_at`,
+                 ar.provider_poll_attempt, ar.provider_last_polled_at, ar.provider_next_poll_at,
+                 ar.transcription_binding_revision_id, ar.staging_binding_revision_id`,
       [this.tenantId, maxInFlight],
     );
     const row = result.rows[0];
@@ -319,7 +331,8 @@ export class AudioAnalysisRepository {
                  ar.provider_terminal_event_id, ar.provider_terminal_status,
                  ar.provider_terminal_received_at, ar.provider_terminal_result_url,
                  ar.provider_terminal_error_code, ar.provider_terminal_error_message,
-                 ar.provider_poll_attempt, ar.provider_last_polled_at, ar.provider_next_poll_at`,
+                 ar.provider_poll_attempt, ar.provider_last_polled_at, ar.provider_next_poll_at,
+                 ar.transcription_binding_revision_id, ar.staging_binding_revision_id`,
       [this.tenantId],
     );
     const row = result.rows[0];
@@ -362,7 +375,8 @@ export class AudioAnalysisRepository {
                  ar.provider_terminal_event_id, ar.provider_terminal_status,
                  ar.provider_terminal_received_at, ar.provider_terminal_result_url,
                  ar.provider_terminal_error_code, ar.provider_terminal_error_message,
-                 ar.provider_poll_attempt, ar.provider_last_polled_at, ar.provider_next_poll_at`,
+                 ar.provider_poll_attempt, ar.provider_last_polled_at, ar.provider_next_poll_at,
+                 ar.transcription_binding_revision_id, ar.staging_binding_revision_id`,
       [this.tenantId],
     );
     const row = result.rows[0];
@@ -402,7 +416,8 @@ export class AudioAnalysisRepository {
                  ar.provider_terminal_event_id, ar.provider_terminal_status,
                  ar.provider_terminal_received_at, ar.provider_terminal_result_url,
                  ar.provider_terminal_error_code, ar.provider_terminal_error_message,
-                 ar.provider_poll_attempt, ar.provider_last_polled_at, ar.provider_next_poll_at`,
+                 ar.provider_poll_attempt, ar.provider_last_polled_at, ar.provider_next_poll_at,
+                 ar.transcription_binding_revision_id, ar.staging_binding_revision_id`,
       [this.tenantId],
     );
     const row = result.rows[0];
@@ -411,7 +426,7 @@ export class AudioAnalysisRepository {
   }
 
   /** 返回最近的供应商查询或六小时超时截止点，避免固定高频扫描时间驱动任务。 */
-  async nextWorkerWakeAt(notifyMode: 'polling' | 'eventbridge'): Promise<Date | undefined> {
+  async nextWorkerWakeAt(_notifyMode: 'polling' | 'eventbridge'): Promise<Date | undefined> {
     const result = await this.pool.query(
       `SELECT min(wake_at) AS wake_at
        FROM (
@@ -423,12 +438,13 @@ export class AudioAnalysisRepository {
          UNION ALL
          SELECT provider_next_poll_at AS wake_at
          FROM ${this.table('audio_analysis_revisions')}
-         WHERE $2 = 'polling' AND tenant_id = $1 AND transcription_provider = 'dashscope'
+         WHERE tenant_id = $1 AND transcription_provider = 'dashscope'
+           AND coalesce(settings_snapshot->>'asyncNotifyMode', 'polling') = 'polling'
            AND status = 'transcribing' AND provider_task_id IS NOT NULL
            AND provider_terminal_received_at IS NULL AND provider_next_poll_at IS NOT NULL
            AND processing_stage = 'awaiting_result'
        ) deadlines`,
-      [this.tenantId, notifyMode],
+      [this.tenantId],
     );
     const wakeAt = result.rows[0]?.wake_at;
     return wakeAt ? new Date(wakeAt as string | Date) : undefined;
@@ -492,7 +508,22 @@ export class AudioAnalysisRepository {
       ),
       storageKey: row.storage_key,
       title: row.title,
+      transcriptionBindingRevisionId: row.transcription_binding_revision_id ?? null,
+      stagingBindingRevisionId: row.staging_binding_revision_id ?? null,
     };
+  }
+
+  /** 仅为 EventBridge 验签解析任务创建时冻结的能力 revision。 */
+  async findTranscriptionBindingByTaskId(taskId: string): Promise<string | null | undefined> {
+    const result = await this.pool.query(
+      `SELECT transcription_binding_revision_id
+       FROM ${this.table('audio_analysis_revisions')}
+       WHERE tenant_id = $1 AND transcription_provider = 'dashscope' AND provider_task_id = $2
+       LIMIT 1`,
+      [this.tenantId, taskId],
+    );
+    if (!result.rows[0]) return undefined;
+    return result.rows[0].transcription_binding_revision_id ?? null;
   }
 
   /** 保存临时 OSS 对象键，使重启后的 worker 能继续提交而不重复上传。 */

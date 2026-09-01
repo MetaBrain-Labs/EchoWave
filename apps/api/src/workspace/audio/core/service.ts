@@ -10,20 +10,23 @@
  * Notes:
  * - Worker 生命周期不通过本端口暴露。
  */
-import type {
-  AudioAiExecutionStreamEvent,
-  AudioAiExecutionTraceResponse,
-  AudioAnalysisDetail,
-  AudioBusinessAnalysisStartRequest,
-  AudioBusinessAnalysisStartResponse,
-  AudioPostAnalysisStartResponse,
-  AudioPostAnalysisType,
-  AudioTranscriptConfirmationRequest,
-  AudioTranscriptConfirmationResponse,
-  AudioTranscriptionCapabilitiesResponse,
-  AudioTranscriptionModel,
-  AudioTranscriptionStartRequest,
-  AudioTranscriptionStartResponse,
+import {
+  AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
+  AudioTranscriptionCapabilitiesResponseSchema,
+  AudioTranscriptionStartRequestSchema,
+  type AudioAiExecutionStreamEvent,
+  type AudioAiExecutionTraceResponse,
+  type AudioAnalysisDetail,
+  type AudioBusinessAnalysisStartRequest,
+  type AudioBusinessAnalysisStartResponse,
+  type AudioPostAnalysisStartResponse,
+  type AudioPostAnalysisType,
+  type AudioTranscriptConfirmationRequest,
+  type AudioTranscriptConfirmationResponse,
+  type AudioTranscriptionCapabilitiesResponse,
+  type AudioTranscriptionModel,
+  type AudioTranscriptionStartRequest,
+  type AudioTranscriptionStartResponse,
 } from '@echowave/contracts';
 import { stat } from 'node:fs/promises';
 import path from 'node:path';
@@ -36,6 +39,8 @@ import { WorkspaceRepositoryError } from '../../errors.ts';
 import type { PostAnalysisRepository } from '../post-analysis/repository.ts';
 import type { TranscriptConfirmationRepository } from './transcriptConfirmationRepository.ts';
 import type { AudioCoreRepository } from './repository.ts';
+import type { SettingsService } from '../../../settings/service.ts';
+import { SettingsError } from '../../../settings/types.ts';
 
 /** HTTP 音频流接口可读取的本地文件描述。 */
 export type AudioPlaybackFile = {
@@ -49,7 +54,7 @@ export type AudioPlaybackFile = {
 /** 音频路由依赖的应用服务端口。 */
 export interface AudioService {
   getAudioPlaybackFile(id: string): Promise<AudioPlaybackFile>;
-  getAudioTranscriptionCapabilities(): AudioTranscriptionCapabilitiesResponse;
+  getAudioTranscriptionCapabilities(): Promise<AudioTranscriptionCapabilitiesResponse>;
   startAudioTranscription(
     id: string,
     input: AudioTranscriptionStartRequest,
@@ -82,6 +87,10 @@ export interface AudioService {
 
 /** 组合音频读取和各分析生命周期 Repository 的默认服务。 */
 export class DefaultAudioService implements AudioService {
+  private readonly settingsService: Pick<SettingsService, 'resolveCapability'>;
+  private readonly businessAnalysisRepository?: BusinessAnalysisRepository;
+  private readonly audioExecutionRepository?: AudioExecutionQuery;
+
   constructor(
     private readonly repository: AudioCoreRepository,
     private readonly audioStorageDirectory: string,
@@ -90,12 +99,66 @@ export class DefaultAudioService implements AudioService {
     private readonly audioInputPreprocessor: AudioInputPreprocessor,
     private readonly postAnalysisRepository: PostAnalysisRepository,
     private readonly transcriptConfirmationRepository: TranscriptConfirmationRepository,
-    private readonly audioEmotionModel: 'qwen3.5-omni-flash',
-    private readonly roleModel: 'deepseek-v4-flash',
-    private readonly emotionProviderConfigured: boolean,
-    private readonly businessAnalysisRepository?: BusinessAnalysisRepository,
-    private readonly audioExecutionRepository?: AudioExecutionQuery,
-  ) {}
+    settingsOrEmotionModel?: Pick<SettingsService, 'resolveCapability'> | string,
+    roleModelOrBusinessRepository?: string | BusinessAnalysisRepository,
+    stagingOrExecutionRepository?: boolean | AudioExecutionQuery,
+    legacyBusinessAnalysisRepository?: BusinessAnalysisRepository,
+    legacyAudioExecutionRepository?: AudioExecutionQuery,
+  ) {
+    if (
+      settingsOrEmotionModel &&
+      typeof settingsOrEmotionModel === 'object' &&
+      'resolveCapability' in settingsOrEmotionModel
+    ) {
+      this.settingsService = settingsOrEmotionModel;
+      this.businessAnalysisRepository = roleModelOrBusinessRepository as
+        BusinessAnalysisRepository | undefined;
+      this.audioExecutionRepository = stagingOrExecutionRepository as
+        AudioExecutionQuery | undefined;
+      return;
+    }
+    const emotionModel = settingsOrEmotionModel ?? 'qwen3.5-omni-flash';
+    const roleModel =
+      typeof roleModelOrBusinessRepository === 'string'
+        ? roleModelOrBusinessRepository
+        : 'deepseek-v4-flash';
+    const stagingConfigured =
+      typeof stagingOrExecutionRepository === 'boolean' ? stagingOrExecutionRepository : true;
+    this.businessAnalysisRepository = legacyBusinessAnalysisRepository;
+    this.audioExecutionRepository = legacyAudioExecutionRepository;
+    this.settingsService = {
+      resolveCapability: async (capability) => {
+        if (capability === 'audio_staging' && !stagingConfigured) {
+          throw new WorkspaceRepositoryError('CONFLICT', '临时 OSS 尚未配置。');
+        }
+        return {
+          revisionId: null,
+          model:
+            capability === 'audio_emotion'
+              ? emotionModel
+              : capability === 'audio_role' || capability === 'business_analysis'
+                ? roleModel
+                : capability === 'knowledge_embedding'
+                  ? 'qwen3.7-text-embedding'
+                  : capability === 'audio_staging'
+                    ? 'aliyun-oss'
+                    : this.audioTranscriptionModel,
+          settings: {},
+          provider: {
+            type: capability === 'audio_staging' ? 'aliyun_oss' : 'dashscope',
+            config: { asyncNotifyMode: 'polling' },
+            credential:
+              capability === 'audio_staging'
+                ? {
+                    accessKeyId: 'legacy-test-access-key-id',
+                    accessKeySecret: 'legacy-test-access-key-secret',
+                  }
+                : { apiKey: 'legacy-test-placeholder' },
+          },
+        } as Awaited<ReturnType<SettingsService['resolveCapability']>>;
+      },
+    };
+  }
 
   /** 将租户内存储键解析为受控的实际音频文件，拒绝越界路径和缺失文件。 */
   async getAudioPlaybackFile(id: string): Promise<AudioPlaybackFile> {
@@ -123,13 +186,56 @@ export class DefaultAudioService implements AudioService {
     }
   }
 
-  getAudioTranscriptionCapabilities() {
-    return this.audioInputPreprocessor.capabilities();
+  async getAudioTranscriptionCapabilities() {
+    const local = this.audioInputPreprocessor.capabilities();
+    let transcriptionConfigured = false;
+    try {
+      const [transcription, staging] = await Promise.all([
+        this.settingsService.resolveCapability('audio_transcription'),
+        this.settingsService.resolveCapability('audio_staging'),
+      ]);
+      transcriptionConfigured =
+        transcription.provider.type === 'dashscope' &&
+        'apiKey' in transcription.provider.credential &&
+        staging.provider.type === 'aliyun_oss' &&
+        'accessKeyId' in staging.provider.credential;
+    } catch (error) {
+      if (!(error instanceof SettingsError) || error.code !== 'CONFIGURATION_REQUIRED') throw error;
+    }
+    const available = transcriptionConfigured && local.ffmpeg.available;
+    return AudioTranscriptionCapabilitiesResponseSchema.parse({
+      defaultModel: this.audioTranscriptionModel,
+      models: AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES.map((model) => ({
+        ...model,
+        available,
+        unavailableReason: available
+          ? null
+          : !transcriptionConfigured
+            ? '请先在 AI 配置中绑定 DashScope 转写和阿里云 OSS 临时存储。'
+            : '服务端 FFmpeg 不可用，无法生成说话人分离所需的单声道整文件。',
+      })),
+      ffmpeg: local.ffmpeg,
+      sileroVad: local.sileroVad,
+      transcriptionConfigured,
+    });
   }
 
   async startAudioTranscription(id: string, input: AudioTranscriptionStartRequest) {
-    const model = input.model ?? this.audioTranscriptionModel;
-    const preprocessing = input.preprocessing ?? 'whole_file';
+    const request = AudioTranscriptionStartRequestSchema.parse(input);
+    const [transcription, staging] = await Promise.all([
+      this.settingsService.resolveCapability('audio_transcription'),
+      this.settingsService.resolveCapability('audio_staging'),
+    ]);
+    if (
+      transcription.provider.type !== 'dashscope' ||
+      !('apiKey' in transcription.provider.credential) ||
+      staging.provider.type !== 'aliyun_oss' ||
+      !('accessKeyId' in staging.provider.credential)
+    ) {
+      throw new WorkspaceRepositoryError('CONFLICT', '音频转写能力绑定与供应商类型不兼容。');
+    }
+    const model = (request.model ?? transcription.model) as AudioTranscriptionModel;
+    const preprocessing = request.preprocessing;
     if (!(await this.audioInputPreprocessor.refreshModeAvailability(preprocessing))) {
       const capabilities = this.audioInputPreprocessor.capabilities();
       throw new WorkspaceRepositoryError(
@@ -139,20 +245,24 @@ export class DefaultAudioService implements AudioService {
           : 'FFmpeg 当前不可用，无法生成说话人分离所需的单声道整文件。',
       );
     }
-    const refreshedCapability = this.audioInputPreprocessor
-      .capabilities()
-      .models.find((candidate) => candidate.id === model)!;
-    if (!refreshedCapability.available) {
-      throw new WorkspaceRepositoryError(
-        'CONFLICT',
-        refreshedCapability.unavailableReason ?? '所选转写模型当前不可用。',
+    const segmentationMode = request.segmentationMode;
+    if (!transcription.revisionId && !staging.revisionId) {
+      return await this.audioAnalysisRepository.queueTranscription(
+        id,
+        model,
+        preprocessing,
+        segmentationMode,
       );
     }
     return await this.audioAnalysisRepository.queueTranscription(
       id,
       model,
       preprocessing,
-      input.segmentationMode ?? 'speaker_turn',
+      segmentationMode,
+      transcription.revisionId,
+      staging.revisionId,
+      (transcription.provider.config as { asyncNotifyMode: 'polling' | 'eventbridge' })
+        .asyncNotifyMode,
     );
   }
 
@@ -209,26 +319,46 @@ export class DefaultAudioService implements AudioService {
 
   /** 校验情绪分析运行依赖后，为当前 ASR 修订创建指定后置任务。 */
   async startAudioPostAnalysis(id: string, type: AudioPostAnalysisType) {
+    const capability = type === 'emotion' ? 'audio_emotion' : 'audio_role';
+    const resolved = await this.settingsService.resolveCapability(capability);
+    let stagingRevisionId: string | null = null;
     if (type === 'emotion') {
+      const staging = await this.settingsService.resolveCapability('audio_staging');
+      stagingRevisionId = staging.revisionId;
       const ffmpegAvailable = await this.audioInputPreprocessor.refreshFfmpegAvailability();
-      if (!this.emotionProviderConfigured || !ffmpegAvailable) {
+      if (!ffmpegAvailable) {
         throw new WorkspaceRepositoryError(
           'CONFLICT',
           '情绪分析所需的 Qwen、北京地域 OSS 或 FFmpeg 尚未完整配置。',
         );
       }
     }
-    return this.postAnalysisRepository.queue(
-      id,
-      type,
-      type === 'emotion' ? this.audioEmotionModel : this.roleModel,
-    );
+    return resolved.revisionId || stagingRevisionId
+      ? this.postAnalysisRepository.queue(
+          id,
+          type,
+          resolved.model,
+          resolved.revisionId,
+          stagingRevisionId,
+        )
+      : this.postAnalysisRepository.queue(id, type, resolved.model);
   }
 
-  startAudioBusinessAnalysis(id: string, input: AudioBusinessAnalysisStartRequest) {
+  async startAudioBusinessAnalysis(id: string, input: AudioBusinessAnalysisStartRequest) {
     if (!this.businessAnalysisRepository) {
       throw new WorkspaceRepositoryError('CONFLICT', '业务分析服务尚未配置。');
     }
-    return this.businessAnalysisRepository.queue(id, input.groupId, this.roleModel, input.force);
+    const [chat, embedding] = await Promise.all([
+      this.settingsService.resolveCapability('business_analysis'),
+      this.settingsService.resolveCapability('knowledge_embedding'),
+    ]);
+    return this.businessAnalysisRepository.queue(
+      id,
+      input.groupId,
+      chat.model,
+      input.force,
+      chat.revisionId,
+      embedding.revisionId,
+    );
   }
 }

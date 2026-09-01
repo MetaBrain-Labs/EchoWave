@@ -19,12 +19,9 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import type { Writable } from 'node:stream';
 
-import {
-  AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
-  AudioTranscriptionCapabilitiesResponseSchema,
-  type AudioTranscriptionCapabilitiesResponse,
-  type AudioTranscriptionModel,
-  type AudioTranscriptionPreprocessing,
+import type {
+  AudioTranscriptionCapabilitiesResponse,
+  AudioTranscriptionPreprocessing,
 } from '@echowave/contracts';
 
 import type { ClaimedAudioTranscription } from './repository.ts';
@@ -46,6 +43,12 @@ export type WholeAudioFile = {
   manifest?: VoiceActivityManifest;
   path: string;
 };
+
+/** 服务端本地音频预处理依赖的探测结果，不包含供应商或 Credential 状态。 */
+export type AudioPreprocessingCapabilities = Pick<
+  AudioTranscriptionCapabilitiesResponse,
+  'ffmpeg' | 'sileroVad'
+>;
 
 /** 外部转码命令失败，且不会暴露命令行中的本地路径。 */
 export class AudioPreprocessingError extends Error {
@@ -347,8 +350,6 @@ export class AudioInputPreprocessor {
       voiceActivityDetector?: VoiceActivityDetector;
       voiceActivityFileProcessor?: VoiceActivityFileProcessor;
       vadModelPath?: string;
-      defaultModel: AudioTranscriptionModel;
-      transcriptionConfigured: boolean;
     },
   ) {
     if (options.ffmpegPath) {
@@ -365,7 +366,7 @@ export class AudioInputPreprocessor {
   }
 
   /** 探测全部本地依赖但不阻止 API 提供其他能力。 */
-  async probeFfmpeg(): Promise<AudioTranscriptionCapabilitiesResponse> {
+  async probeFfmpeg(): Promise<AudioPreprocessingCapabilities> {
     await this.refreshFfmpegAvailability();
     await this.refreshVadAvailability();
     return this.capabilities();
@@ -401,40 +402,26 @@ export class AudioInputPreprocessor {
     return this.sileroVadAvailable;
   }
 
-  /** 返回供应商、FFmpeg 与 Silero 分别决定的转写能力。 */
-  capabilities(): AudioTranscriptionCapabilitiesResponse {
-    const available = this.options.transcriptionConfigured && this.ffmpegAvailable;
-    return AudioTranscriptionCapabilitiesResponseSchema.parse({
-      defaultModel: this.options.defaultModel,
-      models: AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES.map((model) => ({
-        ...model,
-        available,
-        unavailableReason: available
-          ? null
-          : !this.options.transcriptionConfigured
-            ? '服务端尚未完整配置 DashScope 与北京地域 OSS。'
-            : '服务端 FFmpeg 不可用，无法生成说话人分离所需的单声道整文件。',
-      })),
+  /** 返回 FFmpeg 与 Silero 的纯本地状态，避免被数据库 Provider 配置污染。 */
+  capabilities(): AudioPreprocessingCapabilities {
+    return {
       ffmpeg: { configured: Boolean(this.options.ffmpegPath), available: this.ffmpegAvailable },
       sileroVad: {
         model: SILERO_VAD_MODEL,
-        available: available && this.sileroVadAvailable,
+        available: this.ffmpegAvailable && this.sileroVadAvailable,
         unavailableReason:
-          available && this.sileroVadAvailable
+          this.ffmpegAvailable && this.sileroVadAvailable
             ? null
-            : !available
-              ? '请先满足 DashScope、OSS 与 FFmpeg 的基础转写依赖。'
+            : !this.ffmpegAvailable
+              ? '请先配置并启用 FFmpeg。'
               : 'Silero VAD 模型或 ONNX Runtime 当前不可用。',
       },
-      transcriptionConfigured: this.options.transcriptionConfigured,
-    });
+    };
   }
 
   /** 在排队前验证用户明确选择的预处理模式。 */
   async refreshModeAvailability(mode: AudioTranscriptionPreprocessing): Promise<boolean> {
-    if (!(await this.refreshFfmpegAvailability()) || !this.options.transcriptionConfigured) {
-      return false;
-    }
+    if (!(await this.refreshFfmpegAvailability())) return false;
     if (mode === 'whole_file') return true;
     return this.refreshVadAvailability();
   }

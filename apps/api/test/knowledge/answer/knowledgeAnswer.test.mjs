@@ -114,6 +114,63 @@ function createHarness({
 }
 
 describe('trusted knowledge answer module', () => {
+  it('resolves dynamic providers only when an answer is requested', async () => {
+    const events = [];
+    const repository = {
+      getOrCreateConversation: async () => ({ id: conversationId, threadId: 'thread-dynamic' }),
+      beginRun: async () => 'run-dynamic',
+      search: async () => [],
+      completeRun: async () => {},
+      failRun: async () => {},
+      listExpiredConversations: async () => [],
+      deleteExpiredConversation: async () => {},
+    };
+    const answers = createKnowledgeAnswerModule({
+      knowledgeRepository: repository,
+      conversationRepository: repository,
+      checkpointer: { deleteThread: async () => {} },
+      resolveRuntime: async () => {
+        events.push('resolve-runtime');
+        return {
+          embeddings: {
+            embedQueryWithUsage: async () => ({
+              vectors: [Array(1024).fill(0.1)],
+              tokens: 1,
+              provider: 'test-provider',
+              model: 'qwen3.7-text-embedding',
+              estimatedCost: { amount: 0, currency: 'CNY' },
+            }),
+          },
+          agent: {
+            generate: async () => ({
+              candidate: { answer: '未找到依据。', grounded: false, citedChunkIds: [] },
+              usage: { inputTokens: 1, outputTokens: 1 },
+            }),
+            correctCitations: async (candidate) => ({
+              candidate,
+              usage: { inputTokens: 0, outputTokens: 0 },
+            }),
+          },
+          ragConfig: {
+            embeddingModel: 'qwen3.7-text-embedding',
+            deepSeekChatModel: 'deepseek-v4-flash',
+          },
+          embeddingBindingRevisionId: 'embedding-revision',
+          chatBindingRevisionId: 'chat-revision',
+        };
+      },
+      scheduleCleanup: () => () => {},
+    });
+
+    assert.deepEqual(events, []);
+    await answers.answer({
+      knowledgeBaseId,
+      request: { question: '何时解析 Provider？' },
+    });
+    assert.deepEqual(events, ['resolve-runtime']);
+    await answers.dispose();
+  });
+
   it('uses a forty-five second total answer signal', async () => {
     const timeouts = [];
     const controller = new AbortController();

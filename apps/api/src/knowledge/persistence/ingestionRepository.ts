@@ -33,6 +33,8 @@ export type ClaimedIngestionJob = {
   format: DocumentFormat;
   sizeBytes: number;
   attempts: number;
+  embeddingBindingRevisionId: string | null;
+  embeddingModel: string;
 };
 
 type PublishInput = {
@@ -83,6 +85,7 @@ export class IngestionRepository {
     stagedPath: string;
     parserVersion: string;
     embeddingModel: string;
+    embeddingBindingRevisionId: string | null;
   }) {
     const client = await this.pool.connect();
     try {
@@ -126,9 +129,17 @@ export class IngestionRepository {
       }
       const revision = await client.query(
         `INSERT INTO ${this.table('document_revisions')}
-           (tenant_id, document_id, source_sha256, parser_version, embedding_model, embedding_dimensions, status)
-         VALUES ($1, $2, $3, $4, $5, 1024, 'processing') RETURNING id`,
-        [this.tenantId, documentId, input.sourceSha256, input.parserVersion, input.embeddingModel],
+           (tenant_id, document_id, source_sha256, parser_version, embedding_model,
+            embedding_dimensions, embedding_binding_revision_id, status)
+         VALUES ($1, $2, $3, $4, $5, 1024, $6, 'processing') RETURNING id`,
+        [
+          this.tenantId,
+          documentId,
+          input.sourceSha256,
+          input.parserVersion,
+          input.embeddingModel,
+          input.embeddingBindingRevisionId,
+        ],
       );
       const revisionId = revision.rows[0].id as string;
       const job = await client.query(
@@ -159,9 +170,11 @@ export class IngestionRepository {
        UPDATE ${this.table('ingestion_jobs')} j
        SET status = 'running', attempts = attempts + 1,
            lease_until = now() + interval '2 minutes', updated_at = now()
-       FROM candidate, ${this.table('documents')} d
+       FROM candidate, ${this.table('documents')} d, ${this.table('document_revisions')} revision
        WHERE j.id = candidate.id AND d.tenant_id = j.tenant_id AND d.id = j.document_id
-       RETURNING j.*, d.title, d.format, d.size_bytes`,
+         AND revision.tenant_id = j.tenant_id AND revision.id = j.revision_id
+       RETURNING j.*, d.title, d.format, d.size_bytes, revision.embedding_model,
+                 revision.embedding_binding_revision_id`,
       [this.tenantId],
     );
     const row = result.rows[0];
@@ -177,6 +190,8 @@ export class IngestionRepository {
       format: row.format,
       sizeBytes: Number(row.size_bytes),
       attempts: row.attempts,
+      embeddingBindingRevisionId: row.embedding_binding_revision_id ?? null,
+      embeddingModel: row.embedding_model,
     };
   }
 

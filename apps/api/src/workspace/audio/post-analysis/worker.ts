@@ -68,9 +68,16 @@ type WorkerOptions = {
   roleRecognizer?: DeepSeekRoleRecognizer;
   preprocessor?: AudioWindowPreprocessor;
   ossStaging?: OssStagingStore;
+  resolveRuntime?: (job: ClaimedPostAnalysisJob) => Promise<PostAnalysisRuntime>;
   reporter?: AiExecutionReporter;
   liveUpdates?: LiveUpdateBroker;
   wakeup?: WorkerWakeupSource;
+};
+
+type PostAnalysisRuntime = {
+  emotionAnalyzer?: QwenEmotionAnalyzer;
+  roleRecognizer?: DeepSeekRoleRecognizer;
+  ossStaging?: OssStagingStore;
 };
 
 /** 由数据库通知优先唤醒、单并发执行一种后置分析任务。 */
@@ -158,6 +165,9 @@ export class AudioPostAnalysisWorker {
     });
     const startedAt = Date.now();
     try {
+      const runtime = this.options.resolveRuntime
+        ? await this.options.resolveRuntime(job)
+        : this.options;
       if (job.segments.length === 0) {
         throw new PostAnalysisProviderError(
           'INVALID_MODEL_OUTPUT',
@@ -165,8 +175,8 @@ export class AudioPostAnalysisWorker {
           false,
         );
       }
-      if (job.type === 'emotion') await this.executeEmotion(job, report);
-      else await this.executeRole(job, report);
+      if (job.type === 'emotion') await this.executeEmotion(job, report, runtime);
+      else await this.executeRole(job, report, runtime);
       await report.finish({
         status: 'completed',
         metadata: { durationMs: Date.now() - startedAt },
@@ -212,11 +222,12 @@ export class AudioPostAnalysisWorker {
   private async executeRole(
     job: ClaimedPostAnalysisJob,
     report: AiExecutionRecorder,
+    runtime: PostAnalysisRuntime,
   ): Promise<void> {
-    if (!this.options.roleRecognizer) {
+    if (!runtime.roleRecognizer) {
       throw new PostAnalysisProviderError('MODEL_UNAVAILABLE', '角色识别模型尚未配置。', false);
     }
-    const results = await this.options.roleRecognizer.recognize(
+    const results = await runtime.roleRecognizer.recognize(
       job.segments,
       job.customBusinessRoles,
       report,
@@ -231,19 +242,24 @@ export class AudioPostAnalysisWorker {
   private async executeEmotion(
     job: ClaimedPostAnalysisJob,
     report: AiExecutionRecorder,
+    runtime: PostAnalysisRuntime,
   ): Promise<void> {
-    if (!this.options.emotionAnalyzer || !this.options.preprocessor || !this.options.ossStaging) {
+    if (!runtime.emotionAnalyzer || !this.options.preprocessor || !runtime.ossStaging) {
       throw new PostAnalysisProviderError(
         'MODEL_UNAVAILABLE',
         '情绪分析所需的 Qwen、OSS 或 FFmpeg 尚未完整配置。',
         false,
       );
     }
+    const emotionRuntime = {
+      emotionAnalyzer: runtime.emotionAnalyzer,
+      ossStaging: runtime.ossStaging,
+    };
     this.windowSequence = 0;
     const initialWindows = buildEmotionWindows(job.segments);
     const results: EmotionPublication[] = [];
     for (const window of initialWindows) {
-      results.push(...(await this.analyzeEmotionWindow(job, window, report)));
+      results.push(...(await this.analyzeEmotionWindow(job, window, report, emotionRuntime)));
       await this.options.repository.updateProgress(
         job.id,
         5 + (results.length / job.segments.length) * 88,
@@ -269,6 +285,7 @@ export class AudioPostAnalysisWorker {
     job: ClaimedPostAnalysisJob,
     segments: PostAnalysisTranscriptSegment[],
     report: AiExecutionRecorder,
+    runtime: Required<Pick<PostAnalysisRuntime, 'emotionAnalyzer' | 'ossStaging'>>,
   ): Promise<EmotionPublication[]> {
     const startMs = Math.max(0, segments[0]!.startMs - WINDOW_CONTEXT_MS);
     const endMs = Math.min(job.durationMs, segments.at(-1)!.endMs + WINDOW_CONTEXT_MS);
@@ -280,10 +297,10 @@ export class AudioPostAnalysisWorker {
       startMs,
       endMs,
     });
-    const objectKey = await this.options.ossStaging!.uploadEmotionWindow(job.id, path);
+    const objectKey = await runtime.ossStaging.uploadEmotionWindow(job.id, path);
     try {
-      return await this.options.emotionAnalyzer!.analyze(
-        this.options.ossStaging!.signedGetUrl(objectKey),
+      return await runtime.emotionAnalyzer.analyze(
+        runtime.ossStaging.signedGetUrl(objectKey),
         segments.map((segment) => ({
           ...segment,
           relativeStartMs: segment.startMs - startMs,
@@ -305,13 +322,13 @@ export class AudioPostAnalysisWorker {
       ) {
         const middle = Math.ceil(segments.length / 2);
         return [
-          ...(await this.analyzeEmotionWindow(job, segments.slice(0, middle), report)),
-          ...(await this.analyzeEmotionWindow(job, segments.slice(middle), report)),
+          ...(await this.analyzeEmotionWindow(job, segments.slice(0, middle), report, runtime)),
+          ...(await this.analyzeEmotionWindow(job, segments.slice(middle), report, runtime)),
         ];
       }
       throw error;
     } finally {
-      await this.options.ossStaging!.delete(objectKey).catch(() => {
+      await runtime.ossStaging.delete(objectKey).catch(() => {
         console.warn('Failed to clean transient emotion analysis object', { jobId: job.id });
       });
     }
