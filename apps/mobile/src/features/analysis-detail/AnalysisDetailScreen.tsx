@@ -45,6 +45,7 @@ import {
 import { getGroupSettings } from '@/shared/api/groupsApi';
 import { WorkspaceRequestError } from '@/shared/api/request';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { applyExecutionTraceEvent, hasRunningExecution } from './executionTraceState';
 import {
   colors,
   fontFamilies,
@@ -153,6 +154,8 @@ export function AnalysisDetailScreen({
   const [executionTraceError, setExecutionTraceError] = useState('');
   const [appActive, setAppActive] = useState(AppState.currentState !== 'background');
   const executionCursorRef = useRef('');
+  const executionTraceRef = useRef<AudioAiExecutionTraceResponse | undefined>(undefined);
+  const executionScopeRef = useRef('');
   const detailRequestSequenceRef = useRef(0);
   const [activeTab, setActiveTab] = useState<AnalysisTab>('transcript');
   const [expandedPlayer, setExpandedPlayer] = useState(false);
@@ -180,11 +183,13 @@ export function AnalysisDetailScreen({
     setHideIrrelevant(value);
   };
   const hasSummary = Boolean(detail?.summarySections.length);
-  const currentExecutionScope = `${detailId}:${groupId ?? ''}`;
+  const currentExecutionScope = `${detailId}:${detail?.revisionId ?? ''}:${groupId ?? ''}`;
   const currentExecutionTrace =
     executionTraceScope === currentExecutionScope ? executionTrace : undefined;
   useEffect(() => {
+    executionScopeRef.current = currentExecutionScope;
     executionCursorRef.current = '';
+    executionTraceRef.current = undefined;
   }, [currentExecutionScope]);
   const transcriptSegments = detail?.scenes.flatMap((scene) => scene.segments) ?? [];
   const transcriptDirty =
@@ -240,14 +245,28 @@ export function AnalysisDetailScreen({
   }, []);
   const loadExecutionTrace = useCallback(
     async (showLoading = true) => {
+      const cursorAtStart = executionCursorRef.current;
       if (showLoading) setExecutionTraceLoading(true);
       setExecutionTraceError('');
       try {
-        setExecutionTrace(await getAudioExecutionTrace(detailId, groupId));
+        const nextTrace = await getAudioExecutionTrace(detailId, groupId);
+        // SSE 已消费新事件时，较早发出的 REST 响应不得覆盖更新后的本地轨迹。
+        if (
+          executionScopeRef.current !== currentExecutionScope ||
+          executionCursorRef.current !== cursorAtStart
+        ) {
+          return;
+        }
+        executionTraceRef.current = nextTrace;
+        setExecutionTrace(nextTrace);
       } catch (reason) {
-        setExecutionTraceError(reason instanceof Error ? reason.message : '模型详情加载失败。');
+        if (executionScopeRef.current === currentExecutionScope) {
+          setExecutionTraceError(reason instanceof Error ? reason.message : '模型详情加载失败。');
+        }
       } finally {
-        setExecutionTraceScope(currentExecutionScope);
+        if (executionScopeRef.current === currentExecutionScope) {
+          setExecutionTraceScope(currentExecutionScope);
+        }
         if (showLoading) setExecutionTraceLoading(false);
       }
     },
@@ -400,142 +419,28 @@ export function AnalysisDetailScreen({
           cursor: executionCursorRef.current || undefined,
           signal: controller.signal,
           onEvent: (event) => {
-            executionCursorRef.current = event.cursor;
             if (event.type === 'error') {
               setExecutionTraceError(event.error.message);
               return;
             }
             failures = 0;
             stopFallback();
-            if (event.type === 'snapshot') {
-              setExecutionTrace(event.trace);
-              setExecutionTraceScope(currentExecutionScope);
-              setExecutionTraceError('');
+            if (event.type === 'heartbeat') {
+              // 连接可能仍健康但曾遗漏终态；运行中快照必须周期性与数据库重新对齐。
+              if (hasRunningExecution(executionTraceRef.current)) void loadExecutionTrace(false);
               return;
             }
-            if (event.type === 'run-status') {
-              setExecutionTrace((current) => {
-                if (
-                  !current ||
-                  current.audioFileId !== event.audioFileId ||
-                  current.analysisRevisionId !== event.analysisRevisionId
-                ) {
-                  return current;
-                }
-                const exists = current.runs.some((run) => run.id === event.runId);
-                return {
-                  ...current,
-                  runs: exists
-                    ? current.runs.map((run) => (run.id === event.runId ? event.run : run))
-                    : [event.run, ...current.runs],
-                };
-              });
+            const nextTrace = applyExecutionTraceEvent(executionTraceRef.current, event);
+            if (!nextTrace) {
+              // 未能应用的持久化事件不能被游标越过，否则重连后不会再次收到它。
+              void loadExecutionTrace(false);
               return;
             }
-            if (event.type === 'step') {
-              setExecutionTrace((current) => {
-                if (!current || current.analysisRevisionId !== event.analysisRevisionId) {
-                  return current;
-                }
-                return {
-                  ...current,
-                  runs: current.runs.map((run) => {
-                    if (run.id !== event.runId) return run;
-                    const exists = run.steps.some((step) => step.id === event.step.id);
-                    const steps = exists
-                      ? run.steps.map((step) => (step.id === event.step.id ? event.step : step))
-                      : [...run.steps, event.step];
-                    return {
-                      ...run,
-                      steps: steps.sort((left, right) => left.sequence - right.sequence),
-                    };
-                  }),
-                };
-              });
-              return;
-            }
-            if (event.type === 'model-start' || event.type === 'model-finish') {
-              setExecutionTrace((current) => {
-                if (!current || current.analysisRevisionId !== event.analysisRevisionId) {
-                  return current;
-                }
-                return {
-                  ...current,
-                  runs: current.runs.map((run) => {
-                    if (run.id !== event.runId) return run;
-                    const exists = run.modelCalls.some((call) => call.id === event.operationId);
-                    const modelCalls = exists
-                      ? run.modelCalls.map((call) =>
-                          call.id === event.operationId ? event.modelCall : call,
-                        )
-                      : [...run.modelCalls, event.modelCall];
-                    return {
-                      ...run,
-                      modelCalls: modelCalls.sort((left, right) => left.sequence - right.sequence),
-                    };
-                  }),
-                };
-              });
-              return;
-            }
-            if (event.type === 'tool-start' || event.type === 'tool-finish') {
-              setExecutionTrace((current) => {
-                if (!current || current.analysisRevisionId !== event.analysisRevisionId) {
-                  return current;
-                }
-                return {
-                  ...current,
-                  runs: current.runs.map((run) => {
-                    if (run.id !== event.runId) return run;
-                    const exists = run.toolCalls.some((tool) => tool.id === event.operationId);
-                    const toolCalls = exists
-                      ? run.toolCalls.map((tool) =>
-                          tool.id === event.operationId ? event.toolCall : tool,
-                        )
-                      : [...run.toolCalls, event.toolCall];
-                    return {
-                      ...run,
-                      toolCalls: toolCalls.sort((left, right) => left.sequence - right.sequence),
-                    };
-                  }),
-                };
-              });
-              return;
-            }
-            if (event.type === 'reasoning-delta') {
-              setExecutionTrace((current) => {
-                if (
-                  !current ||
-                  current.audioFileId !== event.audioFileId ||
-                  current.analysisRevisionId !== event.analysisRevisionId
-                ) {
-                  return current;
-                }
-                return {
-                  ...current,
-                  runs: current.runs.map((run) =>
-                    run.id !== event.runId
-                      ? run
-                      : {
-                          ...run,
-                          modelCalls: run.modelCalls.map((call) =>
-                            call.id !== event.operationId
-                              ? call
-                              : {
-                                  ...call,
-                                  reasoningContent: `${call.reasoningContent}${event.delta}`.slice(
-                                    0,
-                                    120_000,
-                                  ),
-                                  reasoningTruncated: call.reasoningTruncated || event.truncated,
-                                },
-                          ),
-                        },
-                  ),
-                };
-              });
-              return;
-            }
+            executionTraceRef.current = nextTrace;
+            setExecutionTrace(nextTrace);
+            setExecutionTraceScope(currentExecutionScope);
+            setExecutionTraceError('');
+            executionCursorRef.current = event.cursor;
           },
         });
         if (!disposed) throw new Error('模型执行实时流已关闭。');

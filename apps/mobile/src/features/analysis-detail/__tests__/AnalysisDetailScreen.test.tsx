@@ -1174,7 +1174,49 @@ describe('AnalysisDetailScreen', () => {
     });
     fireEvent.press(screen.getByRole('button', { name: '回到最新' }));
     expect(screen.queryByRole('button', { name: '回到最新' })).toBeNull();
-    expect(workspaceApi.getAudioExecutionTrace).toHaveBeenCalledTimes(1);
+
+    jest.mocked(workspaceApi.getAudioExecutionTrace).mockResolvedValueOnce({
+      audioFileId: analysisFixture.audioFileId,
+      analysisRevisionId: analysisFixture.id,
+      runs: [
+        {
+          id: runId,
+          kind: 'audio-business-analysis',
+          name: 'EchoWave sales conversation review',
+          phase: null,
+          status: 'completed',
+          groupId,
+          sourceJobId: 'b1000000-0000-4000-8000-000000000001',
+          startedAt: '2026-08-29T01:00:00.000Z',
+          completedAt: '2026-08-29T01:00:58.000Z',
+          durationMs: 58_000,
+          error: null,
+          steps: [],
+          modelCalls: [
+            {
+              ...runningCall,
+              status: 'completed',
+              completedAt: '2026-08-29T01:00:57.895Z',
+              durationMs: 56_895,
+              reasoningContent: '先核对转写，再检查知识证据。继续检查成交风险。',
+            },
+          ],
+          toolCalls: [],
+        },
+      ],
+    });
+    await act(async () => {
+      streamOptions?.onEvent({
+        type: 'heartbeat',
+        cursor: '4',
+        audioFileId: analysisFixture.audioFileId,
+        analysisRevisionId: analysisFixture.id,
+        occurredAt: '2026-08-29T01:01:00.000Z',
+      });
+    });
+    await waitFor(() => expect(workspaceApi.getAudioExecutionTrace).toHaveBeenCalledTimes(2));
+    fireEvent.press(await screen.findByText('业务分析'));
+    expect(await screen.findByText('第 1 次 · 成功 · 57 秒')).toBeTruthy();
   });
 
   it('renders an actionable state for unknown detail ids', async () => {
