@@ -14,6 +14,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { KnowledgeQueryScreen } from '@/features/knowledge/screens/KnowledgeQueryScreen';
 import { parseResourceOrigin } from '@/shared/navigation/resourceOrigin';
+import { backOrReplace } from '@/shared/navigation/routeBack';
 import { firstRouteParam } from '@/shared/navigation/routeParams';
 
 /** 渲染指定知识库的临时可信问答页面。 */
@@ -31,7 +32,7 @@ export default function KnowledgeQueryRoute() {
     <KnowledgeQueryScreen
       knowledgeId={knowledgeId}
       onBack={() =>
-        router.replace({
+        backOrReplace(router, {
           pathname: '/knowledge/[knowledgeId]',
           params: { knowledgeId, origin, ...(groupId ? { groupId } : {}) },
         })

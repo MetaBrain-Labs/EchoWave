@@ -5,7 +5,7 @@
  *
  * Responsibilities:
  * - 锁定来源参数的创建、透传与安全回退。
- * - 防止详情页再次依赖不稳定的历史栈返回。
+ * - 验证应用内返回优先复用真实原生栈。
  *
  * Notes:
  * - 页面内容使用最小交互替身，仅测试 Expo Router 协调行为。
@@ -22,6 +22,8 @@ import DocumentDetailRoute from '../../../app/knowledge/[knowledgeId]/files/[fil
 import SourceDetailRoute from '../../../app/sources/[sourceId]';
 
 const mockRouter = {
+  back: jest.fn(),
+  canGoBack: jest.fn(() => true),
   push: jest.fn(),
   replace: jest.fn(),
   setParams: jest.fn(),
@@ -136,6 +138,7 @@ jest.mock('@/features/knowledge/screens/DocumentDetailScreen', () => ({
 describe('resource origin navigation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockRouter.canGoBack.mockReturnValue(true);
     mockRouteParams = {};
   });
 
@@ -176,7 +179,7 @@ describe('resource origin navigation', () => {
     });
   });
 
-  it('returns a grouped source through analysis to its original group tab', () => {
+  it('returns a grouped source through analysis using the native parent stack', () => {
     mockRouteParams = { sourceId: 'source-id', groupId: 'group-id', origin: 'group' };
     const sourceScreen = render(<SourceDetailRoute />);
     fireEvent.press(sourceScreen.getByText('打开数据源分析'));
@@ -201,22 +204,18 @@ describe('resource origin navigation', () => {
     };
     const analysisScreen = render(<AnalysisDetailRoute />);
     fireEvent.press(analysisScreen.getByText('分析返回'));
-    expect(mockRouter.replace).toHaveBeenCalledWith({
-      pathname: '/sources/[sourceId]',
-      params: { sourceId: 'source-id', origin: 'group', groupId: 'group-id' },
-    });
+    expect(mockRouter.back).toHaveBeenCalledTimes(1);
+    expect(mockRouter.replace).not.toHaveBeenCalled();
     analysisScreen.unmount();
 
     mockRouteParams = { sourceId: 'source-id', groupId: 'group-id', origin: 'group' };
     const restoredSourceScreen = render(<SourceDetailRoute />);
     fireEvent.press(restoredSourceScreen.getByText('数据源返回'));
-    expect(mockRouter.replace).toHaveBeenCalledWith({
-      pathname: '/',
-      params: { groupId: 'group-id', tab: 'sources' },
-    });
+    expect(mockRouter.back).toHaveBeenCalledTimes(2);
+    expect(mockRouter.replace).not.toHaveBeenCalled();
   });
 
-  it('propagates grouped knowledge context to documents and falls back safely', () => {
+  it('propagates grouped knowledge context and pops documents to their real parent', () => {
     mockRouteParams = { knowledgeId: 'knowledge-id', groupId: 'group-id', origin: 'group' };
     const detailScreen = render(<KnowledgeDetailRoute />);
     fireEvent.press(detailScreen.getByText('打开知识文档'));
@@ -239,12 +238,42 @@ describe('resource origin navigation', () => {
     };
     const documentScreen = render(<DocumentDetailRoute />);
     fireEvent.press(documentScreen.getByText('知识文档返回'));
-    expect(mockRouter.replace).toHaveBeenCalledWith({
-      pathname: '/knowledge/[knowledgeId]',
-      params: { knowledgeId: 'knowledge-id', origin: 'group', groupId: 'group-id' },
-    });
+    expect(mockRouter.back).toHaveBeenCalledTimes(1);
+    expect(mockRouter.replace).not.toHaveBeenCalled();
     documentScreen.unmount();
+  });
 
+  it('falls back through origin parameters only when no native history exists', () => {
+    mockRouter.canGoBack.mockReturnValue(false);
+
+    mockRouteParams = { sourceId: 'source-id', groupId: 'group-id', origin: 'group' };
+    const sourceScreen = render(<SourceDetailRoute />);
+    fireEvent.press(sourceScreen.getByText('数据源返回'));
+    expect(mockRouter.replace).toHaveBeenCalledWith({
+      pathname: '/',
+      params: { groupId: 'group-id', tab: 'sources' },
+    });
+    sourceScreen.unmount();
+
+    jest.clearAllMocks();
+    mockRouter.canGoBack.mockReturnValue(false);
+    mockRouteParams = {
+      id: 'audio-id',
+      groupId: 'analysis-group-id',
+      origin: 'group',
+      originGroupId: 'group-id',
+      returnSourceId: 'source-id',
+    };
+    const analysisScreen = render(<AnalysisDetailRoute />);
+    fireEvent.press(analysisScreen.getByText('分析返回'));
+    expect(mockRouter.replace).toHaveBeenCalledWith({
+      pathname: '/sources/[sourceId]',
+      params: { sourceId: 'source-id', origin: 'group', groupId: 'group-id' },
+    });
+    analysisScreen.unmount();
+
+    jest.clearAllMocks();
+    mockRouter.canGoBack.mockReturnValue(false);
     mockRouteParams = { knowledgeId: 'knowledge-id', origin: 'invalid' };
     const fallbackScreen = render(<KnowledgeDetailRoute />);
     fireEvent.press(fallbackScreen.getByText('知识库返回'));

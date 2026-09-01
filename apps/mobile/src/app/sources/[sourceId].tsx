@@ -14,6 +14,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { DataSourceDetailScreen } from '@/features/data-sources/screens/DataSourceDetailScreen';
 import { parseResourceOrigin } from '@/shared/navigation/resourceOrigin';
+import { backOrReplace } from '@/shared/navigation/routeBack';
 import { firstRouteParam } from '@/shared/navigation/routeParams';
 
 /** 渲染路由参数指定的数据源详情。 */
@@ -29,9 +30,9 @@ export default function DataSourceDetailRoute() {
   const sourceId = firstRouteParam(params.sourceId);
   const goBack = () => {
     if (origin === 'group' && groupId) {
-      router.replace({ pathname: '/', params: { groupId, tab: 'sources' } });
+      backOrReplace(router, { pathname: '/', params: { groupId, tab: 'sources' } });
     } else {
-      router.replace('/(tabs)/sources');
+      backOrReplace(router, '/(tabs)/sources');
     }
   };
 

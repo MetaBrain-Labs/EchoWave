@@ -14,6 +14,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { DocumentDetailScreen } from '@/features/knowledge/screens/DocumentDetailScreen';
 import { parseResourceOrigin } from '@/shared/navigation/resourceOrigin';
+import { backOrReplace } from '@/shared/navigation/routeBack';
 import { firstRouteParam } from '@/shared/navigation/routeParams';
 
 /** 渲染指定知识文档并连接文档块详情导航。 */
@@ -36,14 +37,10 @@ export default function DocumentDetailRoute() {
   const initialTab = firstRouteParam(params.tab) === 'original' ? 'original' : 'parsed';
   const returnsToQuery = firstRouteParam(params.returnTo) === 'knowledge-query';
   const goBack = () => {
-    if (returnsToQuery && router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace({
-        pathname: '/knowledge/[knowledgeId]',
-        params: { knowledgeId, origin, ...(groupId ? { groupId } : {}) },
-      });
-    }
+    backOrReplace(router, {
+      pathname: '/knowledge/[knowledgeId]',
+      params: { knowledgeId, origin, ...(groupId ? { groupId } : {}) },
+    });
   };
 
   return (

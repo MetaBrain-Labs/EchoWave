@@ -14,6 +14,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { AnalysisDetailScreen } from '@/features/analysis-detail/AnalysisDetailScreen';
 import { parseResourceOrigin } from '@/shared/navigation/resourceOrigin';
+import { backOrReplace } from '@/shared/navigation/routeBack';
 import { firstRouteParam } from '@/shared/navigation/routeParams';
 
 /** 读取分析 ID 并渲染对应分析详情页面。 */
@@ -39,7 +40,7 @@ export default function AnalysisDetailRoute() {
   const origin = parseResourceOrigin(originParam);
   const goBack = () => {
     if (sourceId) {
-      router.replace({
+      backOrReplace(router, {
         pathname: '/sources/[sourceId]',
         params: {
           sourceId,
@@ -48,9 +49,12 @@ export default function AnalysisDetailRoute() {
         },
       });
     } else if (analysisGroupId) {
-      router.replace({ pathname: '/', params: { groupId: analysisGroupId, tab: 'audio' } });
+      backOrReplace(router, {
+        pathname: '/',
+        params: { groupId: analysisGroupId, tab: 'audio' },
+      });
     } else {
-      router.replace('/');
+      backOrReplace(router, '/');
     }
   };
 

@@ -11,7 +11,7 @@
  * - 业务页面状态不得提升到此组合根。
  */
 import { useFonts } from 'expo-font';
-import { Slot } from 'expo-router';
+import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -41,7 +41,7 @@ export default function RootLayout() {
       <View style={styles.stage}>
         <View style={styles.canvas}>
           <NavigationLoadingProvider>
-            <Slot />
+            <Stack screenOptions={{ headerShown: false }} />
             <StatusBar style="dark" />
             <StatusBarBackdrop />
           </NavigationLoadingProvider>

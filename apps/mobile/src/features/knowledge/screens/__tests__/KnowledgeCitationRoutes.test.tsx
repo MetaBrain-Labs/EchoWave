@@ -34,13 +34,20 @@ jest.mock('@/shared/navigation/NavigationLoadingProvider', () => ({
 jest.mock('@/features/knowledge/screens/KnowledgeQueryScreen', () => {
   return {
     KnowledgeQueryScreen: ({
+      onBack,
       onOpenCitation,
     }: {
+      onBack: () => void;
       onOpenCitation: (documentId: string, chunkId: string) => void;
     }) => (
-      <MockPressable onPress={() => onOpenCitation('document-id', 'chunk-id')}>
-        <MockText>打开引用</MockText>
-      </MockPressable>
+      <MockView>
+        <MockPressable onPress={onBack}>
+          <MockText>问答返回</MockText>
+        </MockPressable>
+        <MockPressable onPress={() => onOpenCitation('document-id', 'chunk-id')}>
+          <MockText>打开引用</MockText>
+        </MockPressable>
+      </MockView>
     ),
   };
 });
@@ -112,6 +119,16 @@ describe('knowledge citation routes', () => {
         returnTo: 'knowledge-query',
       },
     });
+  });
+
+  it('returns from the query route through its real knowledge-detail parent', () => {
+    mockRouteParams = { knowledgeId: 'knowledge-id', origin: 'knowledge-list' };
+    const screen = render(<KnowledgeQueryRoute />);
+
+    fireEvent.press(screen.getByText('问答返回'));
+
+    expect(mockRouter.back).toHaveBeenCalledTimes(1);
+    expect(mockRouter.replace).not.toHaveBeenCalled();
   });
 
   it('returns to chat and propagates its marker across block navigation', () => {

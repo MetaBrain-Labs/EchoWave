@@ -14,6 +14,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { KnowledgeDetailScreen } from '@/features/knowledge/screens/KnowledgeDetailScreen';
 import { parseResourceOrigin } from '@/shared/navigation/resourceOrigin';
+import { backOrReplace } from '@/shared/navigation/routeBack';
 import { firstRouteParam } from '@/shared/navigation/routeParams';
 
 /** 读取知识库 ID 并连接详情、文档与问答路由。 */
@@ -30,9 +31,9 @@ export default function KnowledgeDetailRoute() {
   const origin = parseResourceOrigin(params.origin);
   const goBack = () => {
     if (origin === 'group' && groupId) {
-      router.replace({ pathname: '/', params: { groupId, tab: 'knowledge' } });
+      backOrReplace(router, { pathname: '/', params: { groupId, tab: 'knowledge' } });
     } else {
-      router.replace('/(tabs)/knowledge');
+      backOrReplace(router, '/(tabs)/knowledge');
     }
   };
 

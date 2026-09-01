@@ -14,6 +14,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { BlockDetailScreen } from '@/features/knowledge/screens/BlockDetailScreen';
 import { parseResourceOrigin } from '@/shared/navigation/resourceOrigin';
+import { backOrReplace } from '@/shared/navigation/routeBack';
 import { firstRouteParam } from '@/shared/navigation/routeParams';
 
 /** 渲染指定文档块并保留完整来源层级参数。 */
@@ -39,11 +40,7 @@ export default function BlockDetailRoute() {
     params: { fileId: documentId, knowledgeId, origin, ...(groupId ? { groupId } : {}) },
   };
   const goBack = () => {
-    if ((returnsToQuery || returnsToAnalysis) && router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace(fileRoute);
-    }
+    backOrReplace(router, fileRoute);
   };
 
   return (
@@ -74,6 +71,8 @@ export default function BlockDetailRoute() {
             blockId: nextBlockId,
             fileId: documentId,
             knowledgeId,
+            origin,
+            ...(groupId ? { groupId } : {}),
             ...(returnsToQuery
               ? { returnTo: 'knowledge-query' }
               : returnsToAnalysis
