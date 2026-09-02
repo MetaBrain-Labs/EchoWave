@@ -47,6 +47,9 @@ import { DashScopeFileTranscription } from '../../workspace/audio/transcription/
 import { EventBridgeSignatureVerifier } from '../../workspace/audio/transcription/eventBridgeSignature.ts';
 import { OssStagingStore } from '../../workspace/audio/transcription/ossStagingStore.ts';
 import { AudioTranscriptionWorker } from '../../workspace/audio/transcription/worker.ts';
+import { DeepSeekSpeakerReviewer } from '../../workspace/audio/speaker-review/deepSeekSpeakerReviewer.ts';
+import { SpeakerReviewRepository } from '../../workspace/audio/speaker-review/repository.ts';
+import { SpeakerReviewWorker } from '../../workspace/audio/speaker-review/worker.ts';
 
 type AudioRuntimeOptions = {
   config: ApiConfig;
@@ -93,6 +96,11 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
     config.rag.tenantId,
   );
   const transcriptConfirmationRepository = new TranscriptConfirmationRepository(
+    pool,
+    config.database.schema,
+    config.rag.tenantId,
+  );
+  const speakerReviewRepository = new SpeakerReviewRepository(
     pool,
     config.database.schema,
     config.rag.tenantId,
@@ -264,6 +272,28 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
       };
     },
   });
+  const speakerReviewWorker = new SpeakerReviewWorker({
+    repository: speakerReviewRepository,
+    reporter,
+    liveUpdates,
+    wakeup: workerWakeup,
+    resolveRuntime: async (job) => {
+      const review = await settingsService.resolveCapability(
+        'audio_speaker_review',
+        job.capabilityBindingRevisionId ?? undefined,
+      );
+      if (review.provider.type !== 'deepseek' || !('apiKey' in review.provider.credential)) {
+        throw new Error('Resolved speaker review provider is incompatible.');
+      }
+      return {
+        reviewer: new DeepSeekSpeakerReviewer({
+          apiKey: review.provider.credential.apiKey,
+          baseUrl: (review.provider.config as { baseUrl: string }).baseUrl,
+          model: job.model,
+        }),
+      };
+    },
+  });
   const businessAnalysisWorker = new BusinessAnalysisWorker({
     repository: businessAnalysisRepository,
     deleteCheckpoint: (job) => checkpointer.deleteThread(businessAnalysisThreadId(job)),
@@ -318,11 +348,17 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
     dashScopeCallbackService,
     emotionWorker,
     roleWorker,
+    speakerReviewWorker,
     businessAnalysisWorker,
     audioInputPreprocessor,
     async stop(): Promise<void> {
       await transcriptionWorker.stop();
-      await Promise.all([emotionWorker.stop(), roleWorker.stop(), businessAnalysisWorker.stop()]);
+      await Promise.all([
+        emotionWorker.stop(),
+        roleWorker.stop(),
+        speakerReviewWorker.stop(),
+        businessAnalysisWorker.stop(),
+      ]);
     },
   };
 }

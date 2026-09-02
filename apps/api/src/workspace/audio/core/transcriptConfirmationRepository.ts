@@ -15,6 +15,7 @@ import {
   AudioTranscriptConfirmationResponseSchema,
   type AudioTranscriptConfirmationRequest,
 } from '@echowave/contracts';
+import { randomUUID } from 'node:crypto';
 
 import { quoteIdentifier, type DatabasePool } from '../../../infrastructure/postgres.ts';
 import { WorkspaceRepositoryError } from '../../errors.ts';
@@ -65,17 +66,18 @@ export class TranscriptConfirmationRepository {
       }
 
       const rawSegments = await client.query(
-        `SELECT id FROM ${this.table('transcript_segments')}
+        `SELECT id, speaker_key, start_ms, end_ms, words
+         FROM ${this.table('transcript_segments')}
          WHERE tenant_id = $1 AND analysis_revision_id = $2
          ORDER BY segment_index`,
         [this.tenantId, input.analysisRevisionId],
       );
       const rawIds = new Set(rawSegments.rows.map((segment) => String(segment.id)));
-      const inputIds = new Set(input.segments.map((segment) => segment.segmentId));
+      const inputIds = new Set(input.segments.map((segment) => segment.sourceSegmentId));
       if (
         rawIds.size !== input.segments.length ||
         inputIds.size !== input.segments.length ||
-        input.segments.some((segment) => !rawIds.has(segment.segmentId))
+        input.segments.some((segment) => !rawIds.has(segment.sourceSegmentId))
       ) {
         throw new WorkspaceRepositoryError(
           'CONFLICT',
@@ -91,24 +93,77 @@ export class TranscriptConfirmationRepository {
         [this.tenantId, input.analysisRevisionId, currentVersion + 1],
       );
       const confirmationId = String(created.rows[0].id);
-      for (const segment of input.segments) {
-        await client.query(
-          `INSERT INTO ${this.table('transcript_confirmation_segments')}
-             (tenant_id, transcript_confirmation_id, analysis_revision_id,
-              transcript_segment_id, text)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [
-            this.tenantId,
-            confirmationId,
-            input.analysisRevisionId,
-            segment.segmentId,
-            segment.text.trim(),
-          ],
-        );
+      const inputBySource = new Map(
+        input.segments.map((segment) => [segment.sourceSegmentId, segment]),
+      );
+      let confirmedIndex = 0;
+      for (const raw of rawSegments.rows) {
+        const sourceSegmentId = String(raw.id);
+        const segment = inputBySource.get(sourceSegmentId)!;
+        const words = Array.isArray(raw.words)
+          ? (raw.words as { startMs: number; endMs: number }[])
+          : [];
+        const wordCount = Math.max(words.length, 1);
+        let cursor = 0;
+        for (const part of segment.parts) {
+          if (
+            part.startWordIndex !== cursor ||
+            part.endWordIndex > wordCount ||
+            part.endWordIndex <= part.startWordIndex
+          ) {
+            throw new WorkspaceRepositoryError(
+              'CONFLICT',
+              '确认片段必须按原始词边界连续、无重叠地覆盖整段内容。',
+            );
+          }
+          cursor = part.endWordIndex;
+        }
+        if (cursor !== wordCount || (words.length === 0 && segment.parts.length !== 1)) {
+          throw new WorkspaceRepositoryError(
+            'CONFLICT',
+            words.length === 0
+              ? '历史转写缺少词级时间戳，不能拆分 Speaker；请重新转写。'
+              : '确认片段必须完整覆盖原始词边界。',
+          );
+        }
+        for (const part of segment.parts) {
+          confirmedIndex += 1;
+          const wholeSource =
+            segment.parts.length === 1 &&
+            part.startWordIndex === 0 &&
+            part.endWordIndex === wordCount;
+          const startMs =
+            words.length === 0 ? Number(raw.start_ms) : words[part.startWordIndex]!.startMs;
+          const endMs =
+            words.length === 0 ? Number(raw.end_ms) : words[part.endWordIndex - 1]!.endMs;
+          await client.query(
+            `INSERT INTO ${this.table('transcript_confirmation_segments')}
+               (tenant_id, transcript_confirmation_id, analysis_revision_id,
+                source_transcript_segment_id, confirmed_segment_id, part_index,
+                speaker_key, start_word_index, end_word_index, start_ms, end_ms, text)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+            [
+              this.tenantId,
+              confirmationId,
+              input.analysisRevisionId,
+              sourceSegmentId,
+              wholeSource ? sourceSegmentId : randomUUID(),
+              confirmedIndex,
+              part.speakerKey,
+              part.startWordIndex,
+              part.endWordIndex,
+              startMs,
+              endMs,
+              part.text.trim(),
+            ],
+          );
+        }
       }
       await client.query(
         `UPDATE ${this.table('audio_analysis_revisions')}
-         SET active_transcript_confirmation_id = $3
+         SET active_transcript_confirmation_id = $3,
+             active_emotion_job_id = NULL,
+             active_role_job_id = NULL
          WHERE tenant_id = $1 AND id = $2`,
         [this.tenantId, input.analysisRevisionId, confirmationId],
       );

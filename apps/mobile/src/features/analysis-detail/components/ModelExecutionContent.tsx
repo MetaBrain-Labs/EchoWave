@@ -41,6 +41,7 @@ const kindLabels: Record<AudioAiExecutionRun['kind'], string> = {
   'audio-transcription': 'ASR 转写',
   'audio-emotion-analysis': '情绪分析',
   'audio-role-recognition': '角色识别',
+  'audio-speaker-review': '说话人复核',
   'audio-business-analysis': '业务分析',
 };
 

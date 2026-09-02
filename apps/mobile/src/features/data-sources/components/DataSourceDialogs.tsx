@@ -437,9 +437,11 @@ export function DataSourceConfirmDialog({
 /** 确认唯一的 DashScope 整文件说话人分离转写。 */
 export function AudioTranscriptionConfirmDialog({
   audioTitle,
+  expectedSpeakerCount,
   models,
   onCancel,
   onConfirm,
+  onExpectedSpeakerCountChange,
   onPreprocessingChange,
   pending,
   preprocessing,
@@ -447,9 +449,11 @@ export function AudioTranscriptionConfirmDialog({
   visible,
 }: {
   audioTitle: string;
+  expectedSpeakerCount: string;
   models: AudioTranscriptionModelCapability[];
   onCancel: () => void;
   onConfirm: () => void;
+  onExpectedSpeakerCountChange: (value: string) => void;
   onPreprocessingChange: (value: AudioTranscriptionPreprocessing) => void;
   pending: boolean;
   preprocessing: AudioTranscriptionPreprocessing;
@@ -457,8 +461,16 @@ export function AudioTranscriptionConfirmDialog({
   visible: boolean;
 }) {
   const selectedCapability = models[0];
+  const parsedSpeakerCount = Number(expectedSpeakerCount);
+  const speakerCountValid =
+    expectedSpeakerCount.length === 0 ||
+    (/^\d+$/.test(expectedSpeakerCount) &&
+      Number.isInteger(parsedSpeakerCount) &&
+      parsedSpeakerCount >= 2 &&
+      parsedSpeakerCount <= 100);
   const preprocessingAvailable = preprocessing === 'whole_file' || Boolean(sileroVad?.available);
-  const selectionAvailable = Boolean(selectedCapability?.available) && preprocessingAvailable;
+  const selectionAvailable =
+    Boolean(selectedCapability?.available) && preprocessingAvailable && speakerCountValid;
   return (
     <Modal animationType="fade" onRequestClose={onCancel} transparent visible={visible}>
       <View style={styles.dialogRoot}>
@@ -535,6 +547,27 @@ export function AudioTranscriptionConfirmDialog({
                 <Text style={styles.secondaryText}>说话人变化或明显停顿时开始新段</Text>
               </View>
             </View>
+            <Text style={styles.transcriptionSectionTitle}>预计说话人数（可选）</Text>
+            <TextInput
+              accessibilityLabel="预计说话人数"
+              editable={!pending}
+              inputMode="numeric"
+              keyboardType="number-pad"
+              maxLength={3}
+              onChangeText={(value) => onExpectedSpeakerCountChange(value.replace(/\D/g, ''))}
+              placeholder="留空则自动判断"
+              placeholderTextColor={textColors.tertiary}
+              style={[styles.speakerCountInput, !speakerCountValid && styles.invalidInput]}
+              value={expectedSpeakerCount}
+            />
+            <Text style={styles.secondaryText}>
+              可填写 2–100。该值仅作为 Speaker 数量软提示，不保证严格输出指定人数。
+            </Text>
+            {!speakerCountValid ? (
+              <Text accessibilityRole="alert" style={styles.directWarning}>
+                预计说话人数必须是 2–100 的整数。
+              </Text>
+            ) : null}
             <Text style={styles.transcriptionSectionTitle}>转写模型</Text>
             {!selectedCapability ? (
               <Text accessibilityRole="alert" style={styles.directWarning}>
@@ -787,6 +820,17 @@ const styles = StyleSheet.create({
     color: textColors.primary,
     fontFamily: fontFamilies.sansBold,
   },
+  speakerCountInput: {
+    ...typography.body,
+    backgroundColor: colors.white,
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    color: textColors.primary,
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+  },
+  invalidInput: { borderColor: colors.danger },
   segmentationOptions: { flexDirection: 'row', gap: spacing.sm },
   segmentationOption: {
     alignItems: 'flex-start',

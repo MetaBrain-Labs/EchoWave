@@ -45,6 +45,7 @@ const MODELS: Record<AiCapability, string> = {
   audio_transcription: 'qwen-audio-3.0-asr-flash-filetrans',
   audio_emotion: 'qwen3.5-omni-flash',
   audio_role: 'deepseek-v4-flash',
+  audio_speaker_review: 'deepseek-v4-flash',
   business_analysis: 'deepseek-v4-flash',
   audio_staging: 'aliyun-oss',
 };
@@ -55,6 +56,7 @@ const PROVIDERS: Record<AiCapability, ProviderType> = {
   audio_transcription: 'dashscope',
   audio_emotion: 'dashscope',
   audio_role: 'deepseek',
+  audio_speaker_review: 'deepseek',
   business_analysis: 'deepseek',
   audio_staging: 'aliyun_oss',
 };

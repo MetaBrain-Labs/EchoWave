@@ -19,6 +19,7 @@ export const AudioAiExecutionKindSchema = z.enum([
   'audio-transcription',
   'audio-emotion-analysis',
   'audio-role-recognition',
+  'audio-speaker-review',
   'audio-business-analysis',
 ]);
 

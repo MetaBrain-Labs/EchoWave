@@ -58,6 +58,7 @@ const capabilities: readonly { id: AiCapability; label: string; provider: Provid
   { id: 'audio_transcription', label: '音频转写', provider: 'dashscope' },
   { id: 'audio_emotion', label: '情绪分析', provider: 'dashscope' },
   { id: 'audio_role', label: '角色识别', provider: 'deepseek' },
+  { id: 'audio_speaker_review', label: '说话人复核', provider: 'deepseek' },
   { id: 'business_analysis', label: '业务分析', provider: 'deepseek' },
   { id: 'audio_staging', label: '临时 OSS', provider: 'aliyun_oss' },
 ];

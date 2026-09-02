@@ -21,6 +21,7 @@ import {
   type AudioBusinessAnalysisStartResponse,
   type AudioPostAnalysisStartResponse,
   type AudioPostAnalysisType,
+  type SpeakerReviewResolutionResponse,
   type AudioTranscriptConfirmationRequest,
   type AudioTranscriptConfirmationResponse,
   type AudioTranscriptionCapabilitiesResponse,
@@ -75,6 +76,11 @@ export interface AudioService {
     id: string,
     input: AudioTranscriptConfirmationRequest,
   ): Promise<AudioTranscriptConfirmationResponse>;
+  resolveSpeakerReviewFinding(
+    id: string,
+    findingId: string,
+  ): Promise<SpeakerReviewResolutionResponse>;
+  resolveAllSpeakerReviewFindings(id: string): Promise<SpeakerReviewResolutionResponse>;
   startAudioPostAnalysis(
     id: string,
     type: AudioPostAnalysisType,
@@ -235,6 +241,12 @@ export class DefaultAudioService implements AudioService {
       throw new WorkspaceRepositoryError('CONFLICT', '音频转写能力绑定与供应商类型不兼容。');
     }
     const model = (request.model ?? transcription.model) as AudioTranscriptionModel;
+    let speakerReview: Awaited<ReturnType<SettingsService['resolveCapability']>> | undefined;
+    try {
+      speakerReview = await this.settingsService.resolveCapability('audio_speaker_review');
+    } catch (error) {
+      if (!(error instanceof SettingsError) || error.code !== 'CONFIGURATION_REQUIRED') throw error;
+    }
     const preprocessing = request.preprocessing;
     if (!(await this.audioInputPreprocessor.refreshModeAvailability(preprocessing))) {
       const capabilities = this.audioInputPreprocessor.capabilities();
@@ -246,21 +258,16 @@ export class DefaultAudioService implements AudioService {
       );
     }
     const segmentationMode = request.segmentationMode;
-    if (!transcription.revisionId && !staging.revisionId) {
-      return await this.audioAnalysisRepository.queueTranscription(
-        id,
-        model,
-        preprocessing,
-        segmentationMode,
-      );
-    }
     return await this.audioAnalysisRepository.queueTranscription(
       id,
       model,
       preprocessing,
       segmentationMode,
+      request.expectedSpeakerCount ?? null,
       transcription.revisionId,
       staging.revisionId,
+      speakerReview?.revisionId ?? null,
+      speakerReview?.model ?? null,
       (transcription.provider.config as { asyncNotifyMode: 'polling' | 'eventbridge' })
         .asyncNotifyMode,
     );
@@ -315,6 +322,25 @@ export class DefaultAudioService implements AudioService {
 
   confirmAudioTranscript(id: string, input: AudioTranscriptConfirmationRequest) {
     return this.transcriptConfirmationRepository.confirm(id, input);
+  }
+
+  /** 将当前分析修订中的单个说话人疑点标记为人工审核通过。 */
+  async resolveSpeakerReviewFinding(
+    id: string,
+    findingId: string,
+  ): Promise<SpeakerReviewResolutionResponse> {
+    return {
+      audioFileId: id,
+      resolvedCount: await this.repository.resolveSpeakerReviewFinding(id, findingId),
+    };
+  }
+
+  /** 将当前分析修订中的全部说话人疑点标记为人工审核通过。 */
+  async resolveAllSpeakerReviewFindings(id: string): Promise<SpeakerReviewResolutionResponse> {
+    return {
+      audioFileId: id,
+      resolvedCount: await this.repository.resolveAllSpeakerReviewFindings(id),
+    };
   }
 
   /** 校验情绪分析运行依赖后，为当前 ASR 修订创建指定后置任务。 */

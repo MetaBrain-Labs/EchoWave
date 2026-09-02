@@ -13,6 +13,7 @@
  */
 import {
   AudioBusinessAnalysisStartRequestSchema,
+  SpeakerReviewResolutionResponseSchema,
   AudioTranscriptConfirmationRequestSchema,
   AudioTranscriptionStartRequestSchema,
 } from '@echowave/contracts';
@@ -105,6 +106,23 @@ export function registerAudioRoutes(
       201,
     );
   });
+  app.delete('/api/audio-files/:audioFileId/speaker-review-findings/:findingId', async (context) =>
+    context.json(
+      SpeakerReviewResolutionResponseSchema.parse(
+        await service.resolveSpeakerReviewFinding(
+          entityId(context.req.param('audioFileId')),
+          entityId(context.req.param('findingId')),
+        ),
+      ),
+    ),
+  );
+  app.delete('/api/audio-files/:audioFileId/speaker-review-findings', async (context) =>
+    context.json(
+      SpeakerReviewResolutionResponseSchema.parse(
+        await service.resolveAllSpeakerReviewFindings(entityId(context.req.param('audioFileId'))),
+      ),
+    ),
+  );
   app.get('/api/audio-transcription/capabilities', async (context) =>
     context.json(await service.getAudioTranscriptionCapabilities()),
   );

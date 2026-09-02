@@ -34,6 +34,8 @@ jest.mock('@/shared/api/audioAnalysisApi', () => {
     confirmAudioTranscript: jest.fn(),
     getAudioAnalysis: jest.fn(),
     getAudioExecutionTrace: jest.fn(),
+    resolveAllSpeakerReviewFindings: jest.fn(),
+    resolveSpeakerReviewFinding: jest.fn(),
     startAudioBusinessAnalysis: jest.fn(),
     startAudioEmotionAnalysis: jest.fn(),
     startAudioRoleRecognition: jest.fn(),
@@ -117,6 +119,14 @@ describe('AnalysisDetailScreen', () => {
       confirmationId: 'a1000000-0000-4000-8000-000000000001',
       version: 2,
       confirmedAt: '2026-08-28T01:00:00.000Z',
+    });
+    jest.mocked(workspaceApi.resolveSpeakerReviewFinding).mockResolvedValue({
+      audioFileId: analysisFixture.audioFileId,
+      resolvedCount: 1,
+    });
+    jest.mocked(workspaceApi.resolveAllSpeakerReviewFindings).mockResolvedValue({
+      audioFileId: analysisFixture.audioFileId,
+      resolvedCount: 2,
     });
     jest.mocked(workspaceApi.startAudioEmotionAnalysis).mockResolvedValue({
       audioFileId: analysisFixture.audioFileId,
@@ -311,10 +321,12 @@ describe('AnalysisDetailScreen', () => {
         analysisRevisionId: analysisFixture.id,
         baseVersion: 0,
         segments: expect.arrayContaining([
-          {
-            segmentId: analysisFixture.scenes[0].segments[0].id,
-            text: analysisFixture.scenes[0].segments[0].rawText,
-          },
+          expect.objectContaining({
+            sourceSegmentId: analysisFixture.scenes[0].segments[0].id,
+            parts: expect.arrayContaining([
+              expect.objectContaining({ text: analysisFixture.scenes[0].segments[0].rawText }),
+            ]),
+          }),
         ]),
       }),
     );
@@ -347,10 +359,165 @@ describe('AnalysisDetailScreen', () => {
       expect.objectContaining({
         baseVersion: 1,
         segments: expect.arrayContaining([
-          { segmentId: analysisFixture.scenes[0].segments[0].id, text: '阿里云计算服务' },
+          expect.objectContaining({
+            sourceSegmentId: analysisFixture.scenes[0].segments[0].id,
+            parts: expect.arrayContaining([expect.objectContaining({ text: '阿里云计算服务' })]),
+          }),
         ]),
       }),
     );
+  });
+
+  it('shows a speaker suspicion and confirms an exact two-part word split', async () => {
+    const sourceSegmentId = '70000000-0000-4000-8000-000000000009';
+    const finding = {
+      id: '71000000-0000-4000-8000-000000000009',
+      sourceSegmentId,
+      splitAfterWordIndex: 0,
+      kind: 'speaker_turn_suspected' as const,
+      severity: 'high' as const,
+      reasonCode: 'question_answer_transition' as const,
+      explanation: '同一 Speaker 段内出现连续的提问与回答语义，建议回听边界。',
+      source: 'rule' as const,
+    };
+    const segment = {
+      ...analysisFixture.scenes[0].segments[0],
+      id: sourceSegmentId,
+      sourceSegmentId,
+      speakerKey: 'Speaker 0',
+      speakerLabel: 'Speaker 0',
+      startMs: 0,
+      endMs: 1_200,
+      rawText: '这是怎么吃呀？这种打开就可以吃。',
+      confirmedText: null,
+      startWordIndex: 0,
+      endWordIndex: 2,
+      words: [
+        { index: 0, startMs: 0, endMs: 500, text: '这是怎么吃呀', punctuation: '？' },
+        { index: 1, startMs: 650, endMs: 1_200, text: '这种打开就可以吃', punctuation: '。' },
+      ],
+      reviewFindings: [finding],
+    };
+    const scene = { ...analysisFixture.scenes[0], segments: [segment] };
+    jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValueOnce({
+      ...analysisFixture,
+      transcriptConfirmation: { status: 'pending', currentVersion: 0, confirmedAt: null },
+      speakerReview: {
+        status: 'partial',
+        model: null,
+        message: '智能说话人复核未配置；当前仅显示本地规则结果。',
+        resolvedAt: null,
+        findings: [finding],
+      },
+      scenes: [scene],
+      rawScenes: [scene],
+    });
+    const screen = await renderAnalysis();
+
+    expect(screen.getByText('本录音仅识别到 1 位说话人。')).toBeTruthy();
+    expect(screen.getByText('说话人待确认')).toBeTruthy();
+    expect(screen.getByText(/智能说话人复核未完成/)).toBeTruthy();
+    fireEvent.press(screen.getByRole('button', { name: '编辑并确认' }));
+    fireEvent.press(screen.getByText('在此拆段'));
+    fireEvent.press(screen.getAllByRole('button', { name: '确认整份转写' })[0]);
+
+    await waitFor(() => expect(workspaceApi.confirmAudioTranscript).toHaveBeenCalledTimes(1));
+    expect(workspaceApi.confirmAudioTranscript).toHaveBeenCalledWith(
+      analysisFixture.audioFileId,
+      expect.objectContaining({
+        segments: [
+          {
+            sourceSegmentId,
+            parts: [
+              expect.objectContaining({
+                speakerKey: 'Speaker 0',
+                startWordIndex: 0,
+                endWordIndex: 1,
+              }),
+              expect.objectContaining({
+                speakerKey: 'Speaker 1',
+                startWordIndex: 1,
+                endWordIndex: 2,
+              }),
+            ],
+          },
+        ],
+      }),
+    );
+  });
+
+  it('hides, stacks, and resolves speaker review findings', async () => {
+    const sourceSegmentId = analysisFixture.scenes[0].segments[0].id;
+    const findings = [
+      {
+        id: '71000000-0000-4000-8000-000000000009',
+        sourceSegmentId,
+        splitAfterWordIndex: 0,
+        kind: 'speaker_turn_suspected' as const,
+        severity: 'high' as const,
+        reasonCode: 'question_answer_transition' as const,
+        explanation: '检测到问答切换。',
+        source: 'rule' as const,
+      },
+      {
+        id: '71000000-0000-4000-8000-000000000010',
+        sourceSegmentId,
+        splitAfterWordIndex: 1,
+        kind: 'speaker_turn_suspected' as const,
+        severity: 'medium' as const,
+        reasonCode: 'long_internal_pause' as const,
+        explanation: '检测到较长停顿。',
+        source: 'model' as const,
+      },
+    ];
+    const segment = { ...analysisFixture.scenes[0].segments[0], reviewFindings: findings };
+    const scene = { ...analysisFixture.scenes[0], segments: [segment] };
+    jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValueOnce({
+      ...analysisFixture,
+      speakerReview: {
+        status: 'ready',
+        model: 'deepseek-v4-flash',
+        message: null,
+        resolvedAt: null,
+        findings,
+      },
+      scenes: [scene],
+      rawScenes: [scene],
+    });
+    const screen = await renderAnalysis();
+
+    expect(screen.getAllByText('说话人待确认')).toHaveLength(1);
+    expect(screen.getByLabelText('还有 1 个说话人疑点')).toBeTruthy();
+    expect(screen.getByText('1 / 2')).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('下一个说话人疑点'));
+    expect(screen.getByText('检测到较长停顿。')).toBeTruthy();
+    expect(screen.getByText('2 / 2')).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('上一个说话人疑点'));
+    expect(screen.getByText('检测到问答切换。')).toBeTruthy();
+    fireEvent.press(screen.getByText('屏蔽说话人待确认'));
+    expect(screen.queryByText('说话人待确认')).toBeNull();
+    fireEvent.press(screen.getByText('屏蔽说话人待确认'));
+
+    fireEvent.press(screen.getByText('确认无误'));
+    await waitFor(() =>
+      expect(workspaceApi.resolveSpeakerReviewFinding).toHaveBeenCalledWith(
+        analysisFixture.audioFileId,
+        findings[0].id,
+      ),
+    );
+    expect(screen.getAllByText('说话人待确认')).toHaveLength(1);
+    expect(screen.queryByLabelText('还有 1 个说话人疑点')).toBeNull();
+
+    fireEvent.press(screen.getByText('全部审核通过'));
+    await waitFor(() =>
+      expect(workspaceApi.resolveAllSpeakerReviewFindings).toHaveBeenCalledWith(
+        analysisFixture.audioFileId,
+      ),
+    );
+    expect(screen.queryByText('说话人待确认')).toBeNull();
+    expect(screen.queryByText('全部审核通过')).toBeNull();
+    expect(screen.queryByText('屏蔽说话人待确认')).toBeNull();
+    expect(screen.getByText('说话人复核已完成，所有疑点均已审核通过。')).toBeTruthy();
   });
 
   it('keeps a failed draft and warns before leaving with unconfirmed changes', async () => {

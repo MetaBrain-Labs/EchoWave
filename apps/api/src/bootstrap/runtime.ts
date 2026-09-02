@@ -159,6 +159,7 @@ export function createRagRuntime(config: ApiConfig) {
     dashScopeCallbackService: audio.dashScopeCallbackService,
     emotionWorker: audio.emotionWorker,
     roleWorker: audio.roleWorker,
+    speakerReviewWorker: audio.speakerReviewWorker,
     businessAnalysisWorker: audio.businessAnalysisWorker,
     audioInputPreprocessor: audio.audioInputPreprocessor,
     liveUpdates,

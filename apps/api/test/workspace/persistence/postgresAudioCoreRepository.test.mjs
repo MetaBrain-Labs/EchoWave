@@ -70,10 +70,50 @@ describe('PostgresAudioCoreRepository audio playback', () => {
   });
 });
 
+describe('PostgresAudioCoreRepository speaker review resolution', () => {
+  it('deletes one or all findings only from the active tenant-scoped revision', async () => {
+    const calls = [];
+    const repository = new PostgresAudioCoreRepository(
+      {
+        query: async (sql, values) => {
+          calls.push({ sql, values });
+          return { rows: [{ audio_exists: true, resolved_count: values.length === 3 ? 1 : 4 }] };
+        },
+      },
+      'echowave',
+      tenantId,
+    );
+
+    assert.equal(await repository.resolveSpeakerReviewFinding(audioId, knowledgeId), 1);
+    assert.equal(await repository.resolveAllSpeakerReviewFindings(audioId), 4);
+    assert.deepEqual(calls[0].values, [tenantId, audioId, knowledgeId]);
+    assert.deepEqual(calls[1].values, [tenantId, audioId]);
+    assert.match(calls[0].sql, /active_analysis_revision_id/);
+    assert.match(calls[0].sql, /speaker_review_resolved_at/);
+    assert.match(calls[0].sql, /finding\.tenant_id = \$1/);
+    assert.match(calls[1].sql, /DELETE FROM .*speaker_review_findings/);
+  });
+
+  it('rejects resolution when the audio is absent from the current tenant', async () => {
+    const repository = new PostgresAudioCoreRepository(
+      { query: async () => ({ rows: [{ audio_exists: false, resolved_count: 0 }] }) },
+      'echowave',
+      tenantId,
+    );
+
+    await assert.rejects(
+      () => repository.resolveAllSpeakerReviewFindings(audioId),
+      /不存在或已归档/,
+    );
+  });
+});
+
 describe('PostgresAudioCoreRepository audio analysis metadata', () => {
   it('exposes the selected model and actually observed diarization state', async () => {
+    const calls = [];
     const pool = {
-      query: async (sql) => {
+      query: async (sql, values) => {
+        calls.push({ sql, values });
         if (/JOIN .*audio_analysis_revisions/.test(sql)) {
           return {
             rows: [
@@ -90,6 +130,7 @@ describe('PostgresAudioCoreRepository audio analysis metadata', () => {
                   responseGranularity: 'chunk',
                 },
                 active_transcript_confirmation_id: knowledgeId,
+                speaker_review_resolved_at: new Date('2026-08-25T01:03:00.000Z'),
                 confirmation_version: 2,
                 confirmed_at: new Date('2026-08-25T01:02:00.000Z'),
                 title: '客户通话',
@@ -132,6 +173,7 @@ describe('PostgresAudioCoreRepository audio analysis metadata', () => {
       model: 'openai/gpt-4o-mini-transcribe',
       language: 'zh',
       diarizationStatus: 'not_returned',
+      expectedSpeakerCount: null,
       preprocessingMode: 'whole_file',
       responseGranularity: 'chunk',
       segmentationMode: 'readable',
@@ -142,7 +184,14 @@ describe('PostgresAudioCoreRepository audio analysis metadata', () => {
       currentVersion: 2,
       confirmedAt: '2026-08-25T01:02:00.000Z',
     });
+    assert.equal(response.speakerReview.resolvedAt, '2026-08-25T01:03:00.000Z');
     assert.equal(response.scenes[0].segments[0].rawText, '您好呀。');
     assert.equal(response.scenes[0].segments[0].confirmedText, '您好。');
+    const confirmedSegmentsQuery = calls.find(({ sql }) =>
+      /FROM .*transcript_confirmation_segments.* confirmed/s.test(sql),
+    );
+    assert.ok(confirmedSegmentsQuery);
+    assert.doesNotMatch(confirmedSegmentsQuery.sql, /\$5/);
+    assert.deepEqual(confirmedSegmentsQuery.values, [tenantId, undefined, undefined, knowledgeId]);
   });
 });

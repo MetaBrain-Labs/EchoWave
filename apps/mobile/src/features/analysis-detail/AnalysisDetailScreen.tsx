@@ -38,6 +38,8 @@ import {
   confirmAudioTranscript,
   getAudioAnalysis,
   getAudioExecutionTrace,
+  resolveAllSpeakerReviewFindings,
+  resolveSpeakerReviewFinding,
   startAudioBusinessAnalysis,
   startAudioEmotionAnalysis,
   startAudioRoleRecognition,
@@ -79,6 +81,72 @@ import {
 } from './components/BusinessAnalysisControls';
 
 const playbackRates = [1, 1.5, 2] as const;
+
+function transcriptDraftSignature(segments: readonly TranscriptSegment[]): string {
+  return JSON.stringify(
+    segments.map((segment) => ({
+      sourceSegmentId: segment.sourceSegmentId,
+      startWordIndex: segment.startWordIndex,
+      endWordIndex: segment.endWordIndex,
+      speakerKey: segment.speakerKey,
+      text: segment.text,
+    })),
+  );
+}
+
+function wordsToText(segment: TranscriptSegment, start: number, end: number): string {
+  return segment.words
+    .filter((word) => word.index >= start && word.index < end)
+    .map((word) => `${word.text}${word.punctuation}`)
+    .join('');
+}
+
+function nextSpeakerKey(segments: readonly TranscriptSegment[]): string {
+  const maximum = segments.reduce((value, segment) => {
+    const match = /^Speaker (\d+)$/.exec(segment.speakerKey);
+    return Math.max(value, match ? Number(match[1]) : 0);
+  }, 0);
+  return `Speaker ${maximum + 1}`;
+}
+
+function withoutResolvedSpeakerFindings(
+  detail: AnalysisDetailView,
+  resolvedIds?: ReadonlySet<string>,
+): AnalysisDetailView {
+  const keepFinding = (finding: { id: string }) =>
+    resolvedIds ? !resolvedIds.has(finding.id) : false;
+  const findings = detail.speakerReview.findings.filter(keepFinding);
+  const hasPendingBoundary = findings.some(
+    (finding) => finding.sourceSegmentId !== null && finding.splitAfterWordIndex !== null,
+  );
+  const mapScenes = (scenes: readonly AnalysisDetailView['scenes'][number][]) =>
+    scenes.map((scene) => {
+      const segments = scene.segments.map((segment) => ({
+        ...segment,
+        reviewFindings: segment.reviewFindings.filter(keepFinding),
+      }));
+      const segmentsById = new Map(segments.map((segment) => [segment.id, segment]));
+      return {
+        ...scene,
+        segments,
+        timelineItems: scene.timelineItems.map((item) =>
+          item.kind === 'segment'
+            ? { ...item, segment: segmentsById.get(item.segment.id) ?? item.segment }
+            : item,
+        ),
+      };
+    });
+  return {
+    ...detail,
+    speakerReview: {
+      ...detail.speakerReview,
+      findings,
+      resolvedAt: hasPendingBoundary ? null : new Date().toISOString(),
+    },
+    scenes: mapScenes(detail.scenes),
+    rawScenes: mapScenes(detail.rawScenes),
+  };
+}
 
 type AudioAnalysisStatusPayload = Extract<
   AudioAnalysisStatusStreamEvent,
@@ -166,9 +234,10 @@ export function AnalysisDetailScreen({
   const [startingAnalysis, setStartingAnalysis] = useState(false);
   const [editingTranscript, setEditingTranscript] = useState(false);
   const [confirmingTranscript, setConfirmingTranscript] = useState(false);
+  const [resolvingSpeakerReview, setResolvingSpeakerReview] = useState<string>();
   const [transcriptDisplayMode, setTranscriptDisplayMode] =
     useState<TranscriptDisplayMode>('current');
-  const [transcriptDrafts, setTranscriptDrafts] = useState<Record<string, string>>({});
+  const [transcriptDraftSegments, setTranscriptDraftSegments] = useState<TranscriptSegment[]>([]);
   const [hideIrrelevant, setHideIrrelevant] = useState(getHideIrrelevantSegmentsPreference);
   const [businessPreflightVisible, setBusinessPreflightVisible] = useState(false);
   const [businessForce, setBusinessForce] = useState(false);
@@ -194,9 +263,8 @@ export function AnalysisDetailScreen({
   const transcriptSegments = detail?.scenes.flatMap((scene) => scene.segments) ?? [];
   const transcriptDirty =
     editingTranscript &&
-    transcriptSegments.some(
-      (segment) => (transcriptDrafts[segment.id] ?? segment.text) !== segment.text,
-    );
+    transcriptDraftSignature(transcriptDraftSegments) !==
+      transcriptDraftSignature(transcriptSegments);
   const applyTabChange = (tab: AnalysisTab) => {
     setActiveTab(tab);
     if (tab !== 'transcript') {
@@ -575,18 +643,14 @@ export function AnalysisDetailScreen({
   const finishTranscriptEditing = () => {
     setEditingTranscript(false);
     setConfirmingTranscript(false);
-    setTranscriptDrafts({});
+    setTranscriptDraftSegments([]);
     setTranscriptDisplayMode('current');
   };
 
   const startTranscriptEditing = () => {
     if (!detail) return;
-    setTranscriptDrafts(
-      Object.fromEntries(
-        detail.scenes.flatMap((scene) =>
-          scene.segments.map((segment) => [segment.id, segment.text]),
-        ),
-      ),
+    setTranscriptDraftSegments(
+      detail.scenes.flatMap((scene) => scene.segments.map((segment) => ({ ...segment }))),
     );
     setTranscriptDisplayMode('current');
     setEditingTranscript(true);
@@ -605,14 +669,24 @@ export function AnalysisDetailScreen({
 
   const confirmTranscript = async () => {
     if (!detail || confirmingTranscript) return;
-    const segments = transcriptSegments.map((segment) => ({
-      segmentId: segment.id,
-      text: transcriptDrafts[segment.id] ?? segment.text,
-    }));
-    if (segments.some((segment) => segment.text.trim().length === 0)) {
+    if (transcriptDraftSegments.some((segment) => segment.text.trim().length === 0)) {
       Alert.alert('无法确认转写', '每个转写片段都必须保留非空正文。');
       return;
     }
+    const segments = detail.rawScenes
+      .flatMap((scene) => scene.segments)
+      .map((source) => ({
+        sourceSegmentId: source.id,
+        parts: transcriptDraftSegments
+          .filter((segment) => segment.sourceSegmentId === source.id)
+          .sort((left, right) => left.startWordIndex - right.startWordIndex)
+          .map((segment) => ({
+            speakerKey: segment.speakerKey,
+            startWordIndex: segment.startWordIndex,
+            endWordIndex: segment.endWordIndex,
+            text: segment.text,
+          })),
+      }));
     setConfirmingTranscript(true);
     try {
       await confirmAudioTranscript(detail.id, {
@@ -640,6 +714,47 @@ export function AnalysisDetailScreen({
       }
     } finally {
       setConfirmingTranscript(false);
+    }
+  };
+
+  const resolveOneSpeakerFinding = async (findingId: string) => {
+    if (!detail || resolvingSpeakerReview) return;
+    setResolvingSpeakerReview(findingId);
+    try {
+      await resolveSpeakerReviewFinding(detail.id, findingId);
+      const resolvedIds = new Set([findingId]);
+      setDetail((current) =>
+        current ? withoutResolvedSpeakerFindings(current, resolvedIds) : current,
+      );
+      setTranscriptDraftSegments((current) =>
+        current.map((segment) => ({
+          ...segment,
+          reviewFindings: segment.reviewFindings.filter((finding) => !resolvedIds.has(finding.id)),
+        })),
+      );
+    } catch (reason) {
+      Alert.alert('无法审核说话人疑点', reason instanceof Error ? reason.message : '请稍后重试。');
+    } finally {
+      setResolvingSpeakerReview(undefined);
+    }
+  };
+
+  const resolveAllSpeakerFindings = async () => {
+    if (!detail || resolvingSpeakerReview || detail.speakerReview.findings.length === 0) return;
+    setResolvingSpeakerReview('all');
+    try {
+      await resolveAllSpeakerReviewFindings(detail.id);
+      setDetail((current) => (current ? withoutResolvedSpeakerFindings(current) : current));
+      setTranscriptDraftSegments((current) =>
+        current.map((segment) => ({ ...segment, reviewFindings: [] })),
+      );
+    } catch (reason) {
+      Alert.alert(
+        '无法审核全部说话人疑点',
+        reason instanceof Error ? reason.message : '请稍后重试。',
+      );
+    } finally {
+      setResolvingSpeakerReview(undefined);
     }
   };
 
@@ -777,14 +892,18 @@ export function AnalysisDetailScreen({
             confirming={confirmingTranscript}
             detail={detail}
             displayMode={transcriptDisplayMode}
-            draftTexts={transcriptDrafts}
+            draftSegments={transcriptDraftSegments}
             editing={editingTranscript}
             hideIrrelevant={hideIrrelevant}
             onCancelEditing={cancelTranscriptEditing}
             onConfirmEditing={() => void confirmTranscript()}
             onDisplayModeChange={setTranscriptDisplayMode}
             onDraftChange={(segmentId, text) =>
-              setTranscriptDrafts((current) => ({ ...current, [segmentId]: text }))
+              setTranscriptDraftSegments((current) =>
+                current.map((segment) =>
+                  segment.id === segmentId ? { ...segment, text } : segment,
+                ),
+              )
             }
             onOpenAiTag={setSelectedTag}
             onOpenEmotion={setEmotionSegment}
@@ -795,6 +914,64 @@ export function AnalysisDetailScreen({
                 startSeconds: segment.startSeconds,
               })
             }
+            onPlayReviewFinding={(segment, splitAfterWordIndex) => {
+              const boundary = segment.words.find((word) => word.index === splitAfterWordIndex);
+              if (!boundary) return;
+              void playback.playRange({
+                endSeconds: Math.min(segment.endSeconds, boundary.endMs / 1_000 + 2),
+                key: `review:${segment.sourceSegmentId}:${splitAfterWordIndex}`,
+                startSeconds: Math.max(segment.startSeconds, boundary.endMs / 1_000 - 2),
+              });
+            }}
+            onResolveAllReviewFindings={() => void resolveAllSpeakerFindings()}
+            onResolveReviewFinding={(findingId) => void resolveOneSpeakerFinding(findingId)}
+            onSpeakerChange={(segmentId, speakerKey) =>
+              setTranscriptDraftSegments((current) =>
+                current.map((segment) =>
+                  segment.id === segmentId
+                    ? { ...segment, speakerKey, speakerLabel: speakerKey }
+                    : segment,
+                ),
+              )
+            }
+            onSplitSegment={(segment, splitAfterWordIndex) => {
+              const splitWord = segment.words.find((word) => word.index === splitAfterWordIndex);
+              const nextWord = segment.words.find((word) => word.index === splitAfterWordIndex + 1);
+              if (!splitWord || !nextWord) return;
+              setTranscriptDraftSegments((current) => {
+                const newSpeakerKey = nextSpeakerKey(current);
+                const leftEnd = splitAfterWordIndex + 1;
+                const left: TranscriptSegment = {
+                  ...segment,
+                  id: `${segment.sourceSegmentId}:${segment.startWordIndex}-${leftEnd}`,
+                  endSeconds: splitWord.endMs / 1_000,
+                  endWordIndex: leftEnd,
+                  text: wordsToText(segment, segment.startWordIndex, leftEnd),
+                  words: segment.words.filter((word) => word.index < leftEnd),
+                  reviewFindings: segment.reviewFindings.filter(
+                    (finding) =>
+                      finding.splitAfterWordIndex !== null && finding.splitAfterWordIndex < leftEnd,
+                  ),
+                };
+                const right: TranscriptSegment = {
+                  ...segment,
+                  id: `${segment.sourceSegmentId}:${leftEnd}-${segment.endWordIndex}`,
+                  speakerKey: newSpeakerKey,
+                  speakerLabel: newSpeakerKey,
+                  startSeconds: nextWord.startMs / 1_000,
+                  startWordIndex: leftEnd,
+                  text: wordsToText(segment, leftEnd, segment.endWordIndex),
+                  words: segment.words.filter((word) => word.index >= leftEnd),
+                  reviewFindings: segment.reviewFindings.filter(
+                    (finding) =>
+                      finding.splitAfterWordIndex !== null &&
+                      finding.splitAfterWordIndex >= leftEnd,
+                  ),
+                };
+                return current.flatMap((item) => (item.id === segment.id ? [left, right] : [item]));
+              });
+            }}
+            resolvingReviewFinding={resolvingSpeakerReview}
             onStartEditing={startTranscriptEditing}
             playingSegmentId={playback.activeRangeKey}
             segmentPlaybackDisabled={!playback.isLoaded || Boolean(playback.error)}

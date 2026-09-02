@@ -59,6 +59,7 @@ try {
     await Promise.all([
       ragRuntime.emotionWorker.start(),
       ragRuntime.roleWorker.start(),
+      ragRuntime.speakerReviewWorker.start(),
       ragRuntime.businessAnalysisWorker.start(),
     ]);
   });

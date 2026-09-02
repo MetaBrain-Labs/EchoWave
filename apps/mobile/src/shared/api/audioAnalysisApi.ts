@@ -16,6 +16,7 @@ import {
   AudioBusinessAnalysisStartRequestSchema,
   AudioBusinessAnalysisStartResponseSchema,
   AudioPostAnalysisStartResponseSchema,
+  SpeakerReviewResolutionResponseSchema,
   AudioTranscriptConfirmationRequestSchema,
   AudioTranscriptConfirmationResponseSchema,
   AudioTranscriptionCapabilitiesResponseSchema,
@@ -59,6 +60,16 @@ export const confirmAudioTranscript = (id: string, input: AudioTranscriptConfirm
       method: 'POST',
     },
   );
+export const resolveSpeakerReviewFinding = (id: string, findingId: string) =>
+  request(
+    `/api/audio-files/${id}/speaker-review-findings/${findingId}`,
+    SpeakerReviewResolutionResponseSchema,
+    { method: 'DELETE' },
+  );
+export const resolveAllSpeakerReviewFindings = (id: string) =>
+  request(`/api/audio-files/${id}/speaker-review-findings`, SpeakerReviewResolutionResponseSchema, {
+    method: 'DELETE',
+  });
 export const startAudioEmotionAnalysis = (id: string) =>
   request(`/api/audio-files/${id}/analysis/emotion`, AudioPostAnalysisStartResponseSchema, {
     method: 'POST',

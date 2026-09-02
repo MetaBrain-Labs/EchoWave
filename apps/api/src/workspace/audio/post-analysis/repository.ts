@@ -184,15 +184,12 @@ export class PostAnalysisRepository {
       return undefined;
     }
     const segments = await this.pool.query(
-      `SELECT ts.id, ts.speaker_key, ts.start_ms, ts.end_ms, confirmed.text
+      `SELECT confirmed.confirmed_segment_id AS id, confirmed.speaker_key,
+              confirmed.start_ms, confirmed.end_ms, confirmed.text
        FROM ${this.table('transcript_confirmation_segments')} confirmed
-       JOIN ${this.table('transcript_segments')} ts
-         ON ts.tenant_id = confirmed.tenant_id
-        AND ts.analysis_revision_id = confirmed.analysis_revision_id
-        AND ts.id = confirmed.transcript_segment_id
        WHERE confirmed.tenant_id = $1
          AND confirmed.transcript_confirmation_id = $2
-       ORDER BY ts.start_ms, ts.segment_index`,
+       ORDER BY confirmed.part_index`,
       [this.tenantId, row.transcript_confirmation_id],
     );
     const snapshot =
@@ -242,14 +239,16 @@ export class PostAnalysisRepository {
       for (const result of results) {
         await client.query(
           `INSERT INTO ${this.table('segment_emotion_results')}
-             (tenant_id, job_id, analysis_revision_id, transcript_segment_id, emotion_label,
+             (tenant_id, job_id, analysis_revision_id, transcript_confirmation_id,
+              confirmed_segment_id, emotion_label,
               confidence, attitude, arousal, pace, volume_trend, pitch_variation,
               pause_pattern, vocal_cues)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)`,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb)`,
           [
             this.tenantId,
             job.id,
             job.revisionId,
+            job.confirmationId,
             result.segmentId,
             result.label,
             result.confidence,

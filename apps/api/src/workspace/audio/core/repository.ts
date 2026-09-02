@@ -23,5 +23,7 @@ export type AudioPlaybackSource = {
 export interface AudioCoreRepository {
   getAudioPlaybackSource(id: string): Promise<AudioPlaybackSource>;
   getAudioAnalysis(id: string): Promise<AudioAnalysisDetail>;
+  resolveSpeakerReviewFinding(audioFileId: string, findingId: string): Promise<number>;
+  resolveAllSpeakerReviewFindings(audioFileId: string): Promise<number>;
   assertGroupAudioAccess(groupId: string, audioFileId: string): Promise<void>;
 }

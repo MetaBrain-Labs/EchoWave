@@ -342,6 +342,7 @@ describe('AudioTranscriptionWorker', () => {
                 startMs: 100,
                 endMs: 900,
                 text: '恢复成功',
+                words: [{ startMs: 200, endMs: 400, text: '恢复成功', punctuation: '' }],
               },
             ],
           };

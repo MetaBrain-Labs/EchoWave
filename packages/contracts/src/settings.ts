@@ -28,6 +28,7 @@ export const AiCapabilitySchema = z.enum([
   'audio_transcription',
   'audio_emotion',
   'audio_role',
+  'audio_speaker_review',
   'business_analysis',
   'audio_staging',
 ]);

@@ -111,11 +111,18 @@ describe('Silero voice activity policy', () => {
             startMs: 100,
             endMs: 900,
             text: '测试',
+            words: [{ startMs: 200, endMs: 400, text: '测试', punctuation: '' }],
           },
         ],
         manifest,
-      ).map(({ startMs, endMs }) => ({ startMs, endMs })),
-      [{ startMs: 39_700, endMs: 40_500 }],
+      ).map(({ startMs, endMs, words }) => ({ startMs, endMs, words })),
+      [
+        {
+          startMs: 39_700,
+          endMs: 40_500,
+          words: [{ startMs: 39_800, endMs: 40_000, text: '测试', punctuation: '' }],
+        },
+      ],
     );
   });
 
@@ -142,6 +149,7 @@ describe('Silero voice activity policy', () => {
               startMs: manifest.sourceSpans[0].processedEndMs - 100,
               endMs: manifest.sourceSpans[1].processedStartMs + 100,
               text: '跨边界',
+              words: [],
             },
           ],
           manifest,

@@ -47,6 +47,7 @@ export type AiExecutionKind =
   | 'audio-transcription'
   | 'audio-business-analysis'
   | 'audio-role-recognition'
+  | 'audio-speaker-review'
   | 'audio-emotion-analysis'
   | 'rag-answer'
   | 'knowledge-ingestion'

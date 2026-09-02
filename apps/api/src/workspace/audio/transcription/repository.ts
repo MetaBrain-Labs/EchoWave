@@ -31,6 +31,7 @@ import {
 import { quoteIdentifier, type DatabasePool } from '../../../infrastructure/postgres.ts';
 import { VoiceActivityManifestSchema, type VoiceActivityManifest } from './voiceActivity.ts';
 import { WorkspaceRepositoryError } from '../../errors.ts';
+import type { SpeakerReviewFindingDraft } from '../speaker-review/rules.ts';
 
 /** worker 已领取的音频转写任务快照。 */
 export type ClaimedAudioTranscription = {
@@ -43,6 +44,7 @@ export type ClaimedAudioTranscription = {
     connectionStatus: string;
   } | null;
   durationMs: number;
+  expectedSpeakerCount: number | null;
   ingestionRunId: string | null;
   mimeType: string;
   model: AudioTranscriptionModel;
@@ -71,6 +73,8 @@ export type ClaimedAudioTranscription = {
   title: string;
   transcriptionBindingRevisionId: string | null;
   stagingBindingRevisionId: string | null;
+  speakerReviewBindingRevisionId: string | null;
+  speakerReviewModel: string | null;
 };
 
 /** Polling 或 EventBridge 发现并允许写入 revision 的 DashScope 终态。 */
@@ -100,6 +104,15 @@ export type TranscriptDraft = {
   speakerKey: string;
   startMs: number;
   text: string;
+  words: TranscriptWordDraft[];
+};
+
+/** 供应商词级时间戳在发布前使用的规范结构。 */
+export type TranscriptWordDraft = {
+  startMs: number;
+  endMs: number;
+  text: string;
+  punctuation: string;
 };
 
 /** 原子发布时写回修订快照的实际 STT 能力。 */
@@ -146,8 +159,11 @@ export class AudioAnalysisRepository {
     model: AudioTranscriptionModel,
     preprocessing: AudioTranscriptionPreprocessing,
     segmentationMode: AudioTranscriptionSegmentationMode = 'speaker_turn',
+    expectedSpeakerCount: number | null = null,
     transcriptionBindingRevisionId: string | null = null,
     stagingBindingRevisionId: string | null = null,
+    speakerReviewBindingRevisionId: string | null = null,
+    speakerReviewModel: string | null = null,
     notifyMode: 'polling' | 'eventbridge' = 'polling',
   ) {
     const client = await this.pool.connect();
@@ -173,7 +189,7 @@ export class AudioAnalysisRepository {
            (tenant_id, audio_file_id, revision_no, transcription_model, analysis_model,
             settings_snapshot, status, progress, processing_stage, processing_updated_at,
             transcription_provider, transcription_binding_revision_id,
-            staging_binding_revision_id)
+             staging_binding_revision_id, speaker_review_binding_revision_id)
          SELECT $1, $2, coalesce(max(revision_no), 0) + 1, $3, $3,
                 jsonb_build_object('speakerDiarization', $5::boolean, 'businessRole', false,
                                    'emotionAnalysis', false, 'timestamps', $6::text,
@@ -181,8 +197,10 @@ export class AudioAnalysisRepository {
                                    'diarizationRequested', $5::boolean,
                                    'diarizationAvailability', $7::text,
                                    'segmentationMode', $8::text,
-                                   'asyncNotifyMode', $12::text),
-                'queued', 0, 'queued', now(), $9, $10, $11
+                                    'asyncNotifyMode', $12::text,
+                                    'expectedSpeakerCount', $13::integer,
+                                    'speakerReviewModel', $15::text),
+                 'queued', 0, 'queued', now(), $9, $10, $11, $14
          FROM ${this.table('audio_analysis_revisions')}
          WHERE tenant_id = $1 AND audio_file_id = $2
          RETURNING id`,
@@ -199,6 +217,9 @@ export class AudioAnalysisRepository {
           transcriptionBindingRevisionId,
           stagingBindingRevisionId,
           notifyMode,
+          expectedSpeakerCount,
+          speakerReviewBindingRevisionId,
+          speakerReviewModel,
         ],
       );
       const response = AudioTranscriptionStartResponseSchema.parse({
@@ -291,7 +312,10 @@ export class AudioAnalysisRepository {
                  ar.provider_terminal_received_at, ar.provider_terminal_result_url,
                  ar.provider_terminal_error_code, ar.provider_terminal_error_message,
                  ar.provider_poll_attempt, ar.provider_last_polled_at, ar.provider_next_poll_at,
-                 ar.transcription_binding_revision_id, ar.staging_binding_revision_id`,
+                  ar.transcription_binding_revision_id, ar.staging_binding_revision_id,
+                  ar.speaker_review_binding_revision_id,
+                  ar.settings_snapshot->>'expectedSpeakerCount' AS expected_speaker_count,
+                  ar.settings_snapshot->>'speakerReviewModel' AS speaker_review_model`,
       [this.tenantId, maxInFlight],
     );
     const row = result.rows[0];
@@ -332,7 +356,10 @@ export class AudioAnalysisRepository {
                  ar.provider_terminal_received_at, ar.provider_terminal_result_url,
                  ar.provider_terminal_error_code, ar.provider_terminal_error_message,
                  ar.provider_poll_attempt, ar.provider_last_polled_at, ar.provider_next_poll_at,
-                 ar.transcription_binding_revision_id, ar.staging_binding_revision_id`,
+                  ar.transcription_binding_revision_id, ar.staging_binding_revision_id,
+                  ar.speaker_review_binding_revision_id,
+                  ar.settings_snapshot->>'expectedSpeakerCount' AS expected_speaker_count,
+                  ar.settings_snapshot->>'speakerReviewModel' AS speaker_review_model`,
       [this.tenantId],
     );
     const row = result.rows[0];
@@ -376,7 +403,10 @@ export class AudioAnalysisRepository {
                  ar.provider_terminal_received_at, ar.provider_terminal_result_url,
                  ar.provider_terminal_error_code, ar.provider_terminal_error_message,
                  ar.provider_poll_attempt, ar.provider_last_polled_at, ar.provider_next_poll_at,
-                 ar.transcription_binding_revision_id, ar.staging_binding_revision_id`,
+                  ar.transcription_binding_revision_id, ar.staging_binding_revision_id,
+                  ar.speaker_review_binding_revision_id,
+                  ar.settings_snapshot->>'expectedSpeakerCount' AS expected_speaker_count,
+                  ar.settings_snapshot->>'speakerReviewModel' AS speaker_review_model`,
       [this.tenantId],
     );
     const row = result.rows[0];
@@ -417,7 +447,10 @@ export class AudioAnalysisRepository {
                  ar.provider_terminal_received_at, ar.provider_terminal_result_url,
                  ar.provider_terminal_error_code, ar.provider_terminal_error_message,
                  ar.provider_poll_attempt, ar.provider_last_polled_at, ar.provider_next_poll_at,
-                 ar.transcription_binding_revision_id, ar.staging_binding_revision_id`,
+                  ar.transcription_binding_revision_id, ar.staging_binding_revision_id,
+                  ar.speaker_review_binding_revision_id,
+                  ar.settings_snapshot->>'expectedSpeakerCount' AS expected_speaker_count,
+                  ar.settings_snapshot->>'speakerReviewModel' AS speaker_review_model`,
       [this.tenantId],
     );
     const row = result.rows[0];
@@ -463,6 +496,8 @@ export class AudioAnalysisRepository {
           }
         : null,
       durationMs: Number(row.duration_ms),
+      expectedSpeakerCount:
+        row.expected_speaker_count == null ? null : Number(row.expected_speaker_count),
       ingestionRunId: row.ingestion_run_id ?? null,
       mimeType: row.mime_type ?? 'application/octet-stream',
       model: AudioTranscriptionModelSchema.parse(row.transcription_model),
@@ -510,6 +545,8 @@ export class AudioAnalysisRepository {
       title: row.title,
       transcriptionBindingRevisionId: row.transcription_binding_revision_id ?? null,
       stagingBindingRevisionId: row.staging_binding_revision_id ?? null,
+      speakerReviewBindingRevisionId: row.speaker_review_binding_revision_id ?? null,
+      speakerReviewModel: row.speaker_review_model ?? null,
     };
   }
 
@@ -661,6 +698,7 @@ export class AudioAnalysisRepository {
     job: ClaimedAudioTranscription,
     segments: TranscriptDraft[],
     metadata: TranscriptionPublicationMetadata,
+    speakerReviewFindings: SpeakerReviewFindingDraft[] = [],
   ) {
     const client = await this.pool.connect();
     try {
@@ -672,13 +710,15 @@ export class AudioAnalysisRepository {
         [this.tenantId, job.revisionId],
       );
       const sceneId = scene.rows[0].id as string;
+      const segmentIds: string[] = [];
       for (let index = 0; index < segments.length; index += 1) {
         const segment = segments[index]!;
-        await client.query(
+        const inserted = await client.query(
           `INSERT INTO ${this.table('transcript_segments')}
              (tenant_id, analysis_revision_id, scene_id, segment_index, speaker_key,
-              speaker_label, business_role, emotion, start_ms, end_ms, text)
-           VALUES ($1, $2, $3, $4, $5, $6, $6, $7, $8, $9, $10)`,
+               speaker_label, business_role, emotion, start_ms, end_ms, text, words)
+            VALUES ($1, $2, $3, $4, $5, $6, $6, $7, $8, $9, $10, $11::jsonb)
+            RETURNING id`,
           [
             this.tenantId,
             job.revisionId,
@@ -690,6 +730,52 @@ export class AudioAnalysisRepository {
             segment.startMs,
             segment.endMs,
             segment.text,
+            JSON.stringify(
+              (segment.words ?? []).map((word, wordIndex) => ({
+                index: wordIndex,
+                startMs: word.startMs,
+                endMs: word.endMs,
+                text: word.text,
+                punctuation: word.punctuation,
+              })),
+            ),
+          ],
+        );
+        segmentIds.push(String(inserted.rows[0].id));
+      }
+      for (const finding of speakerReviewFindings) {
+        const sourceSegmentId =
+          finding.sourceSegmentIndex === null ? null : segmentIds[finding.sourceSegmentIndex];
+        if (finding.sourceSegmentIndex !== null && !sourceSegmentId) continue;
+        await client.query(
+          `INSERT INTO ${this.table('speaker_review_findings')}
+             (tenant_id, analysis_revision_id, source_transcript_segment_id,
+              split_after_word_index, kind, severity, reason_code, explanation, finding_source)
+           VALUES ($1, $2, $3, $4, 'speaker_turn_suspected', $5, $6, $7, $8)`,
+          [
+            this.tenantId,
+            job.revisionId,
+            sourceSegmentId,
+            finding.splitAfterWordIndex,
+            finding.severity,
+            finding.reasonCode,
+            finding.explanation,
+            finding.source,
+          ],
+        );
+      }
+      if (job.speakerReviewModel) {
+        await client.query(
+          `INSERT INTO ${this.table('audio_speaker_review_jobs')}
+             (tenant_id, audio_file_id, analysis_revision_id,
+              capability_binding_revision_id, model, status)
+           VALUES ($1, $2, $3, $4, $5, 'queued')`,
+          [
+            this.tenantId,
+            job.audioFileId,
+            job.revisionId,
+            job.speakerReviewBindingRevisionId,
+            job.speakerReviewModel,
           ],
         );
       }

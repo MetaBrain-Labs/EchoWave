@@ -18,8 +18,11 @@ import type {
   BusinessAnalysisTagCategory,
   AudioTranscriptionMetadata,
   AudioTranscriptConfirmationState,
+  SpeakerReview,
+  SpeakerReviewFinding,
   SegmentEmotionAnalysis,
   SegmentRoleAnalysis,
+  TranscriptWord,
 } from '@echowave/contracts';
 
 export type AiTagAnalysis = {
@@ -41,13 +44,18 @@ export type TranscriptSegment = {
   emotionAnalysis?: SegmentEmotionAnalysis;
   endSeconds: number;
   id: string;
+  sourceSegmentId: string;
   speakerKey: string;
   speakerLabel: string;
   roleAnalysis?: SegmentRoleAnalysis;
   rawText: string;
   confirmedText?: string;
   startSeconds: number;
+  startWordIndex: number;
+  endWordIndex: number;
   text: string;
+  words: readonly TranscriptWord[];
+  reviewFindings: readonly SpeakerReviewFinding[];
 };
 
 export type TranscriptInvalidSegment = {
@@ -82,9 +90,11 @@ export type AnalysisDetailView = {
   revisionId: string;
   invalidSegments: readonly TranscriptInvalidSegment[];
   scenes: readonly TranscriptScene[];
+  rawScenes: readonly TranscriptScene[];
   summarySections: readonly SummarySection[];
   title: string;
   transcription: AudioTranscriptionMetadata;
+  speakerReview: SpeakerReview;
   transcriptConfirmation: AudioTranscriptConfirmationState;
   postAnalysis: { emotion: AudioPostAnalysisState; role: AudioPostAnalysisState };
   businessAnalysis: AudioBusinessAnalysisState;
@@ -173,43 +183,51 @@ export function toAnalysisDetailView(detail: AudioAnalysisDetail): AnalysisDetai
       endSeconds: interval.endMs / 1_000,
       durationSeconds: Math.round((interval.endMs - interval.startMs) / 1_000),
     }));
-  const scenes: TranscriptSceneDraft[] = detail.scenes.map((scene) => ({
-    id: scene.id,
-    title: scene.title,
-    startSeconds: scene.startMs / 1_000,
-    segments: scene.segments.map((segment) => ({
-      id: segment.id,
-      speakerKey: segment.speakerKey,
-      speakerLabel: segment.speakerLabel,
-      businessRole: segment.businessRole,
-      emotion: segment.emotion,
-      roleAnalysis: segment.roleAnalysis ?? undefined,
-      emotionAnalysis: segment.emotionAnalysis ?? undefined,
-      startSeconds: segment.startMs / 1_000,
-      endSeconds: segment.endMs / 1_000,
-      rawText: segment.rawText,
-      confirmedText: segment.confirmedText ?? undefined,
-      text: segment.confirmedText ?? segment.rawText,
-      aiTags: [
-        ...businessTags.filter((tag) => tag.evidenceSegmentIds.includes(segment.id)),
-        ...(businessTags.length === 0 && segment.aiTag
-          ? [
-              {
-                id: segment.aiTag.id,
-                category: 'custom' as const,
-                customLabel: segment.aiTag.title,
-                title: segment.aiTag.title,
-                summary: segment.aiTag.summary,
-                details: segment.aiTag.details,
-                confidence: 100,
-                evidenceSegmentIds: [segment.id],
-                citations: [],
-              },
-            ]
-          : []),
-      ],
-    })),
-  }));
+  const mapScenes = (sourceScenes: typeof detail.scenes): TranscriptSceneDraft[] =>
+    sourceScenes.map((scene) => ({
+      id: scene.id,
+      title: scene.title,
+      startSeconds: scene.startMs / 1_000,
+      segments: scene.segments.map((segment) => ({
+        id: segment.id,
+        sourceSegmentId: segment.sourceSegmentId ?? segment.id,
+        speakerKey: segment.speakerKey,
+        speakerLabel: segment.speakerLabel,
+        businessRole: segment.businessRole,
+        emotion: segment.emotion,
+        roleAnalysis: segment.roleAnalysis ?? undefined,
+        emotionAnalysis: segment.emotionAnalysis ?? undefined,
+        startSeconds: segment.startMs / 1_000,
+        startWordIndex: segment.startWordIndex,
+        endWordIndex: segment.endWordIndex ?? Math.max(segment.words.length, 1),
+        endSeconds: segment.endMs / 1_000,
+        rawText: segment.rawText,
+        confirmedText: segment.confirmedText ?? undefined,
+        text: segment.confirmedText ?? segment.rawText,
+        words: segment.words,
+        reviewFindings: segment.reviewFindings,
+        aiTags: [
+          ...businessTags.filter((tag) => tag.evidenceSegmentIds.includes(segment.id)),
+          ...(businessTags.length === 0 && segment.aiTag
+            ? [
+                {
+                  id: segment.aiTag.id,
+                  category: 'custom' as const,
+                  customLabel: segment.aiTag.title,
+                  title: segment.aiTag.title,
+                  summary: segment.aiTag.summary,
+                  details: segment.aiTag.details,
+                  confidence: 100,
+                  evidenceSegmentIds: [segment.id],
+                  citations: [],
+                },
+              ]
+            : []),
+        ],
+      })),
+    }));
+  const scenes = mapScenes(detail.scenes);
+  const rawScenes = mapScenes(detail.rawScenes.length > 0 ? detail.rawScenes : detail.scenes);
   return {
     id: detail.audioFileId,
     revisionId: detail.id,
@@ -219,11 +237,13 @@ export function toAnalysisDetailView(detail: AudioAnalysisDetail): AnalysisDetai
       detail.businessAnalysis.result?.generatedAt ?? detail.generatedAt,
     ).toLocaleString(),
     transcription: detail.transcription,
+    speakerReview: detail.speakerReview,
     transcriptConfirmation: detail.transcriptConfirmation,
     postAnalysis: detail.postAnalysis,
     businessAnalysis: detail.businessAnalysis,
     invalidSegments,
     scenes: attachTimelineItems(scenes, invalidSegments),
+    rawScenes: attachTimelineItems(rawScenes, invalidSegments),
     summarySections: (
       detail.businessAnalysis.result?.summarySections ?? detail.summarySections
     ).map((section) => ({

@@ -361,20 +361,21 @@ export class BusinessAnalysisRepository {
     const row = claimed.rows[0];
     if (!row) return undefined;
     const segments = await this.pool.query(
-      `SELECT ts.id, ts.speaker_key, ts.speaker_label, ts.start_ms, ts.end_ms, confirmed.text,
+      `SELECT confirmed.confirmed_segment_id AS id, confirmed.speaker_key,
+              confirmed.speaker_key AS speaker_label, confirmed.start_ms, confirmed.end_ms,
+              confirmed.text,
               rr.role_label, rr.confidence AS role_confidence,
               er.emotion_label, er.confidence AS emotion_confidence, er.attitude
        FROM ${this.table('transcript_confirmation_segments')} confirmed
-       JOIN ${this.table('transcript_segments')} ts
-         ON ts.tenant_id = confirmed.tenant_id
-        AND ts.analysis_revision_id = confirmed.analysis_revision_id
-        AND ts.id = confirmed.transcript_segment_id
        LEFT JOIN ${this.table('speaker_role_results')} rr
-         ON rr.tenant_id = ts.tenant_id AND rr.job_id = $3 AND rr.speaker_key = ts.speaker_key
+         ON rr.tenant_id = confirmed.tenant_id AND rr.job_id = $3
+        AND rr.speaker_key = confirmed.speaker_key
        LEFT JOIN ${this.table('segment_emotion_results')} er
-         ON er.tenant_id = ts.tenant_id AND er.job_id = $4 AND er.transcript_segment_id = ts.id
+         ON er.tenant_id = confirmed.tenant_id AND er.job_id = $4
+        AND er.transcript_confirmation_id = confirmed.transcript_confirmation_id
+        AND er.confirmed_segment_id = confirmed.confirmed_segment_id
        WHERE confirmed.tenant_id = $1 AND confirmed.transcript_confirmation_id = $2
-       ORDER BY ts.start_ms, ts.segment_index`,
+       ORDER BY confirmed.part_index`,
       [this.tenantId, row.transcript_confirmation_id, row.role_job_id, row.emotion_job_id],
     );
     const knowledgeBaseIds = safeArray(row.knowledge_base_ids);
@@ -522,9 +523,10 @@ export class BusinessAnalysisRepository {
         for (const segmentId of tag.evidenceSegmentIds) {
           await client.query(
             `INSERT INTO ${this.table('business_analysis_tag_segments')}
-               (tenant_id, job_id, tag_id, analysis_revision_id, transcript_segment_id)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [this.tenantId, job.id, tagId, job.revisionId, segmentId],
+               (tenant_id, job_id, tag_id, analysis_revision_id,
+                transcript_confirmation_id, confirmed_segment_id)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [this.tenantId, job.id, tagId, job.revisionId, job.confirmationId, segmentId],
           );
         }
         for (const chunkId of tag.citedChunkIds) {
@@ -625,8 +627,9 @@ export class BusinessAnalysisRepository {
               error_code, error_message, error_retryable
        FROM ${this.table('audio_business_analysis_jobs')}
        WHERE tenant_id = $1 AND group_id = $2 AND audio_file_id = $3
+         AND transcript_confirmation_id = $4
        ORDER BY created_at DESC LIMIT 1`,
-      [this.tenantId, groupId, audioFileId],
+      [this.tenantId, groupId, audioFileId, current.confirmationId],
     );
     const head = await this.pool.query(
       `SELECT job.id, job.model, job.published_at, job.input_fingerprint,
@@ -635,8 +638,9 @@ export class BusinessAnalysisRepository {
        FROM ${this.table('audio_group_business_analysis_heads')} head
        JOIN ${this.table('audio_business_analysis_jobs')} job
          ON job.tenant_id = head.tenant_id AND job.id = head.active_job_id
+        AND job.transcript_confirmation_id = $4
        WHERE head.tenant_id = $1 AND head.group_id = $2 AND head.audio_file_id = $3`,
-      [this.tenantId, groupId, audioFileId],
+      [this.tenantId, groupId, audioFileId, current.confirmationId],
     );
     const published = head.rows[0];
     let result = null;
@@ -651,8 +655,8 @@ export class BusinessAnalysisRepository {
         this.pool.query(
           `SELECT tag.id, tag.category, tag.custom_label, tag.title, tag.summary,
                   tag.details, tag.confidence,
-                  coalesce(array_agg(DISTINCT map.transcript_segment_id)
-                    FILTER (WHERE map.transcript_segment_id IS NOT NULL), '{}') AS segment_ids
+                  coalesce(array_agg(DISTINCT map.confirmed_segment_id)
+                    FILTER (WHERE map.confirmed_segment_id IS NOT NULL), '{}') AS segment_ids
            FROM ${this.table('business_analysis_tags')} tag
            LEFT JOIN ${this.table('business_analysis_tag_segments')} map
              ON map.tenant_id = tag.tenant_id AND map.job_id = tag.job_id AND map.tag_id = tag.id

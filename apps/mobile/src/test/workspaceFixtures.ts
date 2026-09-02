@@ -235,6 +235,7 @@ export const analysisFixture: AudioAnalysisDetail = {
   durationMs: 1_104_000,
   generatedAt: '2026-08-15T10:51:24.000Z',
   transcription: {
+    expectedSpeakerCount: null,
     model: 'qwen-audio-3.0-asr-flash-filetrans',
     language: 'zh',
     diarizationStatus: 'observed',
@@ -242,6 +243,13 @@ export const analysisFixture: AudioAnalysisDetail = {
     segmentationMode: 'speaker_turn',
     speakerIdentityScope: 'recording',
     preprocessingMode: 'whole_file',
+  },
+  speakerReview: {
+    status: 'ready',
+    model: 'deepseek-v4-flash',
+    message: null,
+    resolvedAt: null,
+    findings: [],
   },
   transcriptConfirmation: {
     status: 'confirmed',
@@ -264,6 +272,7 @@ export const analysisFixture: AudioAnalysisDetail = {
     error: null,
     result: null,
   },
+  rawScenes: [],
   invalidSegments: [
     {
       id: 'a0000000-0000-4000-8000-000000000001',
@@ -294,6 +303,11 @@ export const analysisFixture: AudioAnalysisDetail = {
             '今天想和你聊聊最近使用团队音频整理工具的体验。先从日常工作开始，你通常会在什么场景下记录和回听访谈？',
           confirmedText:
             '今天想和你聊聊最近使用团队音频整理工具的体验。先从日常工作开始，你通常会在什么场景下记录和回听访谈？',
+          sourceSegmentId: '70000000-0000-4000-8000-000000000001',
+          startWordIndex: 0,
+          endWordIndex: 1,
+          words: [],
+          reviewFindings: [],
           aiTag: {
             id: '90000000-0000-4000-8000-000000000001',
             title: '高频访谈记录场景',
@@ -316,6 +330,11 @@ export const analysisFixture: AudioAnalysisDetail = {
             '最常见的是用户访谈和每周复盘。我会先完整录音，结束后再回听并整理重点，但在很长的录音里寻找关键内容会花不少时间。',
           confirmedText:
             '最常见的是用户访谈和每周复盘。我会先完整录音，结束后再回听并整理重点，但在很长的录音里寻找关键内容会花不少时间。',
+          sourceSegmentId: '70000000-0000-4000-8000-000000000002',
+          startWordIndex: 0,
+          endWordIndex: 1,
+          words: [],
+          reviewFindings: [],
           aiTag: null,
         },
       ],

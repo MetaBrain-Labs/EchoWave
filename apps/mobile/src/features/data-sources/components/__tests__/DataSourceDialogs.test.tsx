@@ -57,9 +57,11 @@ describe('DataSourceFormSheet custom business roles', () => {
 
 describe('AudioTranscriptionConfirmDialog layout', () => {
   it('keeps preprocessing and segmentation rows readable inside a scrollable dialog', () => {
+    const onExpectedSpeakerCountChange = jest.fn();
     const screen = render(
       <AudioTranscriptionConfirmDialog
         audioTitle="测试录音"
+        expectedSpeakerCount=""
         models={AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES.map((model) => ({
           ...model,
           available: true,
@@ -67,6 +69,7 @@ describe('AudioTranscriptionConfirmDialog layout', () => {
         }))}
         onCancel={jest.fn()}
         onConfirm={jest.fn()}
+        onExpectedSpeakerCountChange={onExpectedSpeakerCountChange}
         onPreprocessingChange={jest.fn()}
         pending={false}
         preprocessing="silero_vad"
@@ -82,5 +85,9 @@ describe('AudioTranscriptionConfirmDialog layout', () => {
     expect(screen.getByText('仅压缩连续超过 30 秒的非人声区间')).toBeTruthy();
     expect(screen.getByText('按说话轮次')).toBeTruthy();
     expect(screen.getByText('说话人变化或明显停顿时开始新段')).toBeTruthy();
+    const speakerCount = screen.getByLabelText('预计说话人数');
+    fireEvent.changeText(speakerCount, '3 people');
+    expect(onExpectedSpeakerCountChange).toHaveBeenCalledWith('3');
+    expect(screen.getByText(/仅作为 Speaker 数量软提示/)).toBeTruthy();
   });
 });

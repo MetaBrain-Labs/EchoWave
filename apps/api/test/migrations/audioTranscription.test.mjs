@@ -55,6 +55,14 @@ const asyncNotifyModesMigration = await readFile(
   new URL('../../migrations/016_dashscope_async_notify_modes.sql', import.meta.url),
   'utf8',
 );
+const speakerReviewMigration = await readFile(
+  new URL('../../migrations/022_speaker_review_and_confirmed_turns.sql', import.meta.url),
+  'utf8',
+);
+const speakerReviewResolutionMigration = await readFile(
+  new URL('../../migrations/023_speaker_review_resolution.sql', import.meta.url),
+  'utf8',
+);
 
 describe('audio transcription migration', () => {
   it('adds business roles and prevents concurrent active revisions', () => {
@@ -170,5 +178,23 @@ describe('audio transcription migration', () => {
     assert.match(asyncNotifyModesMigration, /SET provider_terminal_source = 'eventbridge'/);
     assert.match(asyncNotifyModesMigration, /SET processing_stage = 'awaiting_result'/);
     assert.match(asyncNotifyModesMigration, /provider_terminal_status IS NULL OR/);
+  });
+
+  it('adds immutable word boundaries, speaker review and split confirmation ownership', () => {
+    assert.match(speakerReviewMigration, /ADD COLUMN words jsonb NOT NULL/);
+    assert.match(speakerReviewMigration, /CREATE TABLE audio_speaker_review_jobs/);
+    assert.match(speakerReviewMigration, /CREATE TABLE speaker_review_findings/);
+    assert.match(speakerReviewMigration, /kind = 'speaker_turn_suspected'/);
+    assert.match(
+      speakerReviewMigration,
+      /RENAME COLUMN transcript_segment_id TO source_transcript_segment_id/,
+    );
+    assert.match(speakerReviewMigration, /ADD COLUMN confirmed_segment_id uuid/);
+    assert.match(speakerReviewMigration, /REFERENCES transcript_confirmation_segments/);
+    assert.doesNotMatch(speakerReviewMigration, /INSERT INTO speaker_review_findings[\s\S]*SELECT/);
+  });
+
+  it('persists the human speaker review completion time', () => {
+    assert.match(speakerReviewResolutionMigration, /ADD COLUMN speaker_review_resolved_at/);
   });
 });

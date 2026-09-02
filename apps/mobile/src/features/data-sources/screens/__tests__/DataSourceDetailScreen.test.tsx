@@ -562,12 +562,14 @@ describe('DataSourceDetailScreen', () => {
     expect(screen.queryByText(/普通分段|直接发送/)).toBeNull();
     expect(screen.getByText(/¥0.00022\/秒/)).toBeTruthy();
     expect(screen.getByText(/Speaker：尽力分离/)).toBeTruthy();
+    fireEvent.changeText(screen.getByLabelText('预计说话人数'), '3');
     fireEvent.press(screen.getByText('确认转写'));
     await waitFor(() =>
       expect(workspaceApi.startAudioTranscription).toHaveBeenCalledWith(audioFixtures[0].id, {
         model: 'qwen-audio-3.0-asr-flash-filetrans',
         preprocessing: 'silero_vad',
         segmentationMode: 'speaker_turn',
+        expectedSpeakerCount: 3,
       }),
     );
 

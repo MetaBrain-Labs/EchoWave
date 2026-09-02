@@ -22,6 +22,7 @@ export const AUDIO_KINDS = new Set<AudioAiExecutionKind>([
   'audio-transcription',
   'audio-emotion-analysis',
   'audio-role-recognition',
+  'audio-speaker-review',
   'audio-business-analysis',
 ]);
 
@@ -29,6 +30,7 @@ export const MODEL_DISPLAY_NAMES: Record<string, string> = {
   'audio-file-transcription': '识别整段音频并生成带时间戳的说话人转写',
   'audio-emotion-analysis': '判断当前音频片段的情绪与置信度',
   'audio-role-recognition': '根据完整对话识别说话人的业务角色',
+  'audio-speaker-review': '复核疑似说话人切换边界',
   'business-analysis-retrieval-planning': '规划业务分析所需的知识检索问题',
   'business-analysis-query-embedding': '将知识检索问题转换为语义向量',
   'business-analysis-generation': '结合转写与知识证据生成业务分析',

@@ -22,6 +22,8 @@ import {
 import {
   confirmAudioTranscript,
   getAudioTranscriptionCapabilities,
+  resolveAllSpeakerReviewFindings,
+  resolveSpeakerReviewFinding,
   startAudioTranscription,
 } from '../audioAnalysisApi';
 import {
@@ -312,7 +314,19 @@ describe('resource API clients', () => {
       confirmAudioTranscript(analysisFixture.audioFileId, {
         analysisRevisionId: analysisFixture.id,
         baseVersion: 1,
-        segments: [{ segmentId: segment.id, text: '  修正正文  ' }],
+        segments: [
+          {
+            sourceSegmentId: segment.id,
+            parts: [
+              {
+                speakerKey: 'Speaker 1',
+                startWordIndex: 0,
+                endWordIndex: 1,
+                text: '  修正正文  ',
+              },
+            ],
+          },
+        ],
       }),
     ).resolves.toEqual(response);
     expect(fetch.mock.calls[0][0]).toContain(
@@ -323,10 +337,56 @@ describe('resource API clients', () => {
         body: JSON.stringify({
           analysisRevisionId: analysisFixture.id,
           baseVersion: 1,
-          segments: [{ segmentId: segment.id, text: '修正正文' }],
+          segments: [
+            {
+              sourceSegmentId: segment.id,
+              parts: [
+                {
+                  speakerKey: 'Speaker 1',
+                  startWordIndex: 0,
+                  endWordIndex: 1,
+                  text: '修正正文',
+                },
+              ],
+            },
+          ],
         }),
         method: 'POST',
       }),
     );
+  });
+
+  it('resolves one or all speaker review findings with DELETE requests', async () => {
+    const findingId = '71000000-0000-4000-8000-000000000009';
+    const fetch = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ audioFileId: analysisFixture.audioFileId, resolvedCount: 1 }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ audioFileId: analysisFixture.audioFileId, resolvedCount: 3 }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+
+    await expect(
+      resolveSpeakerReviewFinding(analysisFixture.audioFileId, findingId),
+    ).resolves.toEqual({ audioFileId: analysisFixture.audioFileId, resolvedCount: 1 });
+    await expect(resolveAllSpeakerReviewFindings(analysisFixture.audioFileId)).resolves.toEqual({
+      audioFileId: analysisFixture.audioFileId,
+      resolvedCount: 3,
+    });
+    expect(fetch.mock.calls[0][0]).toContain(
+      `/api/audio-files/${analysisFixture.audioFileId}/speaker-review-findings/${findingId}`,
+    );
+    expect(fetch.mock.calls[0][1]).toEqual(expect.objectContaining({ method: 'DELETE' }));
+    expect(fetch.mock.calls[1][0]).toContain(
+      `/api/audio-files/${analysisFixture.audioFileId}/speaker-review-findings`,
+    );
+    expect(fetch.mock.calls[1][1]).toEqual(expect.objectContaining({ method: 'DELETE' }));
   });
 });

@@ -329,6 +329,12 @@ describe('DefaultAudioService audio transcription', () => {
       'qwen-audio-3.0-asr-flash-filetrans',
       'whole_file',
       'speaker_turn',
+      null,
+      null,
+      null,
+      null,
+      'qwen-audio-3.0-asr-flash-filetrans',
+      'polling',
     ]);
     await assert.rejects(
       () =>

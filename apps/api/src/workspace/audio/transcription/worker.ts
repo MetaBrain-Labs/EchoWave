@@ -35,6 +35,7 @@ import { handleDashScopeTaskResult as persistDashScopeTaskResult } from './dashS
 import { AudioTranscriptionProviderError } from './errors.ts';
 import type { OssStagingStore } from './ossStagingStore.ts';
 import { restoreOriginalTimeline, VoiceActivityError } from './voiceActivity.ts';
+import { detectSpeakerReviewCandidates } from '../speaker-review/rules.ts';
 
 const AUDIO_TRANSCRIPTION_LANGUAGE = 'zh' as const;
 const POLL_DELAYS_MS = [2_000, 5_000, 10_000, 15_000] as const;
@@ -334,11 +335,15 @@ export class AudioTranscriptionWorker {
     await repository.updateActivity(job, { stage: 'transcribing', progress: 15 });
     this.notify(job, false);
     const taskId = await runReportedStep(report, 'dashscope-submit', () =>
-      dashScope.submit(ossStaging.signedGetUrl(objectKey!), {
-        revisionId: job.revisionId,
-        durationMs: providerDurationMs,
-        preprocessing: job.preprocessingMode,
-      }),
+      dashScope.submit(
+        ossStaging.signedGetUrl(objectKey!),
+        {
+          revisionId: job.revisionId,
+          durationMs: providerDurationMs,
+          preprocessing: job.preprocessingMode,
+        },
+        job.expectedSpeakerCount ?? undefined,
+      ),
     );
     const submittedAt = new Date();
     await repository.recordProviderTask(job, taskId, submittedAt, providers.notifyMode);
@@ -455,7 +460,7 @@ export class AudioTranscriptionWorker {
         durationMs: providerDurationMs,
         preprocessingMode: job.preprocessingMode,
         diarizationEnabled: true,
-        timestampGranularity: 'segment',
+        timestampGranularity: 'word',
       },
       output: { language: AUDIO_TRANSCRIPTION_LANGUAGE, segments: result.segments },
     });
@@ -473,15 +478,21 @@ export class AudioTranscriptionWorker {
     }
     await this.options.repository.updateActivity(job, { stage: 'publishing', progress: 95 });
     this.notify(job, false);
+    const reviewFindings = detectSpeakerReviewCandidates(segments);
     await runReportedStep(report, 'publish', () =>
-      this.options.repository.publishTranscription(job, segments, {
-        language: AUDIO_TRANSCRIPTION_LANGUAGE,
-        diarizationRequested: true,
-        diarizationObserved: true,
-        responseGranularity: 'segment',
-        segmentationMode: 'speaker_turn',
-        speakerIdentityScope: 'recording',
-      }),
+      this.options.repository.publishTranscription(
+        job,
+        segments,
+        {
+          language: AUDIO_TRANSCRIPTION_LANGUAGE,
+          diarizationRequested: true,
+          diarizationObserved: true,
+          responseGranularity: 'word',
+          segmentationMode: 'speaker_turn',
+          speakerIdentityScope: 'recording',
+        },
+        reviewFindings,
+      ),
     );
     this.notify(job, true);
     await this.cleanupProviderArtifact(job, report, providers.ossStaging);

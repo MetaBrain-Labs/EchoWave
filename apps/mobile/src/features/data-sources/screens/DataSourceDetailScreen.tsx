@@ -159,6 +159,7 @@ export function DataSourceDetailScreen({
     useState<AudioTranscriptionCapabilitiesResponse>();
   const [transcriptionPreprocessing, setTranscriptionPreprocessing] =
     useState<AudioTranscriptionPreprocessing>('silero_vad');
+  const [expectedSpeakerCount, setExpectedSpeakerCount] = useState('');
   const [startingTranscription, setStartingTranscription] = useState(false);
   const [unlinkTarget, setUnlinkTarget] = useState<LinkedDataSourceGroup>();
   const [switchTarget, setSwitchTarget] = useState<LinkedDataSourceGroup>();
@@ -359,6 +360,7 @@ export function DataSourceDetailScreen({
         model: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
         preprocessing: transcriptionPreprocessing,
         segmentationMode: 'speaker_turn',
+        ...(expectedSpeakerCount ? { expectedSpeakerCount: Number(expectedSpeakerCount) } : {}),
       });
       setTranscriptionTarget(undefined);
       await load(false);
@@ -454,6 +456,7 @@ export function DataSourceDetailScreen({
   const uploadDates = [...new Set(filteredUploadRecords.map((record) => record.date))];
   const prepareTranscription = (target: SourceAudioItem) => {
     setTranscriptionPreprocessing('silero_vad');
+    setExpectedSpeakerCount('');
     setTranscriptionTarget(target);
   };
   const openMoreActions = () =>
@@ -596,6 +599,7 @@ export function DataSourceDetailScreen({
       />
       <AudioTranscriptionConfirmDialog
         audioTitle={transcriptionTarget?.title ?? ''}
+        expectedSpeakerCount={expectedSpeakerCount}
         models={[...(transcriptionCapabilities?.models ?? [])]}
         onPreprocessingChange={setTranscriptionPreprocessing}
         onCancel={() => {
@@ -604,6 +608,7 @@ export function DataSourceDetailScreen({
         onConfirm={() => {
           void confirmTranscription();
         }}
+        onExpectedSpeakerCountChange={setExpectedSpeakerCount}
         pending={startingTranscription}
         preprocessing={transcriptionPreprocessing}
         sileroVad={transcriptionCapabilities?.sileroVad}

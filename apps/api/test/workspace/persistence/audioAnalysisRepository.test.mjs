@@ -110,7 +110,7 @@ describe('AudioAnalysisRepository', () => {
     const insert = calls.find((call) => /INSERT INTO .*audio_analysis_revisions/.test(call.sql));
     assert.equal(insert.values[3], 'whole_file');
     assert.equal(insert.values[4], true);
-    assert.equal(insert.values[5], 'segment');
+    assert.equal(insert.values[5], 'word');
     assert.equal(insert.values[6], 'best_effort');
     assert.match(insert.sql, /'preprocessingMode', \$4::text/);
     assert.match(insert.sql, /'language', 'zh'/);
@@ -217,6 +217,7 @@ describe('AudioAnalysisRepository', () => {
       query: async (sql, values) => {
         calls.push({ sql, values });
         if (/INSERT INTO .*analysis_scenes/.test(sql)) return { rows: [{ id: revisionId }] };
+        if (/INSERT INTO .*transcript_segments/.test(sql)) return { rows: [{ id: audioFileId }] };
         if (/UPDATE .*audio_files/.test(sql)) return { rowCount: 1, rows: [{ id: audioFileId }] };
         return { rows: [], rowCount: 1 };
       },
@@ -258,6 +259,7 @@ describe('AudioAnalysisRepository', () => {
           speakerKey: 'Speaker 0',
           startMs: 0,
           text: '您好',
+          words: [],
         },
       ],
       {
