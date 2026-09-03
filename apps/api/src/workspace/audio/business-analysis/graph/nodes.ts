@@ -42,6 +42,10 @@ export type BusinessAnalysisNodeOptions = {
   embeddings: Pick<DashScopeEmbeddings, 'embedQuery'>;
   embeddingModel: string;
   agent: SalesAnalysisAgent;
+  saveWindowResult?: (
+    jobId: string,
+    window: import('../repository.ts').BusinessAnalysisWindowResult,
+  ) => Promise<void>;
 };
 
 /** 将长转写分成最多三个有界主动检索查询。 */
@@ -181,6 +185,7 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
     const segmentIds = new Set(job.segments.map((segment) => segment.id));
     const retrievedIds = new Set(retrievedChunks.map((chunk) => chunk.id));
     const customTags = new Set(job.settings.customTags);
+    let removedCitationCount = 0;
     for (const tag of draft.tags) {
       if (tag.evidenceSegmentIds.some((id) => !segmentIds.has(id))) {
         throw new BusinessAnalysisProviderError(
@@ -189,13 +194,9 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
           true,
         );
       }
-      if (tag.citedChunkIds.some((id) => !retrievedIds.has(id))) {
-        throw new BusinessAnalysisProviderError(
-          'INVALID_MODEL_OUTPUT',
-          '销售复盘引用了未检索或未授权的知识块。',
-          true,
-        );
-      }
+      const validCitations = tag.citedChunkIds.filter((id) => retrievedIds.has(id));
+      removedCitationCount += tag.citedChunkIds.length - validCitations.length;
+      tag.citedChunkIds = validCitations;
       if (
         (tag.category === 'custom' && (!tag.customLabel || !customTags.has(tag.customLabel))) ||
         (tag.category !== 'custom' && tag.customLabel !== null)
@@ -208,6 +209,9 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
       }
     }
     const limitations = [...draft.limitations];
+    if (removedCitationCount > 0) {
+      limitations.push(`已移除 ${removedCitationCount} 个不在本次检索白名单中的知识引用。`);
+    }
     if (!job.segments.some((segment) => segment.role))
       limitations.push('本次分析未使用角色识别结果。');
     if (!job.segments.some((segment) => segment.emotion))
@@ -286,6 +290,10 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
           return chunks;
         },
         recorder: context.report,
+        windowResults: job.windowResults,
+        onWindowComplete: options.saveWindowResult
+          ? (window) => options.saveWindowResult!(job.id, window)
+          : undefined,
       });
       context.report.recordStep({ name: 'analysis-generation', status: 'completed' });
       return { draft, retrievedChunks: additionalChunks };

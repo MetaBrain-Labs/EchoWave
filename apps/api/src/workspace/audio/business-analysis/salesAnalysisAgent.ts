@@ -13,7 +13,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import { AIMessage, type AIMessageChunk } from '@langchain/core/messages';
+import type { AIMessageChunk } from '@langchain/core/messages';
 import { tool } from '@langchain/core/tools';
 import { concat } from '@langchain/core/utils/stream';
 import { ChatDeepSeek } from '@langchain/deepseek';
@@ -31,12 +31,23 @@ import { modelMessageForReport } from '../../../ai-observability/modelCallReport
 import { extractFinalMessageText, parseJsonObject } from '../../../ai-runtime/structuredOutput.ts';
 import type { RagConfig } from '../../../config/workspace.ts';
 import type { RetrievalChunk } from '../../../knowledge/retrieval/types.ts';
-import type { BusinessAnalysisPublication, ClaimedBusinessAnalysisJob } from './repository.ts';
+import type {
+  BusinessAnalysisPublication,
+  BusinessAnalysisWindowResult,
+  ClaimedBusinessAnalysisJob,
+} from './repository.ts';
 import { salesAnalysisContext, salesAnalysisInput, salesAnalysisRepairContext } from './CONTEXT.ts';
+import { buildBusinessAnalysisWindows, type BusinessAnalysisWindow } from './windowing.ts';
 
 const CoreSummaryTitleSchema = z.enum(['overall', 'strengths', 'improvements', 'risks', 'actions']);
-const ANALYSIS_MAX_OUTPUT_TOKENS = 8_000;
-const REPAIR_MAX_OUTPUT_TOKENS = 5_000;
+// 结构化结果的输出预算不包含隐藏思考；各阶段独立设置，避免小任务耗尽大模型预算。
+const RETRIEVAL_PLANNING_MAX_OUTPUT_TOKENS = 768;
+const RETRIEVAL_PLANNING_TIMEOUT_MS = 30_000;
+const ANALYSIS_MAX_OUTPUT_TOKENS = 6_000;
+const ANALYSIS_MODEL_TIMEOUT_MS = 60_000;
+const ANALYSIS_WORKFLOW_TIMEOUT_MS = 120_000;
+const REPAIR_MAX_OUTPUT_TOKENS = 4_096;
+const REPAIR_TIMEOUT_MS = 45_000;
 const MAX_ANALYSIS_TAGS = 12;
 const OUTPUT_TOKEN_LIMIT_TOLERANCE = 16;
 const analysisTagCategories = ['strength', 'improvement', 'risk', 'suggestion', 'custom'] as const;
@@ -52,8 +63,8 @@ const AgentTagSchema = z
     category: z.enum(analysisTagCategories),
     customLabel: z.string().trim().min(1).max(24).nullable(),
     title: z.string().trim().min(1).max(120),
-    summary: z.string().trim().min(1).max(800),
-    details: z.array(z.string().trim().min(1).max(500)).max(3),
+    summary: z.string().trim().min(1).max(420),
+    details: z.array(z.string().trim().min(1).max(260)).max(3),
     confidence: z.number().int().min(0).max(100),
     evidenceSegmentIds: z.array(z.string().uuid()).min(1).max(50),
     citedChunkIds: z.array(z.string().uuid()).max(12),
@@ -75,12 +86,12 @@ const AgentTagSchema = z
 
 const AgentResultSchema = z
   .object({
-    limitations: z.array(z.string().trim().min(1).max(500)).max(4),
+    limitations: z.array(z.string().trim().min(1).max(320)).max(4),
     summarySections: z
       .array(
         z.object({
           title: CoreSummaryTitleSchema,
-          body: z.string().trim().min(1).max(2_000),
+          body: z.string().trim().min(1).max(900),
         }),
       )
       .length(5),
@@ -106,6 +117,10 @@ export class BusinessAnalysisProviderError extends Error {
     public readonly code: 'INVALID_MODEL_OUTPUT' | 'MODEL_TIMEOUT' | 'MODEL_UNAVAILABLE',
     message: string,
     public readonly retryable: boolean,
+    public readonly reason: 'timeout' | 'output_truncated' | 'invalid_citation' | 'other' = code ===
+    'MODEL_TIMEOUT'
+      ? 'timeout'
+      : 'other',
   ) {
     super(message);
     this.name = 'BusinessAnalysisProviderError';
@@ -251,6 +266,21 @@ function finishReasonFromMetadata(metadata: Record<string, unknown> | undefined)
   return typeof finishReason === 'string' && finishReason ? finishReason : null;
 }
 
+/** LangChain 流式响应可能是 AIMessageChunk，不应只用 AIMessage 的 instanceof 丢失审计。 */
+function isAiMessageLike(value: unknown): value is AIMessageChunk {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as {
+    type?: unknown;
+    content?: unknown;
+    _getType?: () => string;
+  };
+  const type = item.type ?? item._getType?.();
+  return (
+    (type === 'ai' || type === 'AIMessageChunk' || type === 'AIMessage') &&
+    item.content !== undefined
+  );
+}
+
 /** 根据供应商结束原因和解析失败时的近上限 Token 数判断输出是否被截断。 */
 function outputWasTruncated(input: {
   finishReason: string | null;
@@ -275,23 +305,38 @@ function summarizeInvalidFields(error: z.ZodError): string {
 
 /** 对一个确认版转写执行受限知识检索和结构化销售复盘。 */
 export class SalesAnalysisAgent {
+  private readonly planningModel: ChatDeepSeek;
   private readonly model: ChatDeepSeek;
   private readonly repairModel: ChatDeepSeek;
 
   constructor(private readonly options: SalesAnalysisAgentOptions) {
+    this.planningModel = new ChatDeepSeek({
+      apiKey: options.ragConfig.deepSeekApiKey,
+      model: options.ragConfig.deepSeekChatModel,
+      temperature: 0,
+      maxTokens: RETRIEVAL_PLANNING_MAX_OUTPUT_TOKENS,
+      maxRetries: 0,
+      timeout: RETRIEVAL_PLANNING_TIMEOUT_MS,
+      configuration: {
+        baseURL: options.ragConfig.deepSeekBaseUrl,
+        ...(options.fetchImplementation ? { fetch: options.fetchImplementation } : {}),
+      },
+      // 规划只返回少量查询，关闭思考可避免等待无关的长推理。
+      modelKwargs: { thinking: { type: 'disabled' } },
+    });
     this.model = new ChatDeepSeek({
       apiKey: options.ragConfig.deepSeekApiKey,
       model: options.ragConfig.deepSeekChatModel,
       temperature: 0,
       maxTokens: ANALYSIS_MAX_OUTPUT_TOKENS,
       maxRetries: 1,
-      timeout: 45_000,
+      timeout: ANALYSIS_MODEL_TIMEOUT_MS,
       configuration: {
         baseURL: options.ragConfig.deepSeekBaseUrl,
         ...(options.fetchImplementation ? { fetch: options.fetchImplementation } : {}),
       },
-      // 销售复盘需要跨片段综合证据，始终显式开启思考模式，避免受通用问答开关影响。
-      modelKwargs: { thinking: { type: 'enabled' } },
+      // 结构化结果必须优先保证完整 JSON，避免隐藏思考占满输出预算。
+      modelKwargs: { thinking: { type: 'disabled' } },
     });
     this.repairModel = new ChatDeepSeek({
       apiKey: options.ragConfig.deepSeekApiKey,
@@ -299,7 +344,7 @@ export class SalesAnalysisAgent {
       temperature: 0,
       maxTokens: REPAIR_MAX_OUTPUT_TOKENS,
       maxRetries: 1,
-      timeout: 45_000,
+      timeout: REPAIR_TIMEOUT_MS,
       configuration: {
         baseURL: options.ragConfig.deepSeekBaseUrl,
         ...(options.fetchImplementation ? { fetch: options.fetchImplementation } : {}),
@@ -314,7 +359,11 @@ export class SalesAnalysisAgent {
     job: ClaimedBusinessAnalysisJob,
     recorder: AiExecutionRecorder = noOpAiExecutionRecorder,
   ): Promise<string[]> {
-    const transcript = job.segments.map((segment) => ({
+    const planningSegments =
+      job.segments.length > 100
+        ? [...job.segments.slice(0, 50), ...job.segments.slice(-50)]
+        : job.segments;
+    const transcript = planningSegments.map((segment) => ({
       id: segment.id,
       speaker: segment.role?.label ?? segment.speakerLabel,
       text: segment.text,
@@ -346,8 +395,8 @@ export class SalesAnalysisAgent {
     });
     try {
       let response: AIMessageChunk | undefined;
-      for await (const chunk of await this.model.stream(messages, {
-        signal: AbortSignal.timeout(20_000),
+      for await (const chunk of await this.planningModel.stream(messages, {
+        signal: AbortSignal.timeout(RETRIEVAL_PLANNING_TIMEOUT_MS),
       })) {
         const reasoning = chunk.additional_kwargs.reasoning_content;
         if (typeof reasoning === 'string') modelCall.appendReasoning(reasoning);
@@ -383,8 +432,14 @@ export class SalesAnalysisAgent {
     preRetrieved: RetrievalChunk[];
     searchKnowledge: (query: string) => Promise<RetrievalChunk[]>;
     recorder?: AiExecutionRecorder;
+    windowResults?: BusinessAnalysisWindowResult[];
+    onWindowComplete?: (window: BusinessAnalysisWindowResult) => Promise<void>;
   }): Promise<BusinessAnalysisPublication> {
     const recorder = input.recorder ?? noOpAiExecutionRecorder;
+    const windows = buildBusinessAnalysisWindows(input.job.segments);
+    if (windows.length > 1) {
+      return this.analyzeHierarchical({ ...input, recorder, windows });
+    }
     const retrievedForRepair = new Map(
       input.preRetrieved.map((chunk) => [chunk.id, chunk] as const),
     );
@@ -514,7 +569,7 @@ export class SalesAnalysisAgent {
         },
         {
           recursionLimit: 24,
-          signal: AbortSignal.timeout(100_000),
+          signal: AbortSignal.timeout(ANALYSIS_WORKFLOW_TIMEOUT_MS),
           streamMode: ['messages', 'values'],
         },
       );
@@ -527,7 +582,7 @@ export class SalesAnalysisAgent {
         }
         if (mode !== 'messages' || !Array.isArray(payload)) continue;
         const message = payload[0];
-        if (!(message instanceof AIMessage)) continue;
+        if (!isAiMessageLike(message)) continue;
         const messageId = message.id ?? activeModelCall?.id ?? randomUUID();
         if (!activeModelCall || activeModelCall.id !== messageId) {
           finishActiveModelCall('completed');
@@ -572,7 +627,7 @@ export class SalesAnalysisAgent {
       );
     }
     const messages = Array.isArray(result.messages) ? result.messages : [];
-    const hasAiResponse = messages.some((message) => message instanceof AIMessage);
+    const hasAiResponse = messages.some((message) => isAiMessageLike(message));
     const { text, reasoning } = extractFinalMessageText(messages);
     const parsed = parseJsonObject(text) ?? parseJsonObject(reasoning);
     const candidate = parseSalesAnalysisCandidate(parsed);
@@ -588,17 +643,14 @@ export class SalesAnalysisAgent {
     }
 
     const invalidFields = summarizeInvalidFields(candidate.result.error);
-    const finalMessage = [...messages].reverse().find((message) => message instanceof AIMessage);
-    const finalMessageFinishReason =
-      finalMessage instanceof AIMessage
-        ? finishReasonFromMetadata(finalMessage.response_metadata as Record<string, unknown>)
-        : null;
+    const finalMessage = [...messages].reverse().find((message) => isAiMessageLike(message));
+    const finalMessageFinishReason = isAiMessageLike(finalMessage)
+      ? finishReasonFromMetadata(finalMessage.response_metadata as Record<string, unknown>)
+      : null;
     const finishReason = latestModelCompletion.value?.finishReason ?? finalMessageFinishReason;
     const outputTokens =
       latestModelCompletion.value?.outputTokens ??
-      (finalMessage instanceof AIMessage
-        ? (finalMessage.usage_metadata?.output_tokens ?? null)
-        : null);
+      (isAiMessageLike(finalMessage) ? (finalMessage.usage_metadata?.output_tokens ?? null) : null);
     const initialTruncated = outputWasTruncated({
       finishReason,
       outputTokens,
@@ -665,7 +717,206 @@ export class SalesAnalysisAgent {
           : `销售复盘模型返回了无效结构（字段：${repairedFields}）。`
         : '销售复盘模型没有返回结果。',
       true,
+      repaired.outputTruncated ? 'output_truncated' : 'other',
     );
+  }
+
+  /** 对长转写逐窗口分析，再用窗口摘要生成最终结果，避免最终请求携带整份 Transcript。 */
+  private async analyzeHierarchical(input: {
+    job: ClaimedBusinessAnalysisJob;
+    preRetrieved: RetrievalChunk[];
+    searchKnowledge: (query: string) => Promise<RetrievalChunk[]>;
+    recorder: AiExecutionRecorder;
+    windows: BusinessAnalysisWindow<ClaimedBusinessAnalysisJob['segments'][number]>[];
+    windowResults?: BusinessAnalysisWindowResult[];
+    onWindowComplete?: (window: BusinessAnalysisWindowResult) => Promise<void>;
+  }): Promise<BusinessAnalysisPublication> {
+    const saved = new Map((input.windowResults ?? []).map((item) => [item.index, item] as const));
+    const results: BusinessAnalysisWindowResult[] = [];
+    for (const window of input.windows) {
+      const existing = saved.get(window.index);
+      if (existing) {
+        results.push(existing);
+        continue;
+      }
+      const windowJob: ClaimedBusinessAnalysisJob = { ...input.job, segments: window.segments };
+      const startedAt = Date.now();
+      const call = beginAiModelCall(input.recorder, {
+        name: 'business-analysis-window',
+        displayName: '分层业务分析窗口',
+        provider: 'deepseek',
+        model: this.options.ragConfig.deepSeekChatModel,
+        attempt: window.index + 1,
+        reasoningMode: 'disabled',
+      });
+      let callFinished = false;
+      try {
+        const response = await this.model.invoke(
+          [
+            {
+              role: 'system' as const,
+              content: `${salesAnalysisContext(MAX_ANALYSIS_TAGS)}\nAnalyze only this transcript window; keep every field especially concise.`,
+            },
+            {
+              role: 'user' as const,
+              content: salesAnalysisInput(windowJob, input.preRetrieved.slice(0, 10)),
+            },
+          ],
+          { signal: AbortSignal.timeout(ANALYSIS_MODEL_TIMEOUT_MS) },
+        );
+        const { text, reasoning } = extractFinalMessageText([response]);
+        const parsed = parseSalesAnalysisCandidate(
+          parseJsonObject(text) ?? parseJsonObject(reasoning),
+        );
+        call.finish({
+          status: 'completed',
+          durationMs: Date.now() - startedAt,
+          inputTokens: response.usage_metadata?.input_tokens ?? null,
+          outputTokens: response.usage_metadata?.output_tokens ?? null,
+          input: { kind: 'chat', windowIndex: window.index },
+          output: modelMessageForReport(response),
+          metadata: { parsed: parsed.result.success, windowIndex: window.index },
+        });
+        callFinished = true;
+        let result: BusinessAnalysisPublication;
+        if (parsed.result.success) result = parsed.result.data;
+        else {
+          const repaired = await this.repairStructure({
+            job: windowJob,
+            retrieved: input.preRetrieved,
+            previousOutput: text,
+            recorder: input.recorder,
+          });
+          if (!repaired.result.success) {
+            throw new BusinessAnalysisProviderError(
+              'INVALID_MODEL_OUTPUT',
+              '分层业务分析窗口输出无法修复。',
+              true,
+            );
+          }
+          result = repaired.result.data;
+        }
+        const savedWindow: BusinessAnalysisWindowResult = {
+          index: window.index,
+          startMs: window.startMs,
+          endMs: window.endMs,
+          segmentIds: window.segments.map((segment) => segment.id),
+          result,
+        };
+        if (input.onWindowComplete) await input.onWindowComplete(savedWindow);
+        results.push(savedWindow);
+      } catch (error) {
+        if (!callFinished) {
+          call.finish({
+            status: 'failed',
+            durationMs: Date.now() - startedAt,
+            inputTokens: null,
+            outputTokens: null,
+            input: { kind: 'chat', windowIndex: window.index },
+            output: { error },
+          });
+        }
+        if (error instanceof BusinessAnalysisProviderError) throw error;
+        if (error instanceof Error && /abort|timeout/i.test(error.message)) {
+          throw new BusinessAnalysisProviderError(
+            'MODEL_TIMEOUT',
+            '分层业务分析模型响应超时。',
+            true,
+          );
+        }
+        throw new BusinessAnalysisProviderError(
+          'MODEL_UNAVAILABLE',
+          '分层业务分析服务暂时不可用。',
+          true,
+        );
+      }
+    }
+    return this.synthesizeHierarchical(input.job, results, input.preRetrieved, input.recorder);
+  }
+
+  /** 只消费窗口摘要的最终汇总；失败时使用确定性合并，保证已完成窗口不会丢失。 */
+  private async synthesizeHierarchical(
+    job: ClaimedBusinessAnalysisJob,
+    windows: BusinessAnalysisWindowResult[],
+    retrieved: RetrievalChunk[],
+    recorder: AiExecutionRecorder,
+  ): Promise<BusinessAnalysisPublication> {
+    const messages = [
+      {
+        role: 'system' as const,
+        content: `${salesAnalysisContext(MAX_ANALYSIS_TAGS)}\nSynthesize only the supplied window summaries. Do not invent evidence or cite IDs outside the supplied allow-list.`,
+      },
+      {
+        role: 'user' as const,
+        content: JSON.stringify({
+          preferences: job.settings,
+          windows: windows.map(({ index, startMs, endMs, result }) => ({
+            index,
+            startMs,
+            endMs,
+            result,
+          })),
+          allowedSegmentIds: job.segments.map((segment) => segment.id),
+          allowedChunkIds: retrieved.map((chunk) => chunk.id),
+        }),
+      },
+    ];
+    const startedAt = Date.now();
+    const call = beginAiModelCall(recorder, {
+      name: 'business-analysis-synthesis',
+      displayName: '汇总分层业务分析',
+      provider: 'deepseek',
+      model: this.options.ragConfig.deepSeekChatModel,
+      attempt: 1,
+      reasoningMode: 'disabled',
+    });
+    try {
+      const response = await this.repairModel.invoke(messages, {
+        signal: AbortSignal.timeout(REPAIR_TIMEOUT_MS),
+      });
+      const { text, reasoning } = extractFinalMessageText([response]);
+      const candidate = parseSalesAnalysisCandidate(
+        parseJsonObject(text) ?? parseJsonObject(reasoning),
+      );
+      call.finish({
+        status: 'completed',
+        durationMs: Date.now() - startedAt,
+        inputTokens: response.usage_metadata?.input_tokens ?? null,
+        outputTokens: response.usage_metadata?.output_tokens ?? null,
+        input: { kind: 'chat', windowCount: windows.length },
+        output: modelMessageForReport(response),
+        metadata: { parsed: candidate.result.success, windowCount: windows.length },
+      });
+      if (candidate.result.success) return candidate.result.data;
+    } catch (error) {
+      call.finish({
+        status: 'failed',
+        durationMs: Date.now() - startedAt,
+        inputTokens: null,
+        outputTokens: null,
+        input: { kind: 'chat', windowCount: windows.length },
+        output: { error },
+      });
+    }
+    const byTitle = new Map<string, string>();
+    for (const window of windows) {
+      for (const section of window.result.summarySections) {
+        const current = byTitle.get(section.title);
+        byTitle.set(
+          section.title,
+          current ? `${current}\n${section.body}`.slice(0, 900) : section.body,
+        );
+      }
+    }
+    const titles = ['overall', 'strengths', 'improvements', 'risks', 'actions'];
+    return {
+      limitations: [...new Set(windows.flatMap((window) => window.result.limitations))].slice(0, 4),
+      summarySections: titles.map((title) => ({
+        title,
+        body: byTitle.get(title) ?? '窗口结果不足，无法生成该章节。',
+      })),
+      tags: windows.flatMap((window) => window.result.tags).slice(0, MAX_ANALYSIS_TAGS),
+    };
   }
 
   /** 使用非思考模型将不完整或不合规的分析压缩为最终业务契约。 */
@@ -699,7 +950,7 @@ export class SalesAnalysisAgent {
     });
     try {
       const response = await this.repairModel.invoke(messages, {
-        signal: AbortSignal.timeout(50_000),
+        signal: AbortSignal.timeout(REPAIR_TIMEOUT_MS),
       });
       const { text, reasoning } = extractFinalMessageText([response]);
       const candidate = parseSalesAnalysisCandidate(

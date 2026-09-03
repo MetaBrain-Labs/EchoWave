@@ -298,7 +298,21 @@ export function restoreOriginalTimeline(
         true,
       );
     }
-    return { ...segment, startMs, endMs };
+    const words = segment.words.map((word) => {
+      if (word.startMs < span.processedStartMs || word.endMs > span.processedEndMs) {
+        throw new VoiceActivityError(
+          'INVALID_VAD_TIMELINE',
+          '词级时间戳跨越了空闲音频过滤边界，请重试。',
+          true,
+        );
+      }
+      return {
+        ...word,
+        startMs: span.originalStartMs + word.startMs - span.processedStartMs,
+        endMs: span.originalStartMs + word.endMs - span.processedStartMs,
+      };
+    });
+    return { ...segment, startMs, endMs, words };
   });
 }
 

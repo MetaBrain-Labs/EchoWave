@@ -46,6 +46,7 @@ jest.mock('@/shared/api/dataSourcesApi', () => ({
 }));
 jest.mock('@/shared/api/audioAnalysisApi', () => ({
   getAudioTranscriptionCapabilities: jest.fn(),
+  remountAudioSource: jest.fn(),
   startAudioTranscription: jest.fn(),
 }));
 jest.mock('@/shared/api/groupsApi', () => ({ listGroups: jest.fn() }));
@@ -113,6 +114,11 @@ describe('DataSourceDetailScreen', () => {
       audioFileId: audioFixtures[0].id,
       revisionId: dataSourceDetailFixture.id,
       status: 'queued',
+    });
+    jest.mocked(workspaceApi.remountAudioSource).mockResolvedValue({
+      audioFileId: audioFixtures[0].id,
+      sourceState: 'available',
+      sha256: 'a'.repeat(64),
     });
     jest.mocked(workspaceApi.listGroups).mockResolvedValue({
       items: [
@@ -387,10 +393,55 @@ describe('DataSourceDetailScreen', () => {
     fireEvent.press(screen.getByText('确认转写'));
     await waitFor(() =>
       expect(workspaceApi.startAudioTranscription).toHaveBeenCalledWith(failed.id, {
+        includeAcousticEmotion: true,
         model: 'qwen-audio-3.0-asr-flash-filetrans',
         preprocessing: 'silero_vad',
         segmentationMode: 'speaker_turn',
       }),
+    );
+  });
+
+  it('verifies the original file before retrying a terminal lightweight failure', async () => {
+    const failed = audioFixtures.find(
+      (item) => item.status.kind === 'failed' && item.status.stage === 'transcription',
+    )!;
+    jest.mocked(workspaceApi.listDataSourceAudioFiles).mockResolvedValueOnce({
+      items: [
+        {
+          ...failed,
+          runtimeMode: 'lightweight_local',
+          sourceState: 'available',
+          sourceRecoveryState: 'required',
+        },
+      ],
+    });
+    jest.mocked(DocumentPicker.getDocumentAsync).mockResolvedValueOnce({
+      canceled: false,
+      assets: [
+        {
+          name: 'original.wav',
+          uri: 'file:///original.wav',
+          mimeType: 'audio/wav',
+          size: 1_024,
+          lastModified: 0,
+        },
+      ],
+    });
+    const screen = await renderDetail();
+
+    fireEvent.press(screen.getAllByLabelText('查看转写失败详情')[0]!);
+    fireEvent.press(screen.getByTestId('transcription-error-retry'));
+    fireEvent.press(screen.getByText('确认转写'));
+
+    await waitFor(() =>
+      expect(workspaceApi.remountAudioSource).toHaveBeenCalledWith(
+        failed.id,
+        expect.objectContaining({ name: 'original.wav' }),
+      ),
+    );
+    expect(workspaceApi.startAudioTranscription).toHaveBeenCalledWith(
+      failed.id,
+      expect.objectContaining({ includeAcousticEmotion: true }),
     );
   });
 
@@ -562,12 +613,15 @@ describe('DataSourceDetailScreen', () => {
     expect(screen.queryByText(/普通分段|直接发送/)).toBeNull();
     expect(screen.getByText(/¥0.00022\/秒/)).toBeTruthy();
     expect(screen.getByText(/Speaker：尽力分离/)).toBeTruthy();
+    fireEvent.changeText(screen.getByLabelText('预计说话人数'), '3');
     fireEvent.press(screen.getByText('确认转写'));
     await waitFor(() =>
       expect(workspaceApi.startAudioTranscription).toHaveBeenCalledWith(audioFixtures[0].id, {
         model: 'qwen-audio-3.0-asr-flash-filetrans',
+        includeAcousticEmotion: true,
         preprocessing: 'silero_vad',
         segmentationMode: 'speaker_turn',
+        expectedSpeakerCount: 3,
       }),
     );
 
@@ -631,6 +685,7 @@ describe('DataSourceDetailScreen', () => {
     await waitFor(() =>
       expect(workspaceApi.startAudioTranscription).toHaveBeenCalledWith(audioFixtures[0].id, {
         model: 'qwen-audio-3.0-asr-flash-filetrans',
+        includeAcousticEmotion: true,
         preprocessing: 'whole_file',
         segmentationMode: 'speaker_turn',
       }),

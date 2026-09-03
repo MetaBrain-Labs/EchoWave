@@ -25,8 +25,19 @@ describe('TranscriptConfirmationRepository', () => {
         if (/SELECT ar.id AS revision_id/.test(sql)) {
           return { rows: [{ revision_id: revisionId, current_version: null }] };
         }
-        if (/SELECT id FROM .*transcript_segments/.test(sql)) {
-          return { rows: [{ id: firstSegmentId }, { id: secondSegmentId }] };
+        if (/SELECT id, speaker_key/.test(sql)) {
+          return {
+            rows: [
+              { id: firstSegmentId, speaker_key: 'Speaker 0', start_ms: 0, end_ms: 500, words: [] },
+              {
+                id: secondSegmentId,
+                speaker_key: 'Speaker 1',
+                start_ms: 500,
+                end_ms: 1_000,
+                words: [],
+              },
+            ],
+          };
         }
         if (/INSERT INTO .*transcript_confirmations/.test(sql)) {
           return {
@@ -47,8 +58,14 @@ describe('TranscriptConfirmationRepository', () => {
       analysisRevisionId: revisionId,
       baseVersion: 0,
       segments: [
-        { segmentId: firstSegmentId, text: '修正一' },
-        { segmentId: secondSegmentId, text: '修正二' },
+        {
+          sourceSegmentId: firstSegmentId,
+          parts: [{ speakerKey: 'Speaker 0', startWordIndex: 0, endWordIndex: 1, text: '修正一' }],
+        },
+        {
+          sourceSegmentId: secondSegmentId,
+          parts: [{ speakerKey: 'Speaker 1', startWordIndex: 0, endWordIndex: 1, text: '修正二' }],
+        },
       ],
     });
 
@@ -72,8 +89,12 @@ describe('TranscriptConfirmationRepository', () => {
         if (/SELECT ar.id AS revision_id/.test(sql)) {
           return { rows: [{ revision_id: revisionId, current_version: 1 }] };
         }
-        if (/SELECT id FROM .*transcript_segments/.test(sql)) {
-          return { rows: [{ id: firstSegmentId }] };
+        if (/SELECT id, speaker_key/.test(sql)) {
+          return {
+            rows: [
+              { id: firstSegmentId, speaker_key: 'Speaker 0', start_ms: 0, end_ms: 500, words: [] },
+            ],
+          };
         }
         if (/INSERT INTO .*transcript_confirmations/.test(sql)) {
           return {
@@ -93,9 +114,158 @@ describe('TranscriptConfirmationRepository', () => {
     const response = await repository.confirm(audioId, {
       analysisRevisionId: revisionId,
       baseVersion: 1,
-      segments: [{ segmentId: firstSegmentId, text: '第二次确认' }],
+      segments: [
+        {
+          sourceSegmentId: firstSegmentId,
+          parts: [
+            { speakerKey: 'Speaker 0', startWordIndex: 0, endWordIndex: 1, text: '第二次确认' },
+          ],
+        },
+      ],
     });
     assert.equal(response.version, 2);
+  });
+
+  it('keeps a lightweight bundled emotion pointer when publishing a correction', async () => {
+    const emotionJobId = '66666666-6666-4666-8666-666666666666';
+    const calls = [];
+    const client = {
+      query: async (sql, values) => {
+        calls.push({ sql, values });
+        if (/SELECT ar.id AS revision_id/.test(sql)) {
+          return {
+            rows: [
+              {
+                revision_id: revisionId,
+                current_version: 1,
+                runtime_mode: 'lightweight_local',
+                active_emotion_job_id: emotionJobId,
+                bundled_emotion_job_id: emotionJobId,
+              },
+            ],
+          };
+        }
+        if (/SELECT id, speaker_key/.test(sql)) {
+          return {
+            rows: [
+              { id: firstSegmentId, speaker_key: 'Speaker 0', start_ms: 0, end_ms: 500, words: [] },
+            ],
+          };
+        }
+        if (/INSERT INTO .*transcript_confirmations/.test(sql)) {
+          return {
+            rows: [{ id: confirmationId, confirmed_at: new Date('2026-08-28T03:00:00.000Z') }],
+          };
+        }
+        return { rows: [], rowCount: 1 };
+      },
+      release: () => {},
+    };
+    const repository = new TranscriptConfirmationRepository(
+      { connect: async () => client },
+      'echowave',
+      tenantId,
+    );
+
+    await repository.confirm(audioId, {
+      analysisRevisionId: revisionId,
+      baseVersion: 1,
+      segments: [
+        {
+          sourceSegmentId: firstSegmentId,
+          parts: [
+            { speakerKey: 'Speaker 0', startWordIndex: 0, endWordIndex: 1, text: '修正后文本' },
+          ],
+        },
+      ],
+    });
+
+    const update = calls.find(({ sql }) => /active_emotion_job_id = CASE/.test(sql));
+    assert.ok(update);
+    assert.equal(update.values.at(-1), true);
+  });
+
+  it('derives split time ranges from continuous server word boundaries', async () => {
+    const calls = [];
+    const client = {
+      query: async (sql, values) => {
+        calls.push({ sql, values });
+        if (/SELECT ar.id AS revision_id/.test(sql)) {
+          return { rows: [{ revision_id: revisionId, current_version: null }] };
+        }
+        if (/SELECT id, speaker_key/.test(sql)) {
+          return {
+            rows: [
+              {
+                id: firstSegmentId,
+                speaker_key: 'Speaker 0',
+                start_ms: 0,
+                end_ms: 1_000,
+                words: [
+                  { index: 0, startMs: 100, endMs: 400 },
+                  { index: 1, startMs: 600, endMs: 900 },
+                ],
+              },
+            ],
+          };
+        }
+        if (/INSERT INTO .*transcript_confirmations/.test(sql)) {
+          return {
+            rows: [{ id: confirmationId, confirmed_at: new Date('2026-08-28T02:00:00.000Z') }],
+          };
+        }
+        return { rows: [], rowCount: 1 };
+      },
+      release: () => {},
+    };
+    const repository = new TranscriptConfirmationRepository(
+      { connect: async () => client },
+      'echowave',
+      tenantId,
+    );
+
+    await repository.confirm(audioId, {
+      analysisRevisionId: revisionId,
+      baseVersion: 0,
+      segments: [
+        {
+          sourceSegmentId: firstSegmentId,
+          parts: [
+            { speakerKey: 'Speaker 0', startWordIndex: 0, endWordIndex: 1, text: '问题' },
+            { speakerKey: 'Speaker 1', startWordIndex: 1, endWordIndex: 2, text: '回答' },
+          ],
+        },
+      ],
+    });
+
+    const inserts = calls.filter(({ sql }) =>
+      /INSERT INTO .*transcript_confirmation_segments/.test(sql),
+    );
+    assert.equal(inserts.length, 2);
+    assert.deepEqual(
+      inserts.map(({ values }) => values.slice(7, 11)),
+      [
+        [0, 1, 100, 400],
+        [1, 2, 600, 900],
+      ],
+    );
+    await assert.rejects(
+      () =>
+        repository.confirm(audioId, {
+          analysisRevisionId: revisionId,
+          baseVersion: 0,
+          segments: [
+            {
+              sourceSegmentId: firstSegmentId,
+              parts: [
+                { speakerKey: 'Speaker 0', startWordIndex: 0, endWordIndex: 2, text: '全部' },
+                { speakerKey: 'Speaker 1', startWordIndex: 1, endWordIndex: 2, text: '重叠' },
+              ],
+            },
+          ],
+        }),
+      (error) => error instanceof WorkspaceRepositoryError && error.code === 'CONFLICT',
+    );
   });
 
   it('rejects stale versions before publication', async () => {
@@ -121,7 +291,14 @@ describe('TranscriptConfirmationRepository', () => {
         repository.confirm(audioId, {
           analysisRevisionId: revisionId,
           baseVersion: 1,
-          segments: [{ segmentId: firstSegmentId, text: '过期修改' }],
+          segments: [
+            {
+              sourceSegmentId: firstSegmentId,
+              parts: [
+                { speakerKey: 'Speaker 0', startWordIndex: 0, endWordIndex: 1, text: '过期修改' },
+              ],
+            },
+          ],
         }),
       (error) => error instanceof WorkspaceRepositoryError && error.code === 'CONFLICT',
     );
@@ -140,8 +317,19 @@ describe('TranscriptConfirmationRepository', () => {
         if (/SELECT ar.id AS revision_id/.test(sql)) {
           return { rows: [{ revision_id: revisionId, current_version: null }] };
         }
-        if (/SELECT id FROM .*transcript_segments/.test(sql)) {
-          return { rows: [{ id: firstSegmentId }, { id: secondSegmentId }] };
+        if (/SELECT id, speaker_key/.test(sql)) {
+          return {
+            rows: [
+              { id: firstSegmentId, speaker_key: 'Speaker 0', start_ms: 0, end_ms: 500, words: [] },
+              {
+                id: secondSegmentId,
+                speaker_key: 'Speaker 1',
+                start_ms: 500,
+                end_ms: 1_000,
+                words: [],
+              },
+            ],
+          };
         }
         return { rows: [] };
       },
@@ -158,7 +346,19 @@ describe('TranscriptConfirmationRepository', () => {
         repository.confirm(audioId, {
           analysisRevisionId: revisionId,
           baseVersion: 0,
-          segments: [{ segmentId: firstSegmentId, text: '只提交一个片段' }],
+          segments: [
+            {
+              sourceSegmentId: firstSegmentId,
+              parts: [
+                {
+                  speakerKey: 'Speaker 0',
+                  startWordIndex: 0,
+                  endWordIndex: 1,
+                  text: '只提交一个片段',
+                },
+              ],
+            },
+          ],
         }),
       (error) => error instanceof WorkspaceRepositoryError && error.code === 'CONFLICT',
     );

@@ -240,7 +240,7 @@ describe('SalesAnalysisAgent', () => {
     assert.ok(invalidParsed.error.issues.some((issue) => issue.path.join('.') === 'tags'));
   });
 
-  it('enables thinking for sales analysis even when the shared setting is disabled', async () => {
+  it('uses a short non-thinking budget for retrieval planning', async () => {
     const requests = [];
     const modelCalls = [];
     const agent = new SalesAnalysisAgent({
@@ -260,7 +260,8 @@ describe('SalesAnalysisAgent', () => {
     const queries = await agent.planRetrievalQueries(analysisJob(), recorder(modelCalls));
 
     assert.deepEqual(queries, ['客户需求']);
-    assert.deepEqual(requests[0].thinking, { type: 'enabled' });
+    assert.deepEqual(requests[0].thinking, { type: 'disabled' });
+    assert.equal(requests[0].max_tokens, 768);
     assert.equal(modelCalls.length, 1);
     assert.deepEqual(
       modelCalls[0].input.messages.map(({ role }) => role),
@@ -360,10 +361,10 @@ describe('SalesAnalysisAgent', () => {
     });
 
     assert.equal(result.tags.length, 12);
-    assert.deepEqual(requests[0].thinking, { type: 'enabled' });
-    assert.equal(requests[0].max_tokens, 8_000);
+    assert.deepEqual(requests[0].thinking, { type: 'disabled' });
+    assert.equal(requests[0].max_tokens, 6_000);
     assert.deepEqual(requests[1].thinking, { type: 'disabled' });
-    assert.equal(requests[1].max_tokens, 5_000);
+    assert.equal(requests[1].max_tokens, 4_096);
     assert.deepEqual(
       modelCalls.map(({ name }) => name),
       ['business-analysis-generation', 'business-analysis-structure-repair'],
@@ -426,7 +427,7 @@ describe('SalesAnalysisAgent', () => {
     const validation = steps.find((step) => step.name === 'business-analysis-structure-validation');
     assert.equal(validation.metadata.finishReason, null);
     assert.equal(validation.metadata.outputTokens, 7_998);
-    assert.equal(validation.metadata.maxOutputTokens, 8_000);
+    assert.equal(validation.metadata.maxOutputTokens, 6_000);
     assert.equal(validation.metadata.outputTruncated, true);
   });
 });

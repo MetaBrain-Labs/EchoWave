@@ -45,8 +45,10 @@ const MODELS: Record<AiCapability, string> = {
   audio_transcription: 'qwen-audio-3.0-asr-flash-filetrans',
   audio_emotion: 'qwen3.5-omni-flash',
   audio_role: 'deepseek-v4-flash',
+  audio_speaker_review: 'deepseek-v4-flash',
   business_analysis: 'deepseek-v4-flash',
   audio_staging: 'aliyun-oss',
+  audio_primary_storage: 'aliyun-oss',
 };
 
 const PROVIDERS: Record<AiCapability, ProviderType> = {
@@ -55,8 +57,10 @@ const PROVIDERS: Record<AiCapability, ProviderType> = {
   audio_transcription: 'dashscope',
   audio_emotion: 'dashscope',
   audio_role: 'deepseek',
+  audio_speaker_review: 'deepseek',
   business_analysis: 'deepseek',
   audio_staging: 'aliyun_oss',
+  audio_primary_storage: 'aliyun_oss',
 };
 
 const ThinkingSettingsSchema = z.object({ enableThinking: z.boolean() }).strict();
@@ -276,11 +280,13 @@ export class SettingsService {
     for (const capability of Object.keys(MODELS) as AiCapability[]) {
       if (existingBindings.has(capability)) continue;
       const selected =
-        capability === 'audio_staging'
-          ? oss
-          : PROVIDERS[capability] === 'dashscope'
-            ? dashScope
-            : deepSeek;
+        capability === 'audio_primary_storage'
+          ? undefined
+          : capability === 'audio_staging'
+            ? oss
+            : PROVIDERS[capability] === 'dashscope'
+              ? dashScope
+              : deepSeek;
       if (!selected) continue;
       await this.saveBinding(capability, {
         providerConnectionId: selected.id,
@@ -488,6 +494,12 @@ export class SettingsService {
   }
 
   private resolveLegacyCapability(capability: AiCapability): ResolvedCapability {
+    if (capability === 'audio_primary_storage') {
+      throw new SettingsError(
+        'CONFIGURATION_REQUIRED',
+        '权威音频对象存储必须在 AI 配置中显式绑定，不能复用旧版临时 OSS。',
+      );
+    }
     if (capability === 'audio_staging') {
       if (!this.legacy.oss) {
         throw new SettingsError('CONFIGURATION_REQUIRED', '音频临时 OSS 尚未配置。');

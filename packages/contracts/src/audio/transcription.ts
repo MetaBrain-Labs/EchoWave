@@ -68,19 +68,19 @@ export const AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES = [
     id: 'qwen-audio-3.0-asr-flash-filetrans',
     provider: 'dashscope',
     displayName: 'Qwen Audio 3.0 ASR Flash Filetrans',
-    description: '阿里云北京地域整文件转写，支持中文说话人分离与句级时间戳',
+    description: '阿里云北京地域整文件转写，支持中文说话人分离与词级时间戳',
     diarization: true,
     diarizationAvailability: 'best_effort',
     emotionRecognition: false,
     businessRoleRecognition: false,
-    notableCapabilities: ['中文及方言', '录音级说话人分离', '句级时间戳'],
+    notableCapabilities: ['中文及方言', '录音级说话人分离', '词级时间戳'],
     pricing: {
       asOf: '2026-08-26',
       input: { amount: 0.00022, currency: 'CNY', unit: 'second' },
       output: { amount: 0, currency: 'CNY', unit: 'included' },
     },
     timestampAvailability: 'best_effort',
-    timestampGranularity: 'segment',
+    timestampGranularity: 'word',
     supportedSegmentationModes: ['speaker_turn'],
     available: false,
     unavailableReason: '需要完整配置 DashScope、北京地域 OSS 和 FFmpeg。',
@@ -91,7 +91,9 @@ export const AudioTranscriptionStartRequestSchema = z
   .object({
     model: AudioTranscriptionModelSchema.optional(),
     preprocessing: AudioTranscriptionPreprocessingSchema.default('whole_file'),
+    includeAcousticEmotion: z.boolean().default(true),
     segmentationMode: z.literal('speaker_turn').default('speaker_turn'),
+    expectedSpeakerCount: z.number().int().min(2).max(100).optional(),
   })
   .superRefine((request, context) => {
     if (request.model !== undefined && request.model !== QWEN_AUDIO_FILETRANS_MODEL) {

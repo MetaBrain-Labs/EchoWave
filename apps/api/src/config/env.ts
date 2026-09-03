@@ -12,6 +12,8 @@
  * - 不合并系统环境变量，也不提供隐式默认值。
  */
 import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { parse } from 'dotenv';
 
@@ -57,16 +59,30 @@ export type ApiConfig = HttpConfig & {
 };
 
 /** 将显式键值集合解析为无默认值的强类型 API 配置。 */
-export function readApiConfig(values: Record<string, string | undefined>): ApiConfig {
+export function readApiConfig(
+  values: Record<string, string | undefined>,
+  baseDirectory?: string,
+): ApiConfig {
   const parsed = EnvironmentSchema.parse(values);
   const http = createHttpConfig(parsed);
   const providers = createProviderConfig(parsed);
+  const settingsSecurity = createSettingsSecurityConfig(parsed);
   return {
     ...http,
     database: createDatabaseConfig(parsed),
     redis: createRedisConfig(parsed),
-    settingsSecurity: createSettingsSecurityConfig(parsed),
-    rag: createRagConfig(parsed, providers),
+    settingsSecurity: {
+      ...settingsSecurity,
+      ...(baseDirectory
+        ? {
+            localCredentialsFile: path.resolve(
+              baseDirectory,
+              settingsSecurity.localCredentialsFile,
+            ),
+          }
+        : {}),
+    },
+    rag: createRagConfig(parsed, providers, baseDirectory),
     legacyProviders: providers.legacy,
     aiExecutionReports: createAiExecutionReportConfig(parsed),
   };
@@ -75,7 +91,7 @@ export function readApiConfig(values: Record<string, string | undefined>): ApiCo
 /** 仅从指定 `.env` 文件加载所需配置，并为文件缺失提供明确错误。 */
 export function readApiConfigFile(fileUrl: URL): ApiConfig {
   try {
-    return readApiConfig(parse(readFileSync(fileUrl)));
+    return readApiConfig(parse(readFileSync(fileUrl)), path.dirname(fileURLToPath(fileUrl)));
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
       throw new Error(`Required API configuration file was not found: ${fileUrl.pathname}`, {

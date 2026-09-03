@@ -18,8 +18,8 @@ function result(sentences) {
   return { transcripts: [{ sentences }] };
 }
 
-function sentence(begin_time, end_time, text, speaker_id = 0) {
-  return { begin_time, end_time, text, speaker_id };
+function sentence(begin_time, end_time, text, speaker_id = 0, words = []) {
+  return { begin_time, end_time, text, speaker_id, words };
 }
 
 describe('normalizeSpeakerTurnSegments', () => {
@@ -65,6 +65,35 @@ describe('normalizeSpeakerTurnSegments', () => {
     );
     assert.equal(segments.length, 3);
     assert.equal(segments[2].text.length, 250);
+  });
+
+  it('keeps ordered word timestamps when provider sentences merge', () => {
+    const segments = normalizeSpeakerTurnSegments(
+      result([
+        sentence(0, 500, '这是怎么吃呀？', 0, [
+          { begin_time: 0, end_time: 500, text: '这是怎么吃呀', punctuation: '？' },
+        ]),
+        sentence(600, 1_200, '这种打开就可以吃。', 0, [
+          { begin_time: 600, end_time: 1_200, text: '这种打开就可以吃', punctuation: '。' },
+        ]),
+      ]),
+    );
+    assert.equal(segments.length, 1);
+    assert.deepEqual(segments[0].words, [
+      { startMs: 0, endMs: 500, text: '这是怎么吃呀', punctuation: '？' },
+      { startMs: 600, endMs: 1_200, text: '这种打开就可以吃', punctuation: '。' },
+    ]);
+    assert.throws(
+      () =>
+        normalizeSpeakerTurnSegments(
+          result([
+            sentence(0, 500, '异常', 0, [
+              { begin_time: 400, end_time: 600, text: '越界', punctuation: '' },
+            ]),
+          ]),
+        ),
+      { code: 'INVALID_MODEL_OUTPUT' },
+    );
   });
 
   it('rejects missing Speaker, invalid timestamps, overlap and empty audio', () => {
@@ -123,6 +152,7 @@ describe('DashScopeFileTranscription', () => {
     );
     const submittedBody = JSON.parse(requests[0].init.body);
     assert.equal(submittedBody.parameters.diarization_enabled, true);
+    assert.equal('speaker_count' in submittedBody.parameters, false);
     assert.deepEqual(submittedBody.input.file_urls, ['https://oss.example/audio.mp3']);
     assert.deepEqual(delays, []);
     assert.equal(
@@ -134,6 +164,37 @@ describe('DashScopeFileTranscription', () => {
     assert.equal(rawReports[0].responseKind, 'task_submission');
     assert.equal(rawReports.at(-1).responseKind, 'transcription_result');
     assert.match(rawReports.at(-1).rawResponseText, /"speaker_id":0/);
+  });
+
+  it('sends speaker_count only when an expected count is provided', async () => {
+    const requests = [];
+    const adapter = new DashScopeFileTranscription(
+      'secret',
+      'https://workspace.example.com/api/v1',
+      async (url, init) => {
+        requests.push({ url, init });
+        return new Response(JSON.stringify({ output: { task_id: 'task-2' } }), { status: 200 });
+      },
+      async () => undefined,
+    );
+    await adapter.submit('https://oss.example/audio.mp3', undefined, 3);
+    const submittedBody = JSON.parse(requests[0].init.body);
+    assert.equal(submittedBody.parameters.speaker_count, 3);
+  });
+
+  it('enables DashScope resolution for temporary oss URLs', async () => {
+    let request;
+    const adapter = new DashScopeFileTranscription(
+      'secret',
+      'https://workspace.example.com/api/v1',
+      async (url, init) => {
+        request = { url, init };
+        return new Response(JSON.stringify({ output: { task_id: 'task-oss' } }), { status: 200 });
+      },
+      async () => undefined,
+    );
+    await adapter.submit('oss://temporary-bucket/audio.mp3');
+    assert.equal(request.init.headers['X-DashScope-OssResourceResolve'], 'enable');
   });
 
   it('performs exactly one task-status request and normalizes non-terminal and terminal states', async () => {

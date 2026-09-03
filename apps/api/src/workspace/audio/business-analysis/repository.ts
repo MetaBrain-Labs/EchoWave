@@ -26,6 +26,7 @@ import type { PoolClient } from 'pg';
 import { quoteIdentifier, type DatabasePool } from '../../../infrastructure/postgres.ts';
 import type { RetrievalChunk } from '../../../knowledge/retrieval/types.ts';
 import { WorkspaceRepositoryError } from '../../errors.ts';
+import { buildBusinessAnalysisWindows } from './windowing.ts';
 
 export const BUSINESS_ANALYSIS_WORKFLOW_VERSION = 'langgraph-v1';
 export const BUSINESS_ANALYSIS_MAX_RECOVERY_ATTEMPTS = 2;
@@ -65,6 +66,8 @@ export type ClaimedBusinessAnalysisJob = {
   knowledgeBases: { id: string; name: string }[];
   settings: BusinessAnalysisSettingsSnapshot;
   segments: BusinessAnalysisSegment[];
+  /** 已完成的窗口结果，供重试时跳过已成功的模型调用。 */
+  windowResults?: BusinessAnalysisWindowResult[];
 };
 
 export type BusinessAnalysisPublication = {
@@ -80,6 +83,14 @@ export type BusinessAnalysisPublication = {
     evidenceSegmentIds: string[];
     citedChunkIds: string[];
   }[];
+};
+
+export type BusinessAnalysisWindowResult = {
+  index: number;
+  startMs: number;
+  endMs: number;
+  segmentIds: string[];
+  result: BusinessAnalysisPublication;
 };
 
 type SourceSnapshot = {
@@ -112,6 +123,13 @@ function comparableSettings(settings: BusinessAnalysisSettingsSnapshot) {
     tone: settings.tone,
     customTags: settings.customTags,
   };
+}
+
+function analysisErrorReason(code: string | null, message: string | null) {
+  if (code === 'MODEL_TIMEOUT') return 'timeout' as const;
+  if (message?.includes('输出') && message.includes('长度')) return 'output_truncated' as const;
+  if (message?.includes('引用')) return 'invalid_citation' as const;
+  return 'other' as const;
 }
 
 /** 管理分组销售复盘的不可变任务与发布结果。 */
@@ -361,20 +379,21 @@ export class BusinessAnalysisRepository {
     const row = claimed.rows[0];
     if (!row) return undefined;
     const segments = await this.pool.query(
-      `SELECT ts.id, ts.speaker_key, ts.speaker_label, ts.start_ms, ts.end_ms, confirmed.text,
+      `SELECT confirmed.confirmed_segment_id AS id, confirmed.speaker_key,
+              confirmed.speaker_key AS speaker_label, confirmed.start_ms, confirmed.end_ms,
+              confirmed.text,
               rr.role_label, rr.confidence AS role_confidence,
               er.emotion_label, er.confidence AS emotion_confidence, er.attitude
        FROM ${this.table('transcript_confirmation_segments')} confirmed
-       JOIN ${this.table('transcript_segments')} ts
-         ON ts.tenant_id = confirmed.tenant_id
-        AND ts.analysis_revision_id = confirmed.analysis_revision_id
-        AND ts.id = confirmed.transcript_segment_id
        LEFT JOIN ${this.table('speaker_role_results')} rr
-         ON rr.tenant_id = ts.tenant_id AND rr.job_id = $3 AND rr.speaker_key = ts.speaker_key
+         ON rr.tenant_id = confirmed.tenant_id AND rr.job_id = $3
+        AND rr.speaker_key = confirmed.speaker_key
        LEFT JOIN ${this.table('segment_emotion_results')} er
-         ON er.tenant_id = ts.tenant_id AND er.job_id = $4 AND er.transcript_segment_id = ts.id
+         ON er.tenant_id = confirmed.tenant_id AND er.job_id = $4
+        AND er.transcript_confirmation_id = confirmed.transcript_confirmation_id
+        AND er.confirmed_segment_id = confirmed.confirmed_segment_id
        WHERE confirmed.tenant_id = $1 AND confirmed.transcript_confirmation_id = $2
-       ORDER BY ts.start_ms, ts.segment_index`,
+       ORDER BY confirmed.part_index`,
       [this.tenantId, row.transcript_confirmation_id, row.role_job_id, row.emotion_job_id],
     );
     const knowledgeBaseIds = safeArray(row.knowledge_base_ids);
@@ -388,6 +407,38 @@ export class BusinessAnalysisRepository {
             [this.tenantId, knowledgeBaseIds],
           );
     const settings = row.settings_snapshot as BusinessAnalysisSettingsSnapshot;
+    const windowPlan = buildBusinessAnalysisWindows(
+      segments.rows.map((segment) => ({
+        id: String(segment.id),
+        startMs: Number(segment.start_ms),
+        endMs: Number(segment.end_ms),
+        text: String(segment.text),
+      })),
+    );
+    // 先建立窗口边界，再领取已完成结果；两步都可重复执行。
+    for (const window of windowPlan) {
+      await this.pool.query(
+        `INSERT INTO ${this.table('audio_business_analysis_windows')}
+           (tenant_id, job_id, window_index, start_ms, end_ms, segment_ids, status)
+         VALUES ($1, $2, $3, $4, $5, $6::uuid[], 'queued')
+         ON CONFLICT (tenant_id, job_id, window_index) DO NOTHING`,
+        [
+          this.tenantId,
+          row.id,
+          window.index,
+          window.startMs,
+          window.endMs,
+          window.segments.map((segment) => segment.id),
+        ],
+      );
+    }
+    const savedWindows = await this.pool.query(
+      `SELECT window_index, start_ms, end_ms, segment_ids, result
+       FROM ${this.table('audio_business_analysis_windows')}
+       WHERE tenant_id = $1 AND job_id = $2 AND status = 'ready'
+       ORDER BY window_index`,
+      [this.tenantId, row.id],
+    );
     return {
       id: row.id,
       audioFileId: row.audio_file_id,
@@ -406,6 +457,15 @@ export class BusinessAnalysisRepository {
         name: String(item.name),
       })),
       settings,
+      windowResults: savedWindows.rows
+        .filter((item) => item.result && typeof item.result === 'object')
+        .map((item) => ({
+          index: Number(item.window_index),
+          startMs: Number(item.start_ms),
+          endMs: Number(item.end_ms),
+          segmentIds: safeArray(item.segment_ids),
+          result: item.result as BusinessAnalysisPublication,
+        })),
       segments: segments.rows.map((segment) => ({
         id: segment.id,
         speakerKey: String(segment.speaker_key),
@@ -433,6 +493,16 @@ export class BusinessAnalysisRepository {
        SET progress = greatest(progress, $3)
        WHERE tenant_id = $1 AND id = $2 AND status = 'running'`,
       [this.tenantId, jobId, Math.max(1, Math.min(99, Math.round(progress)))],
+    );
+  }
+
+  /** 幂等保存一个窗口结果，进程中断后可从最近完成窗口恢复。 */
+  async saveWindowResult(jobId: string, window: BusinessAnalysisWindowResult): Promise<void> {
+    await this.pool.query(
+      `UPDATE ${this.table('audio_business_analysis_windows')}
+       SET status = 'ready', attempt = attempt + 1, result = $4::jsonb, completed_at = now(), updated_at = now()
+       WHERE tenant_id = $1 AND job_id = $2 AND window_index = $3`,
+      [this.tenantId, jobId, window.index, JSON.stringify(window.result)],
     );
   }
 
@@ -522,9 +592,10 @@ export class BusinessAnalysisRepository {
         for (const segmentId of tag.evidenceSegmentIds) {
           await client.query(
             `INSERT INTO ${this.table('business_analysis_tag_segments')}
-               (tenant_id, job_id, tag_id, analysis_revision_id, transcript_segment_id)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [this.tenantId, job.id, tagId, job.revisionId, segmentId],
+               (tenant_id, job_id, tag_id, analysis_revision_id,
+                transcript_confirmation_id, confirmed_segment_id)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [this.tenantId, job.id, tagId, job.revisionId, job.confirmationId, segmentId],
           );
         }
         for (const chunkId of tag.citedChunkIds) {
@@ -625,8 +696,9 @@ export class BusinessAnalysisRepository {
               error_code, error_message, error_retryable
        FROM ${this.table('audio_business_analysis_jobs')}
        WHERE tenant_id = $1 AND group_id = $2 AND audio_file_id = $3
+         AND transcript_confirmation_id = $4
        ORDER BY created_at DESC LIMIT 1`,
-      [this.tenantId, groupId, audioFileId],
+      [this.tenantId, groupId, audioFileId, current.confirmationId],
     );
     const head = await this.pool.query(
       `SELECT job.id, job.model, job.published_at, job.input_fingerprint,
@@ -635,8 +707,9 @@ export class BusinessAnalysisRepository {
        FROM ${this.table('audio_group_business_analysis_heads')} head
        JOIN ${this.table('audio_business_analysis_jobs')} job
          ON job.tenant_id = head.tenant_id AND job.id = head.active_job_id
+        AND job.transcript_confirmation_id = $4
        WHERE head.tenant_id = $1 AND head.group_id = $2 AND head.audio_file_id = $3`,
-      [this.tenantId, groupId, audioFileId],
+      [this.tenantId, groupId, audioFileId, current.confirmationId],
     );
     const published = head.rows[0];
     let result = null;
@@ -651,8 +724,8 @@ export class BusinessAnalysisRepository {
         this.pool.query(
           `SELECT tag.id, tag.category, tag.custom_label, tag.title, tag.summary,
                   tag.details, tag.confidence,
-                  coalesce(array_agg(DISTINCT map.transcript_segment_id)
-                    FILTER (WHERE map.transcript_segment_id IS NOT NULL), '{}') AS segment_ids
+                  coalesce(array_agg(DISTINCT map.confirmed_segment_id)
+                    FILTER (WHERE map.confirmed_segment_id IS NOT NULL), '{}') AS segment_ids
            FROM ${this.table('business_analysis_tags')} tag
            LEFT JOIN ${this.table('business_analysis_tag_segments')} map
              ON map.tenant_id = tag.tenant_id AND map.job_id = tag.job_id AND map.tag_id = tag.id
@@ -738,6 +811,7 @@ export class BusinessAnalysisRepository {
               code: String(job.error_code ?? 'ANALYSIS_FAILED'),
               message: String(job.error_message ?? '业务分析失败。'),
               retryable: Boolean(job.error_retryable),
+              reason: analysisErrorReason(job.error_code ?? null, job.error_message ?? null),
             }
           : null,
       result,

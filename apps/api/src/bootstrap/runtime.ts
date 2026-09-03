@@ -22,6 +22,10 @@ import { LiveUpdateBroker } from '../infrastructure/liveUpdateBroker.ts';
 import { createDatabasePool, createPostgresConnectionString } from '../infrastructure/postgres.ts';
 import { PostgresWorkerWakeup } from '../infrastructure/workerWakeup.ts';
 import { PostgresAudioExecutionRepository } from '../workspace/audio/execution/postgresAudioExecutionRepository.ts';
+import { AudioRuntimeRepository } from '../workspace/audio/runtime-mode/repository.ts';
+import { AudioRuntimeService } from '../workspace/audio/runtime-mode/service.ts';
+import { AudioUploadSessionRepository } from '../workspace/audio/runtime-mode/uploadSessionRepository.ts';
+import { AudioUploadSessionService } from '../workspace/audio/runtime-mode/uploadSessionService.ts';
 import { DatabaseCredentialProvider } from '../settings/credentials/databaseCredentialProvider.ts';
 import { LocalCredentialProvider } from '../settings/credentials/localCredentialProvider.ts';
 import { SettingsRepository } from '../settings/repository.ts';
@@ -134,7 +138,12 @@ export function createRagRuntime(config: ApiConfig) {
     reporter: executionReporter,
     settingsService,
   });
-  const workspace = createWorkspaceRuntime({ config, pool });
+  const audioRuntimeRepository = new AudioRuntimeRepository(
+    pool,
+    config.database.schema,
+    config.rag.tenantId,
+  );
+  const workspace = createWorkspaceRuntime({ config, pool, audioRuntimeRepository });
   const audio = createAudioRuntime({
     config,
     pool,
@@ -148,19 +157,40 @@ export function createRagRuntime(config: ApiConfig) {
     sttRawResponseReporter,
     settingsService,
   });
+  const audioRuntimeService = new AudioRuntimeService(
+    audioRuntimeRepository,
+    settingsService,
+    audio.audioInputPreprocessor,
+  );
+  const audioUploadService = new AudioUploadSessionService(
+    new AudioUploadSessionRepository(pool, config.database.schema, config.rag.tenantId),
+    audioRuntimeRepository,
+    settingsService,
+    audio.audioService,
+    {
+      audioStorageDirectory: config.rag.audioStorageDir,
+      tempDirectory: config.rag.audioTranscriptionTempDir,
+      tenantId: config.rag.tenantId,
+    },
+  );
 
   return {
     service: knowledge.service,
     groupService: workspace.groupService,
     dataSourceService: workspace.dataSourceService,
     audioService: audio.audioService,
+    audioRuntimeService,
+    audioUploadService,
     worker: knowledge.worker,
     transcriptionWorker: audio.transcriptionWorker,
     dashScopeCallbackService: audio.dashScopeCallbackService,
     emotionWorker: audio.emotionWorker,
     roleWorker: audio.roleWorker,
+    speakerReviewWorker: audio.speakerReviewWorker,
     businessAnalysisWorker: audio.businessAnalysisWorker,
     audioInputPreprocessor: audio.audioInputPreprocessor,
+    cleanupExpiredAudio: audio.cleanupExpiredAudio,
+    startSourceCleanup: audio.startSourceCleanup,
     liveUpdates,
     workerWakeup,
     settingsService,

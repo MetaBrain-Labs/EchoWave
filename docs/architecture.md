@@ -79,12 +79,12 @@ apps/api/src/
 
 - PostgreSQL 是知识库、文档、revision、chunk、任务、会话和运行记录的权威来源。
 - 当前音频修订的用户可见 AI 执行轨迹同样由 PostgreSQL 承载。四类音频 worker 通过组合报告器同时写入可选本地诊断和始终启用的安全审计；安全审计只保存步骤、模型统计、工具名称、检索查询、知识库名称和命中文档定位，不保存提示词、模型原文、知识块正文或隐藏 reasoning。
-- PostgreSQL 同时保存租户级分组、数据源、音频元数据和已发布音频分析修订版；音频二进制与第三方凭据不进入业务表。
-- 手动上传音频先经扩展名、MIME 和媒体结构校验，再以随机文件名写入 `AUDIO_STORAGE_DIR`；数据库只保存相对 `storage_key`。文件写入或数据库事务失败时会补偿清理本批新文件。
-- 音频播放通过租户隔离的内容路由读取本地权威文件。仓储只返回未归档、已上传音频的存储元数据，服务层验证路径仍位于 `AUDIO_STORAGE_DIR`，HTTP 层提供 `GET`、`HEAD` 与单段字节 Range；客户端始终以音频 ID 构造 URL，不接触存储键。移动端使用一个页面级 `expo-audio` 实例同步完整录音与正文片段播放，片段边界只来自已发布时间戳。
-- 音频转写使用 `audio_analysis_revisions` 作为 PostgreSQL 队列，并把供应商、实际模型、分段模式、固定语言、声明能力、实际响应能力与预处理模式写入 revision 设置快照。`silero_vad` 路径以本地 ONNX 模型流式检测人声并压缩超过 30 秒的非人声区间，`whole_file` 路径保留完整音频；两者都通过 FFmpeg 生成单个 16kHz 单声道 MP3，经短期 OSS 对象和 24 小时签名 URL 提交北京地域 DashScope Qwen 文件转写，不在修订内自动切换模型或预处理模式。
+- PostgreSQL 同时保存租户级分组、数据源、音频元数据、运行模式/存储绑定、ASR Run、Checkpoint 和已发布分析结果；音频二进制与第三方凭据不进入业务表。
+- 新音频在创建时固化 `hybrid`、`object_storage` 或 `lightweight_local`。混合模式把原音频持久化到 `AUDIO_STORAGE_DIR`；对象模式通过预签名 PUT 直接进入权威 OSS；轻量模式以流式 API 上传到临时本地目录并在任务完成后删除。上传会话与 SHA-256 指纹支持中断后的确认和重新挂载。
+- 音频播放始终使用租户隔离的稳定内容路由。混合/轻量资产读取受控本地路径，对象资产由 API 代理 OSS Range；客户端只使用音频 ID。源文件清理后路由返回明确不可用状态，已发布 Transcript 和分析结果不受影响。
+- 音频转写使用 `audio_analysis_revisions` 作为 PostgreSQL 队列，并持久化供应商任务、VAD Manifest 与阶段 Checkpoint。`silero_vad` 流式检测并压缩无效区间，生成单个 16kHz 单声道文件，避免把完整音频载入内存或拆散录音级 Speaker ID。混合/对象模式使用临时 OSS，轻量模式使用 DashScope Instant 临时文件区。
 - `transcript_segments.text` 永久保存供应商 Raw Transcript；人工确认通过 `transcript_confirmations` 与 `transcript_confirmation_segments` 保存完整不可变快照，并由 ASR revision 上的 active 指针选择当前 Confirmed Transcript。确认只替换正文快照，不重建片段或修改 Speaker、时间戳和既有分析指针。
-- 情绪分析和角色识别使用 `audio_post_analysis_jobs` 作为两个独立队列。任务只能从已确认的 ASR revision 创建，并固化当前确认版本、模型和数据源自定义角色字典；worker 始终从该确认快照读取正文。两类 worker 各自单并发并通过 `FOR UPDATE SKIP LOCKED` 领取，因此可以并行运行但不会让同类型任务重入。
+- 情绪分析和角色识别使用 `audio_post_analysis_jobs`。混合/对象模式从已确认 revision 独立创建；轻量模式可在 ASR Run 创建时默认绑定声学情绪，Transcript 发布后用 Raw 时间戳自动生成系统快照并顺序执行情绪与清理。角色识别始终只读 Transcript，因此不受源音频清理影响。
 - 分组通过关联表连接知识库和数据源；分组可见音频由显式分享与关联数据源两条关系合并去重，页面计数不作为可写字段保存。
 - 分组和数据源允许在当前固定租户内创建和软归档；归档数据源会从活动列表、分组统计和数据源继承的音频可见关系中排除它，但不会删除关联、音频事实或本地文件。
 - 知识库保存当前只读的存储、索引、模型和解析模式；概览统计继续由活动文档事实动态聚合。
@@ -92,17 +92,17 @@ apps/api/src/
 - 新音频修订版只有完整写入本次产生的场景和 Raw Transcript 后才替换当前版本指针，并以待确认状态展示；情绪与角色结果分别写入版本化结果表，并在各自事务的最后切换 revision 上的 active 指针。再次确认正文、后处理失败或重跑都不会覆盖旧分析结果，新 ASR revision 也不会读取旧 revision 的确认或后处理指针。
 - 所有仓储 SQL 都包含 `tenant_id`，检索还同时约束知识库和文档当前生效 revision。
 - `ingestion_jobs` 通过 `FOR UPDATE SKIP LOCKED`、租约和幂等 chunk 唯一键恢复执行。知识入库、音频转写、情绪、角色和业务分析任务在事务提交后统一发送 PostgreSQL `NOTIFY` 失效信号；同进程 worker 立即尝试领取，15 秒安全扫描只负责通知丢失、监听重连或未知写入路径。通知不携带任务正文，也不替代任务表。
-- 分组业务分析使用持久化 LangGraph 表达 `prepare → plan_retrieval → retrieve_query 并行扇出 → deep_agent → validate → publish`。任务表仍是状态、进度和重试的权威来源；Graph 只 checkpoint 可序列化快照，仓储、模型和报告器通过 runtime context 注入。稳定 thread ID 绑定 workflow 版本和 job ID，`sync` durability 保证进入下一节点前 checkpoint 已落库。
-- 业务分析进程中断时，启动恢复会把遗留 `running` 任务重新排队，使用原 thread 从最后成功节点继续，不消耗错误恢复预算。可重试错误最多在 15 秒和 60 秒后恢复两次；DeepAgent 是原子节点，节点内中断会重跑该节点，但不重跑已 checkpoint 的规划和成功检索分支。
+- 分组业务分析使用持久化 LangGraph 表达 `prepare → plan_retrieval → retrieve_query 并行扇出 → deep_agent → validate → publish`。任务表仍是状态、进度和重试的权威来源；Graph 只 checkpoint 可序列化快照，仓储、模型和报告器通过 runtime context 注入。稳定 thread ID 绑定 workflow 版本和 job ID，`sync` durability 保证进入下一节点前 checkpoint 已落库。检索规划使用非思考模型，输出上限 768 tokens、超时 30 秒；主结构化分析使用非思考模型，输出上限 6000 tokens、单次模型超时 60 秒、工作流总超时 120 秒；结构修复使用 4096 tokens、超时 45 秒。
+- 业务分析进程中断时，启动恢复会把遗留 `running` 任务重新排队，使用原 thread 从最后成功节点继续，不消耗错误恢复预算。可重试错误最多在 15 秒和 60 秒后恢复两次；短转写仍在一个分析节点内完成，长转写会按最多 50 个片段或约 6000 个中文字建立窗口并保存窗口结果，窗口级中断只重跑最早未完成窗口，不重跑已 checkpoint 的规划和成功检索分支。
 - 业务分析发布在单事务中写入摘要、标签、证据和 head；同 job 已成功发布且仍为 head 时重复调用视为成功。成功或最终失败后删除 thread checkpoint，删除失败不回滚业务终态，由下次启动扫描补偿。
 - 音频转写通过部分唯一索引阻止同一音频并发任务，并用 `FOR UPDATE SKIP LOCKED` 领取。DashScope 的任务 ID、临时 OSS 对象键和提交时间随修订持久化；提交后进入 `awaiting_result` 并释放 worker。Polling 模式只领取已到数据库截止时间的任务并单次查询状态，进程内定时器按全局最近的查询或六小时超时截止点精确唤醒；EventBridge 模式不查询状态，只等待验签回调。进程重启时只重新排队未完成提交的修订，已有 task ID 的修订从持久化截止点恢复对应发现机制，已持久化终态的修订直接重新领取完成阶段。
-- Qwen Filetrans 适配器要求每个非空句子都有 `speaker_id` 与有序有效毫秒时间戳；Speaker 变化、同 Speaker 间隔达到 1500ms 或合并后超过 240 字软上限时创建新段。缺失 Speaker、时间戳异常或乱序直接以 `INVALID_MODEL_OUTPUT` 失败，不进行模型或分段回退。原始 ASR 只产生正文、Speaker 与时间戳，角色和情绪由后处理结果覆盖兼容字段。
+- Qwen Filetrans 适配器要求每个非空句子都有 `speaker_id` 与有序有效毫秒时间戳；Speaker 变化、同 Speaker 间隔达到 1500ms 或合并后超过 240 字软上限时创建新段。缺失 Speaker、时间戳异常或乱序直接以 `INVALID_MODEL_OUTPUT` 失败，不进行模型或分段回退。原始 ASR 只产生正文、Speaker 与时间戳，角色识别和声学情绪由后处理结果覆盖兼容字段；轻量本地在同一 ASR Run 内顺序执行声学情绪并在成功后清理源文件。
 - 情绪 worker 按说话轮次生成最多 5 分钟或 50 个目标片段的窗口，并加入前后各 1 秒上下文。窗口经 FFmpeg 转为音频后暂存到独立 OSS 前缀并交给 Qwen；网络最多重试三次，结构纠正一次，仍无效时递归二分，单片段失败则整项任务失败。
 - 角色 worker 把完整有序转写、每个 `speakerKey`、核心角色和本次数据源角色快照发送给 DeepSeek。输出必须完整覆盖已观察说话人，角色必须在白名单内，证据片段必须属于对应说话人。
 - 转写 worker 将阶段、当前 Chunk/动态总数、音频时间范围、网络尝试和更新时间持久化到当前修订。Polling 和 EventBridge 只负责发现并持久化首个供应商终态，结果下载、结构校验、时间轴恢复、发布与清理由同一完成路径处理；移动端通过单实例进程内事件总线唤醒的 SSE 展示业务进度，REST 仅负责首帧和连接失败后的临时降级。旧修订的结构尝试字段仅作兼容读取。
 - 新 revision 仅在全部向量写入成功后才在单事务中成为 active revision；失败不会使旧内容离线。
 - 原文件使用随机临时路径，发布成功或不可重试失败后删除；超过 24 小时的孤立文件由 worker 清理。
-- 首期只允许单 API 实例。worker 任务唤醒已使用 PostgreSQL `LISTEN/NOTIFY`，但移动端 SSE 仍使用单实例进程内事件总线，PostgreSQL 快照始终是权威状态；扩展到多 API 实例前仍需为 SSE 失效信号引入跨实例分发，并把本地权威音频和临时处理文件迁移到可共享对象存储。DashScope 路径的 OSS 仅是带一天生命周期兜底的临时中转，不是权威音频存储。
+- 首期只允许单 API 实例。worker 任务唤醒已使用 PostgreSQL `LISTEN/NOTIFY`，但移动端 SSE 仍使用单实例进程内事件总线，PostgreSQL 快照始终是权威状态；扩展到多 API 实例前仍需为 SSE 失效信号引入跨实例分发。对象模式的企业 OSS 是权威原音频存储，`audio_staging` 与 DashScope Instant 仅保存短期中间文件。
 
 ### 为什么保留原生 PostgreSQL 接口
 

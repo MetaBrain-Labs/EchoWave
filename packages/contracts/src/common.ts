@@ -17,6 +17,7 @@ export const EntityIdSchema = z.string().uuid();
 
 /** EchoWave HTTP API 允许使用的稳定错误码 schema。 */
 export const ApiErrorCodeSchema = z.enum([
+  'AUDIO_MODE_UNAVAILABLE',
   'AUDIO_TOO_LARGE',
   'BAD_REQUEST',
   'CONFIGURATION_REQUIRED',
@@ -31,10 +32,13 @@ export const ApiErrorCodeSchema = z.enum([
   'MODEL_UNAVAILABLE',
   'NOT_FOUND',
   'PROVIDER_REMOVED',
+  'SOURCE_REUPLOAD_REQUIRED',
   'TOO_MANY_FILES',
   'TRANSCODER_UNAVAILABLE',
   'UNSUPPORTED_FORMAT',
   'UNAUTHORIZED',
+  'UPLOAD_SESSION_EXPIRED',
+  'UPLOAD_SESSION_REQUIRED',
 ]);
 
 /** 不泄露内部实现的统一 HTTP 错误响应 schema。 */

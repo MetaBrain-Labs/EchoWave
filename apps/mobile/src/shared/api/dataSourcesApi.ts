@@ -11,10 +11,14 @@
  * - 音频处理和分析命令由 audioAnalysisApi 管理。
  */
 import type { DocumentPickerAsset } from 'expo-document-picker';
+import { File, UploadType } from 'expo-file-system';
 import { Platform } from 'react-native';
 
 import {
   AudioFileListResponseSchema,
+  AudioUploadSessionCompleteResponseSchema,
+  AudioUploadSessionCreateRequestSchema,
+  AudioUploadSessionResponseSchema,
   DataSourceAudioUploadResponseSchema,
   DataSourceCreateRequestSchema,
   DataSourceDetailSchema,
@@ -26,8 +30,10 @@ import {
   type DataSourceCreateRequest,
   type DataSourceGroupLinkRequest,
   type DataSourceUpdateRequest,
+  type AudioRuntimeMode,
 } from '@echowave/contracts';
 
+import { apiUrl } from './apiUrl';
 import { request } from './request';
 
 export const listDataSources = () => request('/api/data-sources', DataSourceListResponseSchema);
@@ -78,6 +84,61 @@ export async function uploadDataSourceAudioFiles(id: string, assets: DocumentPic
     method: 'POST',
     timeoutMs: 120_000,
   });
+}
+
+/** 按对象或轻量模式逐个创建会话并以二进制流上传，避免在 JS 内存复制整段音频。 */
+export async function uploadSessionAudioFiles(
+  id: string,
+  assets: DocumentPickerAsset[],
+  mode: AudioRuntimeMode,
+  includeAcousticEmotion: boolean,
+) {
+  for (const asset of assets) {
+    const sizeBytes = asset.size ?? asset.file?.size ?? new File(asset.uri).size;
+    const session = await request(
+      `/api/data-sources/${id}/audio-upload-sessions`,
+      AudioUploadSessionResponseSchema,
+      {
+        method: 'POST',
+        body: AudioUploadSessionCreateRequestSchema.parse({
+          filename: asset.name,
+          mimeType: asset.mimeType ?? 'application/octet-stream',
+          sizeBytes,
+          includeAcousticEmotion,
+        }),
+      },
+    );
+    if (session.mode !== mode) {
+      throw new Error('运行模式已在上传期间变化，请重新选择文件。');
+    }
+    const uploadUrl = session.upload.url.startsWith('/')
+      ? `${apiUrl}${session.upload.url}`
+      : session.upload.url;
+    if (Platform.OS === 'web' && asset.file) {
+      const response = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: session.upload.headers,
+        body: asset.file,
+      });
+      if (!response.ok) throw new Error(`音频上传失败（HTTP ${response.status}）。`);
+    } else {
+      const result = await new File(asset.uri).upload(uploadUrl, {
+        headers: session.upload.headers,
+        httpMethod: 'PUT',
+        mimeType: asset.mimeType ?? 'application/octet-stream',
+        sessionType: 'background',
+        uploadType: UploadType.BINARY_CONTENT,
+      });
+      if (result.status < 200 || result.status >= 300) {
+        throw new Error(`音频上传失败（HTTP ${result.status}）。`);
+      }
+    }
+    await request(
+      `/api/audio-upload-sessions/${session.id}/complete`,
+      AudioUploadSessionCompleteResponseSchema,
+      { method: 'POST', timeoutMs: 120_000 },
+    );
+  }
 }
 
 export const archiveDataSourceAudioFile = (id: string, audioFileId: string) =>

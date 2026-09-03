@@ -26,6 +26,8 @@ import {
 
 function enrichmentLabel(state: AudioPostAnalysisState, currentVersion: number): string {
   if (state.state === 'idle') return '未识别';
+  if (state.state === 'not_requested') return '本次转写未启用';
+  if (state.state === 'source_unavailable') return '源音频已不可用';
   if (state.confirmationVersion !== currentVersion)
     return `已过期（基于 v${state.confirmationVersion}）`;
   if (state.state === 'queued') return '等待中';
@@ -48,6 +50,19 @@ function stateLabel(state: AudioBusinessAnalysisState): string {
   return state.settingsCurrent && state.knowledgeCurrent
     ? '分析完成'
     : '已有结果，设置或关联已更新';
+}
+
+function errorLabel(state: AudioBusinessAnalysisState): string {
+  if (!state.error) return '';
+  const prefix =
+    state.error.reason === 'timeout'
+      ? '模型响应超时'
+      : state.error.reason === 'output_truncated'
+        ? '模型输出被截断'
+        : state.error.reason === 'invalid_citation'
+          ? '知识引用已校正'
+          : '';
+  return prefix ? `${prefix}：${state.error.message}` : state.error.message;
 }
 
 /** 展示当前分组业务分析状态与启动或重跑入口。 */
@@ -73,7 +88,7 @@ export function BusinessAnalysisControls({
       </View>
       {state.error ? (
         <Text accessibilityRole="alert" style={styles.errorText}>
-          {state.error.message}
+          {errorLabel(state)}
         </Text>
       ) : null}
       {!processing ? (

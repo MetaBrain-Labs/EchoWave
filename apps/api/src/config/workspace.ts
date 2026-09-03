@@ -12,6 +12,7 @@
  */
 import { AudioTranscriptionModelSchema, type AudioTranscriptionModel } from '@echowave/contracts';
 import { z } from 'zod';
+import path from 'node:path';
 
 import type { ProviderConfig } from './providers.ts';
 import { OptionalStringSchema } from './schema.ts';
@@ -57,7 +58,10 @@ export type RagConfig = {
 export function createRagConfig(
   values: z.infer<typeof WorkspaceEnvironmentSchema>,
   providers: ProviderConfig,
+  baseDirectory?: string,
 ): RagConfig {
+  const resolvePath = (value: string): string =>
+    baseDirectory ? path.resolve(baseDirectory, value) : value;
   return {
     tenantId: values.DEV_TENANT_ID,
     dashScope: providers.dashScope,
@@ -68,12 +72,12 @@ export function createRagConfig(
     deepSeekChatModel: providers.deepSeek.chatModel,
     enableThinking: providers.deepSeek.enableThinking,
     langGraphSchema: values.LANGGRAPH_SCHEMA,
-    uploadTempDir: values.UPLOAD_TEMP_DIR,
-    audioStorageDir: values.AUDIO_STORAGE_DIR,
+    uploadTempDir: resolvePath(values.UPLOAD_TEMP_DIR),
+    audioStorageDir: resolvePath(values.AUDIO_STORAGE_DIR),
     audioTranscriptionModel:
       values.AUDIO_TRANSCRIPTION_MODEL ?? 'qwen-audio-3.0-asr-flash-filetrans',
     audioEmotionModel: values.AUDIO_EMOTION_MODEL ?? 'qwen3.5-omni-flash',
-    audioTranscriptionTempDir: values.AUDIO_TRANSCRIPTION_TEMP_DIR,
+    audioTranscriptionTempDir: resolvePath(values.AUDIO_TRANSCRIPTION_TEMP_DIR),
     audioTranscriptionMaxInFlight: values.AUDIO_TRANSCRIPTION_MAX_IN_FLIGHT,
     ...(values.FFMPEG_PATH ? { ffmpegPath: values.FFMPEG_PATH } : {}),
   };

@@ -17,11 +17,18 @@ export type AudioPlaybackSource = {
   mimeType: string;
   originalFilename: string;
   storageKey: string;
+  sizeBytes: number;
+  sourceState: 'available' | 'cleaned' | 'missing';
+  storageBackend: 'local_persistent' | 'local_ephemeral' | 'aliyun_oss';
+  storageBindingRevisionId: string | null;
+  updatedAt: Date;
 };
 
 /** 音频核心读取 Repository 端口。 */
 export interface AudioCoreRepository {
   getAudioPlaybackSource(id: string): Promise<AudioPlaybackSource>;
   getAudioAnalysis(id: string): Promise<AudioAnalysisDetail>;
+  resolveSpeakerReviewFinding(audioFileId: string, findingId: string): Promise<number>;
+  resolveAllSpeakerReviewFindings(audioFileId: string): Promise<number>;
   assertGroupAudioAccess(groupId: string, audioFileId: string): Promise<void>;
 }

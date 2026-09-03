@@ -123,6 +123,8 @@ describe('workspace routes', () => {
   let startedPostAnalysisInput;
   let startedBusinessAnalysisInput;
   let confirmedTranscriptInput;
+  let resolvedSpeakerFindingInput;
+  let resolvedAllSpeakerFindingsId;
   let updatedGroupSettingsInput;
   let replacedGroupKnowledgeInput;
   let replacedGroupSourcesInput;
@@ -235,6 +237,14 @@ describe('workspace routes', () => {
         version: input.baseVersion + 1,
         confirmedAt: '2026-08-28T01:00:00.000Z',
       };
+    },
+    resolveSpeakerReviewFinding: async (id, findingId) => {
+      resolvedSpeakerFindingInput = { id, findingId };
+      return { audioFileId: id, resolvedCount: 1 };
+    },
+    resolveAllSpeakerReviewFindings: async (id) => {
+      resolvedAllSpeakerFindingsId = id;
+      return { audioFileId: id, resolvedCount: 3 };
     },
     startAudioPostAnalysis: async (id, type) => {
       startedPostAnalysisInput = { id, type };
@@ -798,6 +808,7 @@ describe('workspace routes', () => {
     assert.deepEqual(startedTranscriptionInput, {
       id: groupId,
       input: {
+        includeAcousticEmotion: true,
         preprocessing: 'whole_file',
         segmentationMode: 'speaker_turn',
       },
@@ -839,7 +850,19 @@ describe('workspace routes', () => {
         body: JSON.stringify({
           analysisRevisionId: groupId,
           baseVersion: 0,
-          segments: [{ segmentId: groupId, text: '  修正正文  ' }],
+          segments: [
+            {
+              sourceSegmentId: groupId,
+              parts: [
+                {
+                  speakerKey: 'Speaker 0',
+                  startWordIndex: 0,
+                  endWordIndex: 1,
+                  text: '  修正正文  ',
+                },
+              ],
+            },
+          ],
         }),
       },
     );
@@ -849,7 +872,19 @@ describe('workspace routes', () => {
       input: {
         analysisRevisionId: groupId,
         baseVersion: 0,
-        segments: [{ segmentId: groupId, text: '修正正文' }],
+        segments: [
+          {
+            sourceSegmentId: groupId,
+            parts: [
+              {
+                speakerKey: 'Speaker 0',
+                startWordIndex: 0,
+                endWordIndex: 1,
+                text: '修正正文',
+              },
+            ],
+          },
+        ],
       },
     });
     assert.equal((await response.json()).version, 1);
@@ -863,13 +898,36 @@ describe('workspace routes', () => {
           analysisRevisionId: groupId,
           baseVersion: 0,
           segments: [
-            { segmentId: groupId, text: '甲' },
-            { segmentId: groupId, text: '乙' },
+            {
+              sourceSegmentId: groupId,
+              parts: [{ speakerKey: 'Speaker 0', startWordIndex: 0, endWordIndex: 1, text: '甲' }],
+            },
+            {
+              sourceSegmentId: groupId,
+              parts: [{ speakerKey: 'Speaker 0', startWordIndex: 0, endWordIndex: 1, text: '乙' }],
+            },
           ],
         }),
       },
     );
     assert.equal(invalid.status, 400);
+  });
+
+  it('resolves one or all speaker review findings', async () => {
+    const one = await workspaceApp.request(
+      `/api/audio-files/${groupId}/speaker-review-findings/${groupId}`,
+      { method: 'DELETE' },
+    );
+    assert.equal(one.status, 200);
+    assert.deepEqual(resolvedSpeakerFindingInput, { id: groupId, findingId: groupId });
+    assert.deepEqual(await one.json(), { audioFileId: groupId, resolvedCount: 1 });
+
+    const all = await workspaceApp.request(`/api/audio-files/${groupId}/speaker-review-findings`, {
+      method: 'DELETE',
+    });
+    assert.equal(all.status, 200);
+    assert.equal(resolvedAllSpeakerFindingsId, groupId);
+    assert.deepEqual(await all.json(), { audioFileId: groupId, resolvedCount: 3 });
   });
 
   it('streams full, HEAD, and ranged audio responses with media CORS headers', async () => {
@@ -959,7 +1017,14 @@ describe('workspace routes', () => {
         body: JSON.stringify({
           analysisRevisionId: groupId,
           baseVersion: 1,
-          segments: [{ segmentId: groupId, text: '修改' }],
+          segments: [
+            {
+              sourceSegmentId: groupId,
+              parts: [
+                { speakerKey: 'Speaker 0', startWordIndex: 0, endWordIndex: 1, text: '修改' },
+              ],
+            },
+          ],
         }),
       },
     );

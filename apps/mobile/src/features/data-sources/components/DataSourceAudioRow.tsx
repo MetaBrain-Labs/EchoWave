@@ -132,7 +132,11 @@ export function AudioRow({
   onShowProgress: () => void;
   playing: boolean;
 }) {
-  const playbackDisabled = item.status.kind === 'uploading' || item.status.kind === 'upload-failed';
+  const playbackDisabled =
+    item.status.kind === 'uploading' ||
+    item.status.kind === 'upload-failed' ||
+    item.sourceState === 'cleaned' ||
+    item.sourceState === 'missing';
   return (
     <View style={styles.audioRow}>
       <Pressable
@@ -164,6 +168,15 @@ export function AudioRow({
         <Text style={styles.audioMeta}>
           {item.duration} · {item.createdAt}
         </Text>
+        {item.sourceRecoveryState === 'required' ? (
+          <Text style={styles.sourceWarning}>重新运行前需要重新选择原音频</Text>
+        ) : item.sourceState && item.sourceState !== 'available' ? (
+          <Text style={styles.sourceWarning}>源音频未保留</Text>
+        ) : item.runtimeMode === 'object_storage' && item.sourceDeleteAfter ? (
+          <Text style={styles.sourceWarning}>
+            原音频保留至 {new Date(item.sourceDeleteAfter).toLocaleDateString()}
+          </Text>
+        ) : null}
         <AudioStatusView
           onShowError={onShowError}
           onShowProgress={onShowProgress}
@@ -184,6 +197,12 @@ export function AudioRow({
 }
 
 const styles = StyleSheet.create({
+  sourceWarning: {
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    marginTop: spacing.xs,
+  },
   inlineStatus: {
     alignItems: 'center',
     flexDirection: 'row',

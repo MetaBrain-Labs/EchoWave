@@ -363,11 +363,37 @@ export class PostgresDataSourceRepository implements DataSourceRepository {
               af.error_retryable AS audio_error_retryable
        FROM ${this.table('audio_files')} af
        LEFT JOIN LATERAL (
-         SELECT ar.status, ar.progress, ar.error_stage, ar.error_code, ar.error_message,
-                ar.error_retryable, ar.error_details, ar.processing_stage, ar.current_chunk,
+         SELECT CASE
+                  WHEN bundled.status = 'failed' THEN 'failed'
+                  WHEN ar.status = 'ready'
+                   AND af.runtime_mode = 'lightweight_local'
+                   AND ar.processing_checkpoint <> 'cleanup_completed'
+                    THEN 'analyzing'
+                  ELSE ar.status
+                END AS status,
+                CASE
+                  WHEN ar.status = 'ready' AND ar.processing_checkpoint = 'transcript_published'
+                    THEN 75 + coalesce(round(bundled.progress * 0.22)::integer, 0)
+                  WHEN ar.status = 'ready'
+                   AND ar.processing_checkpoint = 'acoustic_emotion_completed' THEN 99
+                  ELSE ar.progress
+                END AS progress,
+                CASE WHEN bundled.status = 'failed' THEN 'analysis'
+                  ELSE ar.error_stage END AS error_stage,
+                CASE WHEN bundled.status = 'failed' THEN bundled.error_code
+                  ELSE ar.error_code END AS error_code,
+                CASE WHEN bundled.status = 'failed' THEN bundled.error_message
+                  ELSE ar.error_message END AS error_message,
+                CASE WHEN bundled.status = 'failed' THEN bundled.error_retryable
+                  ELSE ar.error_retryable END AS error_retryable,
+                CASE WHEN bundled.status = 'failed' THEN NULL
+                  ELSE ar.error_details END AS error_details,
+                ar.processing_stage, ar.current_chunk,
                 ar.chunk_count, ar.current_chunk_start_ms, ar.current_chunk_end_ms,
                 ar.network_attempt, ar.structure_attempt, ar.processing_updated_at
          FROM ${this.table('audio_analysis_revisions')} ar
+         LEFT JOIN ${this.table('audio_post_analysis_jobs')} bundled
+           ON bundled.tenant_id = ar.tenant_id AND bundled.id = ar.bundled_emotion_job_id
          WHERE ar.tenant_id = af.tenant_id AND ar.audio_file_id = af.id
          ORDER BY ar.revision_no DESC LIMIT 1
        ) latest ON true

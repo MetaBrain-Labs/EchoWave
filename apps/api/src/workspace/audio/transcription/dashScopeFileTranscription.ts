@@ -68,6 +68,16 @@ const SentenceSchema = z
     end_time: z.number().int().positive(),
     text: z.string(),
     speaker_id: z.union([z.string(), z.number()]),
+    words: z
+      .array(
+        z.object({
+          begin_time: z.number().int().nonnegative(),
+          end_time: z.number().int().positive(),
+          text: z.string(),
+          punctuation: z.string().optional().default(''),
+        }),
+      )
+      .default([]),
   })
   .passthrough();
 const TranscriptionResultSchema = z.object({
@@ -145,6 +155,18 @@ export function normalizeSpeakerTurnSegments(
       throw invalidOutput('供应商句子时间戳乱序或相互重叠。');
     }
     previousSentenceEnd = sentence.end_time;
+    let previousWordEnd = sentence.begin_time;
+    for (const word of sentence.words) {
+      if (
+        word.begin_time < sentence.begin_time ||
+        word.end_time > sentence.end_time ||
+        word.end_time <= word.begin_time ||
+        word.begin_time < previousWordEnd
+      ) {
+        throw invalidOutput('供应商结果包含越界、乱序或重叠的词级时间戳。');
+      }
+      previousWordEnd = word.end_time;
+    }
 
     let speakerKey = speakerKeys.get(rawSpeaker);
     if (!speakerKey) {
@@ -162,6 +184,14 @@ export function normalizeSpeakerTurnSegments(
     if (shouldMerge) {
       previous.endMs = sentence.end_time;
       previous.text = mergedText;
+      previous.words.push(
+        ...sentence.words.map((word) => ({
+          startMs: word.begin_time,
+          endMs: word.end_time,
+          text: word.text,
+          punctuation: word.punctuation,
+        })),
+      );
     } else {
       segments.push({
         speakerKey,
@@ -170,6 +200,12 @@ export function normalizeSpeakerTurnSegments(
         startMs: sentence.begin_time,
         endMs: sentence.end_time,
         text,
+        words: sentence.words.map((word) => ({
+          startMs: word.begin_time,
+          endMs: word.end_time,
+          text: word.text,
+          punctuation: word.punctuation,
+        })),
       });
     }
   }
@@ -190,13 +226,18 @@ export class DashScopeFileTranscription {
   ) {}
 
   /** 创建仅包含一个整文件 URL 的异步说话人分离任务。 */
-  async submit(fileUrl: string, context?: DashScopeRawResponseContext): Promise<string> {
+  async submit(
+    fileUrl: string,
+    context?: DashScopeRawResponseContext,
+    expectedSpeakerCount?: number,
+  ): Promise<string> {
     const response = await this.request(`${this.baseUrl}/services/audio/asr/transcription`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
         'Content-Type': 'application/json',
         'X-DashScope-Async': 'enable',
+        ...(fileUrl.startsWith('oss://') ? { 'X-DashScope-OssResourceResolve': 'enable' } : {}),
       },
       body: JSON.stringify({
         model: 'qwen-audio-3.0-asr-flash-filetrans',
@@ -206,6 +247,7 @@ export class DashScopeFileTranscription {
           language_hints: ['zh', 'en'],
           diarization_enabled: true,
           special_word_filter: { system_reserved_filter: false },
+          ...(expectedSpeakerCount === undefined ? {} : { speaker_count: expectedSpeakerCount }),
         },
       }),
     });

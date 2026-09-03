@@ -8,7 +8,7 @@
  */
 export class WorkspaceRepositoryError extends Error {
   constructor(
-    public readonly code: 'CONFLICT' | 'NOT_FOUND' | 'TRANSCODER_UNAVAILABLE',
+    public readonly code: 'BAD_REQUEST' | 'CONFLICT' | 'NOT_FOUND' | 'TRANSCODER_UNAVAILABLE',
     message: string,
   ) {
     super(message);

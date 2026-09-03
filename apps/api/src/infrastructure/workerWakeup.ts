@@ -24,6 +24,7 @@ export type WorkerQueue =
   | 'audio-transcription'
   | 'audio-emotion-analysis'
   | 'audio-role-analysis'
+  | 'audio-speaker-review'
   | 'audio-business-analysis';
 
 const workerQueues = new Set<WorkerQueue>([
@@ -31,6 +32,7 @@ const workerQueues = new Set<WorkerQueue>([
   'audio-transcription',
   'audio-emotion-analysis',
   'audio-role-analysis',
+  'audio-speaker-review',
   'audio-business-analysis',
 ]);
 

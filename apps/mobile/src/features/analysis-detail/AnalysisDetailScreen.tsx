@@ -15,7 +15,10 @@ import type {
   AudioAiExecutionTraceResponse,
   AudioAnalysisStatusStreamEvent,
   AudioPostAnalysisType,
+  AudioTranscriptionRunListResponse,
 } from '@echowave/contracts';
+import { DEFAULT_AUDIO_TRANSCRIPTION_MODEL } from '@echowave/contracts';
+import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -38,9 +41,15 @@ import {
   confirmAudioTranscript,
   getAudioAnalysis,
   getAudioExecutionTrace,
+  listAudioTranscriptions,
+  resolveAllSpeakerReviewFindings,
+  resolveSpeakerReviewFinding,
+  remountAudioSource,
   startAudioBusinessAnalysis,
   startAudioEmotionAnalysis,
   startAudioRoleRecognition,
+  startAudioTranscription,
+  selectAudioTranscription,
 } from '@/shared/api/audioAnalysisApi';
 import { getGroupSettings } from '@/shared/api/groupsApi';
 import { WorkspaceRequestError } from '@/shared/api/request';
@@ -73,12 +82,79 @@ import { TranscriptContent, type TranscriptDisplayMode } from './components/Tran
 import { EmotionAnalysisPanel } from './components/EmotionAnalysisPanel';
 import { ModelExecutionContent } from './components/ModelExecutionContent';
 import { PostAnalysisConfirmDialog, PostAnalysisControls } from './components/PostAnalysisControls';
+import { TranscriptionRunSelector } from './components/TranscriptionRunSelector';
 import {
   BusinessAnalysisControls,
   BusinessAnalysisPreflightDialog,
 } from './components/BusinessAnalysisControls';
 
 const playbackRates = [1, 1.5, 2] as const;
+
+function transcriptDraftSignature(segments: readonly TranscriptSegment[]): string {
+  return JSON.stringify(
+    segments.map((segment) => ({
+      sourceSegmentId: segment.sourceSegmentId,
+      startWordIndex: segment.startWordIndex,
+      endWordIndex: segment.endWordIndex,
+      speakerKey: segment.speakerKey,
+      text: segment.text,
+    })),
+  );
+}
+
+function wordsToText(segment: TranscriptSegment, start: number, end: number): string {
+  return segment.words
+    .filter((word) => word.index >= start && word.index < end)
+    .map((word) => `${word.text}${word.punctuation}`)
+    .join('');
+}
+
+function nextSpeakerKey(segments: readonly TranscriptSegment[]): string {
+  const maximum = segments.reduce((value, segment) => {
+    const match = /^Speaker (\d+)$/.exec(segment.speakerKey);
+    return Math.max(value, match ? Number(match[1]) : 0);
+  }, 0);
+  return `Speaker ${maximum + 1}`;
+}
+
+function withoutResolvedSpeakerFindings(
+  detail: AnalysisDetailView,
+  resolvedIds?: ReadonlySet<string>,
+): AnalysisDetailView {
+  const keepFinding = (finding: { id: string }) =>
+    resolvedIds ? !resolvedIds.has(finding.id) : false;
+  const findings = detail.speakerReview.findings.filter(keepFinding);
+  const hasPendingBoundary = findings.some(
+    (finding) => finding.sourceSegmentId !== null && finding.splitAfterWordIndex !== null,
+  );
+  const mapScenes = (scenes: readonly AnalysisDetailView['scenes'][number][]) =>
+    scenes.map((scene) => {
+      const segments = scene.segments.map((segment) => ({
+        ...segment,
+        reviewFindings: segment.reviewFindings.filter(keepFinding),
+      }));
+      const segmentsById = new Map(segments.map((segment) => [segment.id, segment]));
+      return {
+        ...scene,
+        segments,
+        timelineItems: scene.timelineItems.map((item) =>
+          item.kind === 'segment'
+            ? { ...item, segment: segmentsById.get(item.segment.id) ?? item.segment }
+            : item,
+        ),
+      };
+    });
+  return {
+    ...detail,
+    speakerReview: {
+      ...detail.speakerReview,
+      findings,
+      resolvedAt: hasPendingBoundary ? null : new Date().toISOString(),
+    },
+    scenes: mapScenes(detail.scenes),
+    rawScenes: mapScenes(detail.rawScenes),
+  };
+}
 
 type AudioAnalysisStatusPayload = Extract<
   AudioAnalysisStatusStreamEvent,
@@ -105,7 +181,13 @@ function hasConvergedToTerminalState(
 ): boolean {
   const postAnalysisConverged = (type: 'emotion' | 'role') => {
     const expectedState = expected[type];
-    if (isPostAnalysisActive(expectedState) || expectedState.state === 'idle') return true;
+    if (
+      isPostAnalysisActive(expectedState) ||
+      expectedState.state === 'idle' ||
+      expectedState.state === 'not_requested' ||
+      expectedState.state === 'source_unavailable'
+    )
+      return true;
     const currentState = current.postAnalysis[type];
     return currentState.state === expectedState.state && currentState.jobId === expectedState.jobId;
   };
@@ -146,6 +228,8 @@ export function AnalysisDetailScreen({
   onOpenCitation,
 }: AnalysisDetailScreenProps) {
   const [detail, setDetail] = useState<AnalysisDetailView>();
+  const [transcriptionRuns, setTranscriptionRuns] = useState<AudioTranscriptionRunListResponse>();
+  const [selectingTranscription, setSelectingTranscription] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [executionTrace, setExecutionTrace] = useState<AudioAiExecutionTraceResponse>();
@@ -166,9 +250,10 @@ export function AnalysisDetailScreen({
   const [startingAnalysis, setStartingAnalysis] = useState(false);
   const [editingTranscript, setEditingTranscript] = useState(false);
   const [confirmingTranscript, setConfirmingTranscript] = useState(false);
+  const [resolvingSpeakerReview, setResolvingSpeakerReview] = useState<string>();
   const [transcriptDisplayMode, setTranscriptDisplayMode] =
     useState<TranscriptDisplayMode>('current');
-  const [transcriptDrafts, setTranscriptDrafts] = useState<Record<string, string>>({});
+  const [transcriptDraftSegments, setTranscriptDraftSegments] = useState<TranscriptSegment[]>([]);
   const [hideIrrelevant, setHideIrrelevant] = useState(getHideIrrelevantSegmentsPreference);
   const [businessPreflightVisible, setBusinessPreflightVisible] = useState(false);
   const [businessForce, setBusinessForce] = useState(false);
@@ -177,7 +262,9 @@ export function AnalysisDetailScreen({
   const [analysisTiming, setAnalysisTiming] = useState<'automatic' | 'manual'>('manual');
   const [preflightPrompted, setPreflightPrompted] = useState(false);
   const runInitialRequest = useInitialRequestLoading();
-  const playback = useAudioPlayback(detailId || undefined);
+  const playback = useAudioPlayback(
+    detail?.sourceState === 'available' ? detailId || undefined : undefined,
+  );
   const changeHideIrrelevant = (value: boolean) => {
     setHideIrrelevantSegmentsPreference(value);
     setHideIrrelevant(value);
@@ -194,9 +281,8 @@ export function AnalysisDetailScreen({
   const transcriptSegments = detail?.scenes.flatMap((scene) => scene.segments) ?? [];
   const transcriptDirty =
     editingTranscript &&
-    transcriptSegments.some(
-      (segment) => (transcriptDrafts[segment.id] ?? segment.text) !== segment.text,
-    );
+    transcriptDraftSignature(transcriptDraftSegments) !==
+      transcriptDraftSignature(transcriptSegments);
   const applyTabChange = (tab: AnalysisTab) => {
     setActiveTab(tab);
     if (tab !== 'transcript') {
@@ -216,9 +302,14 @@ export function AnalysisDetailScreen({
       if (showLoading) setLoading(true);
       if (showLoading) setError('');
       try {
-        const nextDetail = toAnalysisDetailView(await getAudioAnalysis(detailId, groupId));
+        const [analysis, runs] = await Promise.all([
+          getAudioAnalysis(detailId, groupId),
+          listAudioTranscriptions(detailId).catch(() => undefined),
+        ]);
+        const nextDetail = toAnalysisDetailView(analysis);
         if (requestSequence !== detailRequestSequenceRef.current) return undefined;
         setDetail(nextDetail);
+        if (runs) setTranscriptionRuns(runs);
         setError('');
         return nextDetail;
       } catch (reason) {
@@ -524,14 +615,14 @@ export function AnalysisDetailScreen({
       if (
         emotion.state === 'idle' ||
         emotion.state === 'failed' ||
-        emotion.confirmationVersion !== version
+        ('confirmationVersion' in emotion && emotion.confirmationVersion !== version)
       ) {
         tasks.push(startAudioEmotionAnalysis(detailId));
       }
       if (
         role.state === 'idle' ||
         role.state === 'failed' ||
-        role.confirmationVersion !== version
+        ('confirmationVersion' in role && role.confirmationVersion !== version)
       ) {
         tasks.push(startAudioRoleRecognition(detailId));
       }
@@ -575,18 +666,54 @@ export function AnalysisDetailScreen({
   const finishTranscriptEditing = () => {
     setEditingTranscript(false);
     setConfirmingTranscript(false);
-    setTranscriptDrafts({});
+    setTranscriptDraftSegments([]);
     setTranscriptDisplayMode('current');
+  };
+
+  const reselectSourceAndTranscribe = async () => {
+    const selection = await DocumentPicker.getDocumentAsync({
+      copyToCacheDirectory: true,
+      multiple: false,
+      type: ['audio/*'],
+    });
+    if (selection.canceled) return;
+    try {
+      await remountAudioSource(detailId, selection.assets[0]!);
+      await startAudioTranscription(detailId, {
+        model: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+        preprocessing: 'silero_vad',
+        segmentationMode: 'speaker_turn',
+        includeAcousticEmotion: true,
+      });
+      Alert.alert('已创建新转写', '源文件指纹校验通过，新的 ASR 与声学情绪任务已排队。');
+      await load(false);
+    } catch (reason) {
+      Alert.alert(
+        '无法重新挂载源文件',
+        reason instanceof Error ? reason.message : '请选择最初上传的同一份原音频。',
+      );
+    }
+  };
+
+  const changeTranscriptionSelection = async (
+    input: { mode: 'auto' } | { mode: 'manual'; revisionId: string },
+  ) => {
+    if (selectingTranscription) return;
+    setSelectingTranscription(true);
+    try {
+      setTranscriptionRuns(await selectAudioTranscription(detailId, input));
+      await load(false);
+    } catch (reason) {
+      Alert.alert('无法切换 ASR 版本', reason instanceof Error ? reason.message : '请稍后重试。');
+    } finally {
+      setSelectingTranscription(false);
+    }
   };
 
   const startTranscriptEditing = () => {
     if (!detail) return;
-    setTranscriptDrafts(
-      Object.fromEntries(
-        detail.scenes.flatMap((scene) =>
-          scene.segments.map((segment) => [segment.id, segment.text]),
-        ),
-      ),
+    setTranscriptDraftSegments(
+      detail.scenes.flatMap((scene) => scene.segments.map((segment) => ({ ...segment }))),
     );
     setTranscriptDisplayMode('current');
     setEditingTranscript(true);
@@ -605,14 +732,24 @@ export function AnalysisDetailScreen({
 
   const confirmTranscript = async () => {
     if (!detail || confirmingTranscript) return;
-    const segments = transcriptSegments.map((segment) => ({
-      segmentId: segment.id,
-      text: transcriptDrafts[segment.id] ?? segment.text,
-    }));
-    if (segments.some((segment) => segment.text.trim().length === 0)) {
+    if (transcriptDraftSegments.some((segment) => segment.text.trim().length === 0)) {
       Alert.alert('无法确认转写', '每个转写片段都必须保留非空正文。');
       return;
     }
+    const segments = detail.rawScenes
+      .flatMap((scene) => scene.segments)
+      .map((source) => ({
+        sourceSegmentId: source.id,
+        parts: transcriptDraftSegments
+          .filter((segment) => segment.sourceSegmentId === source.id)
+          .sort((left, right) => left.startWordIndex - right.startWordIndex)
+          .map((segment) => ({
+            speakerKey: segment.speakerKey,
+            startWordIndex: segment.startWordIndex,
+            endWordIndex: segment.endWordIndex,
+            text: segment.text,
+          })),
+      }));
     setConfirmingTranscript(true);
     try {
       await confirmAudioTranscript(detail.id, {
@@ -640,6 +777,47 @@ export function AnalysisDetailScreen({
       }
     } finally {
       setConfirmingTranscript(false);
+    }
+  };
+
+  const resolveOneSpeakerFinding = async (findingId: string) => {
+    if (!detail || resolvingSpeakerReview) return;
+    setResolvingSpeakerReview(findingId);
+    try {
+      await resolveSpeakerReviewFinding(detail.id, findingId);
+      const resolvedIds = new Set([findingId]);
+      setDetail((current) =>
+        current ? withoutResolvedSpeakerFindings(current, resolvedIds) : current,
+      );
+      setTranscriptDraftSegments((current) =>
+        current.map((segment) => ({
+          ...segment,
+          reviewFindings: segment.reviewFindings.filter((finding) => !resolvedIds.has(finding.id)),
+        })),
+      );
+    } catch (reason) {
+      Alert.alert('无法审核说话人疑点', reason instanceof Error ? reason.message : '请稍后重试。');
+    } finally {
+      setResolvingSpeakerReview(undefined);
+    }
+  };
+
+  const resolveAllSpeakerFindings = async () => {
+    if (!detail || resolvingSpeakerReview || detail.speakerReview.findings.length === 0) return;
+    setResolvingSpeakerReview('all');
+    try {
+      await resolveAllSpeakerReviewFindings(detail.id);
+      setDetail((current) => (current ? withoutResolvedSpeakerFindings(current) : current));
+      setTranscriptDraftSegments((current) =>
+        current.map((segment) => ({ ...segment, reviewFindings: [] })),
+      );
+    } catch (reason) {
+      Alert.alert(
+        '无法审核全部说话人疑点',
+        reason instanceof Error ? reason.message : '请稍后重试。',
+      );
+    } finally {
+      setResolvingSpeakerReview(undefined);
     }
   };
 
@@ -716,6 +894,7 @@ export function AnalysisDetailScreen({
     );
   }
 
+  const sourceAvailable = detail.sourceState === 'available';
   const playbackRate = playbackRates[playbackRateIndex];
   const playbackDuration = playback.duration > 0 ? playback.duration : detail.durationSeconds;
   const changePlaybackRate = () => {
@@ -728,36 +907,59 @@ export function AnalysisDetailScreen({
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-      {expandedPlayer ? (
-        <ExpandedPlayer
-          durationSeconds={playbackDuration}
-          error={playback.error}
-          isBuffering={playback.isBuffering}
-          isLoaded={playback.isLoaded}
-          isPlaying={playback.isPlaying}
-          onBack={requestBack}
-          onCollapse={() => setExpandedPlayer(false)}
-          onJump={(seconds) => void playback.jumpBy(seconds)}
-          onPlayPause={() => void playback.toggleFullPlayback()}
-          onRateChange={changePlaybackRate}
-          onRetry={() => playback.retry()}
-          onSeek={(seconds) => void playback.seekTo(seconds)}
-          playbackRate={playbackRate}
-          positionSeconds={playback.currentTime}
-        />
+      {sourceAvailable ? (
+        expandedPlayer ? (
+          <ExpandedPlayer
+            durationSeconds={playbackDuration}
+            error={playback.error}
+            isBuffering={playback.isBuffering}
+            isLoaded={playback.isLoaded}
+            isPlaying={playback.isPlaying}
+            onBack={requestBack}
+            onCollapse={() => setExpandedPlayer(false)}
+            onJump={(seconds) => void playback.jumpBy(seconds)}
+            onPlayPause={() => void playback.toggleFullPlayback()}
+            onRateChange={changePlaybackRate}
+            onRetry={() => playback.retry()}
+            onSeek={(seconds) => void playback.seekTo(seconds)}
+            playbackRate={playbackRate}
+            positionSeconds={playback.currentTime}
+          />
+        ) : (
+          <CompactPlayer
+            durationSeconds={playbackDuration}
+            error={playback.error}
+            isBuffering={playback.isBuffering}
+            isLoaded={playback.isLoaded}
+            isPlaying={playback.isPlaying}
+            onBack={requestBack}
+            onExpand={() => setExpandedPlayer(true)}
+            onPlayPause={() => void playback.toggleFullPlayback()}
+            onRetry={() => playback.retry()}
+            positionSeconds={playback.currentTime}
+          />
+        )
       ) : (
-        <CompactPlayer
-          durationSeconds={playbackDuration}
-          error={playback.error}
-          isBuffering={playback.isBuffering}
-          isLoaded={playback.isLoaded}
-          isPlaying={playback.isPlaying}
-          onBack={requestBack}
-          onExpand={() => setExpandedPlayer(true)}
-          onPlayPause={() => void playback.toggleFullPlayback()}
-          onRetry={() => playback.retry()}
-          positionSeconds={playback.currentTime}
-        />
+        <View
+          accessibilityRole="alert"
+          style={styles.sourceUnavailableCard}
+          testID="analysis-source-unavailable"
+        >
+          <IconButton icon="chevron-back" label="返回" onPress={requestBack} />
+          <Ionicons color={colors.secondary} name="volume-mute-outline" size={24} />
+          <View style={styles.sourceUnavailableCopy}>
+            <Text style={styles.sourceUnavailableTitle}>
+              {detail.runtimeMode === 'lightweight_local'
+                ? '轻量本地模式：仅保留分析结果'
+                : '源音频未保留'}
+            </Text>
+            <Text style={styles.sourceUnavailableDescription}>
+              {detail.runtimeMode === 'lightweight_local'
+                ? '声学情绪、转写和后续分析已保存，原音频已清理，当前不可播放。'
+                : '当前源音频不可用，已保存的转写和分析结果仍可查看。'}
+            </Text>
+          </View>
+        </View>
       )}
       <DetailTabs activeTab={activeTab} onChange={selectTab} showSummary={hasSummary} />
       <ScrollView
@@ -777,14 +979,18 @@ export function AnalysisDetailScreen({
             confirming={confirmingTranscript}
             detail={detail}
             displayMode={transcriptDisplayMode}
-            draftTexts={transcriptDrafts}
+            draftSegments={transcriptDraftSegments}
             editing={editingTranscript}
             hideIrrelevant={hideIrrelevant}
             onCancelEditing={cancelTranscriptEditing}
             onConfirmEditing={() => void confirmTranscript()}
             onDisplayModeChange={setTranscriptDisplayMode}
             onDraftChange={(segmentId, text) =>
-              setTranscriptDrafts((current) => ({ ...current, [segmentId]: text }))
+              setTranscriptDraftSegments((current) =>
+                current.map((segment) =>
+                  segment.id === segmentId ? { ...segment, text } : segment,
+                ),
+              )
             }
             onOpenAiTag={setSelectedTag}
             onOpenEmotion={setEmotionSegment}
@@ -795,11 +1001,72 @@ export function AnalysisDetailScreen({
                 startSeconds: segment.startSeconds,
               })
             }
+            onPlayReviewFinding={(segment, splitAfterWordIndex) => {
+              const boundary = segment.words.find((word) => word.index === splitAfterWordIndex);
+              if (!boundary) return;
+              void playback.playRange({
+                endSeconds: Math.min(segment.endSeconds, boundary.endMs / 1_000 + 2),
+                key: `review:${segment.sourceSegmentId}:${splitAfterWordIndex}`,
+                startSeconds: Math.max(segment.startSeconds, boundary.endMs / 1_000 - 2),
+              });
+            }}
+            onResolveAllReviewFindings={() => void resolveAllSpeakerFindings()}
+            onResolveReviewFinding={(findingId) => void resolveOneSpeakerFinding(findingId)}
+            onSpeakerChange={(segmentId, speakerKey) =>
+              setTranscriptDraftSegments((current) =>
+                current.map((segment) =>
+                  segment.id === segmentId
+                    ? { ...segment, speakerKey, speakerLabel: speakerKey }
+                    : segment,
+                ),
+              )
+            }
+            onSplitSegment={(segment, splitAfterWordIndex) => {
+              const splitWord = segment.words.find((word) => word.index === splitAfterWordIndex);
+              const nextWord = segment.words.find((word) => word.index === splitAfterWordIndex + 1);
+              if (!splitWord || !nextWord) return;
+              setTranscriptDraftSegments((current) => {
+                const newSpeakerKey = nextSpeakerKey(current);
+                const leftEnd = splitAfterWordIndex + 1;
+                const left: TranscriptSegment = {
+                  ...segment,
+                  id: `${segment.sourceSegmentId}:${segment.startWordIndex}-${leftEnd}`,
+                  endSeconds: splitWord.endMs / 1_000,
+                  endWordIndex: leftEnd,
+                  text: wordsToText(segment, segment.startWordIndex, leftEnd),
+                  words: segment.words.filter((word) => word.index < leftEnd),
+                  reviewFindings: segment.reviewFindings.filter(
+                    (finding) =>
+                      finding.splitAfterWordIndex !== null && finding.splitAfterWordIndex < leftEnd,
+                  ),
+                };
+                const right: TranscriptSegment = {
+                  ...segment,
+                  id: `${segment.sourceSegmentId}:${leftEnd}-${segment.endWordIndex}`,
+                  speakerKey: newSpeakerKey,
+                  speakerLabel: newSpeakerKey,
+                  startSeconds: nextWord.startMs / 1_000,
+                  startWordIndex: leftEnd,
+                  text: wordsToText(segment, leftEnd, segment.endWordIndex),
+                  words: segment.words.filter((word) => word.index >= leftEnd),
+                  reviewFindings: segment.reviewFindings.filter(
+                    (finding) =>
+                      finding.splitAfterWordIndex !== null &&
+                      finding.splitAfterWordIndex >= leftEnd,
+                  ),
+                };
+                return current.flatMap((item) => (item.id === segment.id ? [left, right] : [item]));
+              });
+            }}
+            resolvingReviewFinding={resolvingSpeakerReview}
             onStartEditing={startTranscriptEditing}
             playingSegmentId={playback.activeRangeKey}
-            segmentPlaybackDisabled={!playback.isLoaded || Boolean(playback.error)}
-            segmentPlaybackLoading={playback.isBuffering}
-            segmentPlaybackPlaying={playback.isPlaying}
+            segmentPlaybackDisabled={
+              !sourceAvailable || !playback.isLoaded || Boolean(playback.error)
+            }
+            segmentPlaybackLoading={sourceAvailable && playback.isBuffering}
+            segmentPlaybackPlaying={sourceAvailable && playback.isPlaying}
+            reviewPlaybackAvailable={sourceAvailable}
             selectedSegmentIds={selectedTag?.evidenceSegmentIds ?? []}
           />
         </View>
@@ -810,11 +1077,21 @@ export function AnalysisDetailScreen({
           style={[styles.page, { width: pageWidth }]}
           testID="analysis-tasks-scroll"
         >
+          <TranscriptionRunSelector
+            onAuto={() => void changeTranscriptionSelection({ mode: 'auto' })}
+            onSelect={(revisionId) =>
+              void changeTranscriptionSelection({ mode: 'manual', revisionId })
+            }
+            pending={selectingTranscription}
+            runs={transcriptionRuns}
+          />
           <PostAnalysisControls
             confirmed={detail.transcriptConfirmation.status === 'confirmed'}
             emotion={detail.postAnalysis.emotion}
+            onRemountSource={() => void reselectSourceAndTranscribe()}
             onStart={setConfirmAnalysisType}
             role={detail.postAnalysis.role}
+            runtimeMode={detail.runtimeMode}
           />
           {groupId ? (
             <BusinessAnalysisControls
@@ -888,6 +1165,29 @@ const styles = StyleSheet.create({
   },
   pager: {
     flex: 1,
+  },
+  sourceUnavailableCard: {
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderBottomColor: colors.divider,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 80,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  sourceUnavailableCopy: { flex: 1 },
+  sourceUnavailableTitle: {
+    ...typography.body,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+  },
+  sourceUnavailableDescription: {
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    marginTop: spacing.xs,
   },
   page: {
     height: '100%',

@@ -121,6 +121,22 @@ describe('post-analysis providers', () => {
     );
   });
 
+  it('enables DashScope resolution for temporary acoustic windows', async () => {
+    let headers;
+    const analyzer = new QwenEmotionAnalyzer({
+      apiKey: 'test',
+      baseUrl: 'https://example.test/v1',
+      model: 'qwen3.5-omni-flash',
+      sleep: async () => {},
+      fetch: async (_url, init) => {
+        headers = init.headers;
+        return response(JSON.stringify({ segments: segments.map(({ id }) => emotion(id)) }));
+      },
+    });
+    await analyzer.analyze('oss://temporary-bucket/window.mp3', segments);
+    assert.equal(headers['X-DashScope-OssResourceResolve'], 'enable');
+  });
+
   it('recognizes only allowed roles and validates evidence ownership', async () => {
     const modelCalls = [];
     const recognizer = new DeepSeekRoleRecognizer({

@@ -46,6 +46,10 @@ export type SourceAudioItem = {
   createdAt: string;
   hasTranscript: boolean;
   status: SourceAudioStatus;
+  runtimeMode?: 'hybrid' | 'object_storage' | 'lightweight_local';
+  sourceState?: 'available' | 'cleaned' | 'missing';
+  sourceRecoveryState?: 'not_required' | 'required' | 'verifying';
+  sourceDeleteAfter?: string | null;
 };
 
 export type UploadRecord = {
@@ -132,6 +136,10 @@ export function toSourceAudioItem(audio: AudioFileSummary): SourceAudioItem {
     createdAt: new Date(audio.createdAt).toLocaleDateString(),
     hasTranscript: audio.hasTranscript,
     status: sourceAudioStatus(audio),
+    runtimeMode: audio.runtimeMode,
+    sourceState: audio.sourceState,
+    sourceRecoveryState: audio.sourceRecoveryState,
+    sourceDeleteAfter: audio.sourceDeleteAfter,
   };
 }
 

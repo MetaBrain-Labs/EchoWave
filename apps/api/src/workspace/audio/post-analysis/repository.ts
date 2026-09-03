@@ -45,11 +45,23 @@ export type ClaimedPostAnalysisJob = {
   confirmationVersion: number;
   capabilityBindingRevisionId: string | null;
   stagingBindingRevisionId: string | null;
+  runtimeMode: 'hybrid' | 'object_storage' | 'lightweight_local';
+  storageBackend: 'local_persistent' | 'local_ephemeral' | 'aliyun_oss';
+  storageBindingRevisionId: string | null;
+  bundled: boolean;
   segments: PostAnalysisTranscriptSegment[];
+  emotionWindowResults?: EmotionWindowResult[];
 };
 
 export type EmotionPublication = SegmentEmotionAnalysis & { segmentId: string };
 export type RolePublication = SegmentRoleAnalysis & { speakerKey: string };
+export type EmotionWindowResult = {
+  index: number;
+  startMs: number;
+  endMs: number;
+  segmentIds: string[];
+  results: EmotionPublication[];
+};
 
 /** 管理后置分析队列与版本化发布事务。 */
 export class PostAnalysisRepository {
@@ -166,51 +178,106 @@ export class PostAnalysisRepository {
        UPDATE ${this.table('audio_post_analysis_jobs')} job
        SET status = 'running', progress = 1
        FROM candidate, ${this.table('audio_files')} af,
-            ${this.table('transcript_confirmations')} tc
+            ${this.table('transcript_confirmations')} tc,
+            ${this.table('audio_analysis_revisions')} ar
        WHERE job.id = candidate.id AND af.tenant_id = job.tenant_id
          AND af.id = job.audio_file_id
          AND tc.tenant_id = job.tenant_id AND tc.id = job.transcript_confirmation_id
+         AND ar.tenant_id = job.tenant_id AND ar.id = job.analysis_revision_id
        RETURNING job.id, job.analysis_type, job.model, job.audio_file_id,
                  job.analysis_revision_id, job.transcript_confirmation_id,
                  job.capability_binding_revision_id, job.staging_binding_revision_id,
                  tc.version_no AS confirmation_version, job.input_snapshot,
-                 af.storage_key, af.duration_ms, af.deleted_at`,
+                 af.storage_key, af.duration_ms, af.deleted_at, af.source_state,
+                 af.runtime_mode, af.storage_backend, af.storage_binding_revision_id,
+                 (ar.bundled_emotion_job_id = job.id) AS bundled`,
       [this.tenantId, type],
     );
     const row = claimed.rows[0];
     if (!row) return undefined;
-    if (row.deleted_at || !row.storage_key || row.duration_ms === null) {
+    const acousticSourceUnavailable =
+      row.analysis_type === 'emotion' &&
+      (row.source_state !== 'available' || !row.storage_key || row.duration_ms === null);
+    if (row.deleted_at || acousticSourceUnavailable) {
       await this.fail(row.id, 'CONFLICT', '音频已归档或缺少可分析的音频文件，任务已停止。', false);
       return undefined;
     }
     const segments = await this.pool.query(
-      `SELECT ts.id, ts.speaker_key, ts.start_ms, ts.end_ms, confirmed.text
+      `SELECT confirmed.confirmed_segment_id AS id, confirmed.speaker_key,
+              confirmed.start_ms, confirmed.end_ms, confirmed.text
        FROM ${this.table('transcript_confirmation_segments')} confirmed
-       JOIN ${this.table('transcript_segments')} ts
-         ON ts.tenant_id = confirmed.tenant_id
-        AND ts.analysis_revision_id = confirmed.analysis_revision_id
-        AND ts.id = confirmed.transcript_segment_id
        WHERE confirmed.tenant_id = $1
          AND confirmed.transcript_confirmation_id = $2
-       ORDER BY ts.start_ms, ts.segment_index`,
+       ORDER BY confirmed.start_ms, confirmed.end_ms, confirmed.part_index`,
       [this.tenantId, row.transcript_confirmation_id],
     );
+    if (row.analysis_type === 'emotion') {
+      const ordered = segments.rows
+        .slice()
+        .sort((left, right) => Number(left.start_ms) - Number(right.start_ms));
+      let current: typeof ordered = [];
+      let windowIndex = 0;
+      const flush = async () => {
+        if (current.length === 0) return;
+        await this.pool.query(
+          `INSERT INTO ${this.table('audio_post_analysis_windows')}
+             (tenant_id, job_id, window_index, start_ms, end_ms, segment_ids, status)
+           VALUES ($1, $2, $3, $4, $5, $6::uuid[], 'queued')
+           ON CONFLICT (tenant_id, job_id, window_index) DO NOTHING`,
+          [
+            this.tenantId,
+            row.id,
+            windowIndex++,
+            current[0]!.start_ms,
+            current.at(-1)!.end_ms,
+            current.map((segment) => segment.id),
+          ],
+        );
+        current = [];
+      };
+      for (const segment of ordered) {
+        const first = current[0];
+        if (
+          first &&
+          (current.length >= 50 || Number(segment.end_ms) - Number(first.start_ms) > 5 * 60 * 1_000)
+        ) {
+          await flush();
+        }
+        current.push(segment);
+      }
+      await flush();
+    }
     const snapshot =
       row.input_snapshot && typeof row.input_snapshot === 'object'
         ? (row.input_snapshot as Record<string, unknown>)
         : {};
+    const emotionWindowResults =
+      row.analysis_type === 'emotion'
+        ? await this.pool.query(
+            `SELECT window_index, start_ms, end_ms, segment_ids, result
+             FROM ${this.table('audio_post_analysis_windows')}
+             WHERE tenant_id = $1 AND job_id = $2 AND status = 'ready'
+             ORDER BY window_index`,
+            [this.tenantId, row.id],
+          )
+        : { rows: [] };
     return {
       id: row.id,
       type: row.analysis_type,
       model: row.model,
       audioFileId: row.audio_file_id,
       revisionId: row.analysis_revision_id,
-      storageKey: row.storage_key,
-      durationMs: Number(row.duration_ms),
+      // 角色识别只读 Transcript；源文件已清理时保留空定位键，不影响其执行。
+      storageKey: row.storage_key ?? '',
+      durationMs: Number(row.duration_ms ?? 0),
       confirmationId: row.transcript_confirmation_id,
       confirmationVersion: Number(row.confirmation_version),
       capabilityBindingRevisionId: row.capability_binding_revision_id ?? null,
       stagingBindingRevisionId: row.staging_binding_revision_id ?? null,
+      runtimeMode: row.runtime_mode,
+      storageBackend: row.storage_backend,
+      storageBindingRevisionId: row.storage_binding_revision_id ?? null,
+      bundled: Boolean(row.bundled),
       customBusinessRoles: Array.isArray(snapshot.customBusinessRoles)
         ? snapshot.customBusinessRoles.filter((value): value is string => typeof value === 'string')
         : [],
@@ -221,7 +288,30 @@ export class PostAnalysisRepository {
         endMs: Number(segment.end_ms),
         text: String(segment.text),
       })),
+      emotionWindowResults: emotionWindowResults.rows
+        .filter((item) => item.result && typeof item.result === 'object')
+        .map((item) => ({
+          index: Number(item.window_index),
+          startMs: Number(item.start_ms),
+          endMs: Number(item.end_ms),
+          segmentIds: Array.isArray(item.segment_ids)
+            ? item.segment_ids.filter(
+                (value: unknown): value is string => typeof value === 'string',
+              )
+            : [],
+          results: item.result as EmotionPublication[],
+        })),
     };
+  }
+
+  /** 幂等保存声学情绪窗口结果，避免长音频重试时重复调用模型。 */
+  async saveEmotionWindowResult(jobId: string, window: EmotionWindowResult): Promise<void> {
+    await this.pool.query(
+      `UPDATE ${this.table('audio_post_analysis_windows')}
+       SET status = 'ready', attempt = attempt + 1, result = $4::jsonb, completed_at = now(), updated_at = now()
+       WHERE tenant_id = $1 AND job_id = $2 AND window_index = $3`,
+      [this.tenantId, jobId, window.index, JSON.stringify(window.results)],
+    );
   }
 
   /** 保存单调递增的任务进度。 */
@@ -242,14 +332,16 @@ export class PostAnalysisRepository {
       for (const result of results) {
         await client.query(
           `INSERT INTO ${this.table('segment_emotion_results')}
-             (tenant_id, job_id, analysis_revision_id, transcript_segment_id, emotion_label,
+             (tenant_id, job_id, analysis_revision_id, transcript_confirmation_id,
+              confirmed_segment_id, emotion_label,
               confidence, attitude, arousal, pace, volume_trend, pitch_variation,
               pause_pattern, vocal_cues)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)`,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb)`,
           [
             this.tenantId,
             job.id,
             job.revisionId,
+            job.confirmationId,
             result.segmentId,
             result.label,
             result.confidence,
@@ -264,6 +356,21 @@ export class PostAnalysisRepository {
         );
       }
       await this.publishPointer(client, job, 'active_emotion_job_id');
+      if (job.bundled) {
+        await client.query(
+          `UPDATE ${this.table('audio_analysis_revisions')}
+           SET processing_checkpoint = 'acoustic_emotion_completed'
+           WHERE tenant_id = $1 AND id = $2 AND bundled_emotion_job_id = $3`,
+          [this.tenantId, job.revisionId, job.id],
+        );
+        await client.query(
+          `UPDATE ${this.table('audio_files')}
+           SET cleanup_status = 'pending', source_delete_after = now(), updated_at = now()
+           WHERE tenant_id = $1 AND id = $2 AND runtime_mode = 'lightweight_local'
+             AND source_state = 'available'`,
+          [this.tenantId, job.audioFileId],
+        );
+      }
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
@@ -334,13 +441,36 @@ export class PostAnalysisRepository {
   }
 
   /** 标记当前任务失败，既有 active 结果指针保持不变。 */
-  async fail(jobId: string, code: string, message: string, retryable: boolean): Promise<void> {
-    await this.pool.query(
+  async fail(jobId: string, code: string, message: string, retryable: boolean): Promise<boolean> {
+    const result = await this.pool.query(
       `UPDATE ${this.table('audio_post_analysis_jobs')}
-       SET status = 'failed', completed_at = now(), error_code = $3,
-           error_message = $4, error_retryable = $5
-       WHERE tenant_id = $1 AND id = $2`,
+       SET status = CASE WHEN $5 AND retry_count < 2 THEN 'queued' ELSE 'failed' END,
+           retry_count = retry_count + 1,
+           progress = CASE WHEN $5 AND retry_count < 2 THEN 0 ELSE progress END,
+           completed_at = CASE WHEN $5 AND retry_count < 2 THEN NULL ELSE now() END,
+           error_code = $3, error_message = $4, error_retryable = $5
+       WHERE tenant_id = $1 AND id = $2
+       RETURNING status`,
       [this.tenantId, jobId, code, message.slice(0, 500), retryable],
     );
+    if (!result.rows[0]) {
+      throw new WorkspaceRepositoryError('CONFLICT', '后置分析任务状态已变化，无法记录失败。');
+    }
+    const finalFailure = result.rows[0]?.status === 'failed';
+    if (!finalFailure) return false;
+    await this.pool.query(
+      `UPDATE ${this.table('audio_files')} af
+       SET source_delete_after = now() + interval '24 hours', cleanup_status = 'pending',
+           source_recovery_state = 'required', updated_at = now()
+       FROM ${this.table('audio_post_analysis_jobs')} job,
+            ${this.table('audio_analysis_revisions')} ar
+       WHERE job.tenant_id = $1 AND job.id = $2
+         AND ar.tenant_id = job.tenant_id AND ar.id = job.analysis_revision_id
+         AND ar.bundled_emotion_job_id = job.id
+         AND af.tenant_id = job.tenant_id AND af.id = job.audio_file_id
+         AND af.runtime_mode = 'lightweight_local' AND af.source_state = 'available'`,
+      [this.tenantId, jobId],
+    );
+    return true;
   }
 }

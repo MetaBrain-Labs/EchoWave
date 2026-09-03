@@ -13,6 +13,17 @@ import { analysisFixture } from '@/test/workspaceFixtures';
 import { toAnalysisDetailView } from '../model';
 
 describe('toAnalysisDetailView invalid audio timeline', () => {
+  it('sorts scenes and segments by their source timestamps', () => {
+    const first = analysisFixture.scenes[0].segments[0];
+    const second = analysisFixture.scenes[0].segments[1];
+    const detail = toAnalysisDetailView({
+      ...analysisFixture,
+      scenes: [{ ...analysisFixture.scenes[0], segments: [second, first] }],
+    });
+
+    expect(detail.scenes[0].segments.map(({ id }) => id)).toEqual([first.id, second.id]);
+  });
+
   it('preserves every interval and places cross-scene gaps after the previous segment', () => {
     const firstSegment = {
       ...analysisFixture.scenes[0].segments[0],

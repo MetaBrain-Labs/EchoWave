@@ -28,11 +28,17 @@ import {
   GroupResourceLinksUpdateRequestSchema,
   GroupSettingsUpdateRequestSchema,
   AudioPostAnalysisStartResponseSchema,
+  AudioPostAnalysisStateSchema,
   AudioAnalysisStatusStreamEventSchema,
   BusinessAnalysisCitationSchema,
   DataSourceAudioStreamEventSchema,
   KnowledgeDocumentStreamEventSchema,
   AudioTranscriptConfirmationRequestSchema,
+  AudioRuntimeOverviewSchema,
+  AudioRuntimeUpdateRequestSchema,
+  AudioTranscriptionRunListResponseSchema,
+  AudioUploadSessionCreateRequestSchema,
+  SpeakerReviewResolutionResponseSchema,
 } from '../../dist/index.js';
 
 const firstId = '11111111-1111-4111-8111-111111111111';
@@ -40,6 +46,16 @@ const secondId = '22222222-2222-4222-8222-222222222222';
 const thirdId = '33333333-3333-4333-8333-333333333333';
 
 describe('workspace contracts', () => {
+  it('validates nonnegative speaker review resolution counts', () => {
+    assert.deepEqual(
+      SpeakerReviewResolutionResponseSchema.parse({ audioFileId: firstId, resolvedCount: 2 }),
+      { audioFileId: firstId, resolvedCount: 2 },
+    );
+    assert.throws(() =>
+      SpeakerReviewResolutionResponseSchema.parse({ audioFileId: firstId, resolvedCount: -1 }),
+    );
+  });
+
   it('trims valid group names and rejects empty or oversized names', () => {
     assert.deepEqual(GroupCreateRequestSchema.parse({ name: '  客户研究组  ' }), {
       name: '客户研究组',
@@ -275,6 +291,7 @@ describe('workspace contracts', () => {
 
   it('validates transcription preprocessing requests and capability responses', () => {
     assert.deepEqual(AudioTranscriptionStartRequestSchema.parse({}), {
+      includeAcousticEmotion: true,
       preprocessing: 'whole_file',
       segmentationMode: 'speaker_turn',
     });
@@ -294,13 +311,18 @@ describe('workspace contracts', () => {
         model: 'qwen-audio-3.0-asr-flash-filetrans',
         preprocessing: 'whole_file',
         segmentationMode: 'speaker_turn',
+        expectedSpeakerCount: 2,
       }),
       {
         model: 'qwen-audio-3.0-asr-flash-filetrans',
+        includeAcousticEmotion: true,
         preprocessing: 'whole_file',
         segmentationMode: 'speaker_turn',
+        expectedSpeakerCount: 2,
       },
     );
+    assert.throws(() => AudioTranscriptionStartRequestSchema.parse({ expectedSpeakerCount: 1 }));
+    assert.throws(() => AudioTranscriptionStartRequestSchema.parse({ expectedSpeakerCount: 101 }));
     assert.throws(() =>
       AudioTranscriptionStartRequestSchema.parse({
         model: 'unknown/model',
@@ -337,9 +359,86 @@ describe('workspace contracts', () => {
       input: { amount: 0.00022, currency: 'CNY', unit: 'second' },
       output: { amount: 0, currency: 'CNY', unit: 'included' },
     });
-    assert.equal(qwenFileTrans.timestampGranularity, 'segment');
+    assert.equal(qwenFileTrans.timestampGranularity, 'word');
     const gptTranscribe = { description: 'Chunk 范围回退' };
     assert.match(gptTranscribe.description, /Chunk 范围回退/);
+  });
+
+  it('defaults acoustic emotion on and validates runtime-mode lifecycle contracts', () => {
+    assert.equal(
+      AudioUploadSessionCreateRequestSchema.parse({
+        filename: 'meeting.wav',
+        mimeType: 'audio/wav',
+        sizeBytes: 1_024,
+      }).includeAcousticEmotion,
+      true,
+    );
+    const overview = AudioRuntimeOverviewSchema.parse({
+      mode: 'hybrid',
+      revision: 1,
+      retention: { originalRetentionDays: null, intermediateRetentionHours: 24 },
+      modes: [
+        { mode: 'hybrid', available: true, unavailableReason: null },
+        { mode: 'object_storage', available: false, unavailableReason: '缺少 OSS' },
+        { mode: 'lightweight_local', available: true, unavailableReason: null },
+      ],
+    });
+    assert.equal(overview.mode, 'hybrid');
+    assert.throws(() =>
+      AudioRuntimeUpdateRequestSchema.parse({
+        mode: 'object_storage',
+        expectedRevision: 1,
+        retention: { originalRetentionDays: 0, intermediateRetentionHours: 24 },
+      }),
+    );
+  });
+
+  it('keeps ASR run selection and acoustic-unavailable states revision scoped', () => {
+    const runs = AudioTranscriptionRunListResponseSchema.parse({
+      selectionMode: 'manual',
+      activeRevisionId: firstId,
+      items: [
+        {
+          id: firstId,
+          revision: 2,
+          status: 'ready',
+          model: 'qwen-audio-3.0-asr-flash-filetrans',
+          preprocessing: 'silero_vad',
+          includeAcousticEmotion: false,
+          active: true,
+          createdAt: '2026-09-03T08:00:00.000Z',
+          completedAt: '2026-09-03T08:10:00.000Z',
+        },
+      ],
+    });
+    assert.equal(runs.items[0].includeAcousticEmotion, false);
+    assert.equal(
+      AudioPostAnalysisStateSchema.parse({
+        state: 'not_requested',
+        reason: 'acoustic_emotion_not_enabled',
+      }).state,
+      'not_requested',
+    );
+    assert.equal(
+      AudioPostAnalysisStateSchema.parse({
+        state: 'source_unavailable',
+        reason: 'source_expired',
+      }).state,
+      'source_unavailable',
+    );
+    assert.equal(
+      AudioPostAnalysisStateSchema.parse({
+        state: 'failed',
+        jobId: firstId,
+        model: 'qwen3.5-omni-flash',
+        code: 'PROVIDER_ERROR',
+        message: '声学分析最终失败。',
+        retryable: false,
+        confirmationVersion: 1,
+        requiresSourceRemount: true,
+      }).requiresSourceRemount,
+      true,
+    );
   });
 
   it('validates data-source settings without accepting credentials', () => {
@@ -463,6 +562,7 @@ describe('workspace contracts', () => {
     assert.equal(AudioAnalysisDetailSchema.parse(detail).scenes.length, 1);
     assert.deepEqual(AudioAnalysisDetailSchema.parse(detail).transcription, {
       ...detail.transcription,
+      expectedSpeakerCount: null,
       preprocessingMode: 'whole_file',
       segmentationMode: 'readable',
       speakerIdentityScope: 'none',
@@ -509,6 +609,7 @@ describe('workspace contracts', () => {
         status: 'confirmed',
         currentVersion: 2,
         confirmedAt: '2026-08-27T10:00:30.000Z',
+        origin: 'user_confirmed',
       },
       postAnalysis: {
         emotion: {
@@ -585,16 +686,34 @@ describe('workspace contracts', () => {
     const request = AudioTranscriptConfirmationRequestSchema.parse({
       analysisRevisionId: firstId,
       baseVersion: 0,
-      segments: [{ segmentId: secondId, text: '  修正后的正文  ' }],
+      segments: [
+        {
+          sourceSegmentId: secondId,
+          parts: [
+            {
+              speakerKey: 'Speaker 0',
+              startWordIndex: 0,
+              endWordIndex: 1,
+              text: '  修正后的正文  ',
+            },
+          ],
+        },
+      ],
     });
-    assert.equal(request.segments[0].text, '修正后的正文');
+    assert.equal(request.segments[0].parts[0].text, '修正后的正文');
     assert.throws(() =>
       AudioTranscriptConfirmationRequestSchema.parse({
         analysisRevisionId: firstId,
         baseVersion: 1,
         segments: [
-          { segmentId: secondId, text: '甲' },
-          { segmentId: secondId, text: '乙' },
+          {
+            sourceSegmentId: secondId,
+            parts: [{ speakerKey: 'Speaker 0', startWordIndex: 0, endWordIndex: 1, text: '甲' }],
+          },
+          {
+            sourceSegmentId: secondId,
+            parts: [{ speakerKey: 'Speaker 0', startWordIndex: 0, endWordIndex: 1, text: '乙' }],
+          },
         ],
       }),
     );
@@ -602,7 +721,12 @@ describe('workspace contracts', () => {
       AudioTranscriptConfirmationRequestSchema.parse({
         analysisRevisionId: firstId,
         baseVersion: -1,
-        segments: [{ segmentId: secondId, text: '   ' }],
+        segments: [
+          {
+            sourceSegmentId: secondId,
+            parts: [{ speakerKey: 'Speaker 0', startWordIndex: 0, endWordIndex: 1, text: '   ' }],
+          },
+        ],
       }),
     );
   });

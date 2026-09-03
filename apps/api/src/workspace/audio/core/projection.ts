@@ -111,6 +111,10 @@ export function audioItem(row: Record<string, any>) {
     sharedFrom: row.shared_from ?? null,
     hasTranscript: Boolean(row.active_analysis_revision_id),
     status: audioStatus(row),
+    runtimeMode: row.runtime_mode,
+    sourceState: row.source_state,
+    sourceRecoveryState: row.source_recovery_state,
+    sourceDeleteAfter: row.source_delete_after ? iso(row.source_delete_after) : null,
   };
 }
 

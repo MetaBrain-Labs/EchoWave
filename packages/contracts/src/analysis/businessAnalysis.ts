@@ -104,7 +104,12 @@ export const AudioBusinessAnalysisStateSchema = z.object({
   settingsCurrent: z.boolean(),
   knowledgeCurrent: z.boolean(),
   error: z
-    .object({ code: z.string().min(1), message: z.string().min(1), retryable: z.boolean() })
+    .object({
+      code: z.string().min(1),
+      message: z.string().min(1),
+      retryable: z.boolean(),
+      reason: z.enum(['timeout', 'output_truncated', 'invalid_citation', 'other']).optional(),
+    })
     .nullable(),
   result: BusinessAnalysisResultSchema.nullable(),
 });

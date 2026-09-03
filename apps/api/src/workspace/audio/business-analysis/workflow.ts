@@ -24,8 +24,10 @@ import type {
 } from './repository.ts';
 import type { SalesAnalysisAgent } from './salesAnalysisAgent.ts';
 import { createBusinessAnalysisGraph } from './graph/graph.ts';
+import type { BusinessAnalysisNodeOptions } from './graph/nodes.ts';
 
 export { buildBusinessRetrievalQueries } from './graph/nodes.ts';
+export { buildBusinessAnalysisWindows } from './windowing.ts';
 
 type BusinessAnalysisWorkflowOptions = {
   repository: BusinessAnalysisRepository;
@@ -34,6 +36,7 @@ type BusinessAnalysisWorkflowOptions = {
   embeddingModel: string;
   agent: SalesAnalysisAgent;
   checkpointer: BaseCheckpointSaver;
+  saveWindowResult?: BusinessAnalysisNodeOptions['saveWindowResult'];
 };
 
 export type BusinessAnalysisWorkflowResult = {

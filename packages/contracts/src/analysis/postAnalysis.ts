@@ -15,6 +15,14 @@ export const AudioPostAnalysisTypeSchema = z.enum(['emotion', 'role']);
 export const AudioPostAnalysisStateSchema = z.discriminatedUnion('state', [
   z.object({ state: z.literal('idle') }),
   z.object({
+    state: z.literal('not_requested'),
+    reason: z.literal('acoustic_emotion_not_enabled'),
+  }),
+  z.object({
+    state: z.literal('source_unavailable'),
+    reason: z.enum(['source_cleaned', 'source_missing', 'source_expired']),
+  }),
+  z.object({
     state: z.enum(['queued', 'running']),
     jobId: EntityIdSchema,
     model: z.string().min(1),
@@ -36,6 +44,7 @@ export const AudioPostAnalysisStateSchema = z.discriminatedUnion('state', [
     message: z.string().min(1),
     retryable: z.boolean(),
     confirmationVersion: z.number().int().positive(),
+    requiresSourceRemount: z.boolean().optional(),
   }),
 ]);
 export const AudioEmotionLabelSchema = z.enum([

@@ -146,11 +146,19 @@ export class FfmpegAudioPreprocessor {
   }
 
   /** 根据 revision 中固定的预处理模式生成单个 MP3。 */
-  async createWholeFile(job: ClaimedAudioTranscription): Promise<WholeAudioFile> {
+  async createWholeFile(
+    job: ClaimedAudioTranscription,
+    sourcePathOverride?: string,
+  ): Promise<WholeAudioFile> {
     if (job.durationMs <= 0) {
       throw new AudioPreprocessingError('TRANSCRIPTION_FAILED', '音频时长无效，无法转写。');
     }
-    const sourcePath = resolveWithin(this.options.audioStorageDirectory, job.storageKey);
+    const sourcePath = sourcePathOverride
+      ? resolveWithin(
+          this.options.tempDirectory,
+          path.relative(this.options.tempDirectory, sourcePathOverride),
+        )
+      : resolveWithin(this.options.audioStorageDirectory, job.storageKey);
     const jobDirectory = resolveWithin(this.options.tempDirectory, job.revisionId);
     await rm(jobDirectory, { force: true, recursive: true });
     await mkdir(jobDirectory, { recursive: true });
@@ -427,7 +435,10 @@ export class AudioInputPreprocessor {
   }
 
   /** 创建 revision 明确选择的整文件转写输入。 */
-  async createWholeFile(job: ClaimedAudioTranscription): Promise<WholeAudioFile> {
+  async createWholeFile(
+    job: ClaimedAudioTranscription,
+    sourcePathOverride?: string,
+  ): Promise<WholeAudioFile> {
     if (!this.ffmpeg || !this.ffmpegAvailable) {
       throw new AudioPreprocessingError(
         'TRANSCODER_UNAVAILABLE',
@@ -437,7 +448,7 @@ export class AudioInputPreprocessor {
     if (job.preprocessingMode === 'silero_vad' && !this.sileroVadAvailable) {
       throw new VoiceActivityError('VAD_UNAVAILABLE', 'Silero VAD 当前不可用。', true);
     }
-    return this.ffmpeg.createWholeFile(job);
+    return this.ffmpeg.createWholeFile(job, sourcePathOverride);
   }
 
   /** 清理当前 revision 的全部临时文件。 */

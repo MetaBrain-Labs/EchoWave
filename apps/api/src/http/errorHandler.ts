@@ -46,7 +46,13 @@ export function installErrorHandlers(app: Hono): void {
       message = error.message;
     } else if (error instanceof WorkspaceRepositoryError) {
       status =
-        error.code === 'NOT_FOUND' ? 404 : error.code === 'TRANSCODER_UNAVAILABLE' ? 503 : 409;
+        error.code === 'BAD_REQUEST'
+          ? 400
+          : error.code === 'NOT_FOUND'
+            ? 404
+            : error.code === 'TRANSCODER_UNAVAILABLE'
+              ? 503
+              : 409;
       code = error.code;
       message = error.message;
     } else if (error instanceof AudioUploadValidationError) {

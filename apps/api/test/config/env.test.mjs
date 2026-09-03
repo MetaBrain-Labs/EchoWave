@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, it } from 'node:test';
 
@@ -103,6 +104,20 @@ describe('API environment', () => {
     assert.deepEqual(config.corsOrigins, ['http://localhost:8081', 'http://localhost:19006']);
     assert.deepEqual(config.settingsSecurity.trustedProxyCidrs, ['127.0.0.1/32', '::1/128']);
     assert.equal(config.settingsSecurity.credentialMasterKey.byteLength, 32);
+  });
+
+  it('resolves file paths relative to the API environment directory when loading a file', () => {
+    const config = readApiConfig(completeValues, path.resolve('apps/api'));
+    assert.equal(config.rag.audioStorageDir, path.resolve('apps/api/.data/audio'));
+    assert.equal(
+      config.rag.audioTranscriptionTempDir,
+      path.resolve('apps/api/.tmp/audio-transcription'),
+    );
+    assert.equal(config.rag.uploadTempDir, path.resolve('apps/api/.tmp/uploads'));
+    assert.equal(
+      config.settingsSecurity.localCredentialsFile,
+      path.resolve('apps/api/.data/secrets/credentials.yaml'),
+    );
   });
 
   it('allows OSS and FFmpeg to be omitted while embeddings remain configured', () => {

@@ -31,6 +31,18 @@ describe('AudioPostAnalysisWorker', () => {
     );
   });
 
+  it('orders unsorted confirmation segments by source time before creating windows', () => {
+    const windows = buildEmotionWindows([
+      makeSegment(2, 20_000),
+      makeSegment(0, 0),
+      makeSegment(1, 10_000),
+    ]);
+    assert.deepEqual(
+      windows[0].map(({ startMs }) => startMs),
+      [0, 10_000, 20_000],
+    );
+  });
+
   it('bisects invalid model output and atomically publishes every segment', async () => {
     const segments = [makeSegment(0), makeSegment(1), makeSegment(2), makeSegment(3)];
     let claimed = false;

@@ -254,6 +254,11 @@ describe('DefaultAudioService audio transcription', () => {
   it('rechecks FFmpeg before queueing the fixed whole-file route', async () => {
     const queued = [];
     const audioRepository = {
+      getAssetRuntime: async () => ({
+        mode: 'hybrid',
+        storageBackend: 'local_persistent',
+        storageBindingRevisionId: null,
+      }),
       queueTranscription: async (id, model, preprocessing, segmentationMode) => {
         queued.push({ id, model, preprocessing, segmentationMode });
         return { audioFileId: id, revisionId: sourceId, status: 'queued' };
@@ -297,6 +302,11 @@ describe('DefaultAudioService audio transcription', () => {
         : model,
     );
     const audioRepository = {
+      getAssetRuntime: async () => ({
+        mode: 'hybrid',
+        storageBackend: 'local_persistent',
+        storageBindingRevisionId: null,
+      }),
       queueTranscription: async (...args) => {
         queued.push(args);
         return { audioFileId: args[0], revisionId: sourceId, status: 'queued' };
@@ -329,6 +339,15 @@ describe('DefaultAudioService audio transcription', () => {
       'qwen-audio-3.0-asr-flash-filetrans',
       'whole_file',
       'speaker_turn',
+      null,
+      null,
+      null,
+      null,
+      'qwen-audio-3.0-asr-flash-filetrans',
+      'polling',
+      false,
+      null,
+      null,
     ]);
     await assert.rejects(
       () =>
@@ -348,7 +367,13 @@ describe('DefaultAudioService audio post-analysis', () => {
     const service = new DefaultAudioService(
       repository(),
       '.data/audio',
-      {},
+      {
+        getAssetRuntime: async () => ({
+          mode: 'hybrid',
+          storageBackend: 'local_persistent',
+          storageBindingRevisionId: null,
+        }),
+      },
       'qwen-audio-3.0-asr-flash-filetrans',
       { refreshFfmpegAvailability: async () => false },
       { queue: async (...args) => queued.push(args) },
