@@ -17,14 +17,20 @@ import { PostgresDataSourceRepository } from '../../workspace/data-sources/postg
 import { DefaultDataSourceService } from '../../workspace/data-sources/service.ts';
 import { PostgresGroupRepository } from '../../workspace/groups/postgresGroupRepository.ts';
 import { DefaultGroupService } from '../../workspace/groups/service.ts';
+import type { AudioRuntimeRepository } from '../../workspace/audio/runtime-mode/repository.ts';
 
 type WorkspaceRuntimeOptions = {
   config: ApiConfig;
   pool: DatabasePool;
+  audioRuntimeRepository?: AudioRuntimeRepository;
 };
 
 /** 创建工作区目录服务与音频核心读取 Repository。 */
-export function createWorkspaceRuntime({ config, pool }: WorkspaceRuntimeOptions) {
+export function createWorkspaceRuntime({
+  config,
+  pool,
+  audioRuntimeRepository,
+}: WorkspaceRuntimeOptions) {
   const groupRepository = new PostgresGroupRepository(
     pool,
     config.database.schema,
@@ -46,6 +52,9 @@ export function createWorkspaceRuntime({ config, pool }: WorkspaceRuntimeOptions
     dataSourceService: new DefaultDataSourceService(
       dataSourceRepository,
       config.rag.audioStorageDir,
+      audioRuntimeRepository
+        ? async () => (await audioRuntimeRepository.get()).mode
+        : async () => 'hybrid',
     ),
     audioCoreRepository,
   };

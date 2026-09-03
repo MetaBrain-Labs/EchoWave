@@ -88,6 +88,11 @@ describe('PostAnalysisRepository', () => {
                   storage_key: 'audio.mp3',
                   duration_ms: 1_000,
                   deleted_at: null,
+                  source_state: 'available',
+                  runtime_mode: 'hybrid',
+                  storage_backend: 'local_persistent',
+                  storage_binding_revision_id: null,
+                  bundled: false,
                 },
               ],
             };
@@ -161,20 +166,41 @@ describe('PostAnalysisRepository', () => {
   });
 
   it('records failure without changing either active pointer', async () => {
-    let statement = '';
+    const statements = [];
     const repository = new PostAnalysisRepository(
       {
         query: async (sql) => {
-          statement = sql;
-          return { rows: [] };
+          statements.push(sql);
+          return { rows: [{ status: 'failed' }] };
         },
       },
       'echowave',
       tenantId,
     );
-    await repository.fail(jobId, 'PROVIDER_ERROR', '暂时不可用', true);
-    assert.match(statement, /SET status = 'failed'/);
-    assert.doesNotMatch(statement, /active_emotion_job_id|active_role_job_id/);
+    await repository.fail(jobId, 'PROVIDER_ERROR', '无法重试', false);
+    assert.match(statements[0], /ELSE 'failed' END/);
+    assert.match(statements[1], /source_recovery_state = 'required'/);
+    assert.ok(
+      statements.every((statement) => !/active_emotion_job_id|active_role_job_id/.test(statement)),
+    );
+  });
+
+  it('requeues a retryable acoustic failure before starting source retention', async () => {
+    const calls = [];
+    const repository = new PostAnalysisRepository(
+      {
+        query: async (sql, values) => {
+          calls.push({ sql, values });
+          return { rows: [{ status: 'queued' }] };
+        },
+      },
+      'echowave',
+      tenantId,
+    );
+    assert.equal(await repository.fail(jobId, 'PROVIDER_ERROR', '暂时不可用', true), false);
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].sql, /retry_count < 2 THEN 'queued'/);
+    assert.doesNotMatch(calls[0].sql, /audio_files/);
   });
 
   it('turns an archived queued audio into a terminal safe failure', async () => {
@@ -202,6 +228,9 @@ describe('PostAnalysisRepository', () => {
               ],
             };
           }
+          if (/UPDATE .*audio_post_analysis_jobs/.test(sql)) {
+            return { rows: [{ status: 'failed' }] };
+          }
           return { rows: [] };
         },
       },
@@ -210,7 +239,9 @@ describe('PostAnalysisRepository', () => {
     );
 
     assert.equal(await repository.claim('emotion'), undefined);
-    const failure = calls.find(({ sql }) => /SET status = 'failed'/.test(sql));
+    const failure = calls.find(
+      ({ sql }) => /audio_post_analysis_jobs/.test(sql) && /RETURNING status/.test(sql),
+    );
     assert.equal(failure.values[2], 'CONFLICT');
     assert.equal(failure.values[4], false);
   });

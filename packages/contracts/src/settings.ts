@@ -31,6 +31,7 @@ export const AiCapabilitySchema = z.enum([
   'audio_speaker_review',
   'business_analysis',
   'audio_staging',
+  'audio_primary_storage',
 ]);
 
 const HttpsUrlSchema = z

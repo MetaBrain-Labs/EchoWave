@@ -76,15 +76,15 @@ Copy-Item apps/api/.env.example apps/api/.env
 Copy-Item apps/mobile/.env.example apps/mobile/.env
 ```
 
-`apps/api/.env` 中的 `AUDIO_STORAGE_DIR` 是手动上传音频的持久化目录。该目录应位于具备持久化磁盘的服务端路径，API 只把随机生成的相对 `storage_key` 写入数据库。生产或容器环境必须显式挂载并备份该目录；不要把它指向临时目录或纳入 Git。
+`apps/api/.env` 中的 `AUDIO_STORAGE_DIR` 同时承载混合模式的持久原音频和轻量模式的临时原音频；每条资产会在 PostgreSQL 固化创建时的运行模式和保留策略。生产或容器环境必须显式挂载该目录，混合模式还需要备份。对象存储模式的原音频直接进入租户配置的权威 OSS，不在该目录长期保存。三种模式、清理边界和接口见[音频运行模式](docs/audio-runtime-modes.md)。
 
 FFmpeg 是整文件转写的必需能力。配置 `FFMPEG_PATH` 后，API 启动时会非致命探测可执行文件；缺失或检查失败不会阻止知识库嵌入和 API 启动，但会禁用音频转写。临时单声道 MP3 写入 `AUDIO_TRANSCRIPTION_TEMP_DIR`，转写模型固定为 `qwen-audio-3.0-asr-flash-filetrans`，失败时不会自动切换模型。API 还会校验仓库内固定的 Silero VAD v6.2.1 ONNX 模型；VAD 不可用时仍可由用户明确选择整文件模式，服务端不会静默回退。
 
-按说话轮次分段使用北京地域 `qwen-audio-3.0-asr-flash-filetrans`。供应商端点、模型、通知方式和能力绑定由 PostgreSQL 配置中心管理；Credential 可选择 AES-256-GCM 加密入库，或由服务器本地只读 `credentials.yaml` 提供。服务端把本地权威音频转成单声道整文件后，临时上传到 `echowave/asr-staging/<tenant>/<revision>/`，使用 24 小时签名 GET URL 提交任务，并在成功或失败后尽力删除。OSS Bucket 必须另外配置该前缀的一天生命周期规则作为清理兜底。
+按说话轮次分段使用北京地域 `qwen-audio-3.0-asr-flash-filetrans`。供应商端点、模型、通知方式和能力绑定由 PostgreSQL 配置中心管理；Credential 可选择 AES-256-GCM 加密入库，或由服务器本地只读 `credentials.yaml` 提供。混合与对象模式通过 `audio_staging` OSS 短期中转预处理音频；轻量模式使用 DashScope Instant 临时文件区并提交 `oss://` 地址。三种路径都持久化 Provider 任务 ID 和 Checkpoint，恢复时不会重复提交已经创建的任务。
 
 `polling` 模式每次只查询一次 DashScope 任务状态，按 2/5/10/15 秒递增间隔把下次查询时间写入数据库并释放 worker，worker 按最近持久化截止时间精确唤醒，六小时后停止查询。所有后台任务在事务提交后通过 PostgreSQL `LISTEN/NOTIFY` 低延迟唤醒，15 秒扫描只作为通知丢失、监听重连和进程恢复的安全兜底；任务表与 `FOR UPDATE SKIP LOCKED` 仍是权威事实和领取机制。该监听固定占用连接池中的一个连接。`eventbridge` 模式的回调地址固定指向 `POST /api/webhooks/dashscope/async-task-finished`；在华北 2（北京）地域 default 事件总线创建规则，筛选 `source=acs.dashscope`、`type=dashscope:System:AsyncTaskFinish` 和模型后缀 `:qwen-audio-3.0-asr-flash-filetrans`，HTTP 目标选择“完整事件”并填写相同 Token。回调 URL 必须可由 EventBridge 通过公网或已配置 VPC 访问；反向代理后的外部完整 URL 必须与环境变量和 EventBridge 目标完全一致。`AUDIO_TRANSCRIPTION_MAX_IN_FLIGHT` 同时约束两种模式中等待供应商终态的任务数，首次部署建议保持 `1`。
 
-转写发布后，供应商正文作为不可变 Raw Transcript 保存，移动端允许用户逐片段修正并确认；每次确认生成完整、不可变的 Confirmed Transcript 版本。只有完成确认后才能独立启动情绪分析和角色识别，任务会固化排队时使用的确认版本和能力配置 revision。再次修正不会清除或自动重跑既有情绪、角色结果，用户可按需手动重跑。情绪窗口使用 `echowave/emotion-staging/` 前缀，同样需要 Bucket 一天生命周期规则兜底。
+转写发布后，供应商正文作为不可变 Raw Transcript 保存；同一音频允许多个 ASR Run，并可手动固定成功版本或自动跟随最新成功版本。混合与对象模式在用户确认 Transcript 后独立启动声学情绪和角色识别。轻量模式默认把声学情绪绑定到 ASR Run，内部按 `ASR → 声学情绪 → 清理` 执行；关闭开关后该 Run 返回 `not_requested`，ASR 成功即删除临时音频。角色识别和业务工作流始终只依赖当前选中的 Transcript。
 
 分析详情和数据源音频列表使用 `expo-audio` 播放原始上传文件。API 通过租户隔离的 `GET/HEAD /api/audio-files/:audioFileId/content` 提供媒体流并支持单段 HTTP Range；客户端不会接收 `storage_key` 或服务器路径。详情页顶部播放器提供真实进度、倍速和跳转，正文片段按钮只播放对应时间范围并在片段结束时自动暂停。播放器仅在当前页面前台运行，离页即停止，不启用后台或锁屏播放。
 
@@ -261,6 +261,6 @@ pnpm check
 
 ## 当前边界
 
-本里程碑不包含真实鉴权、转写修正统计或 Correction Dataset 导出、意图分析、跨录音业务聚合、情绪融合评分、精确声学数值测量、数据源同步、Redis、权威音频对象存储迁移、OCR、PDF、旧版 Office、多 API 实例部署或 EAS Build。OSS 只用于 DashScope 单次任务的短期中转；手动上传音频仍保存在 `AUDIO_STORAGE_DIR` 指定的单机持久化目录。知识入库、音频转写、两类后处理及业务分析 worker 均与 API 同进程，本地文件模式仅支持单 API 实例，横向扩容前必须迁移到权威对象存储和独立 worker。详见 [文档索引](./docs/README.md) 与 [架构说明](./docs/architecture.md)。
+本里程碑不包含真实鉴权、转写修正统计或 Correction Dataset 导出、意图分析、跨录音业务聚合、情绪融合评分、精确声学数值测量、数据源同步、Redis、OCR、PDF、旧版 Office、独立 Worker 部署或 EAS Build。API 和 Worker 仍在同一进程；混合与轻量模式的本地音频路径只支持单 API 主机，对象存储模式虽不依赖本地持久盘，但多实例前仍需把进程内 SSE 失效信号改为跨实例分发。详见 [文档索引](./docs/README.md)、[架构说明](./docs/architecture.md)与[音频运行模式](./docs/audio-runtime-modes.md)。
 
 在 Windows 上无法运行 iOS Simulator；iOS 本轮通过 Expo bundle 导出、TypeScript 检查和应用配置校验，最终原生运行验收需在 macOS/Xcode 环境完成。

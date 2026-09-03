@@ -234,6 +234,10 @@ export const analysisFixture: AudioAnalysisDetail = {
   title: '产品访谈分析',
   durationMs: 1_104_000,
   generatedAt: '2026-08-15T10:51:24.000Z',
+  runtimeMode: 'hybrid',
+  sourceState: 'available',
+  sourceRecoveryState: 'not_required',
+  sourceDeleteAfter: null,
   transcription: {
     expectedSpeakerCount: null,
     model: 'qwen-audio-3.0-asr-flash-filetrans',
@@ -255,6 +259,7 @@ export const analysisFixture: AudioAnalysisDetail = {
     status: 'confirmed',
     currentVersion: 1,
     confirmedAt: '2026-08-15T10:52:00.000Z',
+    origin: 'user_confirmed',
   },
   postAnalysis: {
     emotion: { state: 'idle' },

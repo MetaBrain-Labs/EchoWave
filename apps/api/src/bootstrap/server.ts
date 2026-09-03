@@ -34,6 +34,8 @@ const app = createApp(config, {
   groupService: ragRuntime.groupService,
   dataSourceService: ragRuntime.dataSourceService,
   audioService: ragRuntime.audioService,
+  audioRuntimeService: ragRuntime.audioRuntimeService,
+  audioUploadService: ragRuntime.audioUploadService,
   liveUpdateBroker: ragRuntime.liveUpdates,
   settingsService: ragRuntime.settingsService,
   trustedProxyCidrs: config.settingsSecurity.trustedProxyCidrs,
@@ -54,6 +56,7 @@ let startupCompleted = false;
 try {
   await startWorkersAfterListening(server, async () => {
     await ragRuntime.workerWakeup.start();
+    await ragRuntime.startSourceCleanup();
     ragRuntime.worker.start();
     await ragRuntime.transcriptionWorker.start();
     await Promise.all([

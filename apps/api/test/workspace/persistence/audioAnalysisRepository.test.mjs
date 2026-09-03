@@ -296,10 +296,111 @@ describe('AudioAnalysisRepository', () => {
     assert.equal(calls.at(-1).sql, 'COMMIT');
   });
 
+  it('auto-confirms lightweight publications and bundles acoustic emotion when requested', async () => {
+    const run = async (includeAcousticEmotion) => {
+      const calls = [];
+      const client = {
+        query: async (sql, values) => {
+          calls.push({ sql, values });
+          if (/INSERT INTO .*analysis_scenes/.test(sql)) return { rows: [{ id: revisionId }] };
+          if (/INSERT INTO .*transcript_segments/.test(sql)) return { rows: [{ id: audioFileId }] };
+          if (/INSERT INTO .*transcript_confirmations/.test(sql)) {
+            return { rows: [{ id: '60000000-0000-4000-8000-000000000001' }] };
+          }
+          if (/INSERT INTO .*audio_post_analysis_jobs/.test(sql)) {
+            return { rows: [{ id: '70000000-0000-4000-8000-000000000001' }] };
+          }
+          if (/UPDATE .*audio_files/.test(sql)) return { rowCount: 1, rows: [{ id: audioFileId }] };
+          return { rows: [], rowCount: 1 };
+        },
+        release: () => {},
+      };
+      const repository = new AudioAnalysisRepository(
+        { connect: async () => client },
+        'echowave',
+        tenantId,
+      );
+      await repository.publishTranscription(
+        {
+          audioFileId,
+          durationMs: 1_000,
+          mimeType: 'audio/wav',
+          preprocessingManifest: { skippedIntervals: [] },
+          preprocessingMode: 'silero_vad',
+          revisionId,
+          revisionNo: 1,
+          sizeBytes: 1_000,
+          storageKey: 'stored.wav',
+          title: '轻量录音',
+          originalFilename: 'meeting.wav',
+          ingestionRunId: null,
+          model: 'qwen-audio-3.0-asr-flash-filetrans',
+          provider: 'dashscope',
+          segmentationMode: 'speaker_turn',
+          dataSource: null,
+          runtimeMode: 'lightweight_local',
+          includeAcousticEmotion,
+          bundledEmotionBindingRevisionId: includeAcousticEmotion
+            ? '80000000-0000-4000-8000-000000000001'
+            : null,
+          bundledEmotionModel: includeAcousticEmotion ? 'qwen3.5-omni-flash' : null,
+        },
+        [
+          {
+            businessRole: 'unknown',
+            emotion: 'unknown',
+            endMs: 900,
+            speakerKey: 'Speaker 0',
+            startMs: 0,
+            text: '您好',
+            words: [],
+          },
+        ],
+        {
+          language: 'zh',
+          diarizationRequested: true,
+          diarizationObserved: false,
+          responseGranularity: 'chunk',
+          segmentationMode: 'speaker_turn',
+          speakerIdentityScope: 'none',
+        },
+      );
+      return calls;
+    };
+
+    const bundledCalls = await run(true);
+    assert.equal(
+      bundledCalls.filter(({ sql }) => /INSERT INTO .*transcript_confirmations/.test(sql)).length,
+      1,
+    );
+    assert.equal(
+      bundledCalls.filter(({ sql }) => /INSERT INTO .*audio_post_analysis_jobs/.test(sql)).length,
+      1,
+    );
+    assert.ok(bundledCalls.some(({ sql }) => /active_transcript_confirmation_id = \$3/.test(sql)));
+    assert.ok(
+      bundledCalls.some(({ sql }) =>
+        /segment\.id, segment\.segment_index, segment\.speaker_key/.test(sql),
+      ),
+    );
+
+    const noEmotionCalls = await run(false);
+    assert.equal(
+      noEmotionCalls.filter(({ sql }) => /INSERT INTO .*audio_post_analysis_jobs/.test(sql)).length,
+      0,
+    );
+    assert.ok(noEmotionCalls.some(({ sql }) => /cleanup_status = 'pending'/.test(sql)));
+  });
+
   it('marks only the failed revision and never updates audio_files', async () => {
     const calls = [];
     const repository = new AudioAnalysisRepository(
-      { query: async (sql, values) => (calls.push({ sql, values }), { rows: [] }) },
+      {
+        query: async (sql, values) => (
+          calls.push({ sql, values }),
+          { rows: [{ status: 'failed' }] }
+        ),
+      },
       'echowave',
       tenantId,
     );
@@ -338,6 +439,60 @@ describe('AudioAnalysisRepository', () => {
     assert.match(calls[0].sql, /error_details = \$6::jsonb/);
     assert.equal(JSON.parse(calls[0].values[5]).category, 'timeout');
     assert.doesNotMatch(calls[0].sql, /audio_files/);
+  });
+
+  it('requeues retryable failures without deleting lightweight source state', async () => {
+    const calls = [];
+    const repository = new AudioAnalysisRepository(
+      {
+        query: async (sql, values) => {
+          calls.push({ sql, values });
+          return { rows: [{ status: 'queued' }] };
+        },
+      },
+      'echowave',
+      tenantId,
+    );
+    const finalFailure = await repository.failTranscription(
+      {
+        audioFileId,
+        revisionId,
+        runtimeMode: 'lightweight_local',
+      },
+      'MODEL_TIMEOUT',
+      '暂时超时。',
+      true,
+    );
+    assert.equal(finalFailure, false);
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].sql, /provider_task_id IS NULL THEN 'queued'/);
+    assert.match(calls[0].sql, /THEN provider_terminal_result_url ELSE NULL/);
+  });
+
+  it('requires a verified source remount after a terminal lightweight failure', async () => {
+    const calls = [];
+    const repository = new AudioAnalysisRepository(
+      {
+        query: async (sql, values) => {
+          calls.push({ sql, values });
+          return calls.length === 1 ? { rows: [{ status: 'failed' }] } : { rows: [] };
+        },
+      },
+      'echowave',
+      tenantId,
+    );
+    assert.equal(
+      await repository.failTranscription(
+        { audioFileId, revisionId, runtimeMode: 'lightweight_local' },
+        'PROVIDER_ERROR',
+        '最终失败。',
+        false,
+      ),
+      true,
+    );
+    assert.equal(calls.length, 2);
+    assert.match(calls[1].sql, /source_recovery_state = 'required'/);
+    assert.match(calls[1].sql, /interval '24 hours'/);
   });
 
   it('persists resumable provider task state and clears only the temporary object key', async () => {

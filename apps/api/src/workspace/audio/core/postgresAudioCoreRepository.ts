@@ -38,20 +38,29 @@ export class PostgresAudioCoreRepository implements AudioCoreRepository {
 
   async getAudioPlaybackSource(audioFileId: string): Promise<AudioPlaybackSource> {
     const result = await this.pool.query(
-      `SELECT storage_key, mime_type, original_filename, upload_status
+      `SELECT storage_key, mime_type, original_filename, upload_status, size_bytes,
+              source_state, storage_backend, storage_binding_revision_id, updated_at
        FROM ${this.table('audio_files')}
        WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
       [this.tenantId, audioFileId],
     );
     const row = result.rows[0];
     if (!row) throw new WorkspaceRepositoryError('NOT_FOUND', '音频不存在或已归档。');
-    if (row.upload_status !== 'ready' || !row.storage_key) {
+    if (row.source_state !== 'available') {
+      throw new WorkspaceRepositoryError('CONFLICT', '源音频未保留，当前无法播放。');
+    }
+    if (row.upload_status !== 'ready' || !row.storage_key || row.size_bytes === null) {
       throw new WorkspaceRepositoryError('CONFLICT', '音频尚未完成上传，当前无法播放。');
     }
     return {
       storageKey: String(row.storage_key),
       mimeType: String(row.mime_type ?? 'application/octet-stream'),
       originalFilename: String(row.original_filename ?? 'audio'),
+      sizeBytes: Number(row.size_bytes),
+      sourceState: row.source_state,
+      storageBackend: row.storage_backend,
+      storageBindingRevisionId: row.storage_binding_revision_id ?? null,
+      updatedAt: new Date(row.updated_at),
     };
   }
 
@@ -171,9 +180,11 @@ export class PostgresAudioCoreRepository implements AudioCoreRepository {
               ar.transcription_model, ar.settings_snapshot,
               ar.active_emotion_job_id, ar.active_role_job_id,
               ar.active_transcript_confirmation_id,
+              ar.include_acoustic_emotion, ar.bundled_emotion_job_id,
               ar.speaker_review_resolved_at,
-              tc.version_no AS confirmation_version, tc.confirmed_at,
-              af.title, coalesce(af.duration_ms, 0)::bigint AS duration_ms
+              tc.version_no AS confirmation_version, tc.confirmed_at, tc.origin AS confirmation_origin,
+              af.title, coalesce(af.duration_ms, 0)::bigint AS duration_ms,
+              af.runtime_mode, af.source_state, af.source_recovery_state, af.source_delete_after
        FROM ${this.table('audio_files')} af
        JOIN ${this.table('audio_analysis_revisions')} ar
          ON ar.tenant_id = af.tenant_id AND ar.id = af.active_analysis_revision_id
@@ -231,11 +242,11 @@ export class PostgresAudioCoreRepository implements AudioCoreRepository {
            ON s.tenant_id = raw.tenant_id AND s.id = raw.scene_id
          LEFT JOIN ${this.table('audio_post_analysis_jobs')} ej
            ON ej.tenant_id = confirmed.tenant_id AND ej.id = $2
-          AND ej.transcript_confirmation_id = confirmed.transcript_confirmation_id
          LEFT JOIN ${this.table('segment_emotion_results')} er
            ON er.tenant_id = confirmed.tenant_id AND er.job_id = ej.id
-          AND er.transcript_confirmation_id = confirmed.transcript_confirmation_id
-          AND er.confirmed_segment_id = confirmed.confirmed_segment_id
+          AND er.confirmed_segment_id IN (
+            confirmed.confirmed_segment_id, confirmed.source_transcript_segment_id
+          )
          LEFT JOIN ${this.table('audio_post_analysis_jobs')} rj
            ON rj.tenant_id = confirmed.tenant_id AND rj.id = $3
           AND rj.transcript_confirmation_id = confirmed.transcript_confirmation_id
@@ -243,7 +254,7 @@ export class PostgresAudioCoreRepository implements AudioCoreRepository {
            ON rr.tenant_id = confirmed.tenant_id AND rr.job_id = rj.id
           AND rr.speaker_key = confirmed.speaker_key
          WHERE confirmed.tenant_id = $1 AND confirmed.transcript_confirmation_id = $4
-         ORDER BY s.scene_index, confirmed.part_index`,
+         ORDER BY s.scene_index, confirmed.start_ms, confirmed.end_ms, confirmed.part_index`,
         [
           this.tenantId,
           row.active_emotion_job_id,
@@ -286,9 +297,18 @@ export class PostgresAudioCoreRepository implements AudioCoreRepository {
          JOIN ${this.table('transcript_confirmations')} tc
            ON tc.tenant_id = job.tenant_id AND tc.id = job.transcript_confirmation_id
          WHERE job.tenant_id = $1 AND job.analysis_revision_id = $2
-           AND job.transcript_confirmation_id = $3
+           AND (
+             job.id = $3 OR job.id = $4 OR job.id = $5 OR job.transcript_confirmation_id = $6
+           )
          ORDER BY job.analysis_type, job.created_at DESC`,
-        [this.tenantId, row.id, row.active_transcript_confirmation_id],
+        [
+          this.tenantId,
+          row.id,
+          row.active_emotion_job_id,
+          row.active_role_job_id,
+          row.bundled_emotion_job_id,
+          row.active_transcript_confirmation_id,
+        ],
       ),
     ]);
 
@@ -477,14 +497,40 @@ export class PostgresAudioCoreRepository implements AudioCoreRepository {
 
     const postAnalysisState = (type: 'emotion' | 'role') => {
       const job = postAnalysisJobs.rows.find((item) => item.analysis_type === type);
-      if (!job) return { state: 'idle' as const };
+      if (!job) {
+        if (
+          type === 'emotion' &&
+          row.runtime_mode === 'lightweight_local' &&
+          !row.include_acoustic_emotion
+        ) {
+          return {
+            state: 'not_requested' as const,
+            reason: 'acoustic_emotion_not_enabled' as const,
+          };
+        }
+        if (type === 'emotion' && row.source_state !== 'available') {
+          return {
+            state: 'source_unavailable' as const,
+            reason:
+              row.runtime_mode === 'object_storage'
+                ? ('source_expired' as const)
+                : row.source_state === 'cleaned'
+                  ? ('source_cleaned' as const)
+                  : ('source_missing' as const),
+          };
+        }
+        return { state: 'idle' as const };
+      }
       if (job.status === 'queued' || job.status === 'running') {
         return {
           state: job.status,
           jobId: job.id,
           model: job.model,
           progress: integer(job.progress),
-          confirmationVersion: integer(job.confirmation_version),
+          confirmationVersion:
+            type === 'emotion' && String(job.id) === String(row.bundled_emotion_job_id)
+              ? integer(row.confirmation_version)
+              : integer(job.confirmation_version),
         };
       }
       if (job.status === 'ready') {
@@ -493,7 +539,10 @@ export class PostgresAudioCoreRepository implements AudioCoreRepository {
           jobId: job.id,
           model: job.model,
           completedAt: iso(job.completed_at),
-          confirmationVersion: integer(job.confirmation_version),
+          confirmationVersion:
+            type === 'emotion' && String(job.id) === String(row.bundled_emotion_job_id)
+              ? integer(row.confirmation_version)
+              : integer(job.confirmation_version),
         };
       }
       return {
@@ -503,7 +552,15 @@ export class PostgresAudioCoreRepository implements AudioCoreRepository {
         code: String(job.error_code ?? 'ANALYSIS_FAILED'),
         message: String(job.error_message ?? '分析失败。'),
         retryable: Boolean(job.error_retryable),
-        confirmationVersion: integer(job.confirmation_version),
+        confirmationVersion:
+          type === 'emotion' && String(job.id) === String(row.bundled_emotion_job_id)
+            ? integer(row.confirmation_version)
+            : integer(job.confirmation_version),
+        requiresSourceRemount:
+          type === 'emotion' &&
+          row.runtime_mode === 'lightweight_local' &&
+          String(job.id) === String(row.bundled_emotion_job_id) &&
+          row.source_recovery_state === 'required',
       };
     };
 
@@ -514,6 +571,10 @@ export class PostgresAudioCoreRepository implements AudioCoreRepository {
       title: row.title,
       durationMs: integer(row.duration_ms),
       generatedAt: iso(row.published_at),
+      runtimeMode: row.runtime_mode,
+      sourceState: row.source_state,
+      sourceRecoveryState: row.source_recovery_state,
+      sourceDeleteAfter: row.source_delete_after ? iso(row.source_delete_after) : null,
       transcription: {
         model: row.transcription_model,
         language: typeof settings.language === 'string' ? settings.language : 'undetermined',
@@ -567,6 +628,10 @@ export class PostgresAudioCoreRepository implements AudioCoreRepository {
             status: 'confirmed',
             currentVersion: integer(row.confirmation_version),
             confirmedAt: iso(row.confirmed_at),
+            origin:
+              row.confirmation_origin === 'system_raw_snapshot'
+                ? 'system_raw_snapshot'
+                : 'user_confirmed',
           }
         : { status: 'pending', currentVersion: 0, confirmedAt: null },
       postAnalysis: {

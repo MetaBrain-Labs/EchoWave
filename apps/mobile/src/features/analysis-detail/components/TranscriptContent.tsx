@@ -84,6 +84,7 @@ function SegmentView({
   playbackDisabled,
   playbackLoading,
   playbackPlaying,
+  reviewPlaybackAvailable,
   resolvingReviewFinding,
   segment,
   speakerDisplayName,
@@ -105,6 +106,7 @@ function SegmentView({
   playbackDisabled: boolean;
   playbackLoading: boolean;
   playbackPlaying: boolean;
+  reviewPlaybackAvailable: boolean;
   resolvingReviewFinding?: string;
   segment: TranscriptSegment;
   speakerDisplayName: string;
@@ -293,12 +295,14 @@ function SegmentView({
                     ) : null}
                     <Text style={styles.reviewReason}>{finding.explanation}</Text>
                     <View style={styles.reviewActions}>
-                      <Pressable
-                        onPress={() => onPlayFinding(segment, boundary)}
-                        style={styles.reviewAction}
-                      >
-                        <Text style={styles.reviewActionText}>播放边界前后</Text>
-                      </Pressable>
+                      {reviewPlaybackAvailable ? (
+                        <Pressable
+                          onPress={() => onPlayFinding(segment, boundary)}
+                          style={styles.reviewAction}
+                        >
+                          <Text style={styles.reviewActionText}>播放边界前后</Text>
+                        </Pressable>
+                      ) : null}
                       {canSplit ? (
                         <Pressable
                           onPress={() => onSplit(segment, boundary)}
@@ -396,6 +400,7 @@ export function TranscriptContent({
   segmentPlaybackDisabled,
   segmentPlaybackLoading,
   segmentPlaybackPlaying,
+  reviewPlaybackAvailable,
   selectedSegmentIds,
 }: {
   confirming: boolean;
@@ -422,6 +427,7 @@ export function TranscriptContent({
   segmentPlaybackDisabled: boolean;
   segmentPlaybackLoading: boolean;
   segmentPlaybackPlaying: boolean;
+  reviewPlaybackAvailable: boolean;
   selectedSegmentIds: readonly string[];
 }) {
   const [skipInvalid, setSkipInvalid] = useState(false);
@@ -482,6 +488,8 @@ export function TranscriptContent({
   const rawSpeakerCount = new Set(
     detail.rawScenes.flatMap((scene) => scene.segments.map((segment) => segment.speakerKey)),
   ).size;
+  const systemConfirmed =
+    confirmation.status === 'confirmed' && confirmation.origin === 'system_raw_snapshot';
 
   return (
     <ScrollView
@@ -494,12 +502,16 @@ export function TranscriptContent({
         <View style={styles.confirmationCopy}>
           <Text style={styles.confirmationTitle}>
             {confirmation.status === 'confirmed'
-              ? `已确认转写 v${confirmation.currentVersion}`
+              ? systemConfirmed
+                ? `轻量本地已自动确认 v${confirmation.currentVersion}`
+                : `已确认转写 v${confirmation.currentVersion}`
               : '转写待确认'}
           </Text>
           <Text style={styles.confirmationDescription}>
             {confirmation.status === 'confirmed'
-              ? `确认于 ${new Date(confirmation.confirmedAt).toLocaleString()}，后续分析使用当前确认版。`
+              ? systemConfirmed
+                ? '转写完成后已自动生成确认快照，后续分析可直接使用；如需调整可继续修正。'
+                : `确认于 ${new Date(confirmation.confirmedAt).toLocaleString()}，后续分析使用当前确认版。`
               : '请检查正文并确认；确认前不能开始情绪分析或角色识别。'}
           </Text>
         </View>
@@ -682,6 +694,7 @@ export function TranscriptContent({
                     playbackDisabled={segmentPlaybackDisabled}
                     playbackLoading={segmentPlaybackLoading && playingSegmentId === item.segment.id}
                     playbackPlaying={segmentPlaybackPlaying && playingSegmentId === item.segment.id}
+                    reviewPlaybackAvailable={reviewPlaybackAvailable}
                     resolvingReviewFinding={resolvingReviewFinding}
                     segment={item.segment}
                     speakerDisplayName={speakerDisplayNames.get(item.segment.speakerKey) ?? '发言'}

@@ -11,12 +11,9 @@
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter, type Href } from 'expo-router';
-import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { ServiceStatusCard } from '@/features/system-status/ServiceStatusCard';
-import { settingsApi } from '@/shared/api/settingsApi';
 import {
   colors,
   fontFamilies,
@@ -27,50 +24,62 @@ import {
 } from '@/shared/theme/tokens';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
 
-/** 组合更多页面说明与 API 服务状态。 */
+const navigationCards: readonly {
+  accessibilityLabel: string;
+  description: string;
+  href: Href;
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+}[] = [
+  {
+    accessibilityLabel: '打开服务状态',
+    description: '检查 API 连接、数据库和基础服务可用性。',
+    href: '/service-status' as Href,
+    icon: 'pulse-outline',
+    title: '服务状态',
+  },
+  {
+    accessibilityLabel: '打开 AI 配置',
+    description: '管理模型供应商、能力绑定和安全凭据。',
+    href: '/settings' as Href,
+    icon: 'options-outline',
+    title: 'AI 配置',
+  },
+  {
+    accessibilityLabel: '打开运行模式',
+    description: '查看或切换混合、对象存储与轻量本地模式。',
+    href: '/audio-runtime' as Href,
+    icon: 'layers-outline',
+    title: '运行模式',
+  },
+];
+
+/** 将“更多”页面渲染为三个统一的导航入口。 */
 export default function MoreScreen() {
   const router = useRouter();
-  const [security, setSecurity] = useState('正在检测连接安全性');
-
-  useEffect(() => {
-    settingsApi
-      .transport()
-      .then((value) =>
-        setSecurity(
-          value.secretSubmissionAllowed
-            ? '连接安全，可管理 Database Credential'
-            : '远程 HTTP，仅允许普通配置和 Local Credential alias',
-        ),
-      )
-      .catch(() => setSecurity('暂时无法读取配置健康状态'));
-  }, []);
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
-      <TopLevelPageHeader subtitle="查看服务连接状态和即将开放的能力。" title="更多" />
+      <TopLevelPageHeader subtitle="服务诊断、AI 配置与音频运行策略。" title="更多" />
       <ScrollView contentContainerStyle={styles.content} testID="more-scroll">
-        <ServiceStatusCard />
-        <Pressable
-          accessibilityLabel="打开 AI 配置"
-          accessibilityRole="button"
-          onPress={() => router.push('/settings' as Href)}
-          style={({ pressed }) => [styles.settingsCard, pressed && styles.pressed]}
-        >
-          <View style={styles.settingsIcon}>
-            <Ionicons color={colors.ink} name="options-outline" size={22} />
-          </View>
-          <View style={styles.settingsCopy}>
-            <Text style={styles.roadmapTitle}>AI 配置</Text>
-            <Text style={styles.roadmapText}>{security}</Text>
-          </View>
-          <Ionicons color={textColors.tertiary} name="chevron-forward" size={22} />
-        </Pressable>
-        <View style={styles.roadmapCard} testID="more-roadmap-card">
-          <Text style={styles.roadmapTitle}>后续接入</Text>
-          <Text style={styles.roadmapText}>
-            PostgreSQL 已承载知识库与音频工作区数据；Redis 仍保留为未来协调边界。
-          </Text>
-        </View>
+        {navigationCards.map((card) => (
+          <Pressable
+            accessibilityLabel={card.accessibilityLabel}
+            accessibilityRole="button"
+            key={card.title}
+            onPress={() => router.push(card.href)}
+            style={({ pressed }) => [styles.navigationCard, pressed && styles.pressed]}
+          >
+            <View style={styles.navigationIcon}>
+              <Ionicons color={colors.ink} name={card.icon} size={22} />
+            </View>
+            <View style={styles.navigationCopy}>
+              <Text style={styles.navigationTitle}>{card.title}</Text>
+              <Text style={styles.navigationText}>{card.description}</Text>
+            </View>
+            <Ionicons color={textColors.tertiary} name="chevron-forward" size={22} />
+          </Pressable>
+        ))}
       </ScrollView>
     </SafeAreaView>
   );
@@ -86,14 +95,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl,
     paddingHorizontal: spacing.md,
   },
-  roadmapCard: {
-    backgroundColor: colors.card,
-    borderColor: colors.divider,
-    borderRadius: radii.default,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: spacing.md,
-  },
-  settingsCard: {
+  navigationCard: {
     alignItems: 'center',
     backgroundColor: colors.card,
     borderColor: colors.divider,
@@ -103,7 +105,7 @@ const styles = StyleSheet.create({
     gap: spacing.base,
     padding: spacing.md,
   },
-  settingsIcon: {
+  navigationIcon: {
     alignItems: 'center',
     backgroundColor: colors.background,
     borderRadius: radii.round,
@@ -111,16 +113,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 40,
   },
-  settingsCopy: { flex: 1 },
+  navigationCopy: { flex: 1 },
   pressed: { opacity: 0.65 },
-  roadmapTitle: {
+  navigationTitle: {
     ...typography.heading2,
     color: textColors.primary,
     fontFamily: fontFamilies.sansBold,
     fontWeight: 'bold',
     marginBottom: spacing.xs,
   },
-  roadmapText: {
+  navigationText: {
     ...typography.description,
     color: textColors.secondary,
     fontFamily: fontFamilies.sans,

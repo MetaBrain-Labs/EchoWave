@@ -16,6 +16,11 @@ import {
   AudioTranscriptionSpeakerIdentityScopeSchema,
 } from '../audio.ts';
 import { EntityIdSchema } from '../common.ts';
+import {
+  AudioRuntimeModeSchema,
+  AudioSourceRecoveryStateSchema,
+  AudioSourceStateSchema,
+} from '../audio/runtime.ts';
 import { AudioBusinessAnalysisStateSchema } from './businessAnalysis.ts';
 import {
   AudioPostAnalysisStateSchema,
@@ -88,6 +93,7 @@ export const AudioTranscriptConfirmationStateSchema = z.discriminatedUnion('stat
     status: z.literal('confirmed'),
     currentVersion: z.number().int().positive(),
     confirmedAt: z.string().datetime(),
+    origin: z.enum(['user_confirmed', 'system_raw_snapshot']).default('user_confirmed'),
   }),
 ]);
 export const AudioTranscriptConfirmationSegmentInputSchema = z.object({
@@ -183,6 +189,10 @@ export const AudioAnalysisDetailSchema = z.object({
   title: z.string(),
   durationMs: z.number().int().nonnegative(),
   generatedAt: z.string().datetime(),
+  runtimeMode: AudioRuntimeModeSchema.default('hybrid'),
+  sourceState: AudioSourceStateSchema.default('available'),
+  sourceRecoveryState: AudioSourceRecoveryStateSchema.default('not_required'),
+  sourceDeleteAfter: z.string().datetime().nullable().default(null),
   transcription: AudioTranscriptionMetadataSchema,
   speakerReview: SpeakerReviewSchema.default({
     status: 'partial',

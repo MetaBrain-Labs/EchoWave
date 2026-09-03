@@ -42,10 +42,13 @@ import type { TranscriptConfirmationRepository } from './transcriptConfirmationR
 import type { AudioCoreRepository } from './repository.ts';
 import type { SettingsService } from '../../../settings/service.ts';
 import { SettingsError } from '../../../settings/types.ts';
+import { PrimaryOssStore } from '../runtime-mode/primaryOssStore.ts';
 
 /** HTTP 音频流接口可读取的本地文件描述。 */
 export type AudioPlaybackFile = {
-  absolutePath: string;
+  kind: 'local' | 'remote';
+  absolutePath?: string;
+  remoteUrl?: string;
   lastModified: Date;
   mimeType: string;
   originalFilename: string;
@@ -60,6 +63,11 @@ export interface AudioService {
     id: string,
     input: AudioTranscriptionStartRequest,
   ): Promise<AudioTranscriptionStartResponse>;
+  listAudioTranscriptions(id: string): ReturnType<AudioAnalysisRepository['listTranscriptions']>;
+  selectAudioTranscription(
+    id: string,
+    input: unknown,
+  ): ReturnType<AudioAnalysisRepository['selectTranscription']>;
   getAudioAnalysis(id: string, groupId?: string): Promise<AudioAnalysisDetail>;
   getAudioExecutionTrace(id: string, groupId?: string): Promise<AudioAiExecutionTraceResponse>;
   getAudioExecutionStreamSnapshot(
@@ -169,6 +177,34 @@ export class DefaultAudioService implements AudioService {
   /** 将租户内存储键解析为受控的实际音频文件，拒绝越界路径和缺失文件。 */
   async getAudioPlaybackFile(id: string): Promise<AudioPlaybackFile> {
     const source = await this.repository.getAudioPlaybackSource(id);
+    if (source.storageBackend === 'aliyun_oss') {
+      const primary = await this.settingsService.resolveCapability(
+        'audio_primary_storage',
+        source.storageBindingRevisionId ?? undefined,
+      );
+      if (
+        primary.provider.type !== 'aliyun_oss' ||
+        !('accessKeyId' in primary.provider.credential)
+      ) {
+        throw new WorkspaceRepositoryError('CONFLICT', '权威音频对象存储配置不兼容。');
+      }
+      const config = primary.provider.config as { bucket: string; region: string };
+      const store = new PrimaryOssStore({
+        accessKeyId: primary.provider.credential.accessKeyId,
+        accessKeySecret: primary.provider.credential.accessKeySecret,
+        bucket: config.bucket,
+        region: config.region,
+        tenantId: 'playback',
+      });
+      return {
+        kind: 'remote',
+        remoteUrl: store.signedGetUrl(source.storageKey),
+        lastModified: source.updatedAt,
+        mimeType: source.mimeType,
+        originalFilename: source.originalFilename,
+        sizeBytes: source.sizeBytes,
+      };
+    }
     const root = path.resolve(this.audioStorageDirectory);
     const absolutePath = path.resolve(root, source.storageKey);
     if (!absolutePath.startsWith(`${root}${path.sep}`)) {
@@ -180,6 +216,7 @@ export class DefaultAudioService implements AudioService {
         throw new WorkspaceRepositoryError('NOT_FOUND', '音频文件不存在。');
       }
       return {
+        kind: 'local',
         absolutePath,
         lastModified: details.mtime,
         mimeType: source.mimeType,
@@ -228,17 +265,30 @@ export class DefaultAudioService implements AudioService {
 
   async startAudioTranscription(id: string, input: AudioTranscriptionStartRequest) {
     const request = AudioTranscriptionStartRequestSchema.parse(input);
-    const [transcription, staging] = await Promise.all([
-      this.settingsService.resolveCapability('audio_transcription'),
-      this.settingsService.resolveCapability('audio_staging'),
-    ]);
+    const assetRuntime = await this.audioAnalysisRepository.getAssetRuntime(id);
+    const transcription = await this.settingsService.resolveCapability('audio_transcription');
+    const staging =
+      assetRuntime.mode === 'lightweight_local'
+        ? undefined
+        : await this.settingsService.resolveCapability('audio_staging');
     if (
       transcription.provider.type !== 'dashscope' ||
       !('apiKey' in transcription.provider.credential) ||
-      staging.provider.type !== 'aliyun_oss' ||
-      !('accessKeyId' in staging.provider.credential)
+      (staging &&
+        (staging.provider.type !== 'aliyun_oss' || !('accessKeyId' in staging.provider.credential)))
     ) {
       throw new WorkspaceRepositoryError('CONFLICT', '音频转写能力绑定与供应商类型不兼容。');
+    }
+    const includeAcousticEmotion =
+      assetRuntime.mode === 'lightweight_local' && request.includeAcousticEmotion;
+    const emotion = includeAcousticEmotion
+      ? await this.settingsService.resolveCapability('audio_emotion')
+      : undefined;
+    if (
+      emotion &&
+      (emotion.provider.type !== 'dashscope' || !('apiKey' in emotion.provider.credential))
+    ) {
+      throw new WorkspaceRepositoryError('CONFLICT', '声学情绪能力绑定与供应商类型不兼容。');
     }
     const model = (request.model ?? transcription.model) as AudioTranscriptionModel;
     let speakerReview: Awaited<ReturnType<SettingsService['resolveCapability']>> | undefined;
@@ -265,12 +315,23 @@ export class DefaultAudioService implements AudioService {
       segmentationMode,
       request.expectedSpeakerCount ?? null,
       transcription.revisionId,
-      staging.revisionId,
+      staging?.revisionId ?? null,
       speakerReview?.revisionId ?? null,
       speakerReview?.model ?? null,
       (transcription.provider.config as { asyncNotifyMode: 'polling' | 'eventbridge' })
         .asyncNotifyMode,
+      includeAcousticEmotion,
+      emotion?.revisionId ?? null,
+      emotion?.model ?? null,
     );
+  }
+
+  listAudioTranscriptions(id: string) {
+    return this.audioAnalysisRepository.listTranscriptions(id);
+  }
+
+  selectAudioTranscription(id: string, input: unknown) {
+    return this.audioAnalysisRepository.selectTranscription(id, input);
   }
 
   async getAudioAnalysis(id: string, groupId?: string) {
@@ -345,6 +406,15 @@ export class DefaultAudioService implements AudioService {
 
   /** 校验情绪分析运行依赖后，为当前 ASR 修订创建指定后置任务。 */
   async startAudioPostAnalysis(id: string, type: AudioPostAnalysisType) {
+    if (type === 'emotion') {
+      const assetRuntime = await this.audioAnalysisRepository.getAssetRuntime(id);
+      if (assetRuntime.mode === 'lightweight_local') {
+        throw new WorkspaceRepositoryError(
+          'CONFLICT',
+          '轻量本地模式的声学情绪只能在创建 ASR Run 时启用，不能稍后单独补跑。',
+        );
+      }
+    }
     const capability = type === 'emotion' ? 'audio_emotion' : 'audio_role';
     const resolved = await this.settingsService.resolveCapability(capability);
     let stagingRevisionId: string | null = null;

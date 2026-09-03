@@ -7,4 +7,5 @@
  * - 维持所有既有 Schema、常量和类型名称。
  */
 export * from './audio/processing.ts';
+export * from './audio/runtime.ts';
 export * from './audio/transcription.ts';

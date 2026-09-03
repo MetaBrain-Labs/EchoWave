@@ -126,6 +126,65 @@ describe('TranscriptConfirmationRepository', () => {
     assert.equal(response.version, 2);
   });
 
+  it('keeps a lightweight bundled emotion pointer when publishing a correction', async () => {
+    const emotionJobId = '66666666-6666-4666-8666-666666666666';
+    const calls = [];
+    const client = {
+      query: async (sql, values) => {
+        calls.push({ sql, values });
+        if (/SELECT ar.id AS revision_id/.test(sql)) {
+          return {
+            rows: [
+              {
+                revision_id: revisionId,
+                current_version: 1,
+                runtime_mode: 'lightweight_local',
+                active_emotion_job_id: emotionJobId,
+                bundled_emotion_job_id: emotionJobId,
+              },
+            ],
+          };
+        }
+        if (/SELECT id, speaker_key/.test(sql)) {
+          return {
+            rows: [
+              { id: firstSegmentId, speaker_key: 'Speaker 0', start_ms: 0, end_ms: 500, words: [] },
+            ],
+          };
+        }
+        if (/INSERT INTO .*transcript_confirmations/.test(sql)) {
+          return {
+            rows: [{ id: confirmationId, confirmed_at: new Date('2026-08-28T03:00:00.000Z') }],
+          };
+        }
+        return { rows: [], rowCount: 1 };
+      },
+      release: () => {},
+    };
+    const repository = new TranscriptConfirmationRepository(
+      { connect: async () => client },
+      'echowave',
+      tenantId,
+    );
+
+    await repository.confirm(audioId, {
+      analysisRevisionId: revisionId,
+      baseVersion: 1,
+      segments: [
+        {
+          sourceSegmentId: firstSegmentId,
+          parts: [
+            { speakerKey: 'Speaker 0', startWordIndex: 0, endWordIndex: 1, text: '修正后文本' },
+          ],
+        },
+      ],
+    });
+
+    const update = calls.find(({ sql }) => /active_emotion_job_id = CASE/.test(sql));
+    assert.ok(update);
+    assert.equal(update.values.at(-1), true);
+  });
+
   it('derives split time ranges from continuous server word boundaries', async () => {
     const calls = [];
     const client = {

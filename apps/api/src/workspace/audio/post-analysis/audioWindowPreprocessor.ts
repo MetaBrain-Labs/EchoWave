@@ -11,7 +11,7 @@
  * - 窗口边界由 worker 计算，本模块不解释转写语义。
  */
 import { spawn } from 'node:child_process';
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdir, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 export class AudioWindowPreprocessingError extends Error {
@@ -44,12 +44,18 @@ const runProcess: ProcessRunner = (executable, args) =>
         reject(
           new AudioWindowPreprocessingError(
             'ANALYSIS_PREPROCESSING_FAILED',
-            '情绪分析音频窗口生成失败。',
+            `情绪分析音频窗口生成失败（FFmpeg exit code: ${formatExitCode(code)}）。`,
             true,
           ),
         );
     });
   });
+
+function formatExitCode(code: number | null): string {
+  if (code === null) return 'unknown';
+  // Windows 会把 FFmpeg 返回的负 errno 展示为无符号 32 位整数，恢复成可读的有符号值。
+  return code > 0x7fffffff ? String(code - 0x100000000) : String(code);
+}
 
 function resolveWithin(root: string, child: string): string {
   const resolvedRoot = path.resolve(root);
@@ -85,6 +91,7 @@ export class AudioWindowPreprocessor {
     windowIndex: number;
     startMs: number;
     endMs: number;
+    sourcePathOverride?: string;
   }): Promise<string> {
     if (!this.options.ffmpegPath) {
       throw new AudioWindowPreprocessingError(
@@ -92,7 +99,20 @@ export class AudioWindowPreprocessor {
         'FFmpeg 尚未配置，无法执行情绪分析。',
       );
     }
-    const source = resolveWithin(this.options.audioStorageDirectory, input.storageKey);
+    const source = input.sourcePathOverride
+      ? resolveWithin(
+          this.options.tempDirectory,
+          path.relative(this.options.tempDirectory, input.sourcePathOverride),
+        )
+      : resolveWithin(this.options.audioStorageDirectory, input.storageKey);
+    const sourceStats = await stat(source).catch(() => undefined);
+    if (!sourceStats?.isFile() || sourceStats.size <= 0) {
+      throw new AudioWindowPreprocessingError(
+        'ANALYSIS_PREPROCESSING_FAILED',
+        '情绪分析源音频不存在或不可读。',
+        true,
+      );
+    }
     const directory = resolveWithin(this.options.tempDirectory, `post-analysis/${input.jobId}`);
     await mkdir(directory, { recursive: true });
     const output = resolveWithin(directory, `window-${input.windowIndex}.mp3`);
@@ -102,10 +122,10 @@ export class AudioWindowPreprocessor {
       'error',
       '-ss',
       (input.startMs / 1_000).toFixed(3),
-      '-to',
-      (input.endMs / 1_000).toFixed(3),
       '-i',
       source,
+      '-t',
+      ((input.endMs - input.startMs) / 1_000).toFixed(3),
       '-vn',
       '-ac',
       '1',
@@ -116,6 +136,14 @@ export class AudioWindowPreprocessor {
       '-y',
       output,
     ]);
+    const outputStats = await stat(output).catch(() => undefined);
+    if (!outputStats?.isFile() || outputStats.size <= 0) {
+      throw new AudioWindowPreprocessingError(
+        'ANALYSIS_PREPROCESSING_FAILED',
+        '情绪分析音频窗口生成失败（FFmpeg 未生成有效音频文件）。',
+        true,
+      );
+    }
     return output;
   }
 

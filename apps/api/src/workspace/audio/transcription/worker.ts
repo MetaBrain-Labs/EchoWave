@@ -33,9 +33,11 @@ import { AudioInputPreprocessor, AudioPreprocessingError } from './audioPreproce
 import type { DashScopeFileTranscription } from './dashScopeFileTranscription.ts';
 import { handleDashScopeTaskResult as persistDashScopeTaskResult } from './dashScopeTaskResult.ts';
 import { AudioTranscriptionProviderError } from './errors.ts';
-import type { OssStagingStore } from './ossStagingStore.ts';
+import type { AudioArtifactStore } from './audioArtifactStore.ts';
 import { restoreOriginalTimeline, VoiceActivityError } from './voiceActivity.ts';
 import { detectSpeakerReviewCandidates } from '../speaker-review/rules.ts';
+import type { PrimaryOssStore } from '../runtime-mode/primaryOssStore.ts';
+import path from 'node:path';
 
 const AUDIO_TRANSCRIPTION_LANGUAGE = 'zh' as const;
 const POLL_DELAYS_MS = [2_000, 5_000, 10_000, 15_000] as const;
@@ -46,19 +48,22 @@ type WorkerOptions = {
   dashScope?: DashScopeFileTranscription;
   maxInFlight: number;
   notifyMode?: 'polling' | 'eventbridge';
-  ossStaging?: OssStagingStore;
+  ossStaging?: AudioArtifactStore;
   resolveProviders?: (job: ClaimedAudioTranscription) => Promise<TranscriptionProviders>;
   preprocessor: AudioInputPreprocessor;
   repository: AudioAnalysisRepository;
   reporter?: AiExecutionReporter;
   liveUpdates?: LiveUpdateBroker;
   wakeup?: WorkerWakeupSource;
+  sourceTempDirectory?: string;
+  onTranscriptionPublished?: (job: ClaimedAudioTranscription) => Promise<void>;
 };
 
 type TranscriptionProviders = {
   dashScope: DashScopeFileTranscription;
   notifyMode: 'polling' | 'eventbridge';
-  ossStaging?: OssStagingStore;
+  ossStaging?: AudioArtifactStore;
+  primaryStorage?: PrimaryOssStore;
 };
 
 type WorkItem =
@@ -318,14 +323,34 @@ export class AudioTranscriptionWorker {
 
     let objectKey = job.providerArtifactKey;
     if (!objectKey) {
+      let materialized: Awaited<ReturnType<PrimaryOssStore['materialize']>> | undefined;
+      if (job.storageBackend === 'aliyun_oss') {
+        if (!providers.primaryStorage || !this.options.sourceTempDirectory) {
+          throw new AudioTranscriptionProviderError(
+            'MODEL_UNAVAILABLE',
+            '对象存储源音频读取能力未完整配置。',
+            false,
+          );
+        }
+        materialized = await providers.primaryStorage.materialize(
+          job.storageKey,
+          path.resolve(this.options.sourceTempDirectory, 'source-materialized', job.revisionId),
+          job.originalFilename ?? 'source-audio',
+        );
+      }
       const wholeFile = await runReportedStep(report, 'preprocess-whole-file', async () => {
         await repository.updateActivity(job, { stage: 'preprocessing', progress: 5 });
         this.notify(job, false);
-        return preprocessor.createWholeFile(job);
+        return preprocessor.createWholeFile(job, materialized?.path);
       });
-      objectKey = await runReportedStep(report, 'oss-staging-upload', () =>
-        ossStaging.upload(job.revisionId, wholeFile.path),
-      );
+      await repository.recordPreprocessing(job, wholeFile.manifest ?? null);
+      try {
+        objectKey = await runReportedStep(report, 'provider-staging-upload', () =>
+          ossStaging.upload(job.revisionId, wholeFile.path),
+        );
+      } finally {
+        await materialized?.cleanup().catch(() => undefined);
+      }
       job.preprocessingManifest = wholeFile.manifest ?? null;
       job.providerArtifactKey = objectKey;
       await repository.recordProviderArtifact(job, objectKey, job.preprocessingManifest);
@@ -497,6 +522,14 @@ export class AudioTranscriptionWorker {
     this.notify(job, true);
     await this.cleanupProviderArtifact(job, report, providers.ossStaging);
     await this.options.preprocessor.cleanup(job);
+    if (this.options.onTranscriptionPublished) {
+      try {
+        await this.options.onTranscriptionPublished(job);
+        report.recordStep({ name: 'source-cleanup', status: 'completed' });
+      } catch {
+        report.recordStep({ name: 'source-cleanup', status: 'failed' });
+      }
+    }
     report.recordOutput(segments);
     return segments;
   }
@@ -519,27 +552,38 @@ export class AudioTranscriptionWorker {
     const providerHttpStatus =
       error instanceof AudioTranscriptionProviderError ? error.providerHttpStatus : undefined;
     let persistenceError: unknown;
+    let finalFailure = true;
     try {
-      await this.options.repository.failTranscription(job, code, message, retryable, details);
-      this.notify(job, true);
+      finalFailure =
+        (await this.options.repository.failTranscription(
+          job,
+          code,
+          message,
+          retryable,
+          details,
+        )) !== false;
+      this.notify(job, finalFailure);
       report.recordStep({ name: 'persist-failure', status: 'completed' });
     } catch (reason) {
       persistenceError = reason;
       report.recordStep({ name: 'persist-failure', status: 'failed' });
     }
-    try {
-      await this.options.preprocessor.cleanup(job);
-      report.recordStep({ name: 'cleanup-failure', status: 'completed' });
-    } catch {
-      report.recordStep({ name: 'cleanup-failure', status: 'failed' });
+    if (finalFailure) {
+      try {
+        await this.options.preprocessor.cleanup(job);
+        report.recordStep({ name: 'cleanup-failure', status: 'completed' });
+      } catch {
+        report.recordStep({ name: 'cleanup-failure', status: 'failed' });
+      }
+      await this.cleanupProviderArtifact(job, report, providers?.ossStaging);
     }
-    await this.cleanupProviderArtifact(job, report, providers?.ossStaging);
     await report.finish({
       status: 'failed',
       error,
       metadata: {
         code,
         retryable,
+        retryScheduled: !finalFailure,
         details,
         durationMs: Date.now() - startedAt,
         ...(providerHttpStatus === undefined ? {} : { providerHttpStatus }),
@@ -551,11 +595,13 @@ export class AudioTranscriptionWorker {
           : {}),
       },
     });
-    console.error('Audio transcription phase failed', {
+    const log = finalFailure ? console.error : console.warn;
+    log('Audio transcription phase failed', {
       audioFileId: job.audioFileId,
       code,
       revisionId: job.revisionId,
       retryable,
+      retryScheduled: !finalFailure,
     });
     if (persistenceError) throw persistenceError;
   }
@@ -564,7 +610,7 @@ export class AudioTranscriptionWorker {
   private async cleanupProviderArtifact(
     job: ClaimedAudioTranscription,
     report: AiExecutionRecorder,
-    ossStaging?: OssStagingStore,
+    ossStaging?: AudioArtifactStore,
   ): Promise<void> {
     if (!job.providerArtifactKey || !ossStaging) return;
     try {

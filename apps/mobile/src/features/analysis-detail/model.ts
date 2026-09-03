@@ -12,7 +12,10 @@
  */
 import type {
   AudioAnalysisDetail,
+  AudioRuntimeMode,
   AudioPostAnalysisState,
+  AudioSourceRecoveryState,
+  AudioSourceState,
   AudioBusinessAnalysisState,
   BusinessAnalysisCitation,
   BusinessAnalysisTagCategory,
@@ -98,6 +101,10 @@ export type AnalysisDetailView = {
   transcriptConfirmation: AudioTranscriptConfirmationState;
   postAnalysis: { emotion: AudioPostAnalysisState; role: AudioPostAnalysisState };
   businessAnalysis: AudioBusinessAnalysisState;
+  runtimeMode: AudioRuntimeMode;
+  sourceState: AudioSourceState;
+  sourceRecoveryState: AudioSourceRecoveryState;
+  sourceDeleteAfter: string | null;
 };
 
 type TranscriptSceneDraft = Omit<TranscriptScene, 'timelineItems'>;
@@ -184,48 +191,52 @@ export function toAnalysisDetailView(detail: AudioAnalysisDetail): AnalysisDetai
       durationSeconds: Math.round((interval.endMs - interval.startMs) / 1_000),
     }));
   const mapScenes = (sourceScenes: typeof detail.scenes): TranscriptSceneDraft[] =>
-    sourceScenes.map((scene) => ({
-      id: scene.id,
-      title: scene.title,
-      startSeconds: scene.startMs / 1_000,
-      segments: scene.segments.map((segment) => ({
-        id: segment.id,
-        sourceSegmentId: segment.sourceSegmentId ?? segment.id,
-        speakerKey: segment.speakerKey,
-        speakerLabel: segment.speakerLabel,
-        businessRole: segment.businessRole,
-        emotion: segment.emotion,
-        roleAnalysis: segment.roleAnalysis ?? undefined,
-        emotionAnalysis: segment.emotionAnalysis ?? undefined,
-        startSeconds: segment.startMs / 1_000,
-        startWordIndex: segment.startWordIndex,
-        endWordIndex: segment.endWordIndex ?? Math.max(segment.words.length, 1),
-        endSeconds: segment.endMs / 1_000,
-        rawText: segment.rawText,
-        confirmedText: segment.confirmedText ?? undefined,
-        text: segment.confirmedText ?? segment.rawText,
-        words: segment.words,
-        reviewFindings: segment.reviewFindings,
-        aiTags: [
-          ...businessTags.filter((tag) => tag.evidenceSegmentIds.includes(segment.id)),
-          ...(businessTags.length === 0 && segment.aiTag
-            ? [
-                {
-                  id: segment.aiTag.id,
-                  category: 'custom' as const,
-                  customLabel: segment.aiTag.title,
-                  title: segment.aiTag.title,
-                  summary: segment.aiTag.summary,
-                  details: segment.aiTag.details,
-                  confidence: 100,
-                  evidenceSegmentIds: [segment.id],
-                  citations: [],
-                },
-              ]
-            : []),
-        ],
-      })),
-    }));
+    [...sourceScenes]
+      .sort((left, right) => left.startMs - right.startMs || left.index - right.index)
+      .map((scene) => ({
+        id: scene.id,
+        title: scene.title,
+        startSeconds: scene.startMs / 1_000,
+        segments: [...scene.segments]
+          .sort((left, right) => left.startMs - right.startMs || left.endMs - right.endMs)
+          .map((segment) => ({
+            id: segment.id,
+            sourceSegmentId: segment.sourceSegmentId ?? segment.id,
+            speakerKey: segment.speakerKey,
+            speakerLabel: segment.speakerLabel,
+            businessRole: segment.businessRole,
+            emotion: segment.emotion,
+            roleAnalysis: segment.roleAnalysis ?? undefined,
+            emotionAnalysis: segment.emotionAnalysis ?? undefined,
+            startSeconds: segment.startMs / 1_000,
+            startWordIndex: segment.startWordIndex,
+            endWordIndex: segment.endWordIndex ?? Math.max(segment.words.length, 1),
+            endSeconds: segment.endMs / 1_000,
+            rawText: segment.rawText,
+            confirmedText: segment.confirmedText ?? undefined,
+            text: segment.confirmedText ?? segment.rawText,
+            words: segment.words,
+            reviewFindings: segment.reviewFindings,
+            aiTags: [
+              ...businessTags.filter((tag) => tag.evidenceSegmentIds.includes(segment.id)),
+              ...(businessTags.length === 0 && segment.aiTag
+                ? [
+                    {
+                      id: segment.aiTag.id,
+                      category: 'custom' as const,
+                      customLabel: segment.aiTag.title,
+                      title: segment.aiTag.title,
+                      summary: segment.aiTag.summary,
+                      details: segment.aiTag.details,
+                      confidence: 100,
+                      evidenceSegmentIds: [segment.id],
+                      citations: [],
+                    },
+                  ]
+                : []),
+            ],
+          })),
+      }));
   const scenes = mapScenes(detail.scenes);
   const rawScenes = mapScenes(detail.rawScenes.length > 0 ? detail.rawScenes : detail.scenes);
   return {
@@ -241,6 +252,10 @@ export function toAnalysisDetailView(detail: AudioAnalysisDetail): AnalysisDetai
     transcriptConfirmation: detail.transcriptConfirmation,
     postAnalysis: detail.postAnalysis,
     businessAnalysis: detail.businessAnalysis,
+    runtimeMode: detail.runtimeMode,
+    sourceState: detail.sourceState,
+    sourceRecoveryState: detail.sourceRecoveryState,
+    sourceDeleteAfter: detail.sourceDeleteAfter,
     invalidSegments,
     scenes: attachTimelineItems(scenes, invalidSegments),
     rawScenes: attachTimelineItems(rawScenes, invalidSegments),

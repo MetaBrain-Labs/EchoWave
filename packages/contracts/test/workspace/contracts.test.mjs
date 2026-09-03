@@ -28,11 +28,16 @@ import {
   GroupResourceLinksUpdateRequestSchema,
   GroupSettingsUpdateRequestSchema,
   AudioPostAnalysisStartResponseSchema,
+  AudioPostAnalysisStateSchema,
   AudioAnalysisStatusStreamEventSchema,
   BusinessAnalysisCitationSchema,
   DataSourceAudioStreamEventSchema,
   KnowledgeDocumentStreamEventSchema,
   AudioTranscriptConfirmationRequestSchema,
+  AudioRuntimeOverviewSchema,
+  AudioRuntimeUpdateRequestSchema,
+  AudioTranscriptionRunListResponseSchema,
+  AudioUploadSessionCreateRequestSchema,
   SpeakerReviewResolutionResponseSchema,
 } from '../../dist/index.js';
 
@@ -286,6 +291,7 @@ describe('workspace contracts', () => {
 
   it('validates transcription preprocessing requests and capability responses', () => {
     assert.deepEqual(AudioTranscriptionStartRequestSchema.parse({}), {
+      includeAcousticEmotion: true,
       preprocessing: 'whole_file',
       segmentationMode: 'speaker_turn',
     });
@@ -309,6 +315,7 @@ describe('workspace contracts', () => {
       }),
       {
         model: 'qwen-audio-3.0-asr-flash-filetrans',
+        includeAcousticEmotion: true,
         preprocessing: 'whole_file',
         segmentationMode: 'speaker_turn',
         expectedSpeakerCount: 2,
@@ -355,6 +362,83 @@ describe('workspace contracts', () => {
     assert.equal(qwenFileTrans.timestampGranularity, 'word');
     const gptTranscribe = { description: 'Chunk 范围回退' };
     assert.match(gptTranscribe.description, /Chunk 范围回退/);
+  });
+
+  it('defaults acoustic emotion on and validates runtime-mode lifecycle contracts', () => {
+    assert.equal(
+      AudioUploadSessionCreateRequestSchema.parse({
+        filename: 'meeting.wav',
+        mimeType: 'audio/wav',
+        sizeBytes: 1_024,
+      }).includeAcousticEmotion,
+      true,
+    );
+    const overview = AudioRuntimeOverviewSchema.parse({
+      mode: 'hybrid',
+      revision: 1,
+      retention: { originalRetentionDays: null, intermediateRetentionHours: 24 },
+      modes: [
+        { mode: 'hybrid', available: true, unavailableReason: null },
+        { mode: 'object_storage', available: false, unavailableReason: '缺少 OSS' },
+        { mode: 'lightweight_local', available: true, unavailableReason: null },
+      ],
+    });
+    assert.equal(overview.mode, 'hybrid');
+    assert.throws(() =>
+      AudioRuntimeUpdateRequestSchema.parse({
+        mode: 'object_storage',
+        expectedRevision: 1,
+        retention: { originalRetentionDays: 0, intermediateRetentionHours: 24 },
+      }),
+    );
+  });
+
+  it('keeps ASR run selection and acoustic-unavailable states revision scoped', () => {
+    const runs = AudioTranscriptionRunListResponseSchema.parse({
+      selectionMode: 'manual',
+      activeRevisionId: firstId,
+      items: [
+        {
+          id: firstId,
+          revision: 2,
+          status: 'ready',
+          model: 'qwen-audio-3.0-asr-flash-filetrans',
+          preprocessing: 'silero_vad',
+          includeAcousticEmotion: false,
+          active: true,
+          createdAt: '2026-09-03T08:00:00.000Z',
+          completedAt: '2026-09-03T08:10:00.000Z',
+        },
+      ],
+    });
+    assert.equal(runs.items[0].includeAcousticEmotion, false);
+    assert.equal(
+      AudioPostAnalysisStateSchema.parse({
+        state: 'not_requested',
+        reason: 'acoustic_emotion_not_enabled',
+      }).state,
+      'not_requested',
+    );
+    assert.equal(
+      AudioPostAnalysisStateSchema.parse({
+        state: 'source_unavailable',
+        reason: 'source_expired',
+      }).state,
+      'source_unavailable',
+    );
+    assert.equal(
+      AudioPostAnalysisStateSchema.parse({
+        state: 'failed',
+        jobId: firstId,
+        model: 'qwen3.5-omni-flash',
+        code: 'PROVIDER_ERROR',
+        message: '声学分析最终失败。',
+        retryable: false,
+        confirmationVersion: 1,
+        requiresSourceRemount: true,
+      }).requiresSourceRemount,
+      true,
+    );
   });
 
   it('validates data-source settings without accepting credentials', () => {
@@ -525,6 +609,7 @@ describe('workspace contracts', () => {
         status: 'confirmed',
         currentVersion: 2,
         confirmedAt: '2026-08-27T10:00:30.000Z',
+        origin: 'user_confirmed',
       },
       postAnalysis: {
         emotion: {

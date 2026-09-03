@@ -115,6 +115,10 @@ export const AudioFileSummarySchema = z.object({
   sharedFrom: z.string().nullable(),
   hasTranscript: z.boolean(),
   status: AudioProcessingStatusSchema,
+  runtimeMode: z.enum(['hybrid', 'object_storage', 'lightweight_local']).optional(),
+  sourceState: z.enum(['available', 'cleaned', 'missing']).optional(),
+  sourceRecoveryState: z.enum(['not_required', 'required', 'verifying']).optional(),
+  sourceDeleteAfter: z.string().datetime().nullable().optional(),
 });
 export const AudioFileListResponseSchema = z.object({ items: z.array(AudioFileSummarySchema) });
 

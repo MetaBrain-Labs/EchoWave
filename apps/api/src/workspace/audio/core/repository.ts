@@ -17,6 +17,11 @@ export type AudioPlaybackSource = {
   mimeType: string;
   originalFilename: string;
   storageKey: string;
+  sizeBytes: number;
+  sourceState: 'available' | 'cleaned' | 'missing';
+  storageBackend: 'local_persistent' | 'local_ephemeral' | 'aliyun_oss';
+  storageBindingRevisionId: string | null;
+  updatedAt: Date;
 };
 
 /** 音频核心读取 Repository 端口。 */

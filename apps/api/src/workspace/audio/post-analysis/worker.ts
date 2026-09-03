@@ -27,7 +27,10 @@ import {
   PostAnalysisRepository,
   type PostAnalysisTranscriptSegment,
 } from './repository.ts';
-import type { OssStagingStore } from '../transcription/ossStagingStore.ts';
+import type { AudioArtifactStore } from '../transcription/audioArtifactStore.ts';
+import type { PrimaryOssStore } from '../runtime-mode/primaryOssStore.ts';
+import path from 'node:path';
+import { runReportedStep } from '../../../ai-runtime/reportedStep.ts';
 import {
   AudioWindowPreprocessingError,
   AudioWindowPreprocessor,
@@ -46,7 +49,12 @@ export function buildEmotionWindows(
 ): PostAnalysisTranscriptSegment[][] {
   const windows: PostAnalysisTranscriptSegment[][] = [];
   let current: PostAnalysisTranscriptSegment[] = [];
-  for (const segment of segments.filter(({ text }) => text.trim().length > 0)) {
+  // 确认快照的旧数据可能没有可靠的 part_index；声学窗口必须按原始时间轴排序，避免生成负的相对时间。
+  const orderedSegments = segments
+    .filter(({ text }) => text.trim().length > 0)
+    .slice()
+    .sort((left, right) => left.startMs - right.startMs || left.endMs - right.endMs);
+  for (const segment of orderedSegments) {
     const first = current[0];
     if (
       first &&
@@ -67,17 +75,20 @@ type WorkerOptions = {
   emotionAnalyzer?: QwenEmotionAnalyzer;
   roleRecognizer?: DeepSeekRoleRecognizer;
   preprocessor?: AudioWindowPreprocessor;
-  ossStaging?: OssStagingStore;
+  ossStaging?: AudioArtifactStore;
   resolveRuntime?: (job: ClaimedPostAnalysisJob) => Promise<PostAnalysisRuntime>;
   reporter?: AiExecutionReporter;
   liveUpdates?: LiveUpdateBroker;
   wakeup?: WorkerWakeupSource;
+  onEmotionPublished?: (job: ClaimedPostAnalysisJob) => Promise<void>;
+  sourceTempDirectory?: string;
 };
 
 type PostAnalysisRuntime = {
   emotionAnalyzer?: QwenEmotionAnalyzer;
   roleRecognizer?: DeepSeekRoleRecognizer;
-  ossStaging?: OssStagingStore;
+  ossStaging?: AudioArtifactStore;
+  primaryStorage?: PrimaryOssStore;
 };
 
 /** 由数据库通知优先唤醒、单并发执行一种后置分析任务。 */
@@ -189,9 +200,11 @@ export class AudioPostAnalysisWorker {
       const message = known ? error.message : '音频分析失败，请稍后重试。';
       const retryable = known ? error.retryable : true;
       let failurePersistenceError: unknown;
+      let finalFailure = true;
       try {
-        await this.options.repository.fail(job.id, code, message, retryable);
-        this.notify(job, true);
+        finalFailure =
+          (await this.options.repository.fail(job.id, code, message, retryable)) !== false;
+        this.notify(job, finalFailure);
       } catch (persistenceError) {
         // 数据库故障不得阻止模型失败报告落盘，二者各自保留诊断信号。
         failurePersistenceError = persistenceError;
@@ -202,6 +215,7 @@ export class AudioPostAnalysisWorker {
         metadata: {
           code,
           retryable,
+          retryScheduled: !finalFailure,
           durationMs: Date.now() - startedAt,
           failurePersistenceError,
         },
@@ -211,6 +225,7 @@ export class AudioPostAnalysisWorker {
         jobId: job.id,
         type: job.type,
         code,
+        retryScheduled: !finalFailure,
       });
     } finally {
       if (job.type === 'emotion' && this.options.preprocessor) {
@@ -255,16 +270,43 @@ export class AudioPostAnalysisWorker {
       emotionAnalyzer: runtime.emotionAnalyzer,
       ossStaging: runtime.ossStaging,
     };
+    let materialized: Awaited<ReturnType<PrimaryOssStore['materialize']>> | undefined;
+    if (job.storageBackend === 'aliyun_oss') {
+      if (!runtime.primaryStorage || !this.options.sourceTempDirectory) {
+        throw new PostAnalysisProviderError(
+          'MODEL_UNAVAILABLE',
+          '对象存储源音频读取能力未完整配置。',
+          false,
+        );
+      }
+      materialized = await runtime.primaryStorage.materialize(
+        job.storageKey,
+        path.resolve(this.options.sourceTempDirectory, 'emotion-source', job.id),
+        'source-audio',
+      );
+    }
     this.windowSequence = 0;
     const initialWindows = buildEmotionWindows(job.segments);
     const results: EmotionPublication[] = [];
-    for (const window of initialWindows) {
-      results.push(...(await this.analyzeEmotionWindow(job, window, report, emotionRuntime)));
-      await this.options.repository.updateProgress(
-        job.id,
-        5 + (results.length / job.segments.length) * 88,
-      );
-      this.notify(job, false);
+    try {
+      for (const window of initialWindows) {
+        results.push(
+          ...(await this.analyzeEmotionWindow(
+            job,
+            window,
+            report,
+            emotionRuntime,
+            materialized?.path,
+          )),
+        );
+        await this.options.repository.updateProgress(
+          job.id,
+          5 + (results.length / job.segments.length) * 88,
+        );
+        this.notify(job, false);
+      }
+    } finally {
+      await materialized?.cleanup().catch(() => undefined);
     }
     const unique = new Map(results.map((result) => [result.segmentId, result]));
     if (unique.size !== job.segments.length) {
@@ -277,6 +319,14 @@ export class AudioPostAnalysisWorker {
     await this.options.repository.updateProgress(job.id, 95);
     this.notify(job, false);
     await this.options.repository.publishEmotion(job, [...unique.values()]);
+    if (this.options.onEmotionPublished) {
+      try {
+        await this.options.onEmotionPublished(job);
+        report.recordStep({ name: 'source-cleanup', status: 'completed' });
+      } catch {
+        report.recordStep({ name: 'source-cleanup', status: 'failed' });
+      }
+    }
     this.notify(job, true);
     report.recordOutput([...unique.values()]);
   }
@@ -286,18 +336,29 @@ export class AudioPostAnalysisWorker {
     segments: PostAnalysisTranscriptSegment[],
     report: AiExecutionRecorder,
     runtime: Required<Pick<PostAnalysisRuntime, 'emotionAnalyzer' | 'ossStaging'>>,
+    sourcePathOverride?: string,
   ): Promise<EmotionPublication[]> {
     const startMs = Math.max(0, segments[0]!.startMs - WINDOW_CONTEXT_MS);
     const endMs = Math.min(job.durationMs, segments.at(-1)!.endMs + WINDOW_CONTEXT_MS);
     this.windowSequence += 1;
-    const path = await this.options.preprocessor!.createWindow({
-      jobId: job.id,
-      storageKey: job.storageKey,
-      windowIndex: this.windowSequence,
-      startMs,
-      endMs,
-    });
-    const objectKey = await runtime.ossStaging.uploadEmotionWindow(job.id, path);
+    const path = await runReportedStep(
+      report,
+      `emotion-window-${this.windowSequence}-preprocess`,
+      () =>
+        this.options.preprocessor!.createWindow({
+          jobId: job.id,
+          storageKey: job.storageKey,
+          windowIndex: this.windowSequence,
+          startMs,
+          endMs,
+          sourcePathOverride,
+        }),
+    );
+    const objectKey = await runReportedStep(
+      report,
+      `emotion-window-${this.windowSequence}-staging-upload`,
+      () => runtime.ossStaging.uploadEmotionWindow(job.id, path),
+    );
     try {
       return await runtime.emotionAnalyzer.analyze(
         runtime.ossStaging.signedGetUrl(objectKey),
@@ -322,8 +383,20 @@ export class AudioPostAnalysisWorker {
       ) {
         const middle = Math.ceil(segments.length / 2);
         return [
-          ...(await this.analyzeEmotionWindow(job, segments.slice(0, middle), report, runtime)),
-          ...(await this.analyzeEmotionWindow(job, segments.slice(middle), report, runtime)),
+          ...(await this.analyzeEmotionWindow(
+            job,
+            segments.slice(0, middle),
+            report,
+            runtime,
+            sourcePathOverride,
+          )),
+          ...(await this.analyzeEmotionWindow(
+            job,
+            segments.slice(middle),
+            report,
+            runtime,
+            sourcePathOverride,
+          )),
         ];
       }
       throw error;

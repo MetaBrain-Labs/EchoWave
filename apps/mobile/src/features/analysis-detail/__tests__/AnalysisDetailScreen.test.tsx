@@ -401,7 +401,11 @@ describe('AnalysisDetailScreen', () => {
     const scene = { ...analysisFixture.scenes[0], segments: [segment] };
     jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValueOnce({
       ...analysisFixture,
-      transcriptConfirmation: { status: 'pending', currentVersion: 0, confirmedAt: null },
+      transcriptConfirmation: {
+        status: 'pending',
+        currentVersion: 0,
+        confirmedAt: null,
+      },
       speakerReview: {
         status: 'partial',
         model: null,
@@ -628,6 +632,84 @@ describe('AnalysisDetailScreen', () => {
     expect(screen.getByText('情绪分析详情')).toBeTruthy();
     expect(screen.getByText('88%')).toBeTruthy();
     expect(screen.getByText(/breathing becomes faster/)).toBeTruthy();
+  });
+
+  it('adapts the detail page after lightweight source cleanup', async () => {
+    const finding = {
+      id: '71000000-0000-4000-8000-000000000010',
+      sourceSegmentId: analysisFixture.scenes[0].segments[0].id,
+      splitAfterWordIndex: 0,
+      kind: 'speaker_turn_suspected' as const,
+      severity: 'high' as const,
+      reasonCode: 'question_answer_transition' as const,
+      explanation: '请检查说话人边界。',
+      source: 'rule' as const,
+    };
+    const segment = {
+      ...analysisFixture.scenes[0].segments[0],
+      reviewFindings: [finding],
+      emotion: 'happy',
+      emotionAnalysis: {
+        label: 'happy' as const,
+        confidence: 0.9,
+        attitude: 'cooperative' as const,
+        arousal: 'medium' as const,
+        pace: 'normal' as const,
+        volumeTrend: 'rising' as const,
+        pitchVariation: 'medium' as const,
+        pausePattern: 'few' as const,
+        vocalCues: ['语气自然'],
+        model: 'qwen3.5-omni-flash',
+      },
+    };
+    jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValueOnce({
+      ...analysisFixture,
+      runtimeMode: 'lightweight_local',
+      sourceState: 'cleaned',
+      sourceRecoveryState: 'not_required',
+      sourceDeleteAfter: '2026-09-03T04:00:00.000Z',
+      transcriptConfirmation: {
+        status: 'confirmed',
+        currentVersion: 1,
+        confirmedAt: '2026-09-03T03:00:00.000Z',
+        origin: 'system_raw_snapshot',
+      },
+      speakerReview: {
+        status: 'partial',
+        model: null,
+        message: '保留本地规则结果。',
+        resolvedAt: null,
+        findings: [finding],
+      },
+      postAnalysis: {
+        emotion: {
+          state: 'ready',
+          jobId: '90000000-0000-4000-8000-000000000001',
+          model: 'qwen3.5-omni-flash',
+          completedAt: '2026-09-03T03:30:00.000Z',
+          confirmationVersion: 1,
+        },
+        role: { state: 'idle' },
+      },
+      scenes: [{ ...analysisFixture.scenes[0], segments: [segment] }],
+      rawScenes: [{ ...analysisFixture.scenes[0], segments: [segment] }],
+    });
+    const screen = await renderAnalysis();
+
+    expect(screen.getByTestId('analysis-source-unavailable')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '返回' })).toBeTruthy();
+    expect(screen.getByText('轻量本地模式：仅保留分析结果')).toBeTruthy();
+    expect(screen.getByText('轻量本地已自动确认 v1')).toBeTruthy();
+    expect(screen.queryByText('播放边界前后')).toBeNull();
+
+    openAnalysisTasks(screen);
+    fireEvent.press(screen.getByRole('button', { name: '展开情绪分析与角色识别' }));
+    expect(screen.getByText(/已在转写时完成声学情绪分析/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '重新分析' })).toBeNull();
+
+    fireEvent.press(screen.getByText('愉快'));
+    expect(screen.getByText('情绪分析详情')).toBeTruthy();
+    expect(screen.getByText('90%')).toBeTruthy();
   });
 
   it('renders every invalid interval at its original timeline position and hides all on request', async () => {

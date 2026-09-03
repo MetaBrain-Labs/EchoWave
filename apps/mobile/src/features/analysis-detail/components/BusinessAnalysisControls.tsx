@@ -26,6 +26,8 @@ import {
 
 function enrichmentLabel(state: AudioPostAnalysisState, currentVersion: number): string {
   if (state.state === 'idle') return '未识别';
+  if (state.state === 'not_requested') return '本次转写未启用';
+  if (state.state === 'source_unavailable') return '源音频已不可用';
   if (state.confirmationVersion !== currentVersion)
     return `已过期（基于 v${state.confirmationVersion}）`;
   if (state.state === 'queued') return '等待中';

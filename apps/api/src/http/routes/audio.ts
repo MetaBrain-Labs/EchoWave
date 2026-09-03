@@ -16,6 +16,7 @@ import {
   SpeakerReviewResolutionResponseSchema,
   AudioTranscriptConfirmationRequestSchema,
   AudioTranscriptionStartRequestSchema,
+  AudioTranscriptSelectionRequestSchema,
 } from '@echowave/contracts';
 import type { Hono } from 'hono';
 import { stream } from 'hono/streaming';
@@ -88,7 +89,28 @@ export function registerAudioRoutes(
     if (context.req.method === 'HEAD') return context.body(null);
 
     return stream(context, async (writer) => {
-      const readable = createReadStream(file.absolutePath, { start: range.start, end: range.end });
+      if (file.kind === 'remote') {
+        const response = await fetch(file.remoteUrl!, {
+          headers: { Range: `bytes=${range.start}-${range.end}` },
+        });
+        if (
+          !response.ok ||
+          !response.body ||
+          (range.kind === 'partial' && response.status !== 206)
+        ) {
+          throw new Error(`object-playback-${response.status}`);
+        }
+        let remaining = contentLength;
+        for await (const chunk of response.body) {
+          if (remaining <= 0) break;
+          const bytes = chunk.subarray(0, remaining);
+          await writer.write(bytes);
+          remaining -= bytes.byteLength;
+        }
+        if (remaining !== 0) throw new Error('object-playback-truncated');
+        return;
+      }
+      const readable = createReadStream(file.absolutePath!, { start: range.start, end: range.end });
       writer.onAbort(() => {
         readable.destroy();
       });
@@ -133,6 +155,17 @@ export function registerAudioRoutes(
       202,
     );
   });
+  app.get('/api/audio-files/:audioFileId/transcriptions', async (context) =>
+    context.json(await service.listAudioTranscriptions(entityId(context.req.param('audioFileId')))),
+  );
+  app.put('/api/audio-files/:audioFileId/transcript-selection', async (context) =>
+    context.json(
+      await service.selectAudioTranscription(
+        entityId(context.req.param('audioFileId')),
+        AudioTranscriptSelectionRequestSchema.parse(await context.req.json()),
+      ),
+    ),
+  );
   app.post('/api/audio-files/:audioFileId/analysis/emotion', async (context) =>
     context.json(
       await service.startAudioPostAnalysis(entityId(context.req.param('audioFileId')), 'emotion'),

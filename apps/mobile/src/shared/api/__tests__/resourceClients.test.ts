@@ -260,16 +260,13 @@ describe('resource API clients', () => {
     expect(fetch.mock.calls[0][0]).toContain(
       `/api/audio-files/${audioFixtures[0].id}/transcriptions`,
     );
-    expect(fetch.mock.calls[0][1]).toEqual(
-      expect.objectContaining({
-        body: JSON.stringify({
-          model: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
-          preprocessing: 'whole_file',
-          segmentationMode: 'speaker_turn',
-        }),
-        method: 'POST',
-      }),
-    );
+    expect(fetch.mock.calls[0][1]?.method).toBe('POST');
+    expect(JSON.parse(String(fetch.mock.calls[0][1]?.body))).toEqual({
+      model: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+      preprocessing: 'whole_file',
+      segmentationMode: 'speaker_turn',
+      includeAcousticEmotion: true,
+    });
   });
 
   it('parses audio transcription capabilities', async () => {

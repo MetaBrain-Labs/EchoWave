@@ -10,7 +10,7 @@ EchoWave 使用 PostgreSQL 作为权威业务存储，并通过 pgvector 支持�
 - LangGraph 独立 schema：4 张 checkpoint 表，由 `PostgresSaver.setup()` 管理。
 - `public` schema：安装 `vector` 扩展，为 `document_chunks.embedding` 提供 `vector(1024)` 类型和 HNSW 索引能力。
 
-音频二进制、第三方连接凭据和页面 UI 偏好不进入这些业务表。手动上传的音频二进制保存在 API 的 `AUDIO_STORAGE_DIR` 持久化目录中，数据库只保存随机相对 `storage_key`。DashScope 转写使用的 OSS 对象是短期中转副本，不是权威存储。数据库保存权威业务事实；数量、总时长、最近上传时间和关联分组数量由查询聚合生成。
+音频二进制、第三方连接凭据和页面 UI 偏好不进入这些业务表。数据库保存每条音频创建时固化的运行模式、存储后端/绑定 revision、定位键、SHA-256、源文件状态与清理期限；混合/轻量音频位于 API 受控目录，对象模式原音频位于企业 OSS。DashScope Instant 与 `audio_staging` 只保存短期中间文件。数据库保存权威业务事实；数量、总时长、最近上传时间和关联分组数量由查询聚合生成。
 
 ## 核心关系
 

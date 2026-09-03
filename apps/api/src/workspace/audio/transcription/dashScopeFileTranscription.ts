@@ -237,6 +237,7 @@ export class DashScopeFileTranscription {
         Authorization: `Bearer ${this.apiKey}`,
         'Content-Type': 'application/json',
         'X-DashScope-Async': 'enable',
+        ...(fileUrl.startsWith('oss://') ? { 'X-DashScope-OssResourceResolve': 'enable' } : {}),
       },
       body: JSON.stringify({
         model: 'qwen-audio-3.0-asr-flash-filetrans',

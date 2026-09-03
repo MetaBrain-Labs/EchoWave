@@ -27,6 +27,7 @@ import path from 'node:path';
 import { parseBuffer } from 'music-metadata';
 
 import type { DataSourceRepository, StoredAudioUpload } from './repository.ts';
+import { WorkspaceRepositoryError } from '../errors.ts';
 
 /** 数据源路由依赖的应用服务端口。 */
 export interface DataSourceService {
@@ -155,6 +156,7 @@ export class DefaultDataSourceService implements DataSourceService {
   constructor(
     private readonly repository: DataSourceRepository,
     private readonly audioStorageDirectory: string,
+    private readonly currentAudioMode: () => Promise<string> = async () => 'hybrid',
   ) {}
 
   listDataSources() {
@@ -190,6 +192,12 @@ export class DefaultDataSourceService implements DataSourceService {
 
   /** 校验并持久保存整批音频，仅在文件和数据库事实全部成功后发布响应。 */
   async uploadDataSourceAudioFiles(id: string, files: File[]) {
+    if ((await this.currentAudioMode()) !== 'hybrid') {
+      throw new WorkspaceRepositoryError(
+        'CONFLICT',
+        '当前运行模式要求使用上传会话，不能使用混合模式 multipart 接口。',
+      );
+    }
     validateBatch(files);
     await this.repository.getDataSource(id);
     const inspected = await Promise.all(files.map((file) => inspectAudio(file)));

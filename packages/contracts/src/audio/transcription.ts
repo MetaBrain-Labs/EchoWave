@@ -91,6 +91,7 @@ export const AudioTranscriptionStartRequestSchema = z
   .object({
     model: AudioTranscriptionModelSchema.optional(),
     preprocessing: AudioTranscriptionPreprocessingSchema.default('whole_file'),
+    includeAcousticEmotion: z.boolean().default(true),
     segmentationMode: z.literal('speaker_turn').default('speaker_turn'),
     expectedSpeakerCount: z.number().int().min(2).max(100).optional(),
   })

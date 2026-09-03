@@ -71,6 +71,7 @@ describe('AudioTranscriptionWorker', () => {
           return current;
         },
         updateActivity: async (_job, activity) => calls.push(['activity', activity.stage]),
+        recordPreprocessing: async () => calls.push(['record-preprocessing']),
         recordProviderArtifact: async () => calls.push(['record-artifact']),
         recordProviderTask: async (_job, taskId, _submittedAt, mode) =>
           calls.push(['record-task', taskId, mode]),

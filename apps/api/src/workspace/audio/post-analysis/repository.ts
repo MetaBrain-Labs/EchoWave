@@ -45,6 +45,10 @@ export type ClaimedPostAnalysisJob = {
   confirmationVersion: number;
   capabilityBindingRevisionId: string | null;
   stagingBindingRevisionId: string | null;
+  runtimeMode: 'hybrid' | 'object_storage' | 'lightweight_local';
+  storageBackend: 'local_persistent' | 'local_ephemeral' | 'aliyun_oss';
+  storageBindingRevisionId: string | null;
+  bundled: boolean;
   segments: PostAnalysisTranscriptSegment[];
 };
 
@@ -166,20 +170,27 @@ export class PostAnalysisRepository {
        UPDATE ${this.table('audio_post_analysis_jobs')} job
        SET status = 'running', progress = 1
        FROM candidate, ${this.table('audio_files')} af,
-            ${this.table('transcript_confirmations')} tc
+            ${this.table('transcript_confirmations')} tc,
+            ${this.table('audio_analysis_revisions')} ar
        WHERE job.id = candidate.id AND af.tenant_id = job.tenant_id
          AND af.id = job.audio_file_id
          AND tc.tenant_id = job.tenant_id AND tc.id = job.transcript_confirmation_id
+         AND ar.tenant_id = job.tenant_id AND ar.id = job.analysis_revision_id
        RETURNING job.id, job.analysis_type, job.model, job.audio_file_id,
                  job.analysis_revision_id, job.transcript_confirmation_id,
                  job.capability_binding_revision_id, job.staging_binding_revision_id,
                  tc.version_no AS confirmation_version, job.input_snapshot,
-                 af.storage_key, af.duration_ms, af.deleted_at`,
+                 af.storage_key, af.duration_ms, af.deleted_at, af.source_state,
+                 af.runtime_mode, af.storage_backend, af.storage_binding_revision_id,
+                 (ar.bundled_emotion_job_id = job.id) AS bundled`,
       [this.tenantId, type],
     );
     const row = claimed.rows[0];
     if (!row) return undefined;
-    if (row.deleted_at || !row.storage_key || row.duration_ms === null) {
+    const acousticSourceUnavailable =
+      row.analysis_type === 'emotion' &&
+      (row.source_state !== 'available' || !row.storage_key || row.duration_ms === null);
+    if (row.deleted_at || acousticSourceUnavailable) {
       await this.fail(row.id, 'CONFLICT', '音频已归档或缺少可分析的音频文件，任务已停止。', false);
       return undefined;
     }
@@ -189,7 +200,7 @@ export class PostAnalysisRepository {
        FROM ${this.table('transcript_confirmation_segments')} confirmed
        WHERE confirmed.tenant_id = $1
          AND confirmed.transcript_confirmation_id = $2
-       ORDER BY confirmed.part_index`,
+       ORDER BY confirmed.start_ms, confirmed.end_ms, confirmed.part_index`,
       [this.tenantId, row.transcript_confirmation_id],
     );
     const snapshot =
@@ -202,12 +213,17 @@ export class PostAnalysisRepository {
       model: row.model,
       audioFileId: row.audio_file_id,
       revisionId: row.analysis_revision_id,
-      storageKey: row.storage_key,
-      durationMs: Number(row.duration_ms),
+      // 角色识别只读 Transcript；源文件已清理时保留空定位键，不影响其执行。
+      storageKey: row.storage_key ?? '',
+      durationMs: Number(row.duration_ms ?? 0),
       confirmationId: row.transcript_confirmation_id,
       confirmationVersion: Number(row.confirmation_version),
       capabilityBindingRevisionId: row.capability_binding_revision_id ?? null,
       stagingBindingRevisionId: row.staging_binding_revision_id ?? null,
+      runtimeMode: row.runtime_mode,
+      storageBackend: row.storage_backend,
+      storageBindingRevisionId: row.storage_binding_revision_id ?? null,
+      bundled: Boolean(row.bundled),
       customBusinessRoles: Array.isArray(snapshot.customBusinessRoles)
         ? snapshot.customBusinessRoles.filter((value): value is string => typeof value === 'string')
         : [],
@@ -263,6 +279,21 @@ export class PostAnalysisRepository {
         );
       }
       await this.publishPointer(client, job, 'active_emotion_job_id');
+      if (job.bundled) {
+        await client.query(
+          `UPDATE ${this.table('audio_analysis_revisions')}
+           SET processing_checkpoint = 'acoustic_emotion_completed'
+           WHERE tenant_id = $1 AND id = $2 AND bundled_emotion_job_id = $3`,
+          [this.tenantId, job.revisionId, job.id],
+        );
+        await client.query(
+          `UPDATE ${this.table('audio_files')}
+           SET cleanup_status = 'pending', source_delete_after = now(), updated_at = now()
+           WHERE tenant_id = $1 AND id = $2 AND runtime_mode = 'lightweight_local'
+             AND source_state = 'available'`,
+          [this.tenantId, job.audioFileId],
+        );
+      }
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
@@ -333,13 +364,36 @@ export class PostAnalysisRepository {
   }
 
   /** 标记当前任务失败，既有 active 结果指针保持不变。 */
-  async fail(jobId: string, code: string, message: string, retryable: boolean): Promise<void> {
-    await this.pool.query(
+  async fail(jobId: string, code: string, message: string, retryable: boolean): Promise<boolean> {
+    const result = await this.pool.query(
       `UPDATE ${this.table('audio_post_analysis_jobs')}
-       SET status = 'failed', completed_at = now(), error_code = $3,
-           error_message = $4, error_retryable = $5
-       WHERE tenant_id = $1 AND id = $2`,
+       SET status = CASE WHEN $5 AND retry_count < 2 THEN 'queued' ELSE 'failed' END,
+           retry_count = retry_count + 1,
+           progress = CASE WHEN $5 AND retry_count < 2 THEN 0 ELSE progress END,
+           completed_at = CASE WHEN $5 AND retry_count < 2 THEN NULL ELSE now() END,
+           error_code = $3, error_message = $4, error_retryable = $5
+       WHERE tenant_id = $1 AND id = $2
+       RETURNING status`,
       [this.tenantId, jobId, code, message.slice(0, 500), retryable],
     );
+    if (!result.rows[0]) {
+      throw new WorkspaceRepositoryError('CONFLICT', '后置分析任务状态已变化，无法记录失败。');
+    }
+    const finalFailure = result.rows[0]?.status === 'failed';
+    if (!finalFailure) return false;
+    await this.pool.query(
+      `UPDATE ${this.table('audio_files')} af
+       SET source_delete_after = now() + interval '24 hours', cleanup_status = 'pending',
+           source_recovery_state = 'required', updated_at = now()
+       FROM ${this.table('audio_post_analysis_jobs')} job,
+            ${this.table('audio_analysis_revisions')} ar
+       WHERE job.tenant_id = $1 AND job.id = $2
+         AND ar.tenant_id = job.tenant_id AND ar.id = job.analysis_revision_id
+         AND ar.bundled_emotion_job_id = job.id
+         AND af.tenant_id = job.tenant_id AND af.id = job.audio_file_id
+         AND af.runtime_mode = 'lightweight_local' AND af.source_state = 'available'`,
+      [this.tenantId, jobId],
+    );
+    return true;
   }
 }

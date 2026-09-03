@@ -182,6 +182,21 @@ describe('DashScopeFileTranscription', () => {
     assert.equal(submittedBody.parameters.speaker_count, 3);
   });
 
+  it('enables DashScope resolution for temporary oss URLs', async () => {
+    let request;
+    const adapter = new DashScopeFileTranscription(
+      'secret',
+      'https://workspace.example.com/api/v1',
+      async (url, init) => {
+        request = { url, init };
+        return new Response(JSON.stringify({ output: { task_id: 'task-oss' } }), { status: 200 });
+      },
+      async () => undefined,
+    );
+    await adapter.submit('oss://temporary-bucket/audio.mp3');
+    assert.equal(request.init.headers['X-DashScope-OssResourceResolve'], 'enable');
+  });
+
   it('performs exactly one task-status request and normalizes non-terminal and terminal states', async () => {
     const requests = [];
     const rawReports = [];

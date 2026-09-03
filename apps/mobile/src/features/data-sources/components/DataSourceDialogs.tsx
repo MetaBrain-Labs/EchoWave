@@ -434,30 +434,107 @@ export function DataSourceConfirmDialog({
   );
 }
 
+/** 在轻量模式真正上传前确认是否把声学情绪分析绑定到首个 ASR Run。 */
+export function LightweightUploadConfirmDialog({
+  includeAcousticEmotion,
+  onCancel,
+  onChange,
+  onConfirm,
+  pending,
+  visible,
+}: {
+  includeAcousticEmotion: boolean;
+  onCancel: () => void;
+  onChange: (value: boolean) => void;
+  onConfirm: () => void;
+  pending: boolean;
+  visible: boolean;
+}) {
+  return (
+    <Modal animationType="fade" onRequestClose={onCancel} transparent visible={visible}>
+      <View style={styles.dialogRoot}>
+        <View accessibilityViewIsModal style={styles.dialogCard}>
+          <Text accessibilityRole="header" style={styles.sheetTitle}>
+            轻量本地处理选项
+          </Text>
+          <Text style={styles.dialogBody}>
+            上传后将自动执行 VAD 和 ASR。任务完成后临时音频会被删除。
+          </Text>
+          <Pressable
+            accessibilityLabel="同时进行声学情绪分析"
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: includeAcousticEmotion, disabled: pending }}
+            disabled={pending}
+            onPress={() => onChange(!includeAcousticEmotion)}
+            style={[
+              styles.segmentationOption,
+              includeAcousticEmotion && styles.selectedModelOption,
+            ]}
+          >
+            <Ionicons
+              color={colors.ink}
+              name={includeAcousticEmotion ? 'checkbox' : 'square-outline'}
+              size={22}
+            />
+            <View style={styles.transcriptionOptionCopy}>
+              <Text style={styles.transcriptionOptionTitle}>同时进行声学情绪分析</Text>
+              <Text style={styles.secondaryText}>默认开启，内部按 ASR → 声学情绪 → 清理执行。</Text>
+              {!includeAcousticEmotion ? (
+                <Text style={styles.directWarning}>
+                  关闭后不会提供情绪分析；以后需要时必须重新选择原文件并新建 ASR Run。
+                </Text>
+              ) : null}
+            </View>
+          </Pressable>
+          <View style={styles.dialogActions}>
+            <Pressable disabled={pending} onPress={onCancel} style={styles.dialogButton}>
+              <Text style={styles.dialogButtonText}>取消</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              disabled={pending}
+              onPress={onConfirm}
+              style={[styles.dialogButton, styles.dialogConfirmButton]}
+            >
+              <Text style={styles.dialogConfirmText}>{pending ? '上传中…' : '确认并上传'}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 /** 确认唯一的 DashScope 整文件说话人分离转写。 */
 export function AudioTranscriptionConfirmDialog({
   audioTitle,
   expectedSpeakerCount,
+  includeAcousticEmotion = true,
   models,
   onCancel,
   onConfirm,
   onExpectedSpeakerCountChange,
+  onIncludeAcousticEmotionChange,
   onPreprocessingChange,
   pending,
   preprocessing,
   sileroVad,
+  showAcousticEmotionOption = false,
   visible,
 }: {
   audioTitle: string;
   expectedSpeakerCount: string;
+  includeAcousticEmotion?: boolean;
   models: AudioTranscriptionModelCapability[];
   onCancel: () => void;
   onConfirm: () => void;
   onExpectedSpeakerCountChange: (value: string) => void;
+  onIncludeAcousticEmotionChange?: (value: boolean) => void;
   onPreprocessingChange: (value: AudioTranscriptionPreprocessing) => void;
   pending: boolean;
   preprocessing: AudioTranscriptionPreprocessing;
   sileroVad?: AudioTranscriptionCapabilitiesResponse['sileroVad'];
+  showAcousticEmotionOption?: boolean;
   visible: boolean;
 }) {
   const selectedCapability = models[0];
@@ -567,6 +644,39 @@ export function AudioTranscriptionConfirmDialog({
               <Text accessibilityRole="alert" style={styles.directWarning}>
                 预计说话人数必须是 2–100 的整数。
               </Text>
+            ) : null}
+            {showAcousticEmotionOption ? (
+              <>
+                <Text style={styles.transcriptionSectionTitle}>声学分析</Text>
+                <Pressable
+                  accessibilityLabel="同时进行声学情绪分析"
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: includeAcousticEmotion, disabled: pending }}
+                  disabled={pending}
+                  onPress={() => onIncludeAcousticEmotionChange?.(!includeAcousticEmotion)}
+                  style={[
+                    styles.segmentationOption,
+                    includeAcousticEmotion && styles.selectedModelOption,
+                  ]}
+                >
+                  <Ionicons
+                    color={colors.ink}
+                    name={includeAcousticEmotion ? 'checkbox' : 'square-outline'}
+                    size={22}
+                  />
+                  <View style={styles.transcriptionOptionCopy}>
+                    <Text style={styles.transcriptionOptionTitle}>同时进行声学情绪分析</Text>
+                    <Text style={styles.secondaryText}>
+                      默认开启。内部按 ASR → 声学情绪 → 临时文件清理执行。
+                    </Text>
+                    {!includeAcousticEmotion ? (
+                      <Text style={styles.directWarning}>
+                        关闭后本次转写不会提供情绪分析，也不能稍后单独补跑。
+                      </Text>
+                    ) : null}
+                  </View>
+                </Pressable>
+              </>
             ) : null}
             <Text style={styles.transcriptionSectionTitle}>转写模型</Text>
             {!selectedCapability ? (

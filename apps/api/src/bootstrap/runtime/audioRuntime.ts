@@ -46,10 +46,15 @@ import {
 import { DashScopeFileTranscription } from '../../workspace/audio/transcription/dashScopeFileTranscription.ts';
 import { EventBridgeSignatureVerifier } from '../../workspace/audio/transcription/eventBridgeSignature.ts';
 import { OssStagingStore } from '../../workspace/audio/transcription/ossStagingStore.ts';
+import { DashScopeInstantStore } from '../../workspace/audio/transcription/dashScopeInstantStore.ts';
+import { PrimaryOssStore } from '../../workspace/audio/runtime-mode/primaryOssStore.ts';
+import { AudioSourceLifecycle } from '../../workspace/audio/runtime-mode/sourceLifecycle.ts';
 import { AudioTranscriptionWorker } from '../../workspace/audio/transcription/worker.ts';
 import { DeepSeekSpeakerReviewer } from '../../workspace/audio/speaker-review/deepSeekSpeakerReviewer.ts';
 import { SpeakerReviewRepository } from '../../workspace/audio/speaker-review/repository.ts';
 import { SpeakerReviewWorker } from '../../workspace/audio/speaker-review/worker.ts';
+
+const SOURCE_CLEANUP_INTERVAL_MS = 15 * 60 * 1_000;
 
 type AudioRuntimeOptions = {
   config: ApiConfig;
@@ -110,6 +115,12 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
     tempDirectory: config.rag.audioTranscriptionTempDir,
     ...(config.rag.ffmpegPath ? { ffmpegPath: config.rag.ffmpegPath } : {}),
   });
+  const sourceLifecycle = new AudioSourceLifecycle(
+    pool,
+    config.database.schema,
+    config.rag.tenantId,
+    config.rag.audioStorageDir,
+  );
   const audioService = new DefaultAudioService(
     audioCoreRepository,
     config.rag.audioStorageDir,
@@ -126,21 +137,13 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
     repository: audioAnalysisRepository,
     maxInFlight: config.rag.audioTranscriptionMaxInFlight,
     resolveProviders: async (job) => {
-      const [transcription, staging] = await Promise.all([
-        settingsService.resolveCapability(
-          'audio_transcription',
-          job.transcriptionBindingRevisionId ?? undefined,
-        ),
-        settingsService.resolveCapability(
-          'audio_staging',
-          job.stagingBindingRevisionId ?? undefined,
-        ),
-      ]);
+      const transcription = await settingsService.resolveCapability(
+        'audio_transcription',
+        job.transcriptionBindingRevisionId ?? undefined,
+      );
       if (
         transcription.provider.type !== 'dashscope' ||
-        !('apiKey' in transcription.provider.credential) ||
-        staging.provider.type !== 'aliyun_oss' ||
-        !('accessKeyId' in staging.provider.credential)
+        !('apiKey' in transcription.provider.credential)
       ) {
         throw new Error('Resolved audio transcription providers are incompatible.');
       }
@@ -148,7 +151,54 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
         baseUrl: string;
         asyncNotifyMode: 'polling' | 'eventbridge';
       };
-      const stagingConfig = staging.provider.config as { region: string; bucket: string };
+      let ossStaging;
+      if (job.runtimeMode === 'lightweight_local') {
+        ossStaging = new DashScopeInstantStore({
+          apiKey: transcription.provider.credential.apiKey,
+          baseUrl: transcriptionConfig.baseUrl,
+          model: job.model,
+        });
+      } else {
+        const staging = await settingsService.resolveCapability(
+          'audio_staging',
+          job.stagingBindingRevisionId ?? undefined,
+        );
+        if (
+          staging.provider.type !== 'aliyun_oss' ||
+          !('accessKeyId' in staging.provider.credential)
+        ) {
+          throw new Error('Resolved audio staging provider is incompatible.');
+        }
+        const stagingConfig = staging.provider.config as { region: string; bucket: string };
+        ossStaging = new OssStagingStore({
+          region: stagingConfig.region,
+          bucket: stagingConfig.bucket,
+          accessKeyId: staging.provider.credential.accessKeyId,
+          accessKeySecret: staging.provider.credential.accessKeySecret,
+          tenantId: config.rag.tenantId,
+        });
+      }
+      let primaryStorage;
+      if (job.storageBackend === 'aliyun_oss') {
+        const primary = await settingsService.resolveCapability(
+          'audio_primary_storage',
+          job.storageBindingRevisionId ?? undefined,
+        );
+        if (
+          primary.provider.type !== 'aliyun_oss' ||
+          !('accessKeyId' in primary.provider.credential)
+        ) {
+          throw new Error('Resolved primary audio storage provider is incompatible.');
+        }
+        const primaryConfig = primary.provider.config as { region: string; bucket: string };
+        primaryStorage = new PrimaryOssStore({
+          region: primaryConfig.region,
+          bucket: primaryConfig.bucket,
+          accessKeyId: primary.provider.credential.accessKeyId,
+          accessKeySecret: primary.provider.credential.accessKeySecret,
+          tenantId: config.rag.tenantId,
+        });
+      }
       return {
         dashScope: new DashScopeFileTranscription(
           transcription.provider.credential.apiKey,
@@ -158,19 +208,20 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
           sttRawResponseReporter,
         ),
         notifyMode: transcriptionConfig.asyncNotifyMode,
-        ossStaging: new OssStagingStore({
-          region: stagingConfig.region,
-          bucket: stagingConfig.bucket,
-          accessKeyId: staging.provider.credential.accessKeyId,
-          accessKeySecret: staging.provider.credential.accessKeySecret,
-          tenantId: config.rag.tenantId,
-        }),
+        ossStaging,
+        ...(primaryStorage ? { primaryStorage } : {}),
       };
     },
     preprocessor: audioInputPreprocessor,
     reporter,
     liveUpdates,
     wakeup: workerWakeup,
+    sourceTempDirectory: config.rag.audioTranscriptionTempDir,
+    onTranscriptionPublished: async (job) => {
+      if (job.runtimeMode === 'lightweight_local' && !job.includeAcousticEmotion) {
+        await sourceLifecycle.cleanup(job.audioFileId, job.revisionId);
+      }
+    },
   });
   const dashScopeCallbackService = new DashScopeCallbackService({
     repository: audioAnalysisRepository,
@@ -214,39 +265,80 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
     liveUpdates,
     wakeup: workerWakeup,
     resolveRuntime: async (job) => {
-      const [emotion, staging] = await Promise.all([
-        settingsService.resolveCapability(
-          'audio_emotion',
-          job.capabilityBindingRevisionId ?? undefined,
-        ),
-        settingsService.resolveCapability(
-          'audio_staging',
-          job.stagingBindingRevisionId ?? undefined,
-        ),
-      ]);
-      if (
-        emotion.provider.type !== 'dashscope' ||
-        !('apiKey' in emotion.provider.credential) ||
-        staging.provider.type !== 'aliyun_oss' ||
-        !('accessKeyId' in staging.provider.credential)
-      ) {
+      const emotion = await settingsService.resolveCapability(
+        'audio_emotion',
+        job.capabilityBindingRevisionId ?? undefined,
+      );
+      if (emotion.provider.type !== 'dashscope' || !('apiKey' in emotion.provider.credential)) {
         throw new Error('Resolved emotion analysis providers are incompatible.');
       }
-      const stagingConfig = staging.provider.config as { region: string; bucket: string };
-      return {
-        emotionAnalyzer: new QwenEmotionAnalyzer({
+      const emotionConfig = emotion.provider.config as {
+        baseUrl: string;
+        compatibleBaseUrl: string;
+      };
+      let ossStaging;
+      if (job.runtimeMode === 'lightweight_local') {
+        ossStaging = new DashScopeInstantStore({
           apiKey: emotion.provider.credential.apiKey,
-          baseUrl: (emotion.provider.config as { compatibleBaseUrl: string }).compatibleBaseUrl,
+          baseUrl: emotionConfig.baseUrl,
           model: job.model,
-        }),
-        ossStaging: new OssStagingStore({
+        });
+      } else {
+        const staging = await settingsService.resolveCapability(
+          'audio_staging',
+          job.stagingBindingRevisionId ?? undefined,
+        );
+        if (
+          staging.provider.type !== 'aliyun_oss' ||
+          !('accessKeyId' in staging.provider.credential)
+        ) {
+          throw new Error('Resolved emotion staging provider is incompatible.');
+        }
+        const stagingConfig = staging.provider.config as { region: string; bucket: string };
+        ossStaging = new OssStagingStore({
           region: stagingConfig.region,
           bucket: stagingConfig.bucket,
           accessKeyId: staging.provider.credential.accessKeyId,
           accessKeySecret: staging.provider.credential.accessKeySecret,
           tenantId: config.rag.tenantId,
+        });
+      }
+      let primaryStorage;
+      if (job.storageBackend === 'aliyun_oss') {
+        const primary = await settingsService.resolveCapability(
+          'audio_primary_storage',
+          job.storageBindingRevisionId ?? undefined,
+        );
+        if (
+          primary.provider.type !== 'aliyun_oss' ||
+          !('accessKeyId' in primary.provider.credential)
+        ) {
+          throw new Error('Resolved primary audio storage provider is incompatible.');
+        }
+        const primaryConfig = primary.provider.config as { region: string; bucket: string };
+        primaryStorage = new PrimaryOssStore({
+          region: primaryConfig.region,
+          bucket: primaryConfig.bucket,
+          accessKeyId: primary.provider.credential.accessKeyId,
+          accessKeySecret: primary.provider.credential.accessKeySecret,
+          tenantId: config.rag.tenantId,
+        });
+      }
+      return {
+        emotionAnalyzer: new QwenEmotionAnalyzer({
+          apiKey: emotion.provider.credential.apiKey,
+          baseUrl: emotionConfig.compatibleBaseUrl,
+          model: job.model,
         }),
+        ossStaging,
+        ...(primaryStorage ? { primaryStorage } : {}),
       };
+    },
+    sourceTempDirectory: config.rag.audioTranscriptionTempDir,
+    onEmotionPublished: async (job) => {
+      if (job.runtimeMode === 'lightweight_local' && job.bundled) {
+        await sourceLifecycle.cleanup(job.audioFileId, job.revisionId);
+      }
     },
   });
   const roleWorker = new AudioPostAnalysisWorker({
@@ -342,6 +434,31 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
     liveUpdates,
     wakeup: workerWakeup,
   });
+  let sourceCleanupTimer: NodeJS.Timeout | undefined;
+
+  /** 清理到期源文件；失败状态由生命周期 Repository 留给下一轮补偿。 */
+  async function cleanupExpiredAudio(): Promise<void> {
+    await sourceLifecycle.cleanupDue(async (bindingRevisionId) => {
+      const primary = await settingsService.resolveCapability(
+        'audio_primary_storage',
+        bindingRevisionId,
+      );
+      if (
+        primary.provider.type !== 'aliyun_oss' ||
+        !('accessKeyId' in primary.provider.credential)
+      ) {
+        throw new Error('Resolved primary audio storage provider is incompatible.');
+      }
+      const primaryConfig = primary.provider.config as { region: string; bucket: string };
+      return new PrimaryOssStore({
+        region: primaryConfig.region,
+        bucket: primaryConfig.bucket,
+        accessKeyId: primary.provider.credential.accessKeyId,
+        accessKeySecret: primary.provider.credential.accessKeySecret,
+        tenantId: config.rag.tenantId,
+      });
+    });
+  }
   return {
     audioService,
     transcriptionWorker,
@@ -351,7 +468,21 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
     speakerReviewWorker,
     businessAnalysisWorker,
     audioInputPreprocessor,
+    cleanupExpiredAudio,
+    /** 启动源文件到期清理和进程存活期间的补偿扫描。 */
+    async startSourceCleanup(): Promise<void> {
+      if (sourceCleanupTimer) return;
+      await cleanupExpiredAudio();
+      sourceCleanupTimer = setInterval(() => {
+        void cleanupExpiredAudio().catch((error) => {
+          console.error('Audio source lifecycle cleanup failed', error);
+        });
+      }, SOURCE_CLEANUP_INTERVAL_MS);
+      sourceCleanupTimer.unref();
+    },
     async stop(): Promise<void> {
+      if (sourceCleanupTimer) clearInterval(sourceCleanupTimer);
+      sourceCleanupTimer = undefined;
       await transcriptionWorker.stop();
       await Promise.all([
         emotionWorker.stop(),

@@ -15,7 +15,10 @@ import type {
   AudioAiExecutionTraceResponse,
   AudioAnalysisStatusStreamEvent,
   AudioPostAnalysisType,
+  AudioTranscriptionRunListResponse,
 } from '@echowave/contracts';
+import { DEFAULT_AUDIO_TRANSCRIPTION_MODEL } from '@echowave/contracts';
+import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -38,11 +41,15 @@ import {
   confirmAudioTranscript,
   getAudioAnalysis,
   getAudioExecutionTrace,
+  listAudioTranscriptions,
   resolveAllSpeakerReviewFindings,
   resolveSpeakerReviewFinding,
+  remountAudioSource,
   startAudioBusinessAnalysis,
   startAudioEmotionAnalysis,
   startAudioRoleRecognition,
+  startAudioTranscription,
+  selectAudioTranscription,
 } from '@/shared/api/audioAnalysisApi';
 import { getGroupSettings } from '@/shared/api/groupsApi';
 import { WorkspaceRequestError } from '@/shared/api/request';
@@ -75,6 +82,7 @@ import { TranscriptContent, type TranscriptDisplayMode } from './components/Tran
 import { EmotionAnalysisPanel } from './components/EmotionAnalysisPanel';
 import { ModelExecutionContent } from './components/ModelExecutionContent';
 import { PostAnalysisConfirmDialog, PostAnalysisControls } from './components/PostAnalysisControls';
+import { TranscriptionRunSelector } from './components/TranscriptionRunSelector';
 import {
   BusinessAnalysisControls,
   BusinessAnalysisPreflightDialog,
@@ -173,7 +181,13 @@ function hasConvergedToTerminalState(
 ): boolean {
   const postAnalysisConverged = (type: 'emotion' | 'role') => {
     const expectedState = expected[type];
-    if (isPostAnalysisActive(expectedState) || expectedState.state === 'idle') return true;
+    if (
+      isPostAnalysisActive(expectedState) ||
+      expectedState.state === 'idle' ||
+      expectedState.state === 'not_requested' ||
+      expectedState.state === 'source_unavailable'
+    )
+      return true;
     const currentState = current.postAnalysis[type];
     return currentState.state === expectedState.state && currentState.jobId === expectedState.jobId;
   };
@@ -214,6 +228,8 @@ export function AnalysisDetailScreen({
   onOpenCitation,
 }: AnalysisDetailScreenProps) {
   const [detail, setDetail] = useState<AnalysisDetailView>();
+  const [transcriptionRuns, setTranscriptionRuns] = useState<AudioTranscriptionRunListResponse>();
+  const [selectingTranscription, setSelectingTranscription] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [executionTrace, setExecutionTrace] = useState<AudioAiExecutionTraceResponse>();
@@ -246,7 +262,9 @@ export function AnalysisDetailScreen({
   const [analysisTiming, setAnalysisTiming] = useState<'automatic' | 'manual'>('manual');
   const [preflightPrompted, setPreflightPrompted] = useState(false);
   const runInitialRequest = useInitialRequestLoading();
-  const playback = useAudioPlayback(detailId || undefined);
+  const playback = useAudioPlayback(
+    detail?.sourceState === 'available' ? detailId || undefined : undefined,
+  );
   const changeHideIrrelevant = (value: boolean) => {
     setHideIrrelevantSegmentsPreference(value);
     setHideIrrelevant(value);
@@ -284,9 +302,14 @@ export function AnalysisDetailScreen({
       if (showLoading) setLoading(true);
       if (showLoading) setError('');
       try {
-        const nextDetail = toAnalysisDetailView(await getAudioAnalysis(detailId, groupId));
+        const [analysis, runs] = await Promise.all([
+          getAudioAnalysis(detailId, groupId),
+          listAudioTranscriptions(detailId).catch(() => undefined),
+        ]);
+        const nextDetail = toAnalysisDetailView(analysis);
         if (requestSequence !== detailRequestSequenceRef.current) return undefined;
         setDetail(nextDetail);
+        if (runs) setTranscriptionRuns(runs);
         setError('');
         return nextDetail;
       } catch (reason) {
@@ -592,14 +615,14 @@ export function AnalysisDetailScreen({
       if (
         emotion.state === 'idle' ||
         emotion.state === 'failed' ||
-        emotion.confirmationVersion !== version
+        ('confirmationVersion' in emotion && emotion.confirmationVersion !== version)
       ) {
         tasks.push(startAudioEmotionAnalysis(detailId));
       }
       if (
         role.state === 'idle' ||
         role.state === 'failed' ||
-        role.confirmationVersion !== version
+        ('confirmationVersion' in role && role.confirmationVersion !== version)
       ) {
         tasks.push(startAudioRoleRecognition(detailId));
       }
@@ -645,6 +668,46 @@ export function AnalysisDetailScreen({
     setConfirmingTranscript(false);
     setTranscriptDraftSegments([]);
     setTranscriptDisplayMode('current');
+  };
+
+  const reselectSourceAndTranscribe = async () => {
+    const selection = await DocumentPicker.getDocumentAsync({
+      copyToCacheDirectory: true,
+      multiple: false,
+      type: ['audio/*'],
+    });
+    if (selection.canceled) return;
+    try {
+      await remountAudioSource(detailId, selection.assets[0]!);
+      await startAudioTranscription(detailId, {
+        model: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+        preprocessing: 'silero_vad',
+        segmentationMode: 'speaker_turn',
+        includeAcousticEmotion: true,
+      });
+      Alert.alert('已创建新转写', '源文件指纹校验通过，新的 ASR 与声学情绪任务已排队。');
+      await load(false);
+    } catch (reason) {
+      Alert.alert(
+        '无法重新挂载源文件',
+        reason instanceof Error ? reason.message : '请选择最初上传的同一份原音频。',
+      );
+    }
+  };
+
+  const changeTranscriptionSelection = async (
+    input: { mode: 'auto' } | { mode: 'manual'; revisionId: string },
+  ) => {
+    if (selectingTranscription) return;
+    setSelectingTranscription(true);
+    try {
+      setTranscriptionRuns(await selectAudioTranscription(detailId, input));
+      await load(false);
+    } catch (reason) {
+      Alert.alert('无法切换 ASR 版本', reason instanceof Error ? reason.message : '请稍后重试。');
+    } finally {
+      setSelectingTranscription(false);
+    }
   };
 
   const startTranscriptEditing = () => {
@@ -831,6 +894,7 @@ export function AnalysisDetailScreen({
     );
   }
 
+  const sourceAvailable = detail.sourceState === 'available';
   const playbackRate = playbackRates[playbackRateIndex];
   const playbackDuration = playback.duration > 0 ? playback.duration : detail.durationSeconds;
   const changePlaybackRate = () => {
@@ -843,36 +907,59 @@ export function AnalysisDetailScreen({
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-      {expandedPlayer ? (
-        <ExpandedPlayer
-          durationSeconds={playbackDuration}
-          error={playback.error}
-          isBuffering={playback.isBuffering}
-          isLoaded={playback.isLoaded}
-          isPlaying={playback.isPlaying}
-          onBack={requestBack}
-          onCollapse={() => setExpandedPlayer(false)}
-          onJump={(seconds) => void playback.jumpBy(seconds)}
-          onPlayPause={() => void playback.toggleFullPlayback()}
-          onRateChange={changePlaybackRate}
-          onRetry={() => playback.retry()}
-          onSeek={(seconds) => void playback.seekTo(seconds)}
-          playbackRate={playbackRate}
-          positionSeconds={playback.currentTime}
-        />
+      {sourceAvailable ? (
+        expandedPlayer ? (
+          <ExpandedPlayer
+            durationSeconds={playbackDuration}
+            error={playback.error}
+            isBuffering={playback.isBuffering}
+            isLoaded={playback.isLoaded}
+            isPlaying={playback.isPlaying}
+            onBack={requestBack}
+            onCollapse={() => setExpandedPlayer(false)}
+            onJump={(seconds) => void playback.jumpBy(seconds)}
+            onPlayPause={() => void playback.toggleFullPlayback()}
+            onRateChange={changePlaybackRate}
+            onRetry={() => playback.retry()}
+            onSeek={(seconds) => void playback.seekTo(seconds)}
+            playbackRate={playbackRate}
+            positionSeconds={playback.currentTime}
+          />
+        ) : (
+          <CompactPlayer
+            durationSeconds={playbackDuration}
+            error={playback.error}
+            isBuffering={playback.isBuffering}
+            isLoaded={playback.isLoaded}
+            isPlaying={playback.isPlaying}
+            onBack={requestBack}
+            onExpand={() => setExpandedPlayer(true)}
+            onPlayPause={() => void playback.toggleFullPlayback()}
+            onRetry={() => playback.retry()}
+            positionSeconds={playback.currentTime}
+          />
+        )
       ) : (
-        <CompactPlayer
-          durationSeconds={playbackDuration}
-          error={playback.error}
-          isBuffering={playback.isBuffering}
-          isLoaded={playback.isLoaded}
-          isPlaying={playback.isPlaying}
-          onBack={requestBack}
-          onExpand={() => setExpandedPlayer(true)}
-          onPlayPause={() => void playback.toggleFullPlayback()}
-          onRetry={() => playback.retry()}
-          positionSeconds={playback.currentTime}
-        />
+        <View
+          accessibilityRole="alert"
+          style={styles.sourceUnavailableCard}
+          testID="analysis-source-unavailable"
+        >
+          <IconButton icon="chevron-back" label="返回" onPress={requestBack} />
+          <Ionicons color={colors.secondary} name="volume-mute-outline" size={24} />
+          <View style={styles.sourceUnavailableCopy}>
+            <Text style={styles.sourceUnavailableTitle}>
+              {detail.runtimeMode === 'lightweight_local'
+                ? '轻量本地模式：仅保留分析结果'
+                : '源音频未保留'}
+            </Text>
+            <Text style={styles.sourceUnavailableDescription}>
+              {detail.runtimeMode === 'lightweight_local'
+                ? '声学情绪、转写和后续分析已保存，原音频已清理，当前不可播放。'
+                : '当前源音频不可用，已保存的转写和分析结果仍可查看。'}
+            </Text>
+          </View>
+        </View>
       )}
       <DetailTabs activeTab={activeTab} onChange={selectTab} showSummary={hasSummary} />
       <ScrollView
@@ -974,9 +1061,12 @@ export function AnalysisDetailScreen({
             resolvingReviewFinding={resolvingSpeakerReview}
             onStartEditing={startTranscriptEditing}
             playingSegmentId={playback.activeRangeKey}
-            segmentPlaybackDisabled={!playback.isLoaded || Boolean(playback.error)}
-            segmentPlaybackLoading={playback.isBuffering}
-            segmentPlaybackPlaying={playback.isPlaying}
+            segmentPlaybackDisabled={
+              !sourceAvailable || !playback.isLoaded || Boolean(playback.error)
+            }
+            segmentPlaybackLoading={sourceAvailable && playback.isBuffering}
+            segmentPlaybackPlaying={sourceAvailable && playback.isPlaying}
+            reviewPlaybackAvailable={sourceAvailable}
             selectedSegmentIds={selectedTag?.evidenceSegmentIds ?? []}
           />
         </View>
@@ -987,11 +1077,21 @@ export function AnalysisDetailScreen({
           style={[styles.page, { width: pageWidth }]}
           testID="analysis-tasks-scroll"
         >
+          <TranscriptionRunSelector
+            onAuto={() => void changeTranscriptionSelection({ mode: 'auto' })}
+            onSelect={(revisionId) =>
+              void changeTranscriptionSelection({ mode: 'manual', revisionId })
+            }
+            pending={selectingTranscription}
+            runs={transcriptionRuns}
+          />
           <PostAnalysisControls
             confirmed={detail.transcriptConfirmation.status === 'confirmed'}
             emotion={detail.postAnalysis.emotion}
+            onRemountSource={() => void reselectSourceAndTranscribe()}
             onStart={setConfirmAnalysisType}
             role={detail.postAnalysis.role}
+            runtimeMode={detail.runtimeMode}
           />
           {groupId ? (
             <BusinessAnalysisControls
@@ -1065,6 +1165,29 @@ const styles = StyleSheet.create({
   },
   pager: {
     flex: 1,
+  },
+  sourceUnavailableCard: {
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderBottomColor: colors.divider,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 80,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  sourceUnavailableCopy: { flex: 1 },
+  sourceUnavailableTitle: {
+    ...typography.body,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+  },
+  sourceUnavailableDescription: {
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    marginTop: spacing.xs,
   },
   page: {
     height: '100%',

@@ -18,6 +18,8 @@ import {
   AudioTranscriptionPreprocessingSchema,
   AudioTranscriptionSegmentationModeSchema,
   AudioTranscriptionStartResponseSchema,
+  AudioTranscriptionRunListResponseSchema,
+  AudioTranscriptSelectionRequestSchema,
   type AudioFailureDetails,
   type AudioTranscriptionPreprocessing,
   type AudioTranscriptionModel,
@@ -75,6 +77,12 @@ export type ClaimedAudioTranscription = {
   stagingBindingRevisionId: string | null;
   speakerReviewBindingRevisionId: string | null;
   speakerReviewModel: string | null;
+  includeAcousticEmotion: boolean;
+  bundledEmotionBindingRevisionId: string | null;
+  bundledEmotionModel: string | null;
+  runtimeMode: 'hybrid' | 'object_storage' | 'lightweight_local';
+  storageBackend: 'local_persistent' | 'local_ephemeral' | 'aliyun_oss';
+  storageBindingRevisionId: string | null;
 };
 
 /** Polling 或 EventBridge 发现并允许写入 revision 的 DashScope 终态。 */
@@ -153,6 +161,33 @@ export class AudioAnalysisRepository {
     return `${this.schema}.${quoteIdentifier(name)}`;
   }
 
+  /** 返回资产创建时固化的运行模式，供 ASR 启动解析存储与声学依赖。 */
+  async getAssetRuntime(audioFileId: string) {
+    const result = await this.pool.query(
+      `SELECT runtime_mode, storage_backend, storage_binding_revision_id,
+              source_state, source_recovery_state
+       FROM ${this.table('audio_files')}
+       WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+      [this.tenantId, audioFileId],
+    );
+    const row = result.rows[0];
+    if (!row) throw new WorkspaceRepositoryError('NOT_FOUND', '音频不存在或已归档。');
+    if (row.source_state !== 'available') {
+      throw new WorkspaceRepositoryError('CONFLICT', '源音频不可用，需要重新选择原文件。');
+    }
+    if (row.source_recovery_state === 'required') {
+      throw new WorkspaceRepositoryError(
+        'CONFLICT',
+        '上次任务已最终失败，请重新选择原文件后新建转写。',
+      );
+    }
+    return {
+      mode: row.runtime_mode as ClaimedAudioTranscription['runtimeMode'],
+      storageBackend: row.storage_backend as ClaimedAudioTranscription['storageBackend'],
+      storageBindingRevisionId: (row.storage_binding_revision_id as string | null) ?? null,
+    };
+  }
+
   /** 为活动音频创建递增修订；部分唯一索引负责最终阻止并发重复任务。 */
   async queueTranscription(
     audioFileId: string,
@@ -165,6 +200,9 @@ export class AudioAnalysisRepository {
     speakerReviewBindingRevisionId: string | null = null,
     speakerReviewModel: string | null = null,
     notifyMode: 'polling' | 'eventbridge' = 'polling',
+    includeAcousticEmotion = true,
+    bundledEmotionBindingRevisionId: string | null = null,
+    bundledEmotionModel: string | null = null,
   ) {
     const client = await this.pool.connect();
     try {
@@ -189,7 +227,9 @@ export class AudioAnalysisRepository {
            (tenant_id, audio_file_id, revision_no, transcription_model, analysis_model,
             settings_snapshot, status, progress, processing_stage, processing_updated_at,
             transcription_provider, transcription_binding_revision_id,
-             staging_binding_revision_id, speaker_review_binding_revision_id)
+             staging_binding_revision_id, speaker_review_binding_revision_id,
+             include_acoustic_emotion, bundled_emotion_binding_revision_id,
+             bundled_emotion_model)
          SELECT $1, $2, coalesce(max(revision_no), 0) + 1, $3, $3,
                 jsonb_build_object('speakerDiarization', $5::boolean, 'businessRole', false,
                                    'emotionAnalysis', false, 'timestamps', $6::text,
@@ -200,7 +240,7 @@ export class AudioAnalysisRepository {
                                     'asyncNotifyMode', $12::text,
                                     'expectedSpeakerCount', $13::integer,
                                     'speakerReviewModel', $15::text),
-                 'queued', 0, 'queued', now(), $9, $10, $11, $14
+                 'queued', 0, 'queued', now(), $9, $10, $11, $14, $16, $17, $18
          FROM ${this.table('audio_analysis_revisions')}
          WHERE tenant_id = $1 AND audio_file_id = $2
          RETURNING id`,
@@ -220,6 +260,9 @@ export class AudioAnalysisRepository {
           expectedSpeakerCount,
           speakerReviewBindingRevisionId,
           speakerReviewModel,
+          includeAcousticEmotion,
+          bundledEmotionBindingRevisionId,
+          bundledEmotionModel,
         ],
       );
       const response = AudioTranscriptionStartResponseSchema.parse({
@@ -300,6 +343,7 @@ export class AudioAnalysisRepository {
        RETURNING ar.id AS revision_id, ar.revision_no, af.id AS audio_file_id,
                  ar.transcription_model, af.title, af.original_filename, af.storage_key,
                  af.mime_type, af.duration_ms, af.size_bytes, af.ingestion_run_id,
+                 af.runtime_mode, af.storage_backend, af.storage_binding_revision_id,
                  ds.id AS data_source_id, ds.name AS data_source_name,
                  ds.source_type, ds.location AS data_source_location,
                  ds.connection_status AS data_source_connection_status,
@@ -314,6 +358,8 @@ export class AudioAnalysisRepository {
                  ar.provider_poll_attempt, ar.provider_last_polled_at, ar.provider_next_poll_at,
                   ar.transcription_binding_revision_id, ar.staging_binding_revision_id,
                   ar.speaker_review_binding_revision_id,
+                  ar.include_acoustic_emotion, ar.bundled_emotion_binding_revision_id,
+                  ar.bundled_emotion_model,
                   ar.settings_snapshot->>'expectedSpeakerCount' AS expected_speaker_count,
                   ar.settings_snapshot->>'speakerReviewModel' AS speaker_review_model`,
       [this.tenantId, maxInFlight],
@@ -344,6 +390,7 @@ export class AudioAnalysisRepository {
        RETURNING ar.id AS revision_id, ar.revision_no, af.id AS audio_file_id,
                  ar.transcription_model, af.title, af.original_filename, af.storage_key,
                  af.mime_type, af.duration_ms, af.size_bytes, af.ingestion_run_id,
+                 af.runtime_mode, af.storage_backend, af.storage_binding_revision_id,
                  ds.id AS data_source_id, ds.name AS data_source_name,
                  ds.source_type, ds.location AS data_source_location,
                  ds.connection_status AS data_source_connection_status,
@@ -358,6 +405,8 @@ export class AudioAnalysisRepository {
                  ar.provider_poll_attempt, ar.provider_last_polled_at, ar.provider_next_poll_at,
                   ar.transcription_binding_revision_id, ar.staging_binding_revision_id,
                   ar.speaker_review_binding_revision_id,
+                  ar.include_acoustic_emotion, ar.bundled_emotion_binding_revision_id,
+                  ar.bundled_emotion_model,
                   ar.settings_snapshot->>'expectedSpeakerCount' AS expected_speaker_count,
                   ar.settings_snapshot->>'speakerReviewModel' AS speaker_review_model`,
       [this.tenantId],
@@ -391,6 +440,7 @@ export class AudioAnalysisRepository {
        RETURNING ar.id AS revision_id, ar.revision_no, af.id AS audio_file_id,
                  ar.transcription_model, af.title, af.original_filename, af.storage_key,
                  af.mime_type, af.duration_ms, af.size_bytes, af.ingestion_run_id,
+                 af.runtime_mode, af.storage_backend, af.storage_binding_revision_id,
                  ds.id AS data_source_id, ds.name AS data_source_name,
                  ds.source_type, ds.location AS data_source_location,
                  ds.connection_status AS data_source_connection_status,
@@ -405,6 +455,8 @@ export class AudioAnalysisRepository {
                  ar.provider_poll_attempt, ar.provider_last_polled_at, ar.provider_next_poll_at,
                   ar.transcription_binding_revision_id, ar.staging_binding_revision_id,
                   ar.speaker_review_binding_revision_id,
+                  ar.include_acoustic_emotion, ar.bundled_emotion_binding_revision_id,
+                  ar.bundled_emotion_model,
                   ar.settings_snapshot->>'expectedSpeakerCount' AS expected_speaker_count,
                   ar.settings_snapshot->>'speakerReviewModel' AS speaker_review_model`,
       [this.tenantId],
@@ -435,6 +487,7 @@ export class AudioAnalysisRepository {
        RETURNING ar.id AS revision_id, ar.revision_no, af.id AS audio_file_id,
                  ar.transcription_model, af.title, af.original_filename, af.storage_key,
                  af.mime_type, af.duration_ms, af.size_bytes, af.ingestion_run_id,
+                 af.runtime_mode, af.storage_backend, af.storage_binding_revision_id,
                  ds.id AS data_source_id, ds.name AS data_source_name,
                  ds.source_type, ds.location AS data_source_location,
                  ds.connection_status AS data_source_connection_status,
@@ -449,6 +502,8 @@ export class AudioAnalysisRepository {
                  ar.provider_poll_attempt, ar.provider_last_polled_at, ar.provider_next_poll_at,
                   ar.transcription_binding_revision_id, ar.staging_binding_revision_id,
                   ar.speaker_review_binding_revision_id,
+                  ar.include_acoustic_emotion, ar.bundled_emotion_binding_revision_id,
+                  ar.bundled_emotion_model,
                   ar.settings_snapshot->>'expectedSpeakerCount' AS expected_speaker_count,
                   ar.settings_snapshot->>'speakerReviewModel' AS speaker_review_model`,
       [this.tenantId],
@@ -547,6 +602,12 @@ export class AudioAnalysisRepository {
       stagingBindingRevisionId: row.staging_binding_revision_id ?? null,
       speakerReviewBindingRevisionId: row.speaker_review_binding_revision_id ?? null,
       speakerReviewModel: row.speaker_review_model ?? null,
+      includeAcousticEmotion: Boolean(row.include_acoustic_emotion),
+      bundledEmotionBindingRevisionId: row.bundled_emotion_binding_revision_id ?? null,
+      bundledEmotionModel: row.bundled_emotion_model ?? null,
+      runtimeMode: row.runtime_mode,
+      storageBackend: row.storage_backend,
+      storageBindingRevisionId: row.storage_binding_revision_id ?? null,
     };
   }
 
@@ -564,6 +625,21 @@ export class AudioAnalysisRepository {
   }
 
   /** 保存临时 OSS 对象键，使重启后的 worker 能继续提交而不重复上传。 */
+  async recordPreprocessing(
+    job: ClaimedAudioTranscription,
+    manifest: VoiceActivityManifest | null,
+  ): Promise<void> {
+    await this.pool.query(
+      `UPDATE ${this.table('audio_analysis_revisions')}
+       SET processing_checkpoint = 'preprocessing_ready',
+           settings_snapshot = CASE WHEN $3::jsonb IS NULL THEN settings_snapshot
+             ELSE settings_snapshot || jsonb_build_object('preprocessingManifest', $3::jsonb) END
+       WHERE tenant_id = $1 AND id = $2 AND status = 'transcribing'`,
+      [this.tenantId, job.revisionId, manifest ? JSON.stringify(manifest) : null],
+    );
+  }
+
+  /** 保存供应商暂存对象键，使重启后的 worker 不重复上传。 */
   async recordProviderArtifact(
     job: ClaimedAudioTranscription,
     objectKey: string,
@@ -572,6 +648,7 @@ export class AudioAnalysisRepository {
     await this.pool.query(
       `UPDATE ${this.table('audio_analysis_revisions')}
        SET provider_artifact_key = $3,
+           processing_checkpoint = 'provider_staged',
            settings_snapshot = CASE WHEN $4::jsonb IS NULL THEN settings_snapshot
              ELSE settings_snapshot || jsonb_build_object('preprocessingManifest', $4::jsonb) END
        WHERE tenant_id = $1 AND id = $2 AND status = 'transcribing'`,
@@ -589,6 +666,7 @@ export class AudioAnalysisRepository {
     await this.pool.query(
       `UPDATE ${this.table('audio_analysis_revisions')}
        SET provider_task_id = $3, provider_submitted_at = $4,
+           processing_checkpoint = 'provider_submitted',
            provider_poll_attempt = 0, provider_last_polled_at = NULL,
            provider_next_poll_at = CASE WHEN $5 = 'polling' THEN now() ELSE NULL END
        WHERE tenant_id = $1 AND id = $2 AND status = 'transcribing'`,
@@ -623,6 +701,7 @@ export class AudioAnalysisRepository {
            provider_terminal_status = $5, provider_terminal_received_at = $6,
            provider_terminal_result_url = $7, provider_terminal_error_code = $8,
            provider_terminal_error_message = $9, provider_next_poll_at = NULL,
+           processing_checkpoint = 'provider_terminal',
            progress = greatest(progress, 60), processing_stage = 'awaiting_result',
            processing_updated_at = now()
        FROM ${this.table('audio_files')} af
@@ -814,14 +893,106 @@ export class AudioAnalysisRepository {
           metadata.speakerIdentityScope,
         ],
       );
+      let lightweightConfirmationId: string | undefined;
+      if (job.runtimeMode === 'lightweight_local') {
+        if (
+          job.includeAcousticEmotion &&
+          (!job.bundledEmotionBindingRevisionId || !job.bundledEmotionModel)
+        ) {
+          throw new WorkspaceRepositoryError(
+            'CONFLICT',
+            '轻量模式声学情绪能力未被固定到 ASR Run。',
+          );
+        }
+        const snapshot = await client.query(
+          `INSERT INTO ${this.table('transcript_confirmations')}
+             (tenant_id, analysis_revision_id, version_no, origin)
+           VALUES ($1, $2, 1, 'system_raw_snapshot') RETURNING id`,
+          [this.tenantId, job.revisionId],
+        );
+        lightweightConfirmationId = String(snapshot.rows[0].id);
+        await client.query(
+          `INSERT INTO ${this.table('transcript_confirmation_segments')}
+             (tenant_id, transcript_confirmation_id, analysis_revision_id,
+              source_transcript_segment_id, confirmed_segment_id, part_index,
+              speaker_key, start_word_index, end_word_index, start_ms, end_ms, text)
+           SELECT segment.tenant_id, $3, segment.analysis_revision_id,
+                  segment.id, segment.id, segment.segment_index, segment.speaker_key, 0,
+                  greatest(jsonb_array_length(segment.words), 1),
+                  segment.start_ms, segment.end_ms, segment.text
+           FROM ${this.table('transcript_segments')} segment
+           WHERE segment.tenant_id = $1 AND segment.analysis_revision_id = $2`,
+          [this.tenantId, job.revisionId, lightweightConfirmationId],
+        );
+        await client.query(
+          `UPDATE ${this.table('audio_analysis_revisions')}
+           SET active_transcript_confirmation_id = $3,
+               processing_checkpoint = 'transcript_published'
+           WHERE tenant_id = $1 AND id = $2`,
+          [this.tenantId, job.revisionId, lightweightConfirmationId],
+        );
+        if (job.includeAcousticEmotion) {
+          const emotion = await client.query(
+            `INSERT INTO ${this.table('audio_post_analysis_jobs')}
+               (tenant_id, audio_file_id, analysis_revision_id, transcript_confirmation_id,
+                analysis_type, model, input_snapshot, status, progress,
+                capability_binding_revision_id, staging_binding_revision_id)
+             VALUES ($1, $2, $3, $4, 'emotion', $5, '{}'::jsonb, 'queued', 0, $6, NULL)
+             RETURNING id`,
+            [
+              this.tenantId,
+              job.audioFileId,
+              job.revisionId,
+              lightweightConfirmationId,
+              job.bundledEmotionModel,
+              job.bundledEmotionBindingRevisionId,
+            ],
+          );
+          await client.query(
+            `UPDATE ${this.table('audio_analysis_revisions')}
+             SET bundled_emotion_job_id = $3
+             WHERE tenant_id = $1 AND id = $2`,
+            [this.tenantId, job.revisionId, emotion.rows[0].id],
+          );
+        } else {
+          await client.query(
+            `UPDATE ${this.table('audio_analysis_revisions')}
+             SET processing_checkpoint = 'transcript_published'
+             WHERE tenant_id = $1 AND id = $2`,
+            [this.tenantId, job.revisionId],
+          );
+          await client.query(
+            `UPDATE ${this.table('audio_files')}
+             SET cleanup_status = 'pending', source_delete_after = now(), updated_at = now()
+             WHERE tenant_id = $1 AND id = $2 AND source_state = 'available'`,
+            [this.tenantId, job.audioFileId],
+          );
+        }
+      } else {
+        await client.query(
+          `UPDATE ${this.table('audio_analysis_revisions')}
+           SET processing_checkpoint = 'transcript_published'
+           WHERE tenant_id = $1 AND id = $2`,
+          [this.tenantId, job.revisionId],
+        );
+      }
       const published = await client.query(
         `UPDATE ${this.table('audio_files')}
          SET active_analysis_revision_id = $3, updated_at = now()
-         WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL RETURNING id`,
+         WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+           AND (transcript_selection_mode = 'auto' OR active_analysis_revision_id IS NULL)
+         RETURNING id`,
         [this.tenantId, job.audioFileId, job.revisionId],
       );
       if (!published.rowCount) {
-        throw new WorkspaceRepositoryError('CONFLICT', '音频已归档，转写结果未发布。');
+        const active = await client.query(
+          `SELECT id FROM ${this.table('audio_files')}
+           WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+          [this.tenantId, job.audioFileId],
+        );
+        if (!active.rowCount) {
+          throw new WorkspaceRepositoryError('CONFLICT', '音频已归档，转写结果未发布。');
+        }
       }
       await client.query('COMMIT');
     } catch (error) {
@@ -832,6 +1003,102 @@ export class AudioAnalysisRepository {
     }
   }
 
+  /** 列出一个音频的全部 ASR Run 以及当前选择策略。 */
+  async listTranscriptions(audioFileId: string) {
+    const audio = await this.pool.query<{
+      active_analysis_revision_id: string | null;
+      transcript_selection_mode: 'auto' | 'manual';
+    }>(
+      `SELECT active_analysis_revision_id, transcript_selection_mode
+       FROM ${this.table('audio_files')}
+       WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+      [this.tenantId, audioFileId],
+    );
+    const source = audio.rows[0];
+    if (!source) throw new WorkspaceRepositoryError('NOT_FOUND', '音频不存在或已归档。');
+    const runs = await this.pool.query<{
+      id: string;
+      revision_no: number;
+      status: 'queued' | 'transcribing' | 'analyzing' | 'ready' | 'failed';
+      transcription_model: string;
+      include_acoustic_emotion: boolean;
+      settings_snapshot: Record<string, unknown>;
+      created_at: Date;
+      completed_at: Date | null;
+    }>(
+      `SELECT id, revision_no, status, transcription_model, include_acoustic_emotion,
+              settings_snapshot, created_at, completed_at
+       FROM ${this.table('audio_analysis_revisions')}
+       WHERE tenant_id = $1 AND audio_file_id = $2
+       ORDER BY revision_no DESC`,
+      [this.tenantId, audioFileId],
+    );
+    return AudioTranscriptionRunListResponseSchema.parse({
+      selectionMode: source.transcript_selection_mode,
+      activeRevisionId: source.active_analysis_revision_id,
+      items: runs.rows.map((row) => ({
+        id: row.id,
+        revision: Number(row.revision_no),
+        status: row.status,
+        model: row.transcription_model,
+        preprocessing:
+          row.settings_snapshot.preprocessingMode === 'silero_vad' ? 'silero_vad' : 'whole_file',
+        includeAcousticEmotion: row.include_acoustic_emotion,
+        active: row.id === source.active_analysis_revision_id,
+        createdAt: row.created_at.toISOString(),
+        completedAt: row.completed_at?.toISOString() ?? null,
+      })),
+    });
+  }
+
+  /** 固定一个成功 ASR Run，或恢复自动跟随最新成功结果。 */
+  async selectTranscription(audioFileId: string, input: unknown) {
+    const request = AudioTranscriptSelectionRequestSchema.parse(input);
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const audio = await client.query(
+        `SELECT id FROM ${this.table('audio_files')}
+         WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL FOR UPDATE`,
+        [this.tenantId, audioFileId],
+      );
+      if (!audio.rowCount) throw new WorkspaceRepositoryError('NOT_FOUND', '音频不存在或已归档。');
+      let revisionId: string | null;
+      if (request.mode === 'manual') {
+        const revision = await client.query<{ id: string }>(
+          `SELECT id FROM ${this.table('audio_analysis_revisions')}
+           WHERE tenant_id = $1 AND audio_file_id = $2 AND id = $3 AND status = 'ready'`,
+          [this.tenantId, audioFileId, request.revisionId],
+        );
+        if (!revision.rowCount) {
+          throw new WorkspaceRepositoryError('CONFLICT', '只能选择已经成功发布的 ASR 结果。');
+        }
+        revisionId = request.revisionId;
+      } else {
+        const latest = await client.query<{ id: string }>(
+          `SELECT id FROM ${this.table('audio_analysis_revisions')}
+           WHERE tenant_id = $1 AND audio_file_id = $2 AND status = 'ready'
+           ORDER BY revision_no DESC LIMIT 1`,
+          [this.tenantId, audioFileId],
+        );
+        revisionId = latest.rows[0]?.id ?? null;
+      }
+      await client.query(
+        `UPDATE ${this.table('audio_files')}
+         SET transcript_selection_mode = $3, active_analysis_revision_id = $4, updated_at = now()
+         WHERE tenant_id = $1 AND id = $2`,
+        [this.tenantId, audioFileId, request.mode, revisionId],
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    return this.listTranscriptions(audioFileId);
+  }
+
   /** 将当前修订标记为转写失败，旧 active revision 保持不变。 */
   async failTranscription(
     job: ClaimedAudioTranscription,
@@ -839,17 +1106,56 @@ export class AudioAnalysisRepository {
     message: string,
     retryable: boolean,
     details: AudioFailureDetails | null = null,
-  ): Promise<void> {
-    await this.pool.query(
+  ): Promise<boolean> {
+    const result = await this.pool.query(
       `UPDATE ${this.table('audio_analysis_revisions')}
-       SET status = 'failed', completed_at = now(), error_stage = 'transcription',
+       SET status = CASE
+             WHEN $5 AND retry_count < 2 AND provider_task_id IS NULL THEN 'queued'
+             WHEN $5 AND retry_count < 2 THEN 'transcribing'
+             ELSE 'failed'
+           END,
+           retry_count = retry_count + 1,
+           completed_at = CASE WHEN $5 AND retry_count < 2 THEN NULL ELSE now() END,
+           error_stage = 'transcription',
            error_code = $3, error_message = $4, error_retryable = $5,
-           error_details = $6::jsonb, processing_stage = NULL, current_chunk = NULL,
+           error_details = $6::jsonb,
+           processing_stage = CASE
+             WHEN $5 AND retry_count < 2 AND provider_task_id IS NULL THEN 'queued'
+             WHEN $5 AND retry_count < 2 THEN 'awaiting_result'
+             ELSE NULL
+           END,
+           progress = CASE
+             WHEN $5 AND retry_count < 2 AND provider_task_id IS NULL THEN 0
+             WHEN $5 AND retry_count < 2 THEN greatest(progress, 35)
+             ELSE progress
+           END,
+           current_chunk = NULL,
            chunk_count = NULL, current_chunk_start_ms = NULL, current_chunk_end_ms = NULL,
            network_attempt = NULL, structure_attempt = NULL, processing_updated_at = NULL,
-           provider_terminal_result_url = NULL
-       WHERE tenant_id = $1 AND id = $2`,
+           provider_next_poll_at = CASE
+             WHEN $5 AND retry_count < 2 AND provider_task_id IS NOT NULL
+              AND provider_terminal_received_at IS NULL THEN now()
+             ELSE provider_next_poll_at
+           END,
+           provider_terminal_result_url = CASE
+             WHEN $5 AND retry_count < 2 THEN provider_terminal_result_url ELSE NULL END
+       WHERE tenant_id = $1 AND id = $2
+       RETURNING status`,
       [this.tenantId, job.revisionId, code, message, retryable, JSON.stringify(details)],
     );
+    if (!result.rows[0]) {
+      throw new WorkspaceRepositoryError('CONFLICT', '转写任务状态已变化，无法记录失败。');
+    }
+    const finalFailure = result.rows[0]?.status === 'failed';
+    if (finalFailure && job.runtimeMode === 'lightweight_local') {
+      await this.pool.query(
+        `UPDATE ${this.table('audio_files')}
+         SET source_delete_after = now() + interval '24 hours', cleanup_status = 'pending',
+             source_recovery_state = 'required', updated_at = now()
+         WHERE tenant_id = $1 AND id = $2 AND source_state = 'available'`,
+        [this.tenantId, job.audioFileId],
+      );
+    }
+    return finalFailure;
   }
 }

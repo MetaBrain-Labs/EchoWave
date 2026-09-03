@@ -168,11 +168,21 @@ create table public.audio_analysis_revisions (
   staging_binding_revision_id uuid,
   speaker_review_binding_revision_id uuid,
   speaker_review_resolved_at timestamp with time zone,
+  include_acoustic_emotion boolean not null default true,
+  retry_count integer not null default 0,
+  processing_checkpoint text not null default 'source_validated'::text,
+  bundled_emotion_job_id uuid,
+  bundled_emotion_binding_revision_id uuid,
+  bundled_emotion_model character varying(160),
   foreign key (tenant_id, id, active_emotion_job_id) references public.audio_post_analysis_jobs (tenant_id, analysis_revision_id, id)
   match simple on update no action on delete no action,
   foreign key (tenant_id, id, active_role_job_id) references public.audio_post_analysis_jobs (tenant_id, analysis_revision_id, id)
   match simple on update no action on delete no action,
   foreign key (tenant_id, id, active_transcript_confirmation_id) references public.transcript_confirmations (tenant_id, analysis_revision_id, id)
+  match simple on update no action on delete no action,
+  foreign key (tenant_id, bundled_emotion_binding_revision_id) references public.ai_capability_binding_revisions (tenant_id, id)
+  match simple on update no action on delete no action,
+  foreign key (tenant_id, id, bundled_emotion_job_id) references public.audio_post_analysis_jobs (tenant_id, analysis_revision_id, id)
   match simple on update no action on delete no action,
   foreign key (tenant_id, audio_file_id) references public.audio_files (tenant_id, id)
   match simple on update no action on delete cascade,
@@ -265,7 +275,18 @@ create table public.audio_files (
   created_at timestamp with time zone not null default now(),
   updated_at timestamp with time zone not null default now(),
   deleted_at timestamp with time zone,
+  runtime_mode text not null default 'hybrid'::text,
+  storage_backend text not null default 'local_persistent'::text,
+  storage_binding_revision_id uuid,
+  source_sha256 character varying(64),
+  source_state text not null default 'available'::text,
+  source_delete_after timestamp with time zone,
+  source_recovery_state text not null default 'not_required'::text,
+  cleanup_status text not null default 'not_due'::text,
+  transcript_selection_mode text not null default 'auto'::text,
   foreign key (tenant_id, id, active_analysis_revision_id) references public.audio_analysis_revisions (tenant_id, audio_file_id, id)
+  match simple on update no action on delete no action,
+  foreign key (tenant_id, storage_binding_revision_id) references public.ai_capability_binding_revisions (tenant_id, id)
   match simple on update no action on delete no action,
   foreign key (tenant_id, data_source_id) references public.data_sources (tenant_id, id)
   match simple on update no action on delete no action,
@@ -279,6 +300,7 @@ create table public.audio_files (
 create unique index audio_files_tenant_id_id_key on audio_files using btree (tenant_id, id);
 create unique index audio_files_source_external_idx on audio_files using btree (tenant_id, data_source_id, source_external_id) WHERE ((data_source_id IS NOT NULL) AND (source_external_id IS NOT NULL));
 create index audio_files_source_timeline_idx on audio_files using btree (tenant_id, data_source_id, created_at) WHERE (deleted_at IS NULL);
+create index audio_files_source_cleanup_idx on audio_files using btree (tenant_id, source_state, source_delete_after) WHERE (source_delete_after IS NOT NULL);
 
 create table public.audio_group_business_analysis_heads (
   tenant_id uuid not null,
@@ -310,6 +332,7 @@ create table public.audio_post_analysis_jobs (
   transcript_confirmation_id uuid not null,
   capability_binding_revision_id uuid,
   staging_binding_revision_id uuid,
+  retry_count integer not null default 0,
   foreign key (tenant_id, capability_binding_revision_id) references public.ai_capability_binding_revisions (tenant_id, id)
   match simple on update no action on delete no action,
   foreign key (tenant_id, audio_file_id, analysis_revision_id) references public.audio_analysis_revisions (tenant_id, audio_file_id, id)
@@ -346,6 +369,32 @@ create table public.audio_speaker_review_jobs (
 create unique index audio_speaker_review_jobs_tenant_id_id_key on audio_speaker_review_jobs using btree (tenant_id, id);
 create unique index audio_speaker_review_jobs_tenant_id_analysis_revision_id_key on audio_speaker_review_jobs using btree (tenant_id, analysis_revision_id);
 create index audio_speaker_review_jobs_claim_idx on audio_speaker_review_jobs using btree (tenant_id, status, created_at);
+
+create table public.audio_upload_sessions (
+  id uuid primary key not null default gen_random_uuid(),
+  tenant_id uuid not null,
+  data_source_id uuid not null,
+  audio_file_id uuid not null,
+  runtime_mode text not null,
+  upload_strategy text not null,
+  original_filename character varying(255) not null,
+  mime_type character varying(160) not null,
+  size_bytes bigint not null,
+  storage_key text not null,
+  include_acoustic_emotion boolean not null default true,
+  status text not null default 'created'::text,
+  expires_at timestamp with time zone not null,
+  error_code text,
+  error_message text,
+  created_at timestamp with time zone not null default now(),
+  completed_at timestamp with time zone,
+  foreign key (tenant_id, audio_file_id) references public.audio_files (tenant_id, id)
+  match simple on update no action on delete cascade,
+  foreign key (tenant_id, data_source_id) references public.data_sources (tenant_id, id)
+  match simple on update no action on delete cascade
+);
+create unique index audio_upload_sessions_tenant_id_id_key on audio_upload_sessions using btree (tenant_id, id);
+create index audio_upload_sessions_expiry_idx on audio_upload_sessions using btree (tenant_id, status, expires_at);
 
 create table public.business_analysis_citations (
   tenant_id uuid not null,
@@ -838,6 +887,17 @@ create table public.speaker_role_results (
   match simple on update no action on delete cascade
 );
 
+create table public.tenant_audio_runtime_settings (
+  tenant_id uuid primary key not null,
+  mode text not null default 'hybrid'::text,
+  revision integer not null default 1,
+  original_retention_days integer,
+  intermediate_retention_hours integer not null default 24,
+  updated_at timestamp with time zone not null default now(),
+  foreign key (tenant_id) references public.tenants (id)
+  match simple on update no action on delete no action
+);
+
 create table public.tenants (
   id uuid primary key not null,
   name text not null,
@@ -872,6 +932,7 @@ create table public.transcript_confirmations (
   analysis_revision_id uuid not null,
   version_no integer not null,
   confirmed_at timestamp with time zone not null default now(),
+  origin text not null default 'user_confirmed'::text,
   foreign key (tenant_id, analysis_revision_id) references public.audio_analysis_revisions (tenant_id, id)
   match simple on update no action on delete cascade
 );

@@ -808,6 +808,7 @@ describe('workspace routes', () => {
     assert.deepEqual(startedTranscriptionInput, {
       id: groupId,
       input: {
+        includeAcousticEmotion: true,
         preprocessing: 'whole_file',
         segmentationMode: 'speaker_turn',
       },

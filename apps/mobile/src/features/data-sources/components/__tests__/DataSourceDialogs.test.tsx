@@ -14,7 +14,11 @@ import { fireEvent, render } from '@testing-library/react-native';
 import { AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES } from '@echowave/contracts';
 import { StyleSheet } from 'react-native';
 
-import { AudioTranscriptionConfirmDialog, DataSourceFormSheet } from '../DataSourceDialogs';
+import {
+  AudioTranscriptionConfirmDialog,
+  DataSourceFormSheet,
+  LightweightUploadConfirmDialog,
+} from '../DataSourceDialogs';
 
 describe('DataSourceFormSheet custom business roles', () => {
   it('extends immutable core roles with normalized custom roles', () => {
@@ -89,5 +93,37 @@ describe('AudioTranscriptionConfirmDialog layout', () => {
     fireEvent.changeText(speakerCount, '3 people');
     expect(onExpectedSpeakerCountChange).toHaveBeenCalledWith('3');
     expect(screen.getByText(/仅作为 Speaker 数量软提示/)).toBeTruthy();
+  });
+});
+
+describe('LightweightUploadConfirmDialog', () => {
+  it('shows acoustic analysis selected by default and explains the permanent opt-out', () => {
+    const onChange = jest.fn();
+    const screen = render(
+      <LightweightUploadConfirmDialog
+        includeAcousticEmotion
+        onCancel={jest.fn()}
+        onChange={onChange}
+        onConfirm={jest.fn()}
+        pending={false}
+        visible
+      />,
+    );
+    const checkbox = screen.getByRole('checkbox', { name: '同时进行声学情绪分析' });
+    expect(checkbox.props.accessibilityState.checked).toBe(true);
+    fireEvent.press(checkbox);
+    expect(onChange).toHaveBeenCalledWith(false);
+
+    screen.rerender(
+      <LightweightUploadConfirmDialog
+        includeAcousticEmotion={false}
+        onCancel={jest.fn()}
+        onChange={onChange}
+        onConfirm={jest.fn()}
+        pending={false}
+        visible
+      />,
+    );
+    expect(screen.getByText(/必须重新选择原文件并新建 ASR Run/)).toBeTruthy();
   });
 });

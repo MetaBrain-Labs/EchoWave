@@ -16,6 +16,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import type {
   AudioTranscriptionCapabilitiesResponse,
   AudioTranscriptionPreprocessing,
+  AudioRuntimeMode,
   LinkedDataSourceGroup,
 } from '@echowave/contracts';
 import { DEFAULT_AUDIO_TRANSCRIPTION_MODEL } from '@echowave/contracts';
@@ -59,17 +60,21 @@ import {
   unlinkDataSourceGroup,
   updateDataSource,
   uploadDataSourceAudioFiles,
+  uploadSessionAudioFiles,
 } from '@/shared/api/dataSourcesApi';
 import {
   getAudioTranscriptionCapabilities,
+  remountAudioSource,
   startAudioTranscription,
 } from '@/shared/api/audioAnalysisApi';
+import { getAudioRuntime } from '@/shared/api/audioRuntimeApi';
 
 import {
   AudioTranscriptionConfirmDialog,
   DataSourceConfirmDialog,
   DataSourceFormSheet,
   DataSourceGroupPicker,
+  LightweightUploadConfirmDialog,
   type DataSourceFormValue,
 } from '../components/DataSourceDialogs';
 import { DataSourceAudioActions } from '../components/DataSourceAudioActions';
@@ -159,12 +164,17 @@ export function DataSourceDetailScreen({
     useState<AudioTranscriptionCapabilitiesResponse>();
   const [transcriptionPreprocessing, setTranscriptionPreprocessing] =
     useState<AudioTranscriptionPreprocessing>('silero_vad');
+  const [includeAcousticEmotion, setIncludeAcousticEmotion] = useState(true);
+  const [audioRuntimeMode, setAudioRuntimeMode] = useState<AudioRuntimeMode>('hybrid');
   const [expectedSpeakerCount, setExpectedSpeakerCount] = useState('');
   const [startingTranscription, setStartingTranscription] = useState(false);
   const [unlinkTarget, setUnlinkTarget] = useState<LinkedDataSourceGroup>();
   const [switchTarget, setSwitchTarget] = useState<LinkedDataSourceGroup>();
   const [confirming, setConfirming] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [pendingUploadAssets, setPendingUploadAssets] =
+    useState<DocumentPicker.DocumentPickerAsset[]>();
+  const [uploadIncludeAcousticEmotion, setUploadIncludeAcousticEmotion] = useState(true);
   const audioPlayback = useAudioPlayback();
   const runInitialRequest = useInitialRequestLoading();
   const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } = useSwipePager({
@@ -178,7 +188,7 @@ export function DataSourceDetailScreen({
       if (showLoading) setLoading(true);
       setError('');
       try {
-        const [detail, audio, records, groups, capabilities] = await Promise.all([
+        const [detail, audio, records, groups, capabilities, runtime] = await Promise.all([
           getDataSource(sourceId),
           listDataSourceAudioFiles(sourceId),
           listDataSourceIngestionRecords(sourceId),
@@ -186,8 +196,10 @@ export function DataSourceDetailScreen({
           showLoading
             ? getAudioTranscriptionCapabilities().catch(() => undefined)
             : Promise.resolve(undefined),
+          showLoading ? getAudioRuntime().catch(() => undefined) : Promise.resolve(undefined),
         ]);
         if (showLoading) setTranscriptionCapabilities(capabilities);
+        if (runtime) setAudioRuntimeMode(runtime.mode);
         setSource(toDataSourceDetailView(detail, audio.items, records.items, groups.items));
         if (!showLoading) setProgressRefreshError('');
       } catch (reason) {
@@ -277,6 +289,27 @@ export function DataSourceDetailScreen({
     }
   };
 
+  const performUpload = async (
+    assets: DocumentPicker.DocumentPickerAsset[],
+    includeEmotion = true,
+  ) => {
+    setUploading(true);
+    setOperationError('');
+    try {
+      if (audioRuntimeMode === 'hybrid') {
+        await uploadDataSourceAudioFiles(sourceId, assets);
+      } else {
+        await uploadSessionAudioFiles(sourceId, assets, audioRuntimeMode, includeEmotion);
+      }
+      setPendingUploadAssets(undefined);
+      await load(false);
+    } catch (reason) {
+      setOperationError(reason instanceof Error ? reason.message : '音频上传失败。');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const pickAndUpload = async () => {
     if (uploading) return;
     const selection = await DocumentPicker.getDocumentAsync({
@@ -307,16 +340,12 @@ export function DataSourceDetailScreen({
       setOperationError('单个文件和整批文件总大小均不能超过 200 MB。');
       return;
     }
-    setUploading(true);
-    setOperationError('');
-    try {
-      await uploadDataSourceAudioFiles(sourceId, assets);
-      await load(false);
-    } catch (reason) {
-      setOperationError(reason instanceof Error ? reason.message : '音频上传失败。');
-    } finally {
-      setUploading(false);
+    if (audioRuntimeMode === 'lightweight_local') {
+      setUploadIncludeAcousticEmotion(true);
+      setPendingUploadAssets(assets);
+      return;
     }
+    await performUpload(assets, false);
   };
 
   const confirmArchiveSource = async () => {
@@ -356,8 +385,18 @@ export function DataSourceDetailScreen({
     setStartingTranscription(true);
     setOperationError('');
     try {
+      if (target.sourceRecoveryState === 'required') {
+        const selection = await DocumentPicker.getDocumentAsync({
+          type: ['audio/*'],
+          copyToCacheDirectory: true,
+          multiple: false,
+        });
+        if (selection.canceled) return;
+        await remountAudioSource(target.id, selection.assets[0]!);
+      }
       await startAudioTranscription(target.id, {
         model: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+        includeAcousticEmotion,
         preprocessing: transcriptionPreprocessing,
         segmentationMode: 'speaker_turn',
         ...(expectedSpeakerCount ? { expectedSpeakerCount: Number(expectedSpeakerCount) } : {}),
@@ -457,7 +496,43 @@ export function DataSourceDetailScreen({
   const prepareTranscription = (target: SourceAudioItem) => {
     setTranscriptionPreprocessing('silero_vad');
     setExpectedSpeakerCount('');
+    setIncludeAcousticEmotion(true);
     setTranscriptionTarget(target);
+  };
+
+  const requestTranscription = () => {
+    if (audioRuntimeMode !== 'lightweight_local' || includeAcousticEmotion) {
+      void confirmTranscription();
+      return;
+    }
+    Alert.alert(
+      '关闭声学情绪分析？',
+      '本次 ASR 完成后会删除临时音频，并永久关闭该转写版本的情绪分析入口。若以后需要情绪分析，必须重新选择原文件并创建新转写。',
+      [
+        { text: '返回', style: 'cancel' },
+        { text: '仍然关闭', style: 'destructive', onPress: () => void confirmTranscription() },
+      ],
+    );
+  };
+  const requestLightweightUpload = () => {
+    const assets = pendingUploadAssets;
+    if (!assets) return;
+    if (uploadIncludeAcousticEmotion) {
+      void performUpload(assets, true);
+      return;
+    }
+    Alert.alert(
+      '关闭声学情绪分析？',
+      '这些音频完成 ASR 后会立即删除临时副本，并且对应转写版本不会提供情绪分析。以后需要时必须重新选择原文件并创建新转写。',
+      [
+        { text: '返回', style: 'cancel' },
+        {
+          text: '仍然关闭',
+          style: 'destructive',
+          onPress: () => void performUpload(assets, false),
+        },
+      ],
+    );
   };
   const openMoreActions = () =>
     Alert.alert('数据源操作', source.name, [
@@ -600,19 +675,30 @@ export function DataSourceDetailScreen({
       <AudioTranscriptionConfirmDialog
         audioTitle={transcriptionTarget?.title ?? ''}
         expectedSpeakerCount={expectedSpeakerCount}
+        includeAcousticEmotion={includeAcousticEmotion}
         models={[...(transcriptionCapabilities?.models ?? [])]}
         onPreprocessingChange={setTranscriptionPreprocessing}
         onCancel={() => {
           if (!startingTranscription) setTranscriptionTarget(undefined);
         }}
-        onConfirm={() => {
-          void confirmTranscription();
-        }}
+        onConfirm={requestTranscription}
         onExpectedSpeakerCountChange={setExpectedSpeakerCount}
+        onIncludeAcousticEmotionChange={setIncludeAcousticEmotion}
         pending={startingTranscription}
         preprocessing={transcriptionPreprocessing}
         sileroVad={transcriptionCapabilities?.sileroVad}
+        showAcousticEmotionOption={audioRuntimeMode === 'lightweight_local'}
         visible={Boolean(transcriptionTarget)}
+      />
+      <LightweightUploadConfirmDialog
+        includeAcousticEmotion={uploadIncludeAcousticEmotion}
+        onCancel={() => {
+          if (!uploading) setPendingUploadAssets(undefined);
+        }}
+        onChange={setUploadIncludeAcousticEmotion}
+        onConfirm={requestLightweightUpload}
+        pending={uploading}
+        visible={Boolean(pendingUploadAssets)}
       />
       <DataSourceConfirmDialog
         body={`解除后，“${unlinkTarget?.name ?? ''}”将不再通过此数据源看到相关音频；显式分享不受影响。`}

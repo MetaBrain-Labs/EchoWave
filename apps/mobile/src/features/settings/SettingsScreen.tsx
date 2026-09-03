@@ -61,6 +61,7 @@ const capabilities: readonly { id: AiCapability; label: string; provider: Provid
   { id: 'audio_speaker_review', label: '说话人复核', provider: 'deepseek' },
   { id: 'business_analysis', label: '业务分析', provider: 'deepseek' },
   { id: 'audio_staging', label: '临时 OSS', provider: 'aliyun_oss' },
+  { id: 'audio_primary_storage', label: '权威音频对象存储', provider: 'aliyun_oss' },
 ];
 
 type ProviderDraft = {

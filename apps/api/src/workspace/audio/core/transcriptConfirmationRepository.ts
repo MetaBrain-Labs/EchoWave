@@ -42,7 +42,9 @@ export class TranscriptConfirmationRepository {
     try {
       await client.query('BEGIN');
       const active = await client.query(
-        `SELECT ar.id AS revision_id, tc.version_no AS current_version
+        `SELECT ar.id AS revision_id, tc.version_no AS current_version,
+                ar.active_emotion_job_id, ar.bundled_emotion_job_id,
+                af.runtime_mode
          FROM ${this.table('audio_files')} af
          JOIN ${this.table('audio_analysis_revisions')} ar
            ON ar.tenant_id = af.tenant_id AND ar.id = af.active_analysis_revision_id
@@ -159,13 +161,17 @@ export class TranscriptConfirmationRepository {
           );
         }
       }
+      const preserveBundledEmotion =
+        row.runtime_mode === 'lightweight_local' &&
+        row.active_emotion_job_id !== null &&
+        row.active_emotion_job_id === row.bundled_emotion_job_id;
       await client.query(
         `UPDATE ${this.table('audio_analysis_revisions')}
          SET active_transcript_confirmation_id = $3,
-             active_emotion_job_id = NULL,
+             active_emotion_job_id = CASE WHEN $4::boolean THEN active_emotion_job_id ELSE NULL END,
              active_role_job_id = NULL
          WHERE tenant_id = $1 AND id = $2`,
-        [this.tenantId, input.analysisRevisionId, confirmationId],
+        [this.tenantId, input.analysisRevisionId, confirmationId, preserveBundledEmotion],
       );
       const response = AudioTranscriptConfirmationResponseSchema.parse({
         audioFileId,

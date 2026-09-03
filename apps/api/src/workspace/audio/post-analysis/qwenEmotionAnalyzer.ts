@@ -137,6 +137,9 @@ export class QwenEmotionAnalyzer {
               headers: {
                 Authorization: `Bearer ${this.options.apiKey}`,
                 'Content-Type': 'application/json',
+                ...(audioUrl.startsWith('oss://')
+                  ? { 'X-DashScope-OssResourceResolve': 'enable' }
+                  : {}),
               },
               body: JSON.stringify({
                 model: this.options.model,
