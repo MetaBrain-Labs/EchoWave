@@ -50,6 +50,7 @@ export interface DataSourceService {
 
 const MAX_AUDIO_FILES = 20;
 const MAX_AUDIO_BYTES = 200 * 1024 * 1024;
+const MAX_AUDIO_DURATION_MS = 12 * 60 * 60 * 1_000;
 const audioMimeTypes: Record<string, Set<string>> = {
   '.mp3': new Set(['audio/mpeg', 'audio/mp3']),
   '.wav': new Set(['audio/wav', 'audio/x-wav', 'audio/wave']),
@@ -136,6 +137,12 @@ async function inspectAudio(file: File): Promise<{ buffer: Buffer; item: StoredA
     durationMs = Math.round(metadata.format.duration * 1_000);
   } catch {
     throw new AudioUploadValidationError('INVALID_FILE', '无法识别有效的音频文件结构。');
+  }
+  if (durationMs > MAX_AUDIO_DURATION_MS) {
+    throw new AudioUploadValidationError(
+      'INVALID_FILE',
+      '音频时长超过 12 小时限制，请先压缩或拆分后再上传。',
+    );
   }
   const storageKey = `${randomUUID()}${extension}`;
   return {

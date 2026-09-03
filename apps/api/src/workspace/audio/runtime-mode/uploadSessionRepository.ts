@@ -57,7 +57,7 @@ export class AudioUploadSessionRepository {
       revision: number;
     },
     storage: {
-      backend: 'local_ephemeral' | 'aliyun_oss';
+      backend: 'local_persistent' | 'local_ephemeral' | 'aliyun_oss';
       bindingRevisionId: string | null;
       key: string;
       strategy: StoredUploadSession['strategy'];

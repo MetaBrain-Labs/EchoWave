@@ -311,7 +311,7 @@ group_data_sources 所关联数据源下的音频
 - `settings_snapshot`：对象类型的设置快照，记录预处理方式、固定识别语言、该模型声明的 diarization/时间戳能力，以及发布时实际是否收到 Speaker 和实际响应粒度；角色与情绪能力为 false。历史修订缺少新增实际能力字段时由读取层兼容推导。
 - `status`：`queued`、`transcribing`、`analyzing`、`ready` 或 `failed`。
 - `progress`：0 到 100。
-- `processing_stage`：进行中修订的 `queued`、`preprocessing`、`transcribing`、`awaiting_result`、`validating`、`correcting`、`splitting`、`merging` 或 `publishing` 阶段；新 STT 任务不再产生 `correcting`，该值仅兼容历史修订。`awaiting_result` 表示异步任务已提交，正在由 Polling 或 EventBridge 发现终态；`splitting` 表示文本退化或连续超时后正在细分当前 FFmpeg Chunk。
+- `processing_stage`：进行中修订的 `queued`、`preprocessing`、`transcribing`、`awaiting_result`、`validating` 或 `publishing` 阶段；`correcting`、`splitting`、`merging` 仅兼容历史修订。`awaiting_result` 表示异步任务已提交，正在由 Polling 或 EventBridge 发现终态。Qwen Filetrans 仍接收一个流式生成的整段压缩音频，长音频业务分析另行按窗口保存 checkpoint。
 - `transcription_provider`：本次修订使用的供应商；迁移 011 后新修订固定为 `dashscope`，旧值仅作为历史审计记录保留。`settings_snapshot.preprocessingManifest` 在 `silero_vad` 模式下保存固定模型校验值、策略、原始/压缩时长、保留区间、跳过区间和时间轴映射，并与临时 OSS 对象键一同写入以支持重启恢复。
 - `provider_task_id`、`provider_submitted_at`：DashScope 异步任务标识和首次提交时间，用于进程重启后恢复终态发现及六小时超时判断。
 - `provider_terminal_source`、`provider_terminal_event_id`、`provider_terminal_status`、`provider_terminal_received_at`：Polling 或 EventBridge 首次接受的供应商终态事实。EventBridge 保存事件 ID；同一任务后续重复或冲突事件不覆盖首个事实。

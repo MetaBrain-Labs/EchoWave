@@ -154,6 +154,7 @@ export class BusinessAnalysisWorker {
       const known = error instanceof BusinessAnalysisProviderError;
       const code = known ? error.code : 'INTERNAL_ERROR';
       const retryable = known ? error.retryable : true;
+      const reason = known ? error.reason : 'other';
       const message = known ? error.message : '销售复盘失败，请稍后重试。';
       let willRetry = false;
       let failurePersistenceError: unknown;
@@ -191,6 +192,7 @@ export class BusinessAnalysisWorker {
         metadata: {
           code,
           retryable,
+          reason,
           willRetry,
           recoveryAttempt: job.recoveryAttempts,
           nextRecoveryAttempt: willRetry ? job.recoveryAttempts + 1 : null,

@@ -428,6 +428,8 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
         embeddingModel: embedding.model,
         agent: new SalesAnalysisAgent({ ragConfig: dynamicRagConfig }),
         checkpointer,
+        saveWindowResult: (jobId, window) =>
+          businessAnalysisRepository.saveWindowResult(jobId, window),
       });
     },
     reporter,

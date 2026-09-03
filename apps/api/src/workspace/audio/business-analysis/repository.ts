@@ -26,6 +26,7 @@ import type { PoolClient } from 'pg';
 import { quoteIdentifier, type DatabasePool } from '../../../infrastructure/postgres.ts';
 import type { RetrievalChunk } from '../../../knowledge/retrieval/types.ts';
 import { WorkspaceRepositoryError } from '../../errors.ts';
+import { buildBusinessAnalysisWindows } from './windowing.ts';
 
 export const BUSINESS_ANALYSIS_WORKFLOW_VERSION = 'langgraph-v1';
 export const BUSINESS_ANALYSIS_MAX_RECOVERY_ATTEMPTS = 2;
@@ -65,6 +66,8 @@ export type ClaimedBusinessAnalysisJob = {
   knowledgeBases: { id: string; name: string }[];
   settings: BusinessAnalysisSettingsSnapshot;
   segments: BusinessAnalysisSegment[];
+  /** 已完成的窗口结果，供重试时跳过已成功的模型调用。 */
+  windowResults?: BusinessAnalysisWindowResult[];
 };
 
 export type BusinessAnalysisPublication = {
@@ -80,6 +83,14 @@ export type BusinessAnalysisPublication = {
     evidenceSegmentIds: string[];
     citedChunkIds: string[];
   }[];
+};
+
+export type BusinessAnalysisWindowResult = {
+  index: number;
+  startMs: number;
+  endMs: number;
+  segmentIds: string[];
+  result: BusinessAnalysisPublication;
 };
 
 type SourceSnapshot = {
@@ -112,6 +123,13 @@ function comparableSettings(settings: BusinessAnalysisSettingsSnapshot) {
     tone: settings.tone,
     customTags: settings.customTags,
   };
+}
+
+function analysisErrorReason(code: string | null, message: string | null) {
+  if (code === 'MODEL_TIMEOUT') return 'timeout' as const;
+  if (message?.includes('输出') && message.includes('长度')) return 'output_truncated' as const;
+  if (message?.includes('引用')) return 'invalid_citation' as const;
+  return 'other' as const;
 }
 
 /** 管理分组销售复盘的不可变任务与发布结果。 */
@@ -389,6 +407,38 @@ export class BusinessAnalysisRepository {
             [this.tenantId, knowledgeBaseIds],
           );
     const settings = row.settings_snapshot as BusinessAnalysisSettingsSnapshot;
+    const windowPlan = buildBusinessAnalysisWindows(
+      segments.rows.map((segment) => ({
+        id: String(segment.id),
+        startMs: Number(segment.start_ms),
+        endMs: Number(segment.end_ms),
+        text: String(segment.text),
+      })),
+    );
+    // 先建立窗口边界，再领取已完成结果；两步都可重复执行。
+    for (const window of windowPlan) {
+      await this.pool.query(
+        `INSERT INTO ${this.table('audio_business_analysis_windows')}
+           (tenant_id, job_id, window_index, start_ms, end_ms, segment_ids, status)
+         VALUES ($1, $2, $3, $4, $5, $6::uuid[], 'queued')
+         ON CONFLICT (tenant_id, job_id, window_index) DO NOTHING`,
+        [
+          this.tenantId,
+          row.id,
+          window.index,
+          window.startMs,
+          window.endMs,
+          window.segments.map((segment) => segment.id),
+        ],
+      );
+    }
+    const savedWindows = await this.pool.query(
+      `SELECT window_index, start_ms, end_ms, segment_ids, result
+       FROM ${this.table('audio_business_analysis_windows')}
+       WHERE tenant_id = $1 AND job_id = $2 AND status = 'ready'
+       ORDER BY window_index`,
+      [this.tenantId, row.id],
+    );
     return {
       id: row.id,
       audioFileId: row.audio_file_id,
@@ -407,6 +457,15 @@ export class BusinessAnalysisRepository {
         name: String(item.name),
       })),
       settings,
+      windowResults: savedWindows.rows
+        .filter((item) => item.result && typeof item.result === 'object')
+        .map((item) => ({
+          index: Number(item.window_index),
+          startMs: Number(item.start_ms),
+          endMs: Number(item.end_ms),
+          segmentIds: safeArray(item.segment_ids),
+          result: item.result as BusinessAnalysisPublication,
+        })),
       segments: segments.rows.map((segment) => ({
         id: segment.id,
         speakerKey: String(segment.speaker_key),
@@ -434,6 +493,16 @@ export class BusinessAnalysisRepository {
        SET progress = greatest(progress, $3)
        WHERE tenant_id = $1 AND id = $2 AND status = 'running'`,
       [this.tenantId, jobId, Math.max(1, Math.min(99, Math.round(progress)))],
+    );
+  }
+
+  /** 幂等保存一个窗口结果，进程中断后可从最近完成窗口恢复。 */
+  async saveWindowResult(jobId: string, window: BusinessAnalysisWindowResult): Promise<void> {
+    await this.pool.query(
+      `UPDATE ${this.table('audio_business_analysis_windows')}
+       SET status = 'ready', attempt = attempt + 1, result = $4::jsonb, completed_at = now(), updated_at = now()
+       WHERE tenant_id = $1 AND job_id = $2 AND window_index = $3`,
+      [this.tenantId, jobId, window.index, JSON.stringify(window.result)],
     );
   }
 
@@ -742,6 +811,7 @@ export class BusinessAnalysisRepository {
               code: String(job.error_code ?? 'ANALYSIS_FAILED'),
               message: String(job.error_message ?? '业务分析失败。'),
               retryable: Boolean(job.error_retryable),
+              reason: analysisErrorReason(job.error_code ?? null, job.error_message ?? null),
             }
           : null,
       result,

@@ -233,4 +233,29 @@ describe('BusinessAnalysisWorkflow', () => {
     );
     assert.equal(published, false);
   });
+
+  it('drops knowledge citations outside the retrieval allow-list without failing publication', async () => {
+    let published;
+    const workflow = new BusinessAnalysisWorkflow({
+      repository: {
+        updateProgress: async () => {},
+        publish: async (_job, result) => {
+          published = result;
+        },
+      },
+      checkpointer: new MemorySaver(),
+      embeddings: { embedQuery: async () => assert.fail('zero-KB analysis must not embed') },
+      embeddingModel: 'text-embedding-v4',
+      knowledgeRepository: {
+        searchMany: async () => assert.fail('zero-KB analysis must not search'),
+      },
+      agent: {
+        planRetrievalQueries: async () => [],
+        analyze: async () => publication(['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa']),
+      },
+    });
+    await workflow.run(makeJob({ knowledgeBaseIds: [], knowledgeBases: [] }), recorder(), () => {});
+    assert.deepEqual(published.tags[0].citedChunkIds, []);
+    assert.match(published.limitations.join(' '), /知识引用/);
+  });
 });

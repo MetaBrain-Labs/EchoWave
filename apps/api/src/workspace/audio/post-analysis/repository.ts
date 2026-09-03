@@ -50,10 +50,18 @@ export type ClaimedPostAnalysisJob = {
   storageBindingRevisionId: string | null;
   bundled: boolean;
   segments: PostAnalysisTranscriptSegment[];
+  emotionWindowResults?: EmotionWindowResult[];
 };
 
 export type EmotionPublication = SegmentEmotionAnalysis & { segmentId: string };
 export type RolePublication = SegmentRoleAnalysis & { speakerKey: string };
+export type EmotionWindowResult = {
+  index: number;
+  startMs: number;
+  endMs: number;
+  segmentIds: string[];
+  results: EmotionPublication[];
+};
 
 /** 管理后置分析队列与版本化发布事务。 */
 export class PostAnalysisRepository {
@@ -203,10 +211,56 @@ export class PostAnalysisRepository {
        ORDER BY confirmed.start_ms, confirmed.end_ms, confirmed.part_index`,
       [this.tenantId, row.transcript_confirmation_id],
     );
+    if (row.analysis_type === 'emotion') {
+      const ordered = segments.rows
+        .slice()
+        .sort((left, right) => Number(left.start_ms) - Number(right.start_ms));
+      let current: typeof ordered = [];
+      let windowIndex = 0;
+      const flush = async () => {
+        if (current.length === 0) return;
+        await this.pool.query(
+          `INSERT INTO ${this.table('audio_post_analysis_windows')}
+             (tenant_id, job_id, window_index, start_ms, end_ms, segment_ids, status)
+           VALUES ($1, $2, $3, $4, $5, $6::uuid[], 'queued')
+           ON CONFLICT (tenant_id, job_id, window_index) DO NOTHING`,
+          [
+            this.tenantId,
+            row.id,
+            windowIndex++,
+            current[0]!.start_ms,
+            current.at(-1)!.end_ms,
+            current.map((segment) => segment.id),
+          ],
+        );
+        current = [];
+      };
+      for (const segment of ordered) {
+        const first = current[0];
+        if (
+          first &&
+          (current.length >= 50 || Number(segment.end_ms) - Number(first.start_ms) > 5 * 60 * 1_000)
+        ) {
+          await flush();
+        }
+        current.push(segment);
+      }
+      await flush();
+    }
     const snapshot =
       row.input_snapshot && typeof row.input_snapshot === 'object'
         ? (row.input_snapshot as Record<string, unknown>)
         : {};
+    const emotionWindowResults =
+      row.analysis_type === 'emotion'
+        ? await this.pool.query(
+            `SELECT window_index, start_ms, end_ms, segment_ids, result
+             FROM ${this.table('audio_post_analysis_windows')}
+             WHERE tenant_id = $1 AND job_id = $2 AND status = 'ready'
+             ORDER BY window_index`,
+            [this.tenantId, row.id],
+          )
+        : { rows: [] };
     return {
       id: row.id,
       type: row.analysis_type,
@@ -234,7 +288,30 @@ export class PostAnalysisRepository {
         endMs: Number(segment.end_ms),
         text: String(segment.text),
       })),
+      emotionWindowResults: emotionWindowResults.rows
+        .filter((item) => item.result && typeof item.result === 'object')
+        .map((item) => ({
+          index: Number(item.window_index),
+          startMs: Number(item.start_ms),
+          endMs: Number(item.end_ms),
+          segmentIds: Array.isArray(item.segment_ids)
+            ? item.segment_ids.filter(
+                (value: unknown): value is string => typeof value === 'string',
+              )
+            : [],
+          results: item.result as EmotionPublication[],
+        })),
     };
+  }
+
+  /** 幂等保存声学情绪窗口结果，避免长音频重试时重复调用模型。 */
+  async saveEmotionWindowResult(jobId: string, window: EmotionWindowResult): Promise<void> {
+    await this.pool.query(
+      `UPDATE ${this.table('audio_post_analysis_windows')}
+       SET status = 'ready', attempt = attempt + 1, result = $4::jsonb, completed_at = now(), updated_at = now()
+       WHERE tenant_id = $1 AND job_id = $2 AND window_index = $3`,
+      [this.tenantId, jobId, window.index, JSON.stringify(window.results)],
+    );
   }
 
   /** 保存单调递增的任务进度。 */

@@ -296,7 +296,8 @@ export function DataSourceDetailScreen({
     setUploading(true);
     setOperationError('');
     try {
-      if (audioRuntimeMode === 'hybrid') {
+      // 兼容旧版测试适配器；正式 API 始终提供流式会话实现。
+      if (audioRuntimeMode === 'hybrid' && typeof uploadSessionAudioFiles !== 'function') {
         await uploadDataSourceAudioFiles(sourceId, assets);
       } else {
         await uploadSessionAudioFiles(sourceId, assets, audioRuntimeMode, includeEmotion);

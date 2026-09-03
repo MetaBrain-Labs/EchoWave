@@ -24,6 +24,7 @@ import type { WorkerWakeupSource } from '../../../infrastructure/workerWakeup.ts
 import {
   type ClaimedPostAnalysisJob,
   type EmotionPublication,
+  type EmotionWindowResult,
   PostAnalysisRepository,
   type PostAnalysisTranscriptSegment,
 } from './repository.ts';
@@ -288,17 +289,32 @@ export class AudioPostAnalysisWorker {
     this.windowSequence = 0;
     const initialWindows = buildEmotionWindows(job.segments);
     const results: EmotionPublication[] = [];
+    const savedWindows = new Map(
+      (job.emotionWindowResults ?? []).map((window) => [window.index, window] as const),
+    );
     try {
-      for (const window of initialWindows) {
-        results.push(
-          ...(await this.analyzeEmotionWindow(
-            job,
-            window,
-            report,
-            emotionRuntime,
-            materialized?.path,
-          )),
-        );
+      for (const [index, window] of initialWindows.entries()) {
+        const saved = savedWindows.get(index);
+        const windowResults = saved
+          ? saved.results
+          : await this.analyzeEmotionWindow(
+              job,
+              window,
+              report,
+              emotionRuntime,
+              materialized?.path,
+            );
+        results.push(...windowResults);
+        if (!saved && 'saveEmotionWindowResult' in this.options.repository) {
+          const checkpoint: EmotionWindowResult = {
+            index,
+            startMs: window[0]!.startMs,
+            endMs: window.at(-1)!.endMs,
+            segmentIds: window.map((segment) => segment.id),
+            results: windowResults,
+          };
+          await this.options.repository.saveEmotionWindowResult(job.id, checkpoint);
+        }
         await this.options.repository.updateProgress(
           job.id,
           5 + (results.length / job.segments.length) * 88,

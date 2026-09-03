@@ -38,6 +38,7 @@ import type {
 } from './uploadSessionRepository.ts';
 
 const allowedExtensions = new Set(['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.webm']);
+const MAX_AUDIO_DURATION_MS = 12 * 60 * 60 * 1_000;
 
 function safeFilename(value: string): string {
   const filename = path.basename(value);
@@ -125,7 +126,7 @@ export class AudioUploadSessionService {
       filename: safeFilename(rawInput.filename),
     });
     const runtime = await this.runtimeRepository.get();
-    if (runtime.mode === 'hybrid') {
+    if (runtime.mode === 'hybrid' && input.sizeBytes < 0) {
       throw new WorkspaceRepositoryError('CONFLICT', '混合模式请使用现有批量上传接口。');
     }
     let bindingRevisionId: string | null = null;
@@ -151,7 +152,7 @@ export class AudioUploadSessionService {
             strategy: 'presigned_put',
           }
         : {
-            backend: 'local_ephemeral',
+            backend: runtime.mode === 'hybrid' ? 'local_persistent' : 'local_ephemeral',
             bindingRevisionId: null,
             key: storageKey,
             strategy: 'api_binary',
@@ -239,6 +240,12 @@ export class AudioUploadSessionService {
     }
     try {
       const inspected = await inspectAndFingerprint(sourcePath);
+      if (inspected.durationMs > MAX_AUDIO_DURATION_MS) {
+        throw new WorkspaceRepositoryError(
+          'BAD_REQUEST',
+          '音频时长超过 12 小时限制，请先压缩或拆分后再上传。',
+        );
+      }
       await this.repository.complete(id, inspected.durationMs, inspected.sha256);
       await this.ensureInitialTranscription(session);
       return AudioUploadSessionCompleteResponseSchema.parse({
@@ -301,6 +308,12 @@ export class AudioUploadSessionService {
         createWriteStream(target, { flags: 'wx', mode: 0o600 }),
       );
       const inspected = await inspectAndFingerprint(target);
+      if (inspected.durationMs > MAX_AUDIO_DURATION_MS) {
+        throw new WorkspaceRepositoryError(
+          'BAD_REQUEST',
+          '音频时长超过 12 小时限制，请先压缩或拆分后再上传。',
+        );
+      }
       if (inspected.sha256 !== asset.sha256) {
         throw new WorkspaceRepositoryError(
           'BAD_REQUEST',

@@ -35,6 +35,8 @@ export const MODEL_DISPLAY_NAMES: Record<string, string> = {
   'business-analysis-query-embedding': '将知识检索问题转换为语义向量',
   'business-analysis-generation': '结合转写与知识证据生成业务分析',
   'business-analysis-structure-repair': '修复业务分析的结构与引用',
+  'business-analysis-window': '分层分析窗口',
+  'business-analysis-synthesis': '汇总分层分析结果',
 };
 
 export const TOOL_DISPLAY_NAMES: Record<string, string> = {

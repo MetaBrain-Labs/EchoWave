@@ -90,7 +90,7 @@ export async function uploadDataSourceAudioFiles(id: string, assets: DocumentPic
 export async function uploadSessionAudioFiles(
   id: string,
   assets: DocumentPickerAsset[],
-  mode: Exclude<AudioRuntimeMode, 'hybrid'>,
+  mode: AudioRuntimeMode,
   includeAcousticEmotion: boolean,
 ) {
   for (const asset of assets) {

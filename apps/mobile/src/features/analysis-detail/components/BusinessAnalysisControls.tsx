@@ -52,6 +52,19 @@ function stateLabel(state: AudioBusinessAnalysisState): string {
     : '已有结果，设置或关联已更新';
 }
 
+function errorLabel(state: AudioBusinessAnalysisState): string {
+  if (!state.error) return '';
+  const prefix =
+    state.error.reason === 'timeout'
+      ? '模型响应超时'
+      : state.error.reason === 'output_truncated'
+        ? '模型输出被截断'
+        : state.error.reason === 'invalid_citation'
+          ? '知识引用已校正'
+          : '';
+  return prefix ? `${prefix}：${state.error.message}` : state.error.message;
+}
+
 /** 展示当前分组业务分析状态与启动或重跑入口。 */
 export function BusinessAnalysisControls({
   onStart,
@@ -75,7 +88,7 @@ export function BusinessAnalysisControls({
       </View>
       {state.error ? (
         <Text accessibilityRole="alert" style={styles.errorText}>
-          {state.error.message}
+          {errorLabel(state)}
         </Text>
       ) : null}
       {!processing ? (
