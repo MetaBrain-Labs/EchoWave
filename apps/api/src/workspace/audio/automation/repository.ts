@@ -279,43 +279,69 @@ export class AudioAutomationRepository {
     );
     if (!batch.rows[0]) throw new WorkspaceRepositoryError('NOT_FOUND', '分析批次不存在。');
     const tasks = await this.pool.query(
-      `SELECT * FROM ${this.table('audio_analysis_tasks')}
-       WHERE tenant_id = $1 AND batch_id = $2 ORDER BY created_at, id`,
-      [this.tenantId, batchId],
+      `SELECT task.*, business.status AS business_status,
+              business.group_id AS business_group_id,
+              business.audio_file_id AS business_audio_file_id,
+              business_head.active_job_id AS business_head_job_id
+       FROM ${this.table('audio_analysis_tasks')} task
+       LEFT JOIN ${this.table('audio_business_analysis_jobs')} business
+         ON business.tenant_id = task.tenant_id AND business.id = task.business_job_id
+        AND business.group_id = $3 AND business.audio_file_id = task.audio_file_id
+       LEFT JOIN ${this.table('audio_group_business_analysis_heads')} business_head
+         ON business_head.tenant_id = task.tenant_id
+        AND business_head.group_id = $3
+        AND business_head.audio_file_id = task.audio_file_id
+       WHERE task.tenant_id = $1 AND task.batch_id = $2 ORDER BY task.created_at, task.id`,
+      [this.tenantId, batchId, batch.rows[0].group_id],
     );
-    const mapped = tasks.rows.map((row) => ({
-      id: row.id,
-      batchId: row.batch_id,
-      audioFileId: row.audio_file_id ?? null,
-      title: row.title,
-      runtimeMode: row.runtime_mode ?? null,
-      status: row.status,
-      phase: row.phase,
-      progress: Number(row.progress),
-      runAfter: iso(row.run_after),
-      warningCodes: strings(row.warning_codes),
-      blocker: row.blocker_reason
-        ? {
-            reason: row.blocker_reason,
-            capability: row.blocker_capability,
-            message: row.blocker_message,
-            sourceExpiresAt: iso(row.source_expires_at),
-          }
-        : null,
-      error: row.error_code
-        ? {
-            code: row.error_code,
-            message: row.error_message,
-            retryable: Boolean(row.error_retryable),
-          }
-        : null,
-      createdAt: iso(row.created_at)!,
-      updatedAt: iso(row.updated_at)!,
-    }));
-    const completed = mapped.filter(
-      (item) => item.status === 'completed' || item.status === 'completed_with_warnings',
-    ).length;
+    const mapped = tasks.rows.map((row) => {
+      // 报告只能指向本次任务发布的业务任务，不能复用失败/取消任务的旧 head。
+      const reportAvailable =
+        (row.status === 'completed' || row.status === 'completed_with_warnings') &&
+        Boolean(row.audio_file_id) &&
+        Boolean(row.business_job_id) &&
+        row.business_status === 'ready' &&
+        row.business_group_id === batch.rows[0].group_id &&
+        row.business_audio_file_id === row.audio_file_id &&
+        row.business_head_job_id === row.business_job_id;
+      return {
+        id: row.id,
+        batchId: row.batch_id,
+        audioFileId: row.audio_file_id ?? null,
+        title: row.title,
+        runtimeMode: row.runtime_mode ?? null,
+        status: row.status,
+        phase: row.phase,
+        progress: Number(row.progress),
+        runAfter: iso(row.run_after),
+        warningCodes: strings(row.warning_codes),
+        blocker: row.blocker_reason
+          ? {
+              reason: row.blocker_reason,
+              capability: row.blocker_capability,
+              message: row.blocker_message,
+              sourceExpiresAt: iso(row.source_expires_at),
+            }
+          : null,
+        error: row.error_code
+          ? {
+              code: row.error_code,
+              message: row.error_message,
+              retryable: Boolean(row.error_retryable),
+            }
+          : null,
+        report: reportAvailable
+          ? { audioFileId: row.audio_file_id, groupId: batch.rows[0].group_id }
+          : null,
+        reportAvailable,
+        createdAt: iso(row.created_at)!,
+        updatedAt: iso(row.updated_at)!,
+      };
+    });
+    const completed = mapped.filter((item) => item.status === 'completed').length;
+    const partial = mapped.filter((item) => item.status === 'completed_with_warnings').length;
     const failed = mapped.filter((item) => item.status === 'failed').length;
+    const canceled = mapped.filter((item) => item.status === 'canceled').length;
     const blocked = mapped.filter((item) => item.status === 'hard_blocked').length;
     const active = mapped.filter((item) =>
       ['scheduled', 'queued', 'running', 'awaiting_upload'].includes(item.status),
@@ -328,7 +354,7 @@ export class AudioAutomationRepository {
       source: row.source_kind,
       scheduledFor: iso(row.scheduled_for),
       configurationSnapshot: row.configuration_snapshot,
-      counts: { total: mapped.length, active, blocked, completed, failed },
+      counts: { total: mapped.length, active, blocked, completed, partial, failed, canceled },
       tasks: mapped,
       createdAt: iso(row.created_at),
     });
@@ -410,8 +436,8 @@ export class AudioAutomationRepository {
       businessJobId?: string;
       progress?: number;
     },
-  ): Promise<void> {
-    await this.pool.query(
+  ): Promise<boolean> {
+    const result = await this.pool.query(
       `UPDATE ${this.table('audio_analysis_tasks')}
        SET phase = coalesce($3, phase), analysis_revision_id = coalesce($4, analysis_revision_id),
            emotion_job_id = coalesce($5, emotion_job_id), role_job_id = coalesce($6, role_job_id),
@@ -428,6 +454,42 @@ export class AudioAutomationRepository {
         input.businessJobId ?? null,
         input.progress ?? null,
       ],
+    );
+    return result.rowCount === 1;
+  }
+
+  /** 父任务取消后清理尚未成功挂载到任务行的孤儿业务子任务。 */
+  async cancelBusinessJob(jobId: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE ${this.table('audio_business_analysis_jobs')}
+       SET status = 'failed', error_code = 'CANCELED', error_message = '业务分析已取消。',
+           error_retryable = false, completed_at = coalesce(completed_at, now()),
+           next_attempt_at = NULL, checkpoint_cleanup_pending = true
+       WHERE tenant_id = $1 AND id = $2 AND status = 'queued'`,
+      [this.tenantId, jobId],
+    );
+    await this.pool.query(
+      `UPDATE ${this.table('audio_business_analysis_jobs')}
+       SET cancel_requested = true
+       WHERE tenant_id = $1 AND id = $2 AND status = 'running'`,
+      [this.tenantId, jobId],
+    );
+  }
+
+  /** 父任务取消后清理尚未成功挂载到任务行的孤儿后置分析子任务。 */
+  async cancelPostAnalysisJob(jobId: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE ${this.table('audio_post_analysis_jobs')}
+       SET status = 'failed', error_code = 'CANCELED', error_message = '后置分析已取消。',
+           error_retryable = false, completed_at = coalesce(completed_at, now())
+       WHERE tenant_id = $1 AND id = $2 AND status = 'queued'`,
+      [this.tenantId, jobId],
+    );
+    await this.pool.query(
+      `UPDATE ${this.table('audio_post_analysis_jobs')}
+       SET cancel_requested = true
+       WHERE tenant_id = $1 AND id = $2 AND status = 'running'`,
+      [this.tenantId, jobId],
     );
   }
 
@@ -781,47 +843,131 @@ export class AudioAutomationRepository {
   }
 
   async cancelBatch(batchId: string): Promise<string[]> {
-    await this.pool.query(
-      `UPDATE ${this.table('audio_analysis_batches')}
-       SET canceled_at = coalesce(canceled_at, now()), updated_at = now()
-       WHERE tenant_id = $1 AND id = $2`,
-      [this.tenantId, batchId],
-    );
-    const canceled = await this.pool.query(
-      `UPDATE ${this.table('audio_analysis_tasks')}
-       SET status = 'canceled', phase = 'done', completed_at = now(), updated_at = now()
-       WHERE tenant_id = $1 AND batch_id = $2
-         AND status IN ('awaiting_upload', 'scheduled', 'queued', 'hard_blocked')
-       RETURNING id`,
-      [this.tenantId, batchId],
-    );
-    await this.pool.query(
-      `UPDATE ${this.table('audio_analysis_tasks')}
-       SET cancel_requested = true, updated_at = now()
-       WHERE tenant_id = $1 AND batch_id = $2 AND status = 'running'`,
-      [this.tenantId, batchId],
-    );
-    return canceled.rows.map((row) => String(row.id));
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `UPDATE ${this.table('audio_analysis_batches')}
+         SET canceled_at = coalesce(canceled_at, now()), updated_at = now()
+         WHERE tenant_id = $1 AND id = $2`,
+        [this.tenantId, batchId],
+      );
+      const canceled = await client.query(
+        `UPDATE ${this.table('audio_analysis_tasks')}
+         SET status = 'canceled', phase = 'done', completed_at = coalesce(completed_at, now()),
+             updated_at = now()
+         WHERE tenant_id = $1 AND batch_id = $2
+           AND status IN ('awaiting_upload', 'scheduled', 'queued', 'hard_blocked')
+         RETURNING id`,
+        [this.tenantId, batchId],
+      );
+      await client.query(
+        `UPDATE ${this.table('audio_analysis_tasks')}
+         SET cancel_requested = true, updated_at = now()
+         WHERE tenant_id = $1 AND batch_id = $2 AND status = 'running'`,
+        [this.tenantId, batchId],
+      );
+      await this.propagateCancellation(client, batchId);
+      await client.query('COMMIT');
+      return canceled.rows.map((row) => String(row.id));
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async cancelTask(taskId: string): Promise<string[]> {
-    const canceled = await this.pool.query(
-      `UPDATE ${this.table('audio_analysis_tasks')}
-       SET status = 'canceled', phase = 'done', completed_at = now(), updated_at = now()
-       WHERE tenant_id = $1 AND id = $2
-         AND status IN ('awaiting_upload', 'scheduled', 'queued', 'hard_blocked')
-       RETURNING id`,
-      [this.tenantId, taskId],
-    );
-    if (!canceled.rowCount) {
-      await this.pool.query(
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const canceled = await client.query(
+        `UPDATE ${this.table('audio_analysis_tasks')}
+         SET status = 'canceled', phase = 'done', completed_at = coalesce(completed_at, now()),
+             updated_at = now()
+         WHERE tenant_id = $1 AND id = $2
+           AND status IN ('awaiting_upload', 'scheduled', 'queued', 'hard_blocked')
+         RETURNING id, batch_id`,
+        [this.tenantId, taskId],
+      );
+      await client.query(
         `UPDATE ${this.table('audio_analysis_tasks')}
          SET cancel_requested = true, updated_at = now()
          WHERE tenant_id = $1 AND id = $2 AND status = 'running'`,
         [this.tenantId, taskId],
       );
+      const batch = await client.query(
+        `SELECT batch_id FROM ${this.table('audio_analysis_tasks')}
+         WHERE tenant_id = $1 AND id = $2`,
+        [this.tenantId, taskId],
+      );
+      if (batch.rows[0])
+        await this.propagateCancellation(client, String(batch.rows[0].batch_id), taskId);
+      await client.query('COMMIT');
+      return canceled.rows.map((row) => String(row.id));
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
-    return canceled.rows.map((row) => String(row.id));
+  }
+
+  /** 在父任务取消的同一事务内终止或标记所有已创建的阶段子任务。 */
+  private async propagateCancellation(
+    client: PoolClient,
+    batchId: string,
+    taskId?: string,
+  ): Promise<void> {
+    const taskFilter = taskId ? 'task.id = $2' : 'task.batch_id = $2';
+    await client.query(
+      `UPDATE ${this.table('audio_business_analysis_jobs')} job
+       SET status = 'failed', error_code = 'CANCELED', error_message = '业务分析已取消。',
+           error_retryable = false, completed_at = coalesce(completed_at, now()),
+           next_attempt_at = NULL, checkpoint_cleanup_pending = true
+       WHERE job.tenant_id = $1 AND job.status = 'queued'
+         AND EXISTS (
+           SELECT 1 FROM ${this.table('audio_analysis_tasks')} task
+           WHERE task.tenant_id = job.tenant_id AND ${taskFilter}
+             AND task.business_job_id = job.id
+         )`,
+      [this.tenantId, taskId ?? batchId],
+    );
+    await client.query(
+      `UPDATE ${this.table('audio_business_analysis_jobs')} job
+       SET cancel_requested = true, updated_at = now()
+       WHERE job.tenant_id = $1 AND job.status = 'running'
+         AND EXISTS (
+           SELECT 1 FROM ${this.table('audio_analysis_tasks')} task
+           WHERE task.tenant_id = job.tenant_id AND ${taskFilter}
+             AND task.business_job_id = job.id
+         )`,
+      [this.tenantId, taskId ?? batchId],
+    );
+    await client.query(
+      `UPDATE ${this.table('audio_post_analysis_jobs')} job
+       SET status = 'failed', error_code = 'CANCELED', error_message = '后置分析已取消。',
+           error_retryable = false, completed_at = coalesce(completed_at, now())
+       WHERE job.tenant_id = $1 AND job.status = 'queued'
+         AND EXISTS (
+           SELECT 1 FROM ${this.table('audio_analysis_tasks')} task
+           WHERE task.tenant_id = job.tenant_id AND ${taskFilter}
+             AND (task.emotion_job_id = job.id OR task.role_job_id = job.id)
+         )`,
+      [this.tenantId, taskId ?? batchId],
+    );
+    await client.query(
+      `UPDATE ${this.table('audio_post_analysis_jobs')} job
+       SET cancel_requested = true
+       WHERE job.tenant_id = $1 AND job.status = 'running'
+         AND EXISTS (
+           SELECT 1 FROM ${this.table('audio_analysis_tasks')} task
+           WHERE task.tenant_id = job.tenant_id AND ${taskFilter}
+             AND (task.emotion_job_id = job.id OR task.role_job_id = job.id)
+         )`,
+      [this.tenantId, taskId ?? batchId],
+    );
   }
 
   async cancelAfterCurrent(task: ClaimedAutomationTask): Promise<void> {

@@ -37,6 +37,7 @@ const app = createApp(config, {
   audioRuntimeService: ragRuntime.audioRuntimeService,
   audioUploadService: ragRuntime.audioUploadService,
   audioAutomationService: ragRuntime.audioAutomationService,
+  audioAnalysisRunsService: ragRuntime.audioAnalysisRunsService,
   pushDeviceService: ragRuntime.pushDeviceService,
   liveUpdateBroker: ragRuntime.liveUpdates,
   settingsService: ragRuntime.settingsService,

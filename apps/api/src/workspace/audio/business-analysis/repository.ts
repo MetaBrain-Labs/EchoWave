@@ -31,6 +31,17 @@ import { buildBusinessAnalysisWindows } from './windowing.ts';
 export const BUSINESS_ANALYSIS_WORKFLOW_VERSION = 'langgraph-v1';
 export const BUSINESS_ANALYSIS_MAX_RECOVERY_ATTEMPTS = 2;
 
+/** 业务分析被用户取消时使用的正常控制流异常。 */
+export class BusinessAnalysisCanceledError extends Error {
+  readonly code = 'CANCELED';
+  readonly retryable = false;
+
+  constructor(message = '业务分析已取消。') {
+    super(message);
+    this.name = 'BusinessAnalysisCanceledError';
+  }
+}
+
 export type BusinessAnalysisSegment = {
   id: string;
   speakerKey: string;
@@ -68,6 +79,7 @@ export type ClaimedBusinessAnalysisJob = {
   segments: BusinessAnalysisSegment[];
   /** 已完成的窗口结果，供重试时跳过已成功的模型调用。 */
   windowResults?: BusinessAnalysisWindowResult[];
+  cancelRequested: boolean;
 };
 
 export type BusinessAnalysisPublication = {
@@ -385,8 +397,16 @@ export class BusinessAnalysisRepository {
   async resetInterrupted(): Promise<void> {
     await this.pool.query(
       `UPDATE ${this.table('audio_business_analysis_jobs')}
+       SET status = 'failed', error_code = 'CANCELED', error_message = '业务分析已取消。',
+           error_retryable = false, completed_at = coalesce(completed_at, now()),
+           next_attempt_at = NULL, checkpoint_cleanup_pending = true
+       WHERE tenant_id = $1 AND status = 'running' AND cancel_requested = true`,
+      [this.tenantId],
+    );
+    await this.pool.query(
+      `UPDATE ${this.table('audio_business_analysis_jobs')}
        SET status = 'queued', next_attempt_at = now(), completed_at = NULL
-       WHERE tenant_id = $1 AND status = 'running'`,
+       WHERE tenant_id = $1 AND status = 'running' AND cancel_requested = false`,
       [this.tenantId],
     );
   }
@@ -396,7 +416,7 @@ export class BusinessAnalysisRepository {
     const claimed = await this.pool.query(
       `WITH candidate AS (
        SELECT id FROM ${this.table('audio_business_analysis_jobs')}
-         WHERE tenant_id = $1 AND status = 'queued'
+         WHERE tenant_id = $1 AND status = 'queued' AND cancel_requested = false
            AND (next_attempt_at IS NULL OR next_attempt_at <= now())
          ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1
        )
@@ -405,7 +425,7 @@ export class BusinessAnalysisRepository {
            error_code = NULL, error_message = NULL, error_retryable = NULL,
            checkpoint_cleanup_pending = true
        FROM candidate
-       WHERE job.id = candidate.id
+       WHERE job.id = candidate.id AND job.cancel_requested = false
        RETURNING job.*`,
       [this.tenantId],
     );
@@ -517,7 +537,53 @@ export class BusinessAnalysisRepository {
             }
           : null,
       })),
+      cancelRequested: Boolean(row.cancel_requested),
     };
+  }
+
+  /** 请求取消业务分析；排队任务立即终止，运行任务等待当前供应商调用收敛。 */
+  async requestCancel(jobId: string): Promise<'canceled' | 'requested' | 'noop'> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const terminal = await client.query(
+        `UPDATE ${this.table('audio_business_analysis_jobs')}
+         SET status = 'failed', error_code = 'CANCELED', error_message = '业务分析已取消。',
+             error_retryable = false, completed_at = coalesce(completed_at, now()),
+             next_attempt_at = NULL, checkpoint_cleanup_pending = true
+         WHERE tenant_id = $1 AND id = $2 AND status = 'queued'
+         RETURNING id`,
+        [this.tenantId, jobId],
+      );
+      if (terminal.rowCount) {
+        await client.query('COMMIT');
+        return 'canceled';
+      }
+      const running = await client.query(
+        `UPDATE ${this.table('audio_business_analysis_jobs')}
+         SET cancel_requested = true
+         WHERE tenant_id = $1 AND id = $2 AND status = 'running' AND cancel_requested = false
+         RETURNING id`,
+        [this.tenantId, jobId],
+      );
+      await client.query('COMMIT');
+      return running.rowCount ? 'requested' : 'noop';
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /** 查询运行中的业务分析是否已收到取消请求，供 Worker 处理供应商竞态。 */
+  async isCancelRequested(jobId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `SELECT cancel_requested FROM ${this.table('audio_business_analysis_jobs')}
+       WHERE tenant_id = $1 AND id = $2`,
+      [this.tenantId, jobId],
+    );
+    return Boolean(result.rows[0]?.cancel_requested);
   }
 
   async updateProgress(jobId: string, progress: number): Promise<void> {
@@ -575,7 +641,7 @@ export class BusinessAnalysisRepository {
     try {
       await client.query('BEGIN');
       const current = await client.query(
-        `SELECT job.status, head.active_job_id
+        `SELECT job.status, head.active_job_id, job.cancel_requested
          FROM ${this.table('audio_business_analysis_jobs')} job
          LEFT JOIN ${this.table('audio_group_business_analysis_heads')} head
            ON head.tenant_id = job.tenant_id AND head.group_id = job.group_id
@@ -591,6 +657,18 @@ export class BusinessAnalysisRepository {
       if (currentJob.status === 'ready' && currentJob.active_job_id === job.id) {
         await client.query('COMMIT');
         return;
+      }
+      if (currentJob.cancel_requested) {
+        await client.query(
+          `UPDATE ${this.table('audio_business_analysis_jobs')}
+           SET status = 'failed', error_code = 'CANCELED', error_message = '业务分析已取消。',
+               error_retryable = false, completed_at = coalesce(completed_at, now()),
+               next_attempt_at = NULL, checkpoint_cleanup_pending = true
+           WHERE tenant_id = $1 AND id = $2 AND status = 'running'`,
+          [this.tenantId, job.id],
+        );
+        await client.query('COMMIT');
+        throw new BusinessAnalysisCanceledError();
       }
       if (currentJob.status !== 'running') {
         throw new WorkspaceRepositoryError('CONFLICT', '业务分析任务状态已变化，无法发布结果。');

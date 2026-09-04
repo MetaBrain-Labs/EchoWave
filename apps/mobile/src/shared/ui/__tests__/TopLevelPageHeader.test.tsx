@@ -70,6 +70,15 @@ describe('TopLevelPageHeader', () => {
     expect(onCreate).toHaveBeenCalledTimes(1);
   });
 
+  it('renders an optional back action for standalone top-level routes', () => {
+    const onBack = jest.fn();
+    const screen = render(<TopLevelPageHeader onBack={onBack} title="分析" />);
+
+    fireEvent.press(screen.getByLabelText('返回'));
+    expect(onBack).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('header', { name: '分析' })).toBeTruthy();
+  });
+
   it('exposes and enforces a disabled action state', () => {
     const onCreate = jest.fn();
     const screen = render(

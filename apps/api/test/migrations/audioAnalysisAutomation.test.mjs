@@ -15,6 +15,10 @@ const notifications = await readFile(
   new URL('../../migrations/029_push_notifications.sql', import.meta.url),
   'utf8',
 );
+const automationNotifyFix = await readFile(
+  new URL('../../migrations/031_fix_audio_analysis_automation_notify.sql', import.meta.url),
+  'utf8',
+);
 
 describe('audio analysis automation migrations', () => {
   it('defines the authoritative batch and task state machine', () => {
@@ -44,5 +48,11 @@ describe('audio analysis automation migrations', () => {
     assert.match(notifications, /UNIQUE \(tenant_id, dedupe_key\)/);
     assert.match(notifications, /'HARD_BLOCKED'.*'FAILED'.*'COMPLETED'.*'PARTIAL_COMPLETED'/s);
     assert.match(notifications, /'push-notifications'/);
+  });
+
+  it('does not dereference phase on child job tables without that field', () => {
+    assert.match(automationNotifyFix, /to_jsonb\(NEW\)/);
+    assert.match(automationNotifyFix, /TG_TABLE_NAME = 'audio_analysis_tasks'/);
+    assert.doesNotMatch(automationNotifyFix, /OLD\.phase|NEW\.phase/);
   });
 });

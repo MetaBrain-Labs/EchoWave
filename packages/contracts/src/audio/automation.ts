@@ -142,6 +142,14 @@ export const AudioAnalysisTaskSchema = z
       .nullable(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
+    report: z
+      .object({
+        audioFileId: EntityIdSchema,
+        groupId: EntityIdSchema,
+      })
+      .nullable()
+      .default(null),
+    reportAvailable: z.boolean().default(false),
   })
   .strict();
 
@@ -179,7 +187,9 @@ export const AudioAnalysisBatchSchema = z
       active: z.number().int().nonnegative(),
       blocked: z.number().int().nonnegative(),
       completed: z.number().int().nonnegative(),
+      partial: z.number().int().nonnegative().default(0),
       failed: z.number().int().nonnegative(),
+      canceled: z.number().int().nonnegative().default(0),
     }),
     tasks: z.array(AudioAnalysisTaskSchema),
     createdAt: z.string().datetime(),

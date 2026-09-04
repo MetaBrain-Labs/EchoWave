@@ -323,6 +323,7 @@ export {
   type TransportSecurityMode,
 } from './settings.ts';
 export * from './audio/automation.ts';
+export * from './audio/analysisRuns.ts';
 export {
   ExpoPushTokenSchema,
   PushDeviceDeleteRequestSchema,

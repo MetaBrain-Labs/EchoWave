@@ -133,10 +133,11 @@ export class AudioAutomationWorker {
         );
         revisionId = queued.revisionId;
       }
-      await this.options.repository.setStageReference(task.id, {
+      const linked = await this.options.repository.setStageReference(task.id, {
         analysisRevisionId: revisionId,
         progress: 5,
       });
+      if (!linked && task.analysisRevisionId !== revisionId) return;
       return;
     }
     const state = await this.options.repository.transcriptionState(revisionId);
@@ -210,11 +211,17 @@ export class AudioAutomationWorker {
       }
     }
     if (emotionJobId !== task.emotionJobId || roleJobId !== task.roleJobId) {
-      await this.options.repository.setStageReference(task.id, {
+      const linked = await this.options.repository.setStageReference(task.id, {
         ...(emotionJobId ? { emotionJobId } : {}),
         ...(roleJobId ? { roleJobId } : {}),
         progress: 50,
       });
+      if (!linked) {
+        if (emotionJobId && emotionJobId !== task.emotionJobId)
+          await this.options.repository.cancelPostAnalysisJob?.(emotionJobId);
+        if (roleJobId && roleJobId !== task.roleJobId)
+          await this.options.repository.cancelPostAnalysisJob?.(roleJobId);
+      }
       return;
     }
     const states = await Promise.all([
@@ -265,10 +272,14 @@ export class AudioAutomationWorker {
           knowledgeBaseIds: task.configuration.knowledgeBaseIds,
         },
       );
-      await this.options.repository.setStageReference(task.id, {
+      const linked = await this.options.repository.setStageReference(task.id, {
         businessJobId: queued.jobId,
         progress: 80,
       });
+      if (!linked) {
+        await this.options.repository.cancelBusinessJob?.(queued.jobId);
+        return;
+      }
       await this.options.repository.setBusinessLimitations(queued.jobId, task.warningCodes);
       return;
     }

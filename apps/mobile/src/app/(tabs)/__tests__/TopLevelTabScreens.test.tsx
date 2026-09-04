@@ -11,16 +11,25 @@
  * - 服务状态与路由使用轻量替身，避免真实网络和导航副作用。
  */
 import { fireEvent, render } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { Pressable as MockPressable, StyleSheet, Text as MockText } from 'react-native';
 
 import CreateScreen from '../create';
 import MoreScreen from '../more';
+import AnalysisRoute from '../../analysis';
 import { colors, radii, spacing } from '@/shared/theme/tokens';
 
 const mockPush = jest.fn();
+const mockBack = jest.fn();
 
 jest.mock('expo-router', () => ({
-  useRouter: () => ({ push: mockPush }),
+  useRouter: () => ({ back: mockBack, push: mockPush }),
+}));
+jest.mock('@/features/analysis-runs/AnalysisRunsScreen', () => ({
+  AnalysisRunsScreen: ({ onBack }: { onBack?: () => void }) => (
+    <MockPressable accessibilityLabel="返回分析工作区" onPress={onBack}>
+      <MockText>分析工作区替身</MockText>
+    </MockPressable>
+  ),
 }));
 jest.mock('@/shared/api/audioAutomationApi', () => ({
   listAudioAnalysisBatches: jest.fn(async () => ({ items: [] })),
@@ -42,7 +51,7 @@ describe('Top-level tab screens', () => {
     jest.clearAllMocks();
   });
 
-  it('keeps the More header fixed and uses three unified navigation cards', () => {
+  it('keeps the More header fixed and uses four unified navigation cards', () => {
     const screen = render(<MoreScreen />);
 
     const header = screen.getByTestId('top-level-page-header');
@@ -51,6 +60,7 @@ describe('Top-level tab screens', () => {
     expect(scroll.findAllByProps({ testID: 'top-level-page-header' })).toHaveLength(0);
 
     for (const card of [
+      screen.getByLabelText('打开分析'),
       screen.getByLabelText('打开服务状态'),
       screen.getByLabelText('打开 AI 配置'),
       screen.getByLabelText('打开运行模式'),
@@ -65,12 +75,22 @@ describe('Top-level tab screens', () => {
       );
     }
 
+    expect(screen.queryByLabelText('打开数据源与音频文件')).toBeNull();
+    fireEvent.press(screen.getByLabelText('打开分析'));
+    expect(mockPush).toHaveBeenCalledWith('/analysis');
     fireEvent.press(screen.getByLabelText('打开 AI 配置'));
     expect(mockPush).toHaveBeenCalledWith('/settings');
     fireEvent.press(screen.getByLabelText('打开服务状态'));
     expect(mockPush).toHaveBeenCalledWith('/service-status');
     fireEvent.press(screen.getByLabelText('打开运行模式'));
     expect(mockPush).toHaveBeenCalledWith('/audio-runtime');
+  });
+
+  it('opens the independent analysis route with a back action', () => {
+    const screen = render(<AnalysisRoute />);
+
+    fireEvent.press(screen.getByLabelText('返回分析工作区'));
+    expect(mockBack).toHaveBeenCalledTimes(1);
   });
 
   it('renders the one-click analysis title and complete pipeline guidance', async () => {

@@ -10,6 +10,7 @@
  */
 import type { AudioAnalysisBatch, AudioAnalysisTask } from '@echowave/contracts';
 import * as DocumentPicker from 'expo-document-picker';
+import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -144,7 +145,8 @@ export function AnalysisBatchDetailScreen({
             <Text style={styles.title}>共 {batch.counts.total} 项</Text>
             <Text style={styles.summaryText}>
               进行中 {batch.counts.active} · 阻塞 {batch.counts.blocked} · 完成{' '}
-              {batch.counts.completed} · 失败 {batch.counts.failed}
+              {batch.counts.completed} · 有限制 {batch.counts.partial} · 失败 {batch.counts.failed}{' '}
+              · 已取消 {batch.counts.canceled}
             </Text>
             <Text style={styles.hint}>
               {batch.scheduledFor
@@ -184,6 +186,7 @@ export function AnalysisBatchDetailScreen({
           {batch.tasks.map((task) => (
             <TaskCard
               busy={busy}
+              groupId={batch.groupId}
               key={task.id}
               onCancel={() => command(() => cancelAudioAnalysisTask(task.id), '已提交取消')}
               onRemount={() =>
@@ -210,18 +213,31 @@ export function AnalysisBatchDetailScreen({
 
 function TaskCard({
   busy,
+  groupId,
   onCancel,
   onRemount,
   onResume,
   task,
 }: {
   busy: boolean;
+  groupId: string;
   onCancel: () => Promise<void>;
   onRemount: () => Promise<void>;
   onResume: () => Promise<void>;
   task: AudioAnalysisTask;
 }) {
+  const router = useRouter();
   const active = ['awaiting_upload', 'scheduled', 'queued', 'running'].includes(task.status);
+  const canViewReport =
+    (task.status === 'completed' || task.status === 'completed_with_warnings') &&
+    task.reportAvailable &&
+    Boolean(task.report);
+  const phaseText =
+    task.status === 'failed'
+      ? '失败于业务分析'
+      : task.status === 'canceled'
+        ? '已取消'
+        : `${phaseLabels[task.phase]} · ${task.progress}% · ${task.runtimeMode ?? '等待上传'}`;
   return (
     <View style={styles.card}>
       <View style={styles.cardTitleRow}>
@@ -232,9 +248,7 @@ function TaskCard({
           {statusLabels[task.status]}
         </Text>
       </View>
-      <Text style={styles.hint}>
-        {phaseLabels[task.phase]} · {task.progress}% · {task.runtimeMode ?? '等待上传'}
-      </Text>
+      <Text style={styles.hint}>{phaseText}</Text>
       <View style={styles.progress}>
         <View style={[styles.progressValue, { width: `${task.progress}%` }]} />
       </View>
@@ -256,6 +270,18 @@ function TaskCard({
         <Text accessibilityRole="alert" style={styles.danger}>
           {task.error.message}
         </Text>
+      ) : null}
+      {canViewReport ? (
+        <Action
+          disabled={busy}
+          label="查看分析报告"
+          onPress={() =>
+            router.push({
+              pathname: '/analysis/[id]',
+              params: { id: task.report!.audioFileId, groupId: task.report!.groupId || groupId },
+            })
+          }
+        />
       ) : null}
       <View style={styles.actions}>
         {task.status === 'hard_blocked' && task.blocker?.reason !== 'SOURCE_REMOUNT_REQUIRED' ? (

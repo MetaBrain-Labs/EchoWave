@@ -39,6 +39,8 @@ import { AudioAutomationWorker } from '../workspace/audio/automation/worker.ts';
 import { PushNotificationRepository } from '../notifications/repository.ts';
 import { PushDeviceService } from '../notifications/service.ts';
 import { PushNotificationWorker } from '../notifications/worker.ts';
+import { AudioAnalysisRunsRepository } from '../workspace/audio/analysis-runs/repository.ts';
+import { AudioAnalysisRunsService } from '../workspace/audio/analysis-runs/service.ts';
 
 /** 装配完整 API 运行时，并返回服务器依赖、Worker 与关闭函数。 */
 export function createRagRuntime(config: ApiConfig) {
@@ -194,6 +196,9 @@ export function createRagRuntime(config: ApiConfig) {
     audio: audio.audioService,
     wakeup: workerWakeup,
   });
+  const audioAnalysisRunsService = new AudioAnalysisRunsService(
+    new AudioAnalysisRunsRepository(pool, config.database.schema, config.rag.tenantId),
+  );
   const pushNotificationRepository = new PushNotificationRepository(
     pool,
     config.database.schema,
@@ -216,6 +221,7 @@ export function createRagRuntime(config: ApiConfig) {
     audioRuntimeService,
     audioUploadService,
     audioAutomationService,
+    audioAnalysisRunsService,
     pushDeviceService,
     worker: knowledge.worker,
     transcriptionWorker: audio.transcriptionWorker,
