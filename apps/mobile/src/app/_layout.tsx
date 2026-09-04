@@ -11,22 +11,35 @@
  * - 业务页面状态不得提升到此组合根。
  */
 import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
+import { Stack, useRouter, type Href } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
 import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { NavigationLoadingProvider } from '@/shared/navigation/NavigationLoadingProvider';
+import {
+  registerPushDevice,
+  subscribeToNotificationNavigation,
+} from '@/shared/notifications/pushNotifications';
 import { colors, fontFamilies, spacing, textColors, typography } from '@/shared/theme/tokens';
 import { StatusBarBackdrop } from '@/shared/ui/StatusBarBackdrop';
 
 /** 装载应用级 provider、字体门禁与根路由栈。 */
 export default function RootLayout() {
+  const router = useRouter();
   const [fontsLoaded, fontError] = useFonts({
     [fontFamilies.kai]: require('../../assets/fonts/LXGWWenKaiLite-Regular.ttf'),
     [fontFamilies.sans]: require('../../assets/fonts/SourceHanSansCN-Regular.otf'),
     [fontFamilies.sansBold]: require('../../assets/fonts/SourceHanSansCN-Bold.otf'),
   });
+
+  useEffect(() => {
+    void registerPushDevice().catch(() => undefined);
+    return subscribeToNotificationNavigation((id) => {
+      router.push({ pathname: '/analysis-batches/[id]', params: { id } } as unknown as Href);
+    });
+  }, [router]);
 
   if (fontError) {
     return <FontGateState description="请重新启动应用后重试。" title="字体加载失败" />;

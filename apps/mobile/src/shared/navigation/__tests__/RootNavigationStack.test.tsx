@@ -28,8 +28,19 @@ jest.mock('expo-router', () => {
         accessibilityLabel: JSON.stringify(screenOptions),
         testID: 'root-native-stack',
       }),
+    useRouter: () => ({ push: jest.fn() }),
   };
 });
+
+jest.mock('expo-notifications', () => ({
+  AndroidImportance: { HIGH: 4 },
+  addNotificationResponseReceivedListener: () => ({ remove: jest.fn() }),
+  getLastNotificationResponseAsync: async () => null,
+  getPermissionsAsync: async () => ({ status: 'denied' }),
+  requestPermissionsAsync: async () => ({ status: 'denied' }),
+  setNotificationChannelAsync: async () => undefined,
+  setNotificationHandler: jest.fn(),
+}));
 
 jest.mock('expo-status-bar', () => ({
   StatusBar: () => null,

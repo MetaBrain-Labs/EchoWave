@@ -1,7 +1,7 @@
 /**
  * 一级标签页面视觉测试。
  *
- * 验证“更多”和“新建”页面接入统一固定页头，并保持公共卡片与占位内容结构一致。
+ * 验证“更多”和“一键分析”页面接入统一固定页头，并保持公共卡片与创建表单结构一致。
  *
  * Responsibilities:
  * - 锁定固定页头与正文滚动容器的兄弟结构。
@@ -22,6 +22,20 @@ const mockPush = jest.fn();
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: mockPush }),
 }));
+jest.mock('@/shared/api/audioAutomationApi', () => ({
+  listAudioAnalysisBatches: jest.fn(async () => ({ items: [] })),
+  createExistingAudioAnalysisBatch: jest.fn(),
+  createUploadAnalysisBatch: jest.fn(),
+}));
+jest.mock('@/shared/api/dataSourcesApi', () => ({
+  listDataSources: jest.fn(async () => ({ items: [] })),
+  listDataSourceGroups: jest.fn(async () => ({ items: [] })),
+  listDataSourceAudioFiles: jest.fn(async () => ({ items: [] })),
+}));
+jest.mock('@/shared/api/audioRuntimeApi', () => ({
+  getAudioRuntime: jest.fn(async () => ({ mode: 'object_storage' })),
+}));
+jest.mock('@/shared/api/groupsApi', () => ({ getGroupSettings: jest.fn() }));
 
 describe('Top-level tab screens', () => {
   beforeEach(() => {
@@ -59,11 +73,12 @@ describe('Top-level tab screens', () => {
     expect(mockPush).toHaveBeenCalledWith('/audio-runtime');
   });
 
-  it('renders one fixed Create title and keeps the placeholder body separate', () => {
+  it('renders the one-click analysis title and complete pipeline guidance', async () => {
     const screen = render(<CreateScreen />);
 
-    expect(screen.getAllByText('新建')).toHaveLength(1);
-    expect(screen.getByRole('header', { name: '新建' })).toBeTruthy();
-    expect(screen.getByTestId('placeholder-content')).toBeTruthy();
+    expect(screen.getAllByText('一键分析')).toHaveLength(1);
+    expect(screen.getByRole('header', { name: '一键分析' })).toBeTruthy();
+    expect(screen.getByText('上传后由服务器自动完成转写、情绪、角色和业务分析')).toBeTruthy();
+    expect(await screen.findByText('1. 数据源')).toBeTruthy();
   });
 });

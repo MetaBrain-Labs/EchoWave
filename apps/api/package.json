@@ -26,6 +26,7 @@
     "domhandler": "^6.0.1",
     "dotenv": "17.4.2",
     "exceljs": "^4.4.0",
+    "expo-server-sdk": "^7.2.0",
     "hono": "4.13.2",
     "htmlparser2": "^12.0.0",
     "jszip": "^3.10.1",

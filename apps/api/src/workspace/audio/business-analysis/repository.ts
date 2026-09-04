@@ -261,12 +261,45 @@ export class BusinessAnalysisRepository {
     force = false,
     chatBindingRevisionId: string | null = null,
     embeddingBindingRevisionId: string | null = null,
+    frozenInput?: {
+      analysisTiming: 'automatic' | 'manual';
+      contentFocus: string;
+      tone: string;
+      customTags: string[];
+      knowledgeBaseIds: string[];
+    },
   ) {
     const client = await this.pool.connect();
     let snapshot: SourceSnapshot | undefined;
     try {
       await client.query('BEGIN');
       snapshot = await this.sourceSnapshot(audioFileId, groupId, client);
+      if (frozenInput) {
+        const settings: BusinessAnalysisSettingsSnapshot = {
+          timing: frozenInput.analysisTiming,
+          contentFocus: frozenInput.contentFocus,
+          tone: frozenInput.tone,
+          customTags: [...frozenInput.customTags],
+          settingsUpdatedAt: snapshot.settings.settingsUpdatedAt,
+        };
+        const fingerprint = createHash('sha256')
+          .update(
+            JSON.stringify({
+              confirmationId: snapshot.confirmationId,
+              emotionJobId: snapshot.emotionJobId,
+              knowledgeBaseIds: frozenInput.knowledgeBaseIds,
+              roleJobId: snapshot.roleJobId,
+              settings: comparableSettings(settings),
+            }),
+          )
+          .digest('hex');
+        snapshot = {
+          ...snapshot,
+          settings,
+          knowledgeBaseIds: [...frozenInput.knowledgeBaseIds],
+          fingerprint,
+        };
+      }
       const existing = await client.query(
         `SELECT id, status FROM ${this.table('audio_business_analysis_jobs')}
          WHERE tenant_id = $1 AND group_id = $2 AND audio_file_id = $3

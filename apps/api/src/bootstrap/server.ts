@@ -36,6 +36,8 @@ const app = createApp(config, {
   audioService: ragRuntime.audioService,
   audioRuntimeService: ragRuntime.audioRuntimeService,
   audioUploadService: ragRuntime.audioUploadService,
+  audioAutomationService: ragRuntime.audioAutomationService,
+  pushDeviceService: ragRuntime.pushDeviceService,
   liveUpdateBroker: ragRuntime.liveUpdates,
   settingsService: ragRuntime.settingsService,
   trustedProxyCidrs: config.settingsSecurity.trustedProxyCidrs,
@@ -64,6 +66,8 @@ try {
       ragRuntime.roleWorker.start(),
       ragRuntime.speakerReviewWorker.start(),
       ragRuntime.businessAnalysisWorker.start(),
+      ragRuntime.audioAutomationWorker.start(),
+      ragRuntime.pushNotificationWorker.start(),
     ]);
   });
   startupCompleted = true;

@@ -29,6 +29,11 @@ import {
 } from './database.ts';
 import { createHttpConfig, HttpEnvironmentSchema, type HttpConfig } from './http.ts';
 import {
+  createNotificationConfig,
+  NotificationEnvironmentSchema,
+  type NotificationConfig,
+} from './notifications.ts';
+import {
   createProviderConfig,
   ProviderEnvironmentSchema,
   type ProviderConfig,
@@ -46,7 +51,8 @@ const EnvironmentSchema = HttpEnvironmentSchema.merge(DatabaseEnvironmentSchema)
   .merge(ProviderEnvironmentSchema)
   .merge(WorkspaceEnvironmentSchema)
   .merge(SettingsSecurityEnvironmentSchema)
-  .merge(AiExecutionEnvironmentSchema);
+  .merge(AiExecutionEnvironmentSchema)
+  .merge(NotificationEnvironmentSchema);
 
 /** API 进程通过校验后可使用的完整运行时配置。 */
 export type ApiConfig = HttpConfig & {
@@ -56,6 +62,7 @@ export type ApiConfig = HttpConfig & {
   rag: RagConfig;
   aiExecutionReports: AiExecutionReportConfig;
   legacyProviders: ProviderConfig['legacy'];
+  notifications: NotificationConfig;
 };
 
 /** 将显式键值集合解析为无默认值的强类型 API 配置。 */
@@ -85,6 +92,7 @@ export function readApiConfig(
     rag: createRagConfig(parsed, providers, baseDirectory),
     legacyProviders: providers.legacy,
     aiExecutionReports: createAiExecutionReportConfig(parsed),
+    notifications: createNotificationConfig(parsed),
   };
 }
 

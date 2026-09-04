@@ -322,3 +322,12 @@ export {
   type SettingsOverview,
   type TransportSecurityMode,
 } from './settings.ts';
+export * from './audio/automation.ts';
+export {
+  ExpoPushTokenSchema,
+  PushDeviceDeleteRequestSchema,
+  PushDeviceRegisterRequestSchema,
+  PushDeviceSchema,
+  type PushDevice,
+  type PushDeviceRegisterRequest,
+} from './notifications.ts';

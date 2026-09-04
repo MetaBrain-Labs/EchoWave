@@ -253,6 +253,27 @@ create index audio_business_analysis_claim_idx on audio_business_analysis_jobs u
 create index audio_business_analysis_fingerprint_idx on audio_business_analysis_jobs using btree (tenant_id, group_id, audio_file_id, transcript_confirmation_id, input_fingerprint, created_at);
 create index audio_business_analysis_due_idx on audio_business_analysis_jobs using btree (tenant_id, next_attempt_at, created_at) WHERE (status = 'queued'::text);
 
+create table public.audio_business_analysis_windows (
+  tenant_id uuid not null,
+  job_id uuid not null,
+  window_index integer not null,
+  start_ms bigint not null,
+  end_ms bigint not null,
+  segment_ids uuid[] not null default '{}'::uuid[],
+  status text not null default 'queued'::text,
+  result jsonb,
+  attempt smallint not null default 0,
+  error_code text,
+  error_message text,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  completed_at timestamp with time zone,
+  primary key (tenant_id, job_id, window_index),
+  foreign key (tenant_id, job_id) references public.audio_business_analysis_jobs (tenant_id, id)
+  match simple on update no action on delete cascade
+);
+create index audio_business_analysis_windows_status_idx on audio_business_analysis_windows using btree (tenant_id, job_id, status, window_index);
+
 create table public.audio_files (
   id uuid primary key not null default gen_random_uuid(),
   tenant_id uuid not null,
@@ -348,6 +369,27 @@ create unique index audio_post_analysis_jobs_tenant_id_id_key on audio_post_anal
 create unique index audio_post_analysis_jobs_tenant_id_analysis_revision_id_id_key on audio_post_analysis_jobs using btree (tenant_id, analysis_revision_id, id);
 create unique index audio_post_analysis_single_running_idx on audio_post_analysis_jobs using btree (tenant_id, analysis_revision_id, analysis_type) WHERE (status = ANY (ARRAY['queued'::text, 'running'::text]));
 create index audio_post_analysis_claim_idx on audio_post_analysis_jobs using btree (tenant_id, analysis_type, status, created_at);
+
+create table public.audio_post_analysis_windows (
+  tenant_id uuid not null,
+  job_id uuid not null,
+  window_index integer not null,
+  start_ms bigint not null,
+  end_ms bigint not null,
+  segment_ids uuid[] not null default '{}'::uuid[],
+  status text not null default 'queued'::text,
+  result jsonb,
+  attempt smallint not null default 0,
+  error_code text,
+  error_message text,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  completed_at timestamp with time zone,
+  primary key (tenant_id, job_id, window_index),
+  foreign key (tenant_id, job_id) references public.audio_post_analysis_jobs (tenant_id, id)
+  match simple on update no action on delete cascade
+);
+create index audio_post_analysis_windows_status_idx on audio_post_analysis_windows using btree (tenant_id, job_id, status, window_index);
 
 create table public.audio_speaker_review_jobs (
   id uuid primary key not null default gen_random_uuid(),

@@ -78,6 +78,8 @@ Copy-Item apps/mobile/.env.example apps/mobile/.env
 
 `apps/api/.env` 中的 `AUDIO_STORAGE_DIR` 同时承载混合模式的持久原音频和轻量模式的临时原音频；每条资产会在 PostgreSQL 固化创建时的运行模式和保留策略。生产或容器环境必须显式挂载该目录，混合模式还需要备份。对象存储模式的原音频直接进入租户配置的权威 OSS，不在该目录长期保存。三种模式、清理边界和接口见[音频运行模式](docs/audio-runtime-modes.md)。
 
+“新建”页支持上传或选择最多 20 条已有音频并由服务端执行完整流水线；对象和混合模式支持一次性定时，轻量模式只支持立即批量。任务、恢复点和通知 outbox 均以 PostgreSQL 为准，具体边界见[一键式音频全流程分析](docs/audio-analysis-automation.md)。
+
 FFmpeg 是整文件转写的必需能力。配置 `FFMPEG_PATH` 后，API 启动时会非致命探测可执行文件；缺失或检查失败不会阻止知识库嵌入和 API 启动，但会禁用音频转写。临时单声道 MP3 写入 `AUDIO_TRANSCRIPTION_TEMP_DIR`，转写模型固定为 `qwen-audio-3.0-asr-flash-filetrans`，失败时不会自动切换模型。API 还会校验仓库内固定的 Silero VAD v6.2.1 ONNX 模型；VAD 不可用时仍可由用户明确选择整文件模式，服务端不会静默回退。
 
 按说话轮次分段使用北京地域 `qwen-audio-3.0-asr-flash-filetrans`。供应商端点、模型、通知方式和能力绑定由 PostgreSQL 配置中心管理；Credential 可选择 AES-256-GCM 加密入库，或由服务器本地只读 `credentials.yaml` 提供。混合与对象模式通过 `audio_staging` OSS 短期中转预处理音频；轻量模式使用 DashScope Instant 临时文件区并提交 `oss://` 地址。三种路径都持久化 Provider 任务 ID 和 Checkpoint，恢复时不会重复提交已经创建的任务。

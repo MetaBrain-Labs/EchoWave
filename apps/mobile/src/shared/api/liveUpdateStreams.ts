@@ -17,6 +17,8 @@ import {
   type AudioAnalysisStatusStreamEvent,
   type DataSourceAudioStreamEvent,
   type KnowledgeDocumentStreamEvent,
+  AudioAnalysisBatchStreamEventSchema,
+  type AudioAnalysisBatchStreamEvent,
 } from '@echowave/contracts';
 import { fetch } from 'expo/fetch';
 
@@ -151,6 +153,20 @@ export function streamKnowledgeDocuments(options: {
     path: `/api/knowledge-bases/${options.knowledgeBaseId}/documents/stream`,
     signal: options.signal,
     parse: (value) => KnowledgeDocumentStreamEventSchema.parse(value),
+    onEvent: options.onEvent,
+  });
+}
+
+/** 连接自动分析批次状态流；断线后的 REST 降级由批次详情页负责。 */
+export function streamAudioAnalysisBatch(options: {
+  batchId: string;
+  signal: AbortSignal;
+  onEvent: (event: AudioAnalysisBatchStreamEvent) => void;
+}) {
+  return streamValidated({
+    path: `/api/audio-analysis-batches/${options.batchId}/stream`,
+    signal: options.signal,
+    parse: (value) => AudioAnalysisBatchStreamEventSchema.parse(value),
     onEvent: options.onEvent,
   });
 }
