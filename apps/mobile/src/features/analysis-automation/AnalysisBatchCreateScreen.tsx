@@ -232,10 +232,12 @@ export function AnalysisBatchCreateScreen() {
             <View style={styles.list}>
               {audioFiles.map((audio) => {
                 const selected = selectedAudioIds.includes(audio.id);
+                const disabledReason = existingAudioDisabledReason(audio, runtimeMode);
                 return (
                   <Pressable
                     accessibilityRole="checkbox"
-                    accessibilityState={{ checked: selected }}
+                    accessibilityState={{ checked: selected, disabled: Boolean(disabledReason) }}
+                    disabled={Boolean(disabledReason)}
                     key={audio.id}
                     onPress={() =>
                       setSelectedAudioIds((current) =>
@@ -246,7 +248,7 @@ export function AnalysisBatchCreateScreen() {
                             : current,
                       )
                     }
-                    style={styles.checkRow}
+                    style={[styles.checkRow, disabledReason && styles.disabled]}
                   >
                     <Ionicons
                       color={selected ? colors.success : colors.muted}
@@ -256,6 +258,10 @@ export function AnalysisBatchCreateScreen() {
                     <Text numberOfLines={1} style={styles.checkLabel}>
                       {audio.title}
                     </Text>
+                    <View style={styles.checkMeta}>
+                      <Text style={styles.hint}>{audio.runtimeMode ?? '模式未知'}</Text>
+                      {disabledReason ? <Text style={styles.danger}>{disabledReason}</Text> : null}
+                    </View>
                   </Pressable>
                 );
               })}
@@ -286,7 +292,8 @@ export function AnalysisBatchCreateScreen() {
             </Text>
           ) : null}
           <Text style={styles.hint}>
-            当前模式：{runtimeMode || '未知'}。文件上传与校验立即进行，模型阶段在计划时间后开始。
+            本批次冻结模式：{runtimeMode || '未知'}
+            。文件上传与校验立即进行，模型阶段在计划时间后开始。
           </Text>
         </Section>
         <Section title="5. 冻结配置预览">
@@ -325,8 +332,8 @@ export function AnalysisBatchCreateScreen() {
                 <View>
                   <Text style={styles.buttonText}>{batch.configurationSnapshot.groupName}</Text>
                   <Text style={styles.hint}>
-                    {new Date(batch.createdAt).toLocaleString()} · {batch.counts.completed}/
-                    {batch.counts.total} 完成
+                    {new Date(batch.createdAt).toLocaleString()} · 完成 {batch.counts.completed} ·
+                    警告 {batch.counts.partial} · 失败 {batch.counts.failed}
                   </Text>
                 </View>
                 <Ionicons color={colors.secondary} name="chevron-forward" size={20} />
@@ -337,6 +344,21 @@ export function AnalysisBatchCreateScreen() {
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+function existingAudioDisabledReason(audio: AudioFileSummary, runtimeMode: string): string | null {
+  if (!runtimeMode) return '正在读取当前运行模式';
+  if (audio.runtimeMode !== runtimeMode)
+    return `当前为 ${audio.runtimeMode ?? '未知'}，需切换运行模式`;
+  if (
+    runtimeMode === 'lightweight_local' &&
+    pipeline.includeEmotion &&
+    audio.sourceState !== 'available' &&
+    !audio.acousticEmotionReady
+  ) {
+    return '需重新挂载原文件';
+  }
+  return null;
 }
 
 function Section({ children, title }: { children: React.ReactNode; title: string }) {
@@ -413,6 +435,7 @@ const styles = StyleSheet.create({
   buttonText: { ...typography.body, color: textColors.primary },
   list: { gap: spacing.sm },
   checkRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm, minHeight: 40 },
+  checkMeta: { alignItems: 'flex-end', flexShrink: 1, gap: 2 },
   checkLabel: { ...typography.body, color: textColors.primary, flex: 1 },
   input: {
     ...typography.body,

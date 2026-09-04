@@ -55,6 +55,7 @@ describe('audio analysis run contracts', () => {
   });
 
   it('rejects unsupported filters and limits', () => {
+    assert.equal(AudioAnalysisRunsQuerySchema.parse({ status: 'warning' }).status, 'warning');
     assert.throws(() => AudioAnalysisRunsQuerySchema.parse({ status: 'unknown' }));
     assert.throws(() => AudioAnalysisRunsQuerySchema.parse({ limit: 51 }));
   });

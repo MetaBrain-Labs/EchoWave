@@ -24,6 +24,7 @@ import {
   AudioUploadSessionResponseSchema,
   AudioSourceRemountResponseSchema,
   type AudioUploadSessionCreateRequest,
+  type AudioRuntimeMode,
 } from '@echowave/contracts';
 import { parseFile } from 'music-metadata';
 
@@ -129,12 +130,14 @@ export class AudioUploadSessionService {
     dataSourceId: string,
     rawInput: AudioUploadSessionCreateRequest,
     analysisTaskId: string | null = null,
+    runtimeModeOverride?: AudioRuntimeMode,
   ) {
     const input = AudioUploadSessionCreateRequestSchema.parse({
       ...rawInput,
       filename: safeFilename(rawInput.filename),
     });
-    const runtime = await this.runtimeRepository.get();
+    const runtimeSettings = await this.runtimeRepository.get();
+    const runtime = { ...runtimeSettings, mode: runtimeModeOverride ?? runtimeSettings.mode };
     if (runtime.mode === 'hybrid' && input.sizeBytes < 0) {
       throw new WorkspaceRepositoryError('CONFLICT', '混合模式请使用现有批量上传接口。');
     }

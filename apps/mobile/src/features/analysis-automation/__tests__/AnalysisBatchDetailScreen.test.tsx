@@ -123,6 +123,18 @@ describe('AnalysisBatchDetailScreen', () => {
     });
   });
 
+  it('shows warning as a separate terminal state while keeping the report entry', async () => {
+    const screen = renderBatch(
+      createBatch({
+        status: 'completed_with_warnings',
+        warningCodes: ['SPEAKER_REVIEW_REQUIRED'],
+      }),
+    );
+
+    expect((await screen.findAllByText('警告')).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('查看分析报告')).toBeTruthy();
+  });
+
   it.each([
     ['failed', '失败于业务分析'],
     ['canceled', '已取消'],

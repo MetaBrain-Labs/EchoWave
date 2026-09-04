@@ -388,12 +388,16 @@ export class PostgresDataSourceRepository implements DataSourceRepository {
                   ELSE ar.error_retryable END AS error_retryable,
                 CASE WHEN bundled.status = 'failed' THEN NULL
                   ELSE ar.error_details END AS error_details,
+                CASE WHEN active_emotion.status = 'ready' OR bundled.status = 'ready'
+                  THEN true ELSE false END AS acoustic_emotion_ready,
                 ar.processing_stage, ar.current_chunk,
                 ar.chunk_count, ar.current_chunk_start_ms, ar.current_chunk_end_ms,
                 ar.network_attempt, ar.structure_attempt, ar.processing_updated_at
          FROM ${this.table('audio_analysis_revisions')} ar
          LEFT JOIN ${this.table('audio_post_analysis_jobs')} bundled
            ON bundled.tenant_id = ar.tenant_id AND bundled.id = ar.bundled_emotion_job_id
+         LEFT JOIN ${this.table('audio_post_analysis_jobs')} active_emotion
+           ON active_emotion.tenant_id = ar.tenant_id AND active_emotion.id = ar.active_emotion_job_id
          WHERE ar.tenant_id = af.tenant_id AND ar.audio_file_id = af.id
          ORDER BY ar.revision_no DESC LIMIT 1
        ) latest ON true

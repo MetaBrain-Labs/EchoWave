@@ -28,6 +28,7 @@ describe('ValidatedSseParser', () => {
         createdAt: '2026-08-30T01:00:00.000Z',
         sharedFrom: null,
         hasTranscript: false,
+        acousticEmotionReady: false,
         status: { kind: 'transcribing', progress: 35, activity: null },
       },
     } as const;

@@ -210,6 +210,11 @@ export class AudioAutomationWorker {
         ).jobId;
       }
     }
+    // 轻量本地模式只能在 ASR 阶段产出声学情绪；复用没有该结果的旧转写时继续后续阶段，
+    // 但必须留下明确警告，避免批次被误认为完整分析。
+    if (task.pipeline.includeEmotion && !emotionJobId) {
+      await this.options.repository.addWarning(task.id, 'EMOTION_UNAVAILABLE');
+    }
     if (emotionJobId !== task.emotionJobId || roleJobId !== task.roleJobId) {
       const linked = await this.options.repository.setStageReference(task.id, {
         ...(emotionJobId ? { emotionJobId } : {}),

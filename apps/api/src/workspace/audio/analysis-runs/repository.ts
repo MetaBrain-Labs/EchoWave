@@ -88,7 +88,8 @@ function matchesStatus(
   if (filter === 'all') return true;
   if (filter === 'active')
     return ['awaiting_upload', 'scheduled', 'queued', 'running', 'hard_blocked'].includes(status);
-  if (filter === 'completed') return ['completed', 'completed_with_warnings'].includes(status);
+  if (filter === 'completed') return status === 'completed';
+  if (filter === 'warning') return status === 'completed_with_warnings';
   return status === filter;
 }
 

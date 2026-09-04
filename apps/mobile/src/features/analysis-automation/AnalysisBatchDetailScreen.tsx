@@ -43,7 +43,7 @@ const statusLabels: Record<AudioAnalysisTask['status'], string> = {
   running: '执行中',
   hard_blocked: '需要处理',
   completed: '已完成',
-  completed_with_warnings: '完成（有限制）',
+  completed_with_warnings: '警告',
   failed: '失败',
   canceled: '已取消',
 };
@@ -145,8 +145,8 @@ export function AnalysisBatchDetailScreen({
             <Text style={styles.title}>共 {batch.counts.total} 项</Text>
             <Text style={styles.summaryText}>
               进行中 {batch.counts.active} · 阻塞 {batch.counts.blocked} · 完成{' '}
-              {batch.counts.completed} · 有限制 {batch.counts.partial} · 失败 {batch.counts.failed}{' '}
-              · 已取消 {batch.counts.canceled}
+              {batch.counts.completed} · 警告 {batch.counts.partial} · 失败 {batch.counts.failed} ·
+              已取消 {batch.counts.canceled}
             </Text>
             <Text style={styles.hint}>
               {batch.scheduledFor
@@ -244,7 +244,13 @@ function TaskCard({
         <Text numberOfLines={1} style={styles.cardTitle}>
           {task.title}
         </Text>
-        <Text style={[styles.badge, task.status === 'hard_blocked' && styles.danger]}>
+        <Text
+          style={[
+            styles.badge,
+            task.status === 'hard_blocked' && styles.danger,
+            task.status === 'completed_with_warnings' && styles.warningBadge,
+          ]}
+        >
           {statusLabels[task.status]}
         </Text>
       </View>
@@ -377,6 +383,7 @@ const styles = StyleSheet.create({
   },
   cardTitle: { ...typography.body, color: textColors.primary, flex: 1, fontWeight: 'bold' },
   badge: { ...typography.label, color: colors.success },
+  warningBadge: { color: '#9A6500' },
   progress: {
     backgroundColor: colors.divider,
     borderRadius: radii.round,

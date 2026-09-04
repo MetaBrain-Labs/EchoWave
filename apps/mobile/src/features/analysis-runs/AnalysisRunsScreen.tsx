@@ -33,6 +33,7 @@ const filters = [
   ['all', '全部'],
   ['active', '进行中'],
   ['completed', '已完成'],
+  ['warning', '警告'],
   ['failed', '失败'],
   ['canceled', '已取消'],
 ] as const;
@@ -45,7 +46,7 @@ function statusLabel(status: AudioAnalysisRun['status']): string {
     running: '运行中',
     hard_blocked: '已阻塞',
     completed: '已完成',
-    completed_with_warnings: '完成但有限制',
+    completed_with_warnings: '警告',
     failed: '失败',
     canceled: '已取消',
   }[status];
@@ -165,8 +166,8 @@ export function AnalysisRunsScreen({ onBack }: { onBack?: () => void } = {}) {
                   </Text>
                   {run.kind === 'batch' ? (
                     <Text style={styles.meta}>
-                      共 {run.counts.total} 项，完成 {run.counts.completed}，失败{' '}
-                      {run.counts.failed}
+                      共 {run.counts.total} 项，完成 {run.counts.completed} · 警告{' '}
+                      {run.counts.partial} · 失败 {run.counts.failed}
                     </Text>
                   ) : run.warningCodes.length ? (
                     <Text style={styles.warning}>有限制：{run.warningCodes.join('、')}</Text>

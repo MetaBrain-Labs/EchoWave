@@ -16,6 +16,7 @@ import {
 } from '@echowave/contracts';
 
 import type { AudioUploadSessionService } from '../runtime-mode/uploadSessionService.ts';
+import type { AudioRuntimeService } from '../runtime-mode/service.ts';
 import type { AudioAutomationRepository } from './repository.ts';
 import { WorkspaceRepositoryError } from '../../errors.ts';
 import type { SettingsService } from '../../../settings/service.ts';
@@ -27,21 +28,29 @@ export class AudioAutomationService {
     private readonly repository: AudioAutomationRepository,
     private readonly uploads: AudioUploadSessionService,
     private readonly settings: Pick<SettingsService, 'resolveCapability'>,
+    private readonly runtime?: Pick<AudioRuntimeService, 'availabilityForMode'>,
   ) {}
 
   /** 创建最多二十项的批次，并为上传来源返回逐文件上传目标。 */
   async create(rawInput: AudioAnalysisBatchCreateRequest) {
     const input = AudioAnalysisBatchCreateRequestSchema.parse(rawInput);
+    const runtimeMode = await this.uploads.currentRuntimeMode();
+    if (input.source === 'uploads' && this.runtime) {
+      const availability = await this.runtime.availabilityForMode(runtimeMode);
+      if (!availability.available) {
+        throw new SettingsError('CONFIGURATION_REQUIRED', availability.unavailableReason!);
+      }
+    }
     if (
       input.source === 'uploads' &&
       input.scheduledFor &&
       new Date(input.scheduledFor).getTime() > Date.now() &&
-      (await this.uploads.currentRuntimeMode()) === 'lightweight_local'
+      runtimeMode === 'lightweight_local'
     ) {
       throw new WorkspaceRepositoryError('CONFLICT', '轻量本地模式不支持定时分析。');
     }
     const capabilities = await this.capabilitySnapshot();
-    const created = await this.repository.createBatch(input, capabilities);
+    const created = await this.repository.createBatch(input, capabilities, runtimeMode);
     const uploadTargets = [];
     if (input.source === 'uploads') {
       for (const item of input.items) {
@@ -53,6 +62,7 @@ export class AudioAutomationService {
             input.dataSourceId,
             { ...item, includeAcousticEmotion: input.pipeline.includeEmotion },
             task.id,
+            runtimeMode,
           );
           uploadTargets.push({ clientItemId: item.clientItemId, taskId: task.id, session });
         } catch (error) {

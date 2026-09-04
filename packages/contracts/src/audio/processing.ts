@@ -119,6 +119,7 @@ export const AudioFileSummarySchema = z.object({
   sourceState: z.enum(['available', 'cleaned', 'missing']).optional(),
   sourceRecoveryState: z.enum(['not_required', 'required', 'verifying']).optional(),
   sourceDeleteAfter: z.string().datetime().nullable().optional(),
+  acousticEmotionReady: z.boolean().default(false),
 });
 export const AudioFileListResponseSchema = z.object({ items: z.array(AudioFileSummarySchema) });
 

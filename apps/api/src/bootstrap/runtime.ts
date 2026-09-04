@@ -190,6 +190,7 @@ export function createRagRuntime(config: ApiConfig) {
     audioAutomationRepository,
     audioUploadService,
     settingsService,
+    audioRuntimeService,
   );
   const audioAutomationWorker = new AudioAutomationWorker({
     repository: audioAutomationRepository,

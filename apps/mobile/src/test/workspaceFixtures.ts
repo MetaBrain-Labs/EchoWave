@@ -101,6 +101,7 @@ const baseAudio = (index: number, title: string): Omit<AudioFileSummary, 'status
   createdAt: `2026-08-${21 - Math.ceil(index / 2)}T10:00:00.000Z`,
   sharedFrom: null,
   hasTranscript: false,
+  acousticEmotionReady: false,
 });
 
 export const audioFixtures: AudioFileSummary[] = [

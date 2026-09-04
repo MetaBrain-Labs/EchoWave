@@ -21,6 +21,7 @@ import {
   type AudioAnalysisBlockReason,
   type AudioAnalysisPipelineOptions,
   type AudioAnalysisTaskPhase,
+  type AudioRuntimeMode,
 } from '@echowave/contracts';
 import type { PoolClient } from 'pg';
 
@@ -84,6 +85,7 @@ export class AudioAutomationRepository {
   async createBatch(
     input: AudioAnalysisBatchCreateRequest,
     capabilitySnapshot: Pick<ConfigurationSnapshot, 'capabilityBindings' | 'models'>,
+    runtimeMode: AudioRuntimeMode,
   ): Promise<{
     batchId: string;
     tasks: { id: string; clientItemId: string | null; audioFileId: string | null }[];
@@ -155,14 +157,15 @@ export class AudioAutomationRepository {
         for (const item of input.items) {
           const task = await client.query(
             `INSERT INTO ${this.table('audio_analysis_tasks')}
-               (tenant_id, batch_id, client_item_id, title, status, phase, run_after)
-             VALUES ($1, $2, $3, $4, 'awaiting_upload', 'upload', $5)
+               (tenant_id, batch_id, client_item_id, title, runtime_mode, status, phase, run_after)
+             VALUES ($1, $2, $3, $4, $5, 'awaiting_upload', 'upload', $6)
              RETURNING id`,
             [
               this.tenantId,
               batchId,
               item.clientItemId,
               item.filename.replace(/\.[^.]+$/, '') || item.filename,
+              runtimeMode,
               input.scheduledFor,
             ],
           );
@@ -174,7 +177,8 @@ export class AudioAutomationRepository {
         }
       } else {
         const assets = await client.query(
-          `SELECT id, title, runtime_mode
+          `SELECT id, title, runtime_mode, source_state, source_recovery_state,
+                  acoustic_emotion_ready
            FROM ${this.table('audio_files')}
            WHERE tenant_id = $1 AND data_source_id = $2 AND id = ANY($3::uuid[])
              AND deleted_at IS NULL AND upload_status = 'ready'
@@ -185,6 +189,16 @@ export class AudioAutomationRepository {
           throw new WorkspaceRepositoryError(
             'NOT_FOUND',
             '部分音频不存在、未上传完成或不属于当前数据源。',
+          );
+        }
+        const mismatched = assets.rows.filter((asset) => asset.runtime_mode !== runtimeMode);
+        if (mismatched.length) {
+          const details = mismatched
+            .map((asset) => `${asset.id}(${asset.runtime_mode ?? 'unknown'})`)
+            .join(', ');
+          throw new WorkspaceRepositoryError(
+            'CONFLICT',
+            `所选音频运行模式与当前模式 ${runtimeMode} 不一致：${details}`,
           );
         }
         const lightweightIds = assets.rows
@@ -200,6 +214,20 @@ export class AudioAutomationRepository {
             `轻量本地音频不能定时执行：${lightweightIds.join(', ')}`,
           );
         }
+        if (runtimeMode === 'lightweight_local' && input.pipeline.includeEmotion) {
+          const remountRequired = assets.rows
+            .filter(
+              (asset) =>
+                asset.source_state !== 'available' && !Boolean(asset.acoustic_emotion_ready),
+            )
+            .map((asset) => String(asset.id));
+          if (remountRequired.length) {
+            throw new WorkspaceRepositoryError(
+              'CONFLICT',
+              `轻量本地音频缺少可复用的声学情绪结果，请先重新挂载原文件：${remountRequired.join(', ')}`,
+            );
+          }
+        }
         for (const asset of assets.rows) {
           const scheduled =
             input.scheduledFor && new Date(input.scheduledFor).getTime() > Date.now();
@@ -213,7 +241,7 @@ export class AudioAutomationRepository {
               batchId,
               asset.id,
               asset.title,
-              asset.runtime_mode,
+              runtimeMode,
               scheduled ? 'scheduled' : 'queued',
               input.scheduledFor,
             ],

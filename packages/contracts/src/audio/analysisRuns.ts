@@ -20,6 +20,7 @@ export const AudioAnalysisRunStatusFilterSchema = z.enum([
   'all',
   'active',
   'completed',
+  'warning',
   'failed',
   'canceled',
 ]);
