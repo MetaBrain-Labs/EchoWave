@@ -19,11 +19,31 @@ import { Platform } from 'react-native';
 
 import type * as Notifications from 'expo-notifications';
 
-import { request } from '@/shared/api/request';
+import { request, WorkspaceRequestError } from '@/shared/api/request';
 
 type NotificationsModule = typeof import('expo-notifications');
 
 let notificationsModulePromise: Promise<NotificationsModule | null> | null = null;
+
+export type PushRegistrationProgress = 'permission' | 'token' | 'api';
+
+export type PushRegistrationResult =
+  | { status: 'registered'; deviceId: string; platform: 'ios' | 'android' }
+  | { status: 'unsupported'; reason: 'runtime' }
+  | { status: 'permission_denied'; reason: 'permission' }
+  | { status: 'unavailable'; reason: 'project_id' };
+
+/** 推送登记失败的稳定错误，不携带 Expo Push Token。 */
+export class PushRegistrationError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly retryable: boolean,
+  ) {
+    super(message);
+    this.name = 'PushRegistrationError';
+  }
+}
 
 /**
  * 判断当前运行时是否可以加载远程推送原生模块。
@@ -58,32 +78,90 @@ export function setupNotificationHandler(): void {
   });
 }
 
-/** 在支持远程推送的原生构建中登记当前设备。 */
-export async function registerPushDevice(): Promise<void> {
-  if (Platform.OS !== 'ios' && Platform.OS !== 'android') return;
-  const Notifications = await loadNotifications();
-  if (!Notifications) return;
-  if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('analysis-alerts', {
-      name: '分析任务通知',
-      importance: Notifications.AndroidImportance.HIGH,
-    });
+/** 在支持远程推送的原生构建中登记当前设备，并返回可观察的阶段结果。 */
+export async function registerPushDevice(
+  onProgress?: (progress: PushRegistrationProgress) => void,
+  dependencies: { notificationsModule?: NotificationsModule } = {},
+): Promise<PushRegistrationResult> {
+  if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
+    return { status: 'unsupported', reason: 'runtime' };
   }
-  const existing = await Notifications.getPermissionsAsync();
-  const permission =
-    existing.status === 'granted' ? existing : await Notifications.requestPermissionsAsync();
-  if (permission.status !== 'granted') return;
+  const Notifications = dependencies.notificationsModule ?? (await loadNotifications());
+  if (!Notifications) return { status: 'unsupported', reason: 'runtime' };
+  try {
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('analysis-alerts', {
+        name: '分析任务通知',
+        importance: Notifications.AndroidImportance.HIGH,
+      });
+    }
+  } catch (error) {
+    throw new PushRegistrationError(
+      'NATIVE_SETUP_FAILED',
+      safePushErrorMessage(error, '无法初始化系统通知通道。'),
+      true,
+    );
+  }
+  onProgress?.('permission');
+  let permission: Awaited<ReturnType<NotificationsModule['getPermissionsAsync']>>;
+  try {
+    const existing = await Notifications.getPermissionsAsync();
+    permission =
+      existing.status === 'granted' ? existing : await Notifications.requestPermissionsAsync();
+  } catch (error) {
+    throw new PushRegistrationError(
+      'PUSH_PERMISSION_CHECK_FAILED',
+      safePushErrorMessage(error, '无法读取系统通知权限。'),
+      true,
+    );
+  }
+  if (permission.status !== 'granted') {
+    return { status: 'permission_denied', reason: 'permission' };
+  }
   const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
-  if (typeof projectId !== 'string' || !projectId) return;
-  const token = await Notifications.getExpoPushTokenAsync({ projectId });
+  if (typeof projectId !== 'string' || !projectId) {
+    return { status: 'unavailable', reason: 'project_id' };
+  }
+  onProgress?.('token');
+  let token: Notifications.ExpoPushToken;
+  try {
+    token = await Notifications.getExpoPushTokenAsync({ projectId });
+  } catch (error) {
+    throw new PushRegistrationError(
+      'EXPO_PUSH_TOKEN_FAILED',
+      safePushErrorMessage(error, '无法获取 Expo Push Token。'),
+      true,
+    );
+  }
   const input: PushDeviceRegisterRequest = {
     token: token.data,
     platform: Platform.OS,
   };
-  await request('/api/push-devices', PushDeviceSchema, {
-    method: 'POST',
-    body: PushDeviceRegisterRequestSchema.parse(input),
-  });
+  onProgress?.('api');
+  try {
+    const device = await request('/api/push-devices', PushDeviceSchema, {
+      method: 'POST',
+      body: PushDeviceRegisterRequestSchema.parse(input),
+    });
+    return { status: 'registered', deviceId: device.id, platform: Platform.OS };
+  } catch (error) {
+    const requestError = error instanceof WorkspaceRequestError ? error : undefined;
+    throw new PushRegistrationError(
+      requestError?.code ?? 'PUSH_DEVICE_REGISTRATION_FAILED',
+      requestError?.message ?? '设备无法登记到 EchoWave Server。',
+      requestError?.retryable ?? true,
+    );
+  }
+}
+
+/** 删除可能出现于原生错误正文中的 Token，并限制状态页诊断长度。 */
+function safePushErrorMessage(error: unknown, fallback: string): string {
+  const raw = error instanceof Error ? error.message : '';
+  const sanitized = raw
+    .replace(/(?:Exponent|Expo)PushToken\[[A-Za-z0-9_-]+\]/g, '[REDACTED_PUSH_TOKEN]')
+    .replace(/[A-Za-z0-9_-]{80,}/g, '[REDACTED]')
+    .trim();
+  return (sanitized || fallback).slice(0, 240);
 }
 
 /**

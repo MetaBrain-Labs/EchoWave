@@ -12,7 +12,7 @@
  * Notes:
  * - 本模块只写本地诊断文件，不提供持久化、查询 API 或实时事件流。
  */
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
@@ -67,6 +67,7 @@ export type AiExecutionReportConfig = {
 export type AiExecutionStart = {
   kind: AiExecutionKind;
   name: string;
+  fileId?: string;
   metadata?: Record<string, unknown>;
 };
 
@@ -306,7 +307,14 @@ export function createAiExecutionReporter(
     dependencies.writeReport ??
     (async (filePath: string, content: string) => {
       await mkdir(path.dirname(filePath), { recursive: true });
-      await writeFile(filePath, content, 'utf8');
+      const temporaryPath = `${filePath}.${randomUUID()}.tmp`;
+      try {
+        await writeFile(temporaryPath, content, 'utf8');
+        await rename(temporaryPath, filePath);
+      } catch (error) {
+        await rm(temporaryPath, { force: true }).catch(() => undefined);
+        throw error;
+      }
     });
   const warn = dependencies.warn ?? ((message: string) => console.warn(message));
 
@@ -411,6 +419,7 @@ class MarkdownExecutionRecorder implements AiExecutionRecorder {
   async finish(result: AiExecutionResult): Promise<void> {
     if (this.finished) return;
     this.finished = true;
+    let diagnosticTarget = path.basename(this.outputDirectory);
     try {
       const endedAt = this.now();
       Object.assign(this.metadata, result.metadata);
@@ -418,12 +427,27 @@ class MarkdownExecutionRecorder implements AiExecutionRecorder {
       const dateDirectory = this.startedAt.toISOString().slice(0, 10);
       const timestamp = this.startedAt.toISOString().replace(/[:.]/g, '-');
       const kind = sanitizeFileSegment(this.input.kind);
-      const fileName = `${timestamp}-${kind}-${sanitizeFileSegment(this.executionId)}.md`;
+      const fileId = sanitizeFileSegment(this.input.fileId ?? this.executionId);
+      const fileName = `${timestamp}-${kind}-${fileId}.md`;
       const filePath = path.join(this.outputDirectory, dateDirectory, fileName);
+      diagnosticTarget = path.join(path.basename(this.outputDirectory), dateDirectory, fileName);
       await this.writeReport(filePath, content);
-    } catch {
+    } catch (error) {
       // 诊断能力必须保持旁路，不能掩盖或改变原始 AI 执行结果。
-      this.warn('[ai-execution-report] failed to write execution report');
+      const code =
+        error && typeof error === 'object' && 'code' in error ? String(error.code) : 'UNKNOWN';
+      const message =
+        error instanceof Error
+          ? redactAiDiagnosticText(error.message).slice(0, 300)
+          : 'Unknown report writer error';
+      this.warn(
+        `[ai-execution-report] failed to write execution report ${safeSerialize({
+          code,
+          error: error instanceof Error ? error.name : 'UnknownError',
+          message,
+          targetPath: diagnosticTarget,
+        })}`,
+      );
     }
   }
 

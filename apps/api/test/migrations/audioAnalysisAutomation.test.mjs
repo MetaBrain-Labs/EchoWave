@@ -19,6 +19,10 @@ const automationNotifyFix = await readFile(
   new URL('../../migrations/031_fix_audio_analysis_automation_notify.sql', import.meta.url),
   'utf8',
 );
+const stageSources = await readFile(
+  new URL('../../migrations/032_audio_automation_stage_sources.sql', import.meta.url),
+  'utf8',
+);
 
 describe('audio analysis automation migrations', () => {
   it('defines the authoritative batch and task state machine', () => {
@@ -54,5 +58,12 @@ describe('audio analysis automation migrations', () => {
     assert.match(automationNotifyFix, /to_jsonb\(NEW\)/);
     assert.match(automationNotifyFix, /TG_TABLE_NAME = 'audio_analysis_tasks'/);
     assert.doesNotMatch(automationNotifyFix, /OLD\.phase|NEW\.phase/);
+  });
+
+  it('persists bounded created, reused, skipped, and unavailable stage sources', () => {
+    assert.match(stageSources, /ADD COLUMN stage_sources jsonb/);
+    for (const source of ['created', 'reused', 'skipped', 'unavailable']) {
+      assert.match(stageSources, new RegExp(`@ != "${source}"`));
+    }
   });
 });

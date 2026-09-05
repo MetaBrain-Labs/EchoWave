@@ -20,8 +20,14 @@ import type { PushNotificationRepository } from './repository.ts';
 export class PushDeviceService {
   constructor(private readonly repository: PushNotificationRepository) {}
 
-  register(rawInput: PushDeviceRegisterRequest) {
-    return this.repository.register(PushDeviceRegisterRequestSchema.parse(rawInput));
+  async register(rawInput: PushDeviceRegisterRequest) {
+    const input = PushDeviceRegisterRequestSchema.parse(rawInput);
+    const device = await this.repository.register(input);
+    console.info('[push-notifications] device registered', {
+      deviceId: device.id,
+      platform: device.platform,
+    });
+    return device;
   }
 
   async disable(rawInput: unknown): Promise<void> {

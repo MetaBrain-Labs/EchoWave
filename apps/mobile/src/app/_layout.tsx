@@ -19,15 +19,12 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { NavigationLoadingProvider } from '@/shared/navigation/NavigationLoadingProvider';
 import { ServerConnectionScreen } from '@/features/server-connection/ServerConnectionScreen';
-import { fetchServerHealth } from '@/shared/api/serverHealth';
 import {
   ServerConnectionProvider,
   useServerConnection,
 } from '@/shared/api/ServerConnectionProvider';
-import {
-  registerPushDevice,
-  subscribeToNotificationNavigation,
-} from '@/shared/notifications/pushNotifications';
+import { subscribeToNotificationNavigation } from '@/shared/notifications/pushNotifications';
+import { PushNotificationProvider } from '@/shared/notifications/PushNotificationProvider';
 import { colors, fontFamilies, spacing, textColors, typography } from '@/shared/theme/tokens';
 import { StatusBarBackdrop } from '@/shared/ui/StatusBarBackdrop';
 
@@ -36,7 +33,9 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ServerConnectionProvider>
-        <RootContent />
+        <PushNotificationProvider>
+          <RootContent />
+        </PushNotificationProvider>
       </ServerConnectionProvider>
     </SafeAreaProvider>
   );
@@ -56,15 +55,10 @@ function RootContent() {
     if (connection.phase !== 'ready' || !connection.serverUrl) return;
     let active = true;
     let unsubscribe: () => void = () => undefined;
-    void fetchServerHealth(connection.serverUrl)
-      .then((health) => {
-        if (!active || !health.capabilities.remotePush) return;
-        void registerPushDevice().catch(() => undefined);
-        unsubscribe = subscribeToNotificationNavigation((id) => {
-          router.push({ pathname: '/analysis-batches/[id]', params: { id } } as unknown as Href);
-        });
-      })
-      .catch(() => undefined);
+    unsubscribe = subscribeToNotificationNavigation((id) => {
+      if (!active) return;
+      router.push({ pathname: '/analysis-batches/[id]', params: { id } } as unknown as Href);
+    });
     return () => {
       active = false;
       unsubscribe();

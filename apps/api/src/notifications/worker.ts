@@ -20,6 +20,7 @@ type PushWorkerOptions = {
   wakeup?: WorkerWakeupSource;
   accessToken?: string;
   enabled?: boolean;
+  expo?: Expo;
 };
 
 /** 单执行器发送通知，跨实例互斥由 outbox 的 SKIP LOCKED 与领取租约提供。 */
@@ -31,7 +32,9 @@ export class PushNotificationWorker {
   private stopping = false;
 
   constructor(private readonly options: PushWorkerOptions) {
-    this.expo = new Expo(options.accessToken ? { accessToken: options.accessToken } : undefined);
+    this.expo =
+      options.expo ??
+      new Expo(options.accessToken ? { accessToken: options.accessToken } : undefined);
   }
 
   async start(): Promise<void> {
@@ -83,8 +86,16 @@ export class PushNotificationWorker {
       await this.options.repository.retryOrFail(
         delivery,
         'PUSH_NETWORK_ERROR',
-        error instanceof Error ? error.message : 'Expo Push Service 请求失败。',
+        safeProviderMessage(
+          error instanceof Error ? error.message : 'Expo Push Service 请求失败。',
+        ),
       );
+      console.warn('[push-notifications] delivery request failed', {
+        deliveryId: delivery.id,
+        deviceId: delivery.deviceId,
+        stage: delivery.ticketId ? 'receipt' : 'ticket',
+        code: 'PUSH_NETWORK_ERROR',
+      });
     }
   }
 
@@ -96,6 +107,12 @@ export class PushNotificationWorker {
         'INVALID_PUSH_TOKEN',
         'Expo Push Token 格式无效。',
       );
+      console.warn('[push-notifications] delivery rejected', {
+        deliveryId: delivery.id,
+        deviceId: delivery.deviceId,
+        stage: 'validation',
+        code: 'INVALID_PUSH_TOKEN',
+      });
       return;
     }
     const [ticket] = await this.expo.sendPushNotificationsAsync([
@@ -115,6 +132,11 @@ export class PushNotificationWorker {
     if (!ticket) throw new Error('Expo Push Service 未返回 ticket。');
     if (ticket.status === 'ok') {
       await this.options.repository.markTicketed(delivery.id, ticket.id);
+      console.info('[push-notifications] delivery ticketed', {
+        deliveryId: delivery.id,
+        deviceId: delivery.deviceId,
+        ticketId: ticket.id,
+      });
       return;
     }
     await this.handleExpoError(delivery, ticket.details?.error, ticket.message);
@@ -133,6 +155,11 @@ export class PushNotificationWorker {
     }
     if (receipt.status === 'ok') {
       await this.options.repository.markDelivered(delivery.id);
+      console.info('[push-notifications] delivery receipt confirmed', {
+        deliveryId: delivery.id,
+        deviceId: delivery.deviceId,
+        ticketId: delivery.ticketId,
+      });
       return;
     }
     await this.handleExpoError(delivery, receipt.details?.error, receipt.message);
@@ -143,15 +170,41 @@ export class PushNotificationWorker {
     code: string | undefined,
     message: string,
   ): Promise<void> {
+    const safeMessage = safeProviderMessage(message);
     if (code === 'DeviceNotRegistered') {
       await this.options.repository.disableDevice(delivery.deviceId);
-      await this.options.repository.markFailed(delivery.id, code, message);
+      await this.options.repository.markFailed(delivery.id, code, safeMessage);
+      this.logExpoFailure(delivery, code, 'receipt');
       return;
     }
     if (code === 'MessageRateExceeded' || code === 'ProviderError' || code === 'ExpoError') {
-      await this.options.repository.retryOrFail(delivery, code, message, true);
+      await this.options.repository.retryOrFail(delivery, code, safeMessage, true);
+      this.logExpoFailure(delivery, code, delivery.ticketId ? 'receipt' : 'ticket');
       return;
     }
-    await this.options.repository.markFailed(delivery.id, code ?? 'PUSH_REJECTED', message);
+    const finalCode = code ?? 'PUSH_REJECTED';
+    await this.options.repository.markFailed(delivery.id, finalCode, safeMessage);
+    this.logExpoFailure(delivery, finalCode, delivery.ticketId ? 'receipt' : 'ticket');
   }
+
+  private logExpoFailure(
+    delivery: ClaimedNotificationDelivery,
+    code: string,
+    stage: 'ticket' | 'receipt',
+  ): void {
+    console.warn('[push-notifications] Expo delivery failed', {
+      deliveryId: delivery.id,
+      deviceId: delivery.deviceId,
+      stage,
+      code,
+    });
+  }
+}
+
+/** Provider 错误可能回显 Token；持久化和日志前必须统一脱敏。 */
+function safeProviderMessage(message: string): string {
+  return message
+    .replace(/(?:Exponent|Expo)PushToken\[[A-Za-z0-9_-]+\]/g, '[REDACTED_PUSH_TOKEN]')
+    .replace(/[A-Za-z0-9_-]{80,}/g, '[REDACTED]')
+    .slice(0, 500);
 }

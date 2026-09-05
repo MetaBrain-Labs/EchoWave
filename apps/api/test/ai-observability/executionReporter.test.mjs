@@ -222,6 +222,29 @@ describe('AI execution reporter', () => {
     assert.ok(writes.every((entry) => entry.filePath.startsWith(outputDirectory)));
   });
 
+  it('uses a stable file id for a batch manifest', async () => {
+    const writes = [];
+    const reporter = createAiExecutionReporter(safeConfig, {
+      repositoryRoot: 'C:\\workspace',
+      now: () => new Date('2026-09-05T13:14:39.000Z'),
+      createId: () => 'random-run-id',
+      writeReport: async (filePath, content) => writes.push({ filePath, content }),
+    });
+    const batchId = 'fc1564fb-da4b-4f44-b958-6875bece7e4a';
+
+    await reporter
+      .start({
+        kind: 'audio-analysis-batch',
+        name: 'batch manifest',
+        fileId: batchId,
+        metadata: { stageSources: { transcription: 'reused' } },
+      })
+      .finish({ status: 'completed' });
+
+    assert.match(writes[0].filePath, new RegExp(`audio-analysis-batch-${batchId}\\.md$`));
+    assert.match(writes[0].content, /"transcription": "reused"/);
+  });
+
   it('isolates writer failures', async () => {
     const warnings = [];
     const reporter = createAiExecutionReporter(safeConfig, {
@@ -237,6 +260,9 @@ describe('AI execution reporter', () => {
       .start({ kind: 'rag-answer', name: 'failed write' })
       .finish({ status: 'completed' });
 
-    assert.deepEqual(warnings, ['[ai-execution-report] failed to write execution report']);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /^\[ai-execution-report\] failed to write execution report/);
+    assert.match(warnings[0], /disk unavailable/);
+    assert.match(warnings[0], /targetPath/);
   });
 });

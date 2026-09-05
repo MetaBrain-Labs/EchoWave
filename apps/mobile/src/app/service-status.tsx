@@ -19,6 +19,10 @@ import {
   ServiceStatusCard,
   type ServiceStatusCardHandle,
 } from '@/features/system-status/ServiceStatusCard';
+import {
+  PushNotificationStatusCard,
+  type PushNotificationStatusCardHandle,
+} from '@/features/system-status/PushNotificationStatusCard';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { colors, spacing } from '@/shared/theme/tokens';
 import { PageHeader } from '@/shared/ui/PageHeader';
@@ -28,9 +32,13 @@ import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 export default function ServiceStatusRoute() {
   const router = useRouter();
   const cardRef = useRef<ServiceStatusCardHandle>(null);
-  const screenRefresh = useScreenRefresh(
-    async () => await (cardRef.current?.refresh() ?? Promise.resolve()),
-  );
+  const pushCardRef = useRef<PushNotificationStatusCardHandle>(null);
+  const screenRefresh = useScreenRefresh(async () => {
+    await Promise.all([
+      cardRef.current?.refresh() ?? Promise.resolve(),
+      pushCardRef.current?.refresh() ?? Promise.resolve(),
+    ]);
+  });
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
       <PageHeader onBack={() => router.back()} onMore={() => undefined} title="服务状态" />
@@ -40,6 +48,7 @@ export default function ServiceStatusRoute() {
         refreshControl={<ScreenRefreshControl {...screenRefresh} />}
       >
         <ServiceStatusCard onChangeServer={() => router.push('/server-connection')} ref={cardRef} />
+        <PushNotificationStatusCard ref={pushCardRef} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -47,5 +56,5 @@ export default function ServiceStatusRoute() {
 
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.canvas, flex: 1 },
-  content: { padding: spacing.md },
+  content: { gap: spacing.md, padding: spacing.md },
 });

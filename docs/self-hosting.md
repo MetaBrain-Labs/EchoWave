@@ -198,10 +198,14 @@ Invoke-RestMethod "http://${serverLanIp}:${apiPort}/health"
 返回值中的 `capabilities.remotePush` 必须为 `true`。安装 Development APK，启动 Metro，并完成：
 
 1. App 连接服务器并请求 Android 通知权限。
-2. 获取 Expo Push Token 并登记到 `POST /api/push-devices`。
-3. 创建一个分析批次，分别验证前台和后台通知。
-4. 点击通知后进入对应的分析批次页面。
-5. 检查 API 日志与通知 outbox，确认没有 `InvalidCredentials`、`MismatchSenderId` 或 `DeviceNotRegistered`。
+2. 打开“更多 → 服务状态”，确认“推送通知”卡片显示“设备已登记”；若显示 Token、API 或权限错误，按错误代码修复后使用“重新登记”。
+3. 检查数据库存在启用的 Android `push_devices` 记录；系统权限允许本身不代表远程推送登记成功。
+4. 使用 Expo 推送测试工具先验证该构建对应的 Token 可以接收通知。
+5. 创建一个分析批次，退出 App，并分别检查 event、delivery、ticket、receipt 与后台系统通知。
+6. 点击通知后进入对应的分析批次页面。
+7. 检查 API 结构化日志与通知 outbox，确认没有 `InvalidCredentials`、`MismatchSenderId` 或 `DeviceNotRegistered`。
+
+若批次全部复用已有分析，仍应在 `.ai-execution-reports/<日期>` 看到一份 `audio-analysis-batch` 清单，并在其中看到各阶段 `reused`；没有新的单次模型调用报告是预期行为。该目录只用于本地诊断，不是业务状态或用户下载报告的权威存储。
 
 远程推送需要原生 Build，不限于 Development Build。当前仓库只记录 Android/Firebase 验收路径；iOS 需要另行配置 Apple Developer、APNs 凭据，并在 macOS/Xcode 环境完成原生验收。
 
