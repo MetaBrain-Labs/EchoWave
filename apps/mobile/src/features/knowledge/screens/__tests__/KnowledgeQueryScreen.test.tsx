@@ -14,6 +14,7 @@ import { KnowledgeQueryScreen } from '../KnowledgeQueryScreen';
 import { listQueryHistory, queryKnowledge } from '../../apiClient';
 import { document, knowledge } from '../../testing/fixtures';
 
+jest.mock('expo-router', () => ({ useFocusEffect: jest.fn() }));
 jest.mock('../../apiClient');
 jest.mock('../../components/AnswerProgressCard', () => {
   return {

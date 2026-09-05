@@ -20,6 +20,29 @@ const knowledgeId = '44444444-4444-4444-8444-444444444444';
 const groupCatalog = { listGroups: async () => ({ items: [] }) };
 
 describe('PostgresDataSourceRepository data-source lifecycle', () => {
+  it('projects acoustic emotion readiness from the latest analysis revision', async () => {
+    const calls = [];
+    const repository = new PostgresDataSourceRepository(
+      {
+        query: async (sql) => {
+          calls.push(sql);
+          return { rows: [] };
+        },
+      },
+      'echowave',
+      tenantId,
+      groupCatalog,
+    );
+    repository.getDataSource = async () => ({});
+
+    await repository.listDataSourceAudioFiles(audioId);
+
+    assert.match(
+      calls[0],
+      /coalesce\(latest\.acoustic_emotion_ready, false\) AS acoustic_emotion_ready/,
+    );
+  });
+
   it('links active groups atomically and ignores duplicate relations', async () => {
     const calls = [];
     const client = {

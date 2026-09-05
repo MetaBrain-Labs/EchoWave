@@ -318,6 +318,7 @@ create table public.audio_business_analysis_jobs (
   checkpoint_cleanup_pending boolean not null default false,
   chat_binding_revision_id uuid,
   embedding_binding_revision_id uuid,
+  cancel_requested boolean not null default false,
   foreign key (tenant_id, chat_binding_revision_id) references public.ai_capability_binding_revisions (tenant_id, id)
   match simple on update no action on delete no action,
   foreign key (tenant_id, embedding_binding_revision_id) references public.ai_capability_binding_revisions (tenant_id, id)
@@ -341,6 +342,7 @@ create unique index uq_audio_business_analysis_running on audio_business_analysi
 create index audio_business_analysis_claim_idx on audio_business_analysis_jobs using btree (tenant_id, status, created_at);
 create index audio_business_analysis_fingerprint_idx on audio_business_analysis_jobs using btree (tenant_id, group_id, audio_file_id, transcript_confirmation_id, input_fingerprint, created_at);
 create index audio_business_analysis_due_idx on audio_business_analysis_jobs using btree (tenant_id, next_attempt_at, created_at) WHERE (status = 'queued'::text);
+create index audio_business_analysis_claim_not_canceled_idx on audio_business_analysis_jobs using btree (tenant_id, status, created_at) WHERE ((status = 'queued'::text) AND (cancel_requested = false));
 
 create table public.audio_business_analysis_windows (
   tenant_id uuid not null,
@@ -443,6 +445,7 @@ create table public.audio_post_analysis_jobs (
   capability_binding_revision_id uuid,
   staging_binding_revision_id uuid,
   retry_count integer not null default 0,
+  cancel_requested boolean not null default false,
   foreign key (tenant_id, capability_binding_revision_id) references public.ai_capability_binding_revisions (tenant_id, id)
   match simple on update no action on delete no action,
   foreign key (tenant_id, audio_file_id, analysis_revision_id) references public.audio_analysis_revisions (tenant_id, audio_file_id, id)
@@ -458,6 +461,7 @@ create unique index audio_post_analysis_jobs_tenant_id_id_key on audio_post_anal
 create unique index audio_post_analysis_jobs_tenant_id_analysis_revision_id_id_key on audio_post_analysis_jobs using btree (tenant_id, analysis_revision_id, id);
 create unique index audio_post_analysis_single_running_idx on audio_post_analysis_jobs using btree (tenant_id, analysis_revision_id, analysis_type) WHERE (status = ANY (ARRAY['queued'::text, 'running'::text]));
 create index audio_post_analysis_claim_idx on audio_post_analysis_jobs using btree (tenant_id, analysis_type, status, created_at);
+create index audio_post_analysis_claim_not_canceled_idx on audio_post_analysis_jobs using btree (tenant_id, analysis_type, status, created_at) WHERE ((status = 'queued'::text) AND (cancel_requested = false));
 
 create table public.audio_post_analysis_windows (
   tenant_id uuid not null,

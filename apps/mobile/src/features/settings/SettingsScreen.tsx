@@ -33,6 +33,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { settingsApi } from '@/shared/api/settingsApi';
 import { WorkspaceRequestError } from '@/shared/api/request';
+import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import {
   colors,
   fontFamilies,
@@ -42,6 +43,7 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 
 const INSECURE_MESSAGE =
   '当前连接不是 HTTPS，不能通过此页面提交 Credential。请在服务器本地配置 credentials.yaml，然后选择对应的 Local Credential alias。';
@@ -218,6 +220,18 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
       setBusy(false);
     }
   };
+  const refreshPage = async () => {
+    try {
+      const transport = await settingsApi.transport();
+      setTransportMode(transport.mode);
+      setSecretAllowed(transport.secretSubmissionAllowed);
+      if (token) await refresh(token);
+      else setError(null);
+    } catch (reason) {
+      setError(errorMessage(reason));
+    }
+  };
+  const screenRefresh = useScreenRefresh(refreshPage);
 
   const login = async () => {
     const candidate = tokenInput.trim();
@@ -294,7 +308,12 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
       <PageHeader onBack={onBack} onMore={() => undefined} title="AI 配置" />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        alwaysBounceVertical
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={<ScreenRefreshControl {...screenRefresh} />}
+      >
         <SecurityBanner mode={transportMode} secretAllowed={secretAllowed} />
         {error ? (
           <View accessibilityRole="alert" style={styles.errorCard}>

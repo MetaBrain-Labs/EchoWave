@@ -196,6 +196,7 @@ export function createRagRuntime(config: ApiConfig) {
     repository: audioAutomationRepository,
     audio: audio.audioService,
     wakeup: workerWakeup,
+    reporter: executionReporter,
   });
   const audioAnalysisRunsService = new AudioAnalysisRunsService(
     new AudioAnalysisRunsRepository(pool, config.database.schema, config.rag.tenantId),

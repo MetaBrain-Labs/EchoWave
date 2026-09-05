@@ -12,7 +12,7 @@
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { KnowledgeDocumentDetail } from '@echowave/contracts';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, type TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -20,7 +20,9 @@ import { PageHeader } from '@/shared/ui/PageHeader';
 import { PageTabs } from '@/shared/ui/PageTabs';
 
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
+import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import {
   colors,
   fontFamilies,
@@ -90,19 +92,19 @@ export function DocumentDetailScreen({
     tabs: tabKeys,
   });
 
+  const load = useCallback(async () => {
+    try {
+      setDocument(await getDocument(knowledgeId, documentId));
+      setError('');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '文档加载失败。');
+    }
+  }, [documentId, knowledgeId]);
+  const screenRefresh = useScreenRefresh(load);
+
   useEffect(() => {
-    let active = true;
-    void runInitialRequest(() => getDocument(knowledgeId, documentId))
-      .then((value) => {
-        if (active) setDocument(value);
-      })
-      .catch((reason) => {
-        if (active) setError(reason instanceof Error ? reason.message : '文档加载失败。');
-      });
-    return () => {
-      active = false;
-    };
-  }, [documentId, knowledgeId, runInitialRequest]);
+    void runInitialRequest(load);
+  }, [load, runInitialRequest]);
 
   const chunks = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
@@ -118,10 +120,16 @@ export function DocumentDetailScreen({
     return (
       <SafeAreaView style={styles.safeArea}>
         <PageHeader onBack={onBack} onMore={() => showComingSoon('更多操作')} title="文件详情" />
-        <EmptyState
-          description={error || '正在从服务器读取解析结果。'}
-          title={error ? '加载失败' : '正在加载'}
-        />
+        <ScrollView
+          alwaysBounceVertical
+          contentContainerStyle={styles.emptyRefreshContent}
+          refreshControl={<ScreenRefreshControl {...screenRefresh} />}
+        >
+          <EmptyState
+            description={error || '正在从服务器读取解析结果。'}
+            title={error ? '加载失败' : '正在加载'}
+          />
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -133,8 +141,10 @@ export function DocumentDetailScreen({
           fullScreen
           mode={previewMode}
           onModeChange={setPreviewMode}
+          onRefresh={screenRefresh.onRefresh}
           onToggleFullScreen={() => setFullScreen(false)}
           previewText={document.previewText}
+          refreshing={screenRefresh.refreshing}
           title={document.title}
         />
       </SafeAreaView>
@@ -173,8 +183,10 @@ export function DocumentDetailScreen({
       >
         <View style={[styles.page, { width: pageWidth }]}>
           <ScrollView
+            alwaysBounceVertical
             contentContainerStyle={styles.pageContent}
             keyboardShouldPersistTaps="handled"
+            refreshControl={<ScreenRefreshControl {...screenRefresh} />}
             showsVerticalScrollIndicator={false}
             stickyHeaderIndices={[1]}
             testID="document-parsed-scroll"
@@ -267,7 +279,9 @@ export function DocumentDetailScreen({
 
         <View style={[styles.page, { width: pageWidth }]}>
           <ScrollView
+            alwaysBounceVertical
             contentContainerStyle={styles.originalContent}
+            refreshControl={<ScreenRefreshControl {...screenRefresh} />}
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.documentMetaRow}>
@@ -301,8 +315,10 @@ export function DocumentDetailScreen({
             <DocumentPreview
               mode={previewMode}
               onModeChange={setPreviewMode}
+              onRefresh={screenRefresh.onRefresh}
               onToggleFullScreen={() => setFullScreen(true)}
               previewText={document.previewText}
+              refreshing={screenRefresh.refreshing}
               title={document.title}
             />
           </ScrollView>
@@ -344,15 +360,19 @@ function DocumentPreview({
   fullScreen = false,
   mode,
   onModeChange,
+  onRefresh,
   onToggleFullScreen,
   previewText,
+  refreshing,
   title,
 }: {
   fullScreen?: boolean;
   mode: PreviewMode;
   onModeChange: (mode: PreviewMode) => void;
+  onRefresh: () => void;
   onToggleFullScreen: () => void;
   previewText: string;
+  refreshing: boolean;
   title: string;
 }) {
   const content = previewText || '原文件已在解析后删除，当前没有规范化文本预览。';
@@ -405,7 +425,9 @@ function DocumentPreview({
       </View>
       {fullScreen ? (
         <ScrollView
+          alwaysBounceVertical
           contentContainerStyle={styles.previewContent}
+          refreshControl={<ScreenRefreshControl onRefresh={onRefresh} refreshing={refreshing} />}
           showsVerticalScrollIndicator={false}
         >
           {mode === 'preview' ? (
@@ -436,6 +458,7 @@ function DocumentPreview({
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.card, flex: 1 },
   safeAreaWhite: { backgroundColor: colors.white, flex: 1 },
+  emptyRefreshContent: { flexGrow: 1 },
   pager: { flex: 1 },
   page: { flex: 1, height: '100%' },
   pageContent: { paddingBottom: spacing.lg },

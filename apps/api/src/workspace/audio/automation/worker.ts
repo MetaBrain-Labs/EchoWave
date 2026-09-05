@@ -12,12 +12,18 @@
  * - 供应商调用的网络退避与阶段 checkpoint 仍由对应子 Worker 负责。
  */
 import type { AudioService } from '../core/service.ts';
+import {
+  noOpAiExecutionReporter,
+  type AiExecutionReporter,
+} from '../../../ai-observability/executionReporter.ts';
 import type { WorkerWakeupSource } from '../../../infrastructure/workerWakeup.ts';
 import { classifyHardBlock, classifyStoredHardBlock } from './errorClassification.ts';
 import {
   AudioAutomationRepository,
+  type AutomationStageSources,
   type ChildJobState,
   type ClaimedAutomationTask,
+  type AutomationTerminalEventType,
 } from './repository.ts';
 
 const SAFETY_SCAN_MS = 15_000;
@@ -26,6 +32,7 @@ type AutomationWorkerOptions = {
   repository: AudioAutomationRepository;
   audio: AudioService;
   wakeup?: WorkerWakeupSource;
+  reporter?: AiExecutionReporter;
 };
 
 function terminal(state: ChildJobState): boolean {
@@ -94,8 +101,7 @@ export class AudioAutomationWorker {
       if (task.phase === 'transcription') await this.advanceTranscription(task);
       else if (task.phase === 'post_analysis') await this.advancePostAnalysis(task);
       else if (task.phase === 'business_analysis') await this.advanceBusiness(task);
-      else if (task.phase === 'done')
-        await this.options.repository.complete(task, task.warningCodes);
+      else if (task.phase === 'done') await this.complete(task);
     } catch (error) {
       const blocked = classifyHardBlock(error);
       if (blocked) {
@@ -107,7 +113,7 @@ export class AudioAutomationWorker {
         );
         return;
       }
-      await this.options.repository.fail(
+      await this.fail(
         task,
         'AUTOMATION_STAGE_FAILED',
         error instanceof Error ? error.message : '自动分析阶段失败。',
@@ -120,6 +126,7 @@ export class AudioAutomationWorker {
     let revisionId = task.analysisRevisionId;
     if (!revisionId) {
       revisionId = await this.options.repository.reusableRevision(task.audioFileId);
+      const reused = Boolean(revisionId);
       if (!revisionId) {
         const queued = await this.options.audio.startAudioTranscription(
           task.audioFileId,
@@ -135,6 +142,7 @@ export class AudioAutomationWorker {
       }
       const linked = await this.options.repository.setStageReference(task.id, {
         analysisRevisionId: revisionId,
+        stageSources: { transcription: reused ? 'reused' : 'created' },
         progress: 5,
       });
       if (!linked && task.analysisRevisionId !== revisionId) return;
@@ -151,7 +159,7 @@ export class AudioAutomationWorker {
           blocked.message,
         );
       } else {
-        await this.options.repository.fail(
+        await this.fail(
           task,
           state.errorCode ?? 'TRANSCRIPTION_FAILED',
           state.errorMessage ?? '音频转写失败。',
@@ -185,9 +193,14 @@ export class AudioAutomationWorker {
     if (!task.analysisRevisionId) throw new Error('自动分析缺少 ASR 修订引用。');
     let emotionJobId = task.emotionJobId;
     let roleJobId = task.roleJobId;
+    let emotionSource = task.stageSources.emotion;
+    let roleSource = task.stageSources.role;
     const reusable = await this.options.repository.postAnalysisReferences(task.analysisRevisionId);
     if (task.pipeline.includeEmotion && !emotionJobId) {
       emotionJobId = reusable.emotionJobId;
+      if (emotionJobId) {
+        emotionSource = task.stageSources.transcription === 'created' ? 'created' : 'reused';
+      }
       if (!emotionJobId && task.runtimeMode !== 'lightweight_local') {
         emotionJobId = (
           await this.options.audio.startAudioPostAnalysis(
@@ -196,10 +209,14 @@ export class AudioAutomationWorker {
             task.configuration.capabilityBindings,
           )
         ).jobId;
+        emotionSource = 'created';
       }
+    } else if (!task.pipeline.includeEmotion) {
+      emotionSource = 'skipped';
     }
     if (task.pipeline.includeRole && !roleJobId) {
       roleJobId = reusable.roleJobId;
+      if (roleJobId) roleSource = 'reused';
       if (!roleJobId) {
         roleJobId = (
           await this.options.audio.startAudioPostAnalysis(
@@ -208,17 +225,30 @@ export class AudioAutomationWorker {
             task.configuration.capabilityBindings,
           )
         ).jobId;
+        roleSource = 'created';
       }
+    } else if (!task.pipeline.includeRole) {
+      roleSource = 'skipped';
     }
     // 轻量本地模式只能在 ASR 阶段产出声学情绪；复用没有该结果的旧转写时继续后续阶段，
     // 但必须留下明确警告，避免批次被误认为完整分析。
     if (task.pipeline.includeEmotion && !emotionJobId) {
+      emotionSource = 'unavailable';
       await this.options.repository.addWarning(task.id, 'EMOTION_UNAVAILABLE');
     }
-    if (emotionJobId !== task.emotionJobId || roleJobId !== task.roleJobId) {
+    if (
+      emotionJobId !== task.emotionJobId ||
+      roleJobId !== task.roleJobId ||
+      emotionSource !== task.stageSources.emotion ||
+      roleSource !== task.stageSources.role
+    ) {
       const linked = await this.options.repository.setStageReference(task.id, {
         ...(emotionJobId ? { emotionJobId } : {}),
         ...(roleJobId ? { roleJobId } : {}),
+        stageSources: {
+          ...(emotionSource ? { emotion: emotionSource } : {}),
+          ...(roleSource ? { role: roleSource } : {}),
+        },
         progress: 50,
       });
       if (!linked) {
@@ -258,7 +288,10 @@ export class AudioAutomationWorker {
 
   private async advanceBusiness(task: ClaimedAutomationTask): Promise<void> {
     if (!task.pipeline.includeBusinessAnalysis) {
-      await this.options.repository.complete(task, task.warningCodes);
+      await this.options.repository.setStageReference(task.id, {
+        stageSources: { businessAnalysis: 'skipped' },
+      });
+      await this.complete(task);
       return;
     }
     if (!task.businessJobId) {
@@ -279,6 +312,7 @@ export class AudioAutomationWorker {
       );
       const linked = await this.options.repository.setStageReference(task.id, {
         businessJobId: queued.jobId,
+        stageSources: { businessAnalysis: queued.reused ? 'reused' : 'created' },
         progress: 80,
       });
       if (!linked) {
@@ -290,7 +324,7 @@ export class AudioAutomationWorker {
     }
     const state = await this.options.repository.businessState(task.businessJobId);
     if (state.status === 'ready') {
-      await this.options.repository.complete(task, task.warningCodes);
+      await this.complete(task);
       return;
     }
     if (state.status === 'failed') {
@@ -303,7 +337,7 @@ export class AudioAutomationWorker {
           blocked.message,
         );
       } else {
-        await this.options.repository.fail(
+        await this.fail(
           task,
           state.errorCode ?? 'BUSINESS_ANALYSIS_FAILED',
           state.errorMessage ?? '业务分析失败。',
@@ -317,6 +351,76 @@ export class AudioAutomationWorker {
     if (task.phase === 'transcription') return 'audio_transcription';
     if (task.phase === 'business_analysis') return 'business_analysis';
     return 'audio_post_analysis';
+  }
+
+  /** 完成父任务，并仅由创建批次终态事件的调用生成一次清单。 */
+  private async complete(task: ClaimedAutomationTask): Promise<void> {
+    const terminalEvent = await this.options.repository.complete(task, task.warningCodes);
+    await this.writeBatchReport(task.batchId, terminalEvent);
+  }
+
+  /** 失败父任务，并在批次因此收敛时生成同一份终态清单。 */
+  private async fail(
+    task: ClaimedAutomationTask,
+    code: string,
+    message: string,
+    retryable: boolean,
+  ): Promise<void> {
+    await this.recordUnavailableStageSources(task).catch((error) => {
+      console.warn('[audio-analysis-batch-report] failed to record terminal stage sources', {
+        batchId: task.batchId,
+        taskId: task.id,
+        error: error instanceof Error ? error.name : 'UnknownError',
+      });
+    });
+    const terminalEvent = await this.options.repository.fail(task, code, message, retryable);
+    await this.writeBatchReport(task.batchId, terminalEvent);
+  }
+
+  /** 终态失败时只补充可由当前配置和缺失引用确定的来源，不猜测已有历史引用。 */
+  private async recordUnavailableStageSources(task: ClaimedAutomationTask): Promise<void> {
+    const stageSources: AutomationStageSources = {};
+    if (!task.stageSources.transcription && !task.analysisRevisionId) {
+      stageSources.transcription = 'unavailable';
+    }
+    if (!task.stageSources.emotion) {
+      if (!task.pipeline.includeEmotion) stageSources.emotion = 'skipped';
+      else if (!task.emotionJobId) stageSources.emotion = 'unavailable';
+    }
+    if (!task.stageSources.role) {
+      if (!task.pipeline.includeRole) stageSources.role = 'skipped';
+      else if (!task.roleJobId) stageSources.role = 'unavailable';
+    }
+    if (!task.stageSources.businessAnalysis) {
+      if (!task.pipeline.includeBusinessAnalysis) stageSources.businessAnalysis = 'skipped';
+      else if (!task.businessJobId) stageSources.businessAnalysis = 'unavailable';
+    }
+    if (Object.keys(stageSources).length) {
+      await this.options.repository.setStageReference(task.id, { stageSources });
+    }
+  }
+
+  /** 批次清单属于旁路诊断，读取或写入失败不得改变父任务终态。 */
+  private async writeBatchReport(
+    batchId: string,
+    terminalEvent: AutomationTerminalEventType | null,
+  ): Promise<void> {
+    if (!terminalEvent) return;
+    try {
+      const manifest = await this.options.repository.batchExecutionManifest(batchId);
+      const report = (this.options.reporter ?? noOpAiExecutionReporter).start({
+        kind: 'audio-analysis-batch',
+        name: 'EchoWave one-click audio analysis batch',
+        fileId: batchId,
+        metadata: { batchId, terminalEvent, manifest },
+      });
+      await report.finish({ status: terminalEvent === 'FAILED' ? 'failed' : 'completed' });
+    } catch (error) {
+      console.warn('[audio-analysis-batch-report] failed to create batch report', {
+        batchId,
+        error: error instanceof Error ? error.name : 'UnknownError',
+      });
+    }
   }
 
   private async currentStageSettled(task: ClaimedAutomationTask): Promise<boolean> {

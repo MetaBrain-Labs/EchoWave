@@ -22,6 +22,7 @@ import { linkKnowledgeBaseGroups, listKnowledgeBaseGroups } from '@/shared/api/k
 import { listGroups } from '@/shared/api/groupsApi';
 import { groupFixture } from '@/test/workspaceFixtures';
 
+jest.mock('expo-router', () => ({ useFocusEffect: jest.fn() }));
 jest.mock('../../apiClient');
 jest.mock('@/shared/api/knowledgeBasesApi');
 jest.mock('@/shared/api/groupsApi');

@@ -14,6 +14,7 @@ const dataSourceId = '33333333-3333-4333-8333-333333333333';
 const groupId = '44444444-4444-4444-8444-444444444444';
 const audioFileId = '55555555-5555-4555-8555-555555555555';
 const businessJobId = '66666666-6666-4666-8666-666666666666';
+const taskId = '77777777-7777-4777-8777-777777777777';
 
 const configurationSnapshot = {
   groupName: '销售组',
@@ -97,6 +98,86 @@ function createRepository(task = {}) {
   };
 }
 
+describe('AudioAutomationRepository.createBatch', () => {
+  it('derives acoustic emotion readiness for existing hybrid audio instead of reading a column', async () => {
+    const calls = [];
+    const client = {
+      query: async (sql, values) => {
+        calls.push({ sql, values });
+        if (/SELECT ds\.id AS data_source_id/.test(sql)) {
+          return {
+            rows: [
+              {
+                data_source_id: dataSourceId,
+                group_id: groupId,
+                group_name: '销售组',
+                analysis_timing: 'manual',
+                content_focus: '分析销售表现',
+                tone: '专业',
+                custom_tags: [],
+                knowledge_base_ids: [],
+              },
+            ],
+          };
+        }
+        if (/INSERT INTO .*audio_analysis_batches/.test(sql)) return { rows: [{ id: batchId }] };
+        if (/FROM .*audio_files.*af/s.test(sql)) {
+          return {
+            rowCount: 1,
+            rows: [
+              {
+                id: audioFileId,
+                title: '客户访谈',
+                runtime_mode: 'hybrid',
+                source_state: 'available',
+                source_recovery_state: 'not_required',
+                acoustic_emotion_ready: false,
+              },
+            ],
+          };
+        }
+        if (/INSERT INTO .*audio_analysis_tasks/.test(sql)) return { rows: [{ id: taskId }] };
+        return { rows: [] };
+      },
+      release: () => {},
+    };
+    const repository = new AudioAutomationRepository(
+      { connect: async () => client },
+      'echowave',
+      tenantId,
+    );
+
+    const result = await repository.createBatch(
+      {
+        source: 'existing_audio',
+        dataSourceId,
+        groupId,
+        audioFileIds: [audioFileId],
+        scheduledFor: null,
+        pipeline: {
+          confirmation: 'system_raw_snapshot',
+          includeEmotion: true,
+          includeRole: true,
+          includeBusinessAnalysis: true,
+          transcriptPolicy: 'reuse_or_create',
+        },
+      },
+      {
+        capabilityBindings: configurationSnapshot.capabilityBindings,
+        models: configurationSnapshot.models,
+      },
+      'hybrid',
+    );
+
+    const assetQuery = calls.find((call) => /FROM .*audio_files.*af/s.test(call.sql));
+    assert.deepEqual(result.tasks, [{ id: taskId, clientItemId: null, audioFileId }]);
+    assert.match(assetQuery.sql, /coalesce\(latest\.acoustic_emotion_ready, false\)/);
+    assert.match(assetQuery.sql, /active_emotion\.status = 'ready'/);
+    assert.match(assetQuery.sql, /bundled\.status = 'ready'/);
+    assert.equal(calls.at(-1).sql, 'COMMIT');
+  });
+});
+
 describe('AudioAutomationRepository.getBatch', () => {
   it('only exposes a report for a completed task with matching business ownership', async () => {
     const { repository, calls } = createRepository();
@@ -133,5 +214,37 @@ describe('AudioAutomationRepository.getBatch', () => {
       assert.equal(result.tasks[0].reportAvailable, false);
       assert.equal(result.tasks[0].report, null);
     }
+  });
+});
+
+describe('AudioAutomationRepository.cancelTask', () => {
+  it('does not update a nonexistent updated_at column on business jobs', async () => {
+    const calls = [];
+    const client = {
+      query: async (sql) => {
+        calls.push(sql);
+        if (/UPDATE .*audio_analysis_tasks[\s\S]*RETURNING id, batch_id/.test(sql)) {
+          return { rows: [{ id: taskId, batch_id: batchId }] };
+        }
+        if (/SELECT batch_id FROM/.test(sql)) {
+          return { rows: [{ batch_id: batchId }] };
+        }
+        return { rows: [] };
+      },
+      release: () => {},
+    };
+    const repository = new AudioAutomationRepository(
+      { connect: async () => client },
+      'echowave',
+      tenantId,
+    );
+
+    await repository.cancelTask(taskId);
+
+    const runningBusinessUpdate = calls.find(
+      (sql) => /UPDATE .*audio_business_analysis_jobs/.test(sql) && /status = 'running'/.test(sql),
+    );
+    assert.ok(runningBusinessUpdate);
+    assert.doesNotMatch(runningBusinessUpdate, /updated_at\s*=/i);
   });
 });

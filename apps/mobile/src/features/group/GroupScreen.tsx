@@ -40,6 +40,7 @@ import {
   listGroups,
 } from '@/shared/api/groupsApi';
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
+import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import {
   colors,
@@ -51,6 +52,7 @@ import {
 } from '@/shared/theme/tokens';
 import { PageTabs } from '@/shared/ui/PageTabs';
 import { SearchSheet } from '@/shared/ui/SearchSheet';
+import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { AudioContent } from './components/AudioContent';
 import { DataSourcesContent } from './components/DataSourcesContent';
 import { GroupDrawer } from './components/GroupDrawer';
@@ -282,29 +284,40 @@ export function GroupScreen({
     [loadAudio, loadKnowledgeBases, loadSources],
   );
 
-  const loadDirectory = useCallback(async () => {
-    setDirectoryLoading(true);
-    setDirectoryError('');
-    try {
-      const response = await listGroups();
-      setGroups(response.items);
-      const routedGroup = response.items.find((item) => item.id === requestedGroupId.current);
-      const firstGroup = routedGroup ?? response.items[0];
-      if (firstGroup) {
-        await selectGroup(firstGroup);
-        if (!routedGroup) onGroupChangeRef.current?.(firstGroup.id);
-      } else {
+  const loadDirectory = useCallback(
+    async (showLoading = true) => {
+      if (showLoading) setDirectoryLoading(true);
+      setDirectoryError('');
+      try {
+        const response = await listGroups();
+        setGroups(response.items);
+        const routedGroup = response.items.find((item) => item.id === requestedGroupId.current);
+        const firstGroup = routedGroup ?? response.items[0];
+        if (firstGroup) {
+          await selectGroup(firstGroup);
+          if (!routedGroup) onGroupChangeRef.current?.(firstGroup.id);
+        } else {
+          clearSelection();
+          onGroupChangeRef.current?.(undefined);
+        }
+      } catch (reason) {
+        setDirectoryError(reason instanceof Error ? reason.message : '分组加载失败。');
+        setGroups([]);
         clearSelection();
-        onGroupChangeRef.current?.(undefined);
+      } finally {
+        if (showLoading) setDirectoryLoading(false);
       }
-    } catch (reason) {
-      setDirectoryError(reason instanceof Error ? reason.message : '分组加载失败。');
-      setGroups([]);
-      clearSelection();
-    } finally {
-      setDirectoryLoading(false);
-    }
-  }, [clearSelection, selectGroup]);
+    },
+    [clearSelection, selectGroup],
+  );
+
+  const refreshPage = useCallback(async () => {
+    await loadDirectory(false);
+    const groupId = selectedGroupId.current;
+    if (!groupId) return;
+    await Promise.all([loadAudio(groupId), loadKnowledgeBases(groupId), loadSources(groupId)]);
+  }, [loadAudio, loadDirectory, loadKnowledgeBases, loadSources]);
+  const screenRefresh = useScreenRefresh(refreshPage);
 
   useEffect(() => {
     const task = setTimeout(() => {
@@ -511,7 +524,11 @@ export function GroupScreen({
           <ActivityIndicator accessibilityLabel="正在加载分组目录" color={colors.ink} />
         </View>
       ) : !group ? (
-        <View style={styles.pageState}>
+        <ScrollView
+          alwaysBounceVertical
+          contentContainerStyle={styles.pageState}
+          refreshControl={<ScreenRefreshControl {...screenRefresh} />}
+        >
           <Ionicons color={colors.muted} name="albums-outline" size={40} />
           <Text style={styles.emptyGroupTitle}>{directoryError || '还没有可用分组'}</Text>
           <Text style={styles.emptyGroupDescription}>
@@ -531,7 +548,7 @@ export function GroupScreen({
               {directoryError ? '重新加载分组' : '打开分组菜单'}
             </Text>
           </Pressable>
-        </View>
+        </ScrollView>
       ) : (
         <>
           <PageTabs activeTab={activeTab} onChange={selectTab} tabs={tabs} />
@@ -549,10 +566,12 @@ export function GroupScreen({
           >
             <View style={[styles.page, { width: pageWidth }]}>
               <ScrollView
+                alwaysBounceVertical
                 contentContainerStyle={styles.scrollContent}
                 onMomentumScrollEnd={handleScrollEnd('audio')}
                 onScroll={handleContentScroll('audio')}
                 onScrollEndDrag={handleScrollEnd('audio')}
+                refreshControl={<ScreenRefreshControl {...screenRefresh} />}
                 scrollEventThrottle={16}
                 showsVerticalScrollIndicator={false}
                 testID="group-audio-scroll"
@@ -577,10 +596,12 @@ export function GroupScreen({
             </View>
             <View style={[styles.page, { width: pageWidth }]}>
               <ScrollView
+                alwaysBounceVertical
                 contentContainerStyle={styles.scrollContent}
                 onMomentumScrollEnd={handleScrollEnd('knowledge')}
                 onScroll={handleContentScroll('knowledge')}
                 onScrollEndDrag={handleScrollEnd('knowledge')}
+                refreshControl={<ScreenRefreshControl {...screenRefresh} />}
                 scrollEventThrottle={16}
                 showsVerticalScrollIndicator={false}
                 testID="group-knowledge-scroll"
@@ -605,10 +626,12 @@ export function GroupScreen({
             </View>
             <View style={[styles.page, { width: pageWidth }]}>
               <ScrollView
+                alwaysBounceVertical
                 contentContainerStyle={styles.scrollContent}
                 onMomentumScrollEnd={handleScrollEnd('sources')}
                 onScroll={handleContentScroll('sources')}
                 onScrollEndDrag={handleScrollEnd('sources')}
+                refreshControl={<ScreenRefreshControl {...screenRefresh} />}
                 scrollEventThrottle={16}
                 showsVerticalScrollIndicator={false}
                 testID="group-sources-scroll"

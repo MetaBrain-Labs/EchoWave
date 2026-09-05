@@ -12,22 +12,16 @@
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { AudioAnalysisRun } from '@echowave/contracts';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { listAudioAnalysisRuns } from '@/shared/api/audioAnalysisRunsApi';
+import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { colors, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
+import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 
 const filters = [
   ['all', '全部'],
@@ -62,13 +56,11 @@ export function AnalysisRunsScreen({ onBack }: { onBack?: () => void } = {}) {
   const [filter, setFilter] = useState<(typeof filters)[number][0]>('all');
   const [items, setItems] = useState<AudioAnalysisRun[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(
-    async (mode: 'initial' | 'refresh' = 'initial') => {
-      if (mode === 'refresh') setRefreshing(true);
-      else setLoading(true);
+    async (showLoading = true) => {
+      if (showLoading) setLoading(true);
       try {
         const response = await listAudioAnalysisRuns({ status: filter, kind: 'all', limit: 50 });
         setItems(response.items);
@@ -77,23 +69,22 @@ export function AnalysisRunsScreen({ onBack }: { onBack?: () => void } = {}) {
         setError(cause instanceof Error ? cause.message : '分析记录加载失败。');
       } finally {
         setLoading(false);
-        setRefreshing(false);
       }
     },
     [filter],
   );
 
-  useFocusEffect(
-    useCallback(() => {
-      void load();
-      return undefined;
-    }, [load]),
-  );
+  const screenRefresh = useScreenRefresh(() => load(false));
+
+  useEffect(() => {
+    const task = setTimeout(() => void load(), 0);
+    return () => clearTimeout(task);
+  }, [load]);
 
   useEffect(() => {
     const hasActive = items.some(isActive);
     if (!hasActive) return undefined;
-    const timer = setInterval(() => void load('refresh'), 15_000);
+    const timer = setInterval(() => void load(false), 15_000);
     return () => clearInterval(timer);
   }, [items, load]);
 
@@ -129,20 +120,28 @@ export function AnalysisRunsScreen({ onBack }: { onBack?: () => void } = {}) {
         <View style={styles.center}>
           <ActivityIndicator color={colors.ink} />
         </View>
-      ) : error ? (
-        <View style={styles.center}>
+      ) : error && !items.length ? (
+        <ScrollView
+          alwaysBounceVertical
+          contentContainerStyle={styles.center}
+          refreshControl={<ScreenRefreshControl {...screenRefresh} />}
+        >
           <Text style={styles.error}>{error}</Text>
           <Pressable onPress={() => void load()} style={styles.retry}>
             <Text style={styles.retryText}>重试</Text>
           </Pressable>
-        </View>
+        </ScrollView>
       ) : (
         <ScrollView
+          alwaysBounceVertical
           contentContainerStyle={items.length ? styles.content : styles.emptyContent}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => void load('refresh')} />
-          }
+          refreshControl={<ScreenRefreshControl {...screenRefresh} />}
         >
+          {error ? (
+            <Text accessibilityRole="alert" style={styles.error}>
+              刷新失败：{error}
+            </Text>
+          ) : null}
           {items.length ? (
             items.map((run) => (
               <Pressable

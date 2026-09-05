@@ -19,6 +19,8 @@ import {
   View,
 } from 'react-native';
 
+import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
+
 import {
   colors,
   fontFamilies,
@@ -392,11 +394,13 @@ export function TranscriptContent({
   onPlayReviewFinding,
   onResolveAllReviewFindings,
   onResolveReviewFinding,
+  onRefresh = () => undefined,
   onSpeakerChange,
   onSplitSegment,
   onStartEditing,
   playingSegmentId,
   resolvingReviewFinding,
+  refreshing = false,
   segmentPlaybackDisabled,
   segmentPlaybackLoading,
   segmentPlaybackPlaying,
@@ -419,11 +423,13 @@ export function TranscriptContent({
   onPlayReviewFinding: (segment: TranscriptSegment, splitAfterWordIndex: number) => void;
   onResolveAllReviewFindings: () => void;
   onResolveReviewFinding: (findingId: string) => void;
+  onRefresh?: () => void;
   onSpeakerChange: (segmentId: string, speakerKey: string) => void;
   onSplitSegment: (segment: TranscriptSegment, splitAfterWordIndex: number) => void;
   onStartEditing: () => void;
   playingSegmentId?: string;
   resolvingReviewFinding?: string;
+  refreshing?: boolean;
   segmentPlaybackDisabled: boolean;
   segmentPlaybackLoading: boolean;
   segmentPlaybackPlaying: boolean;
@@ -493,8 +499,10 @@ export function TranscriptContent({
 
   return (
     <ScrollView
+      alwaysBounceVertical
       contentContainerStyle={styles.transcriptContent}
       keyboardShouldPersistTaps="handled"
+      refreshControl={<ScreenRefreshControl onRefresh={onRefresh} refreshing={refreshing} />}
       showsVerticalScrollIndicator={false}
       style={styles.pageScroll}
     >

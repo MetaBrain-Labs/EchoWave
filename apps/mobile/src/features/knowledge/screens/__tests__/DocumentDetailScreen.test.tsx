@@ -17,6 +17,7 @@ import { DocumentDetailScreen } from '../DocumentDetailScreen';
 import { getDocument } from '../../apiClient';
 import { document, knowledge } from '../../testing/fixtures';
 
+jest.mock('expo-router', () => ({ useFocusEffect: jest.fn() }));
 jest.mock('../../apiClient');
 
 describe('DocumentDetailScreen', () => {

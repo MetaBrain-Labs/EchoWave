@@ -20,7 +20,7 @@ import {
   type GroupAnalysisTiming,
   type KnowledgeBaseSummary,
 } from '@echowave/contracts';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -44,7 +44,9 @@ import {
 } from '@/shared/api/groupsApi';
 import { listDataSources } from '@/shared/api/dataSourcesApi';
 import { listKnowledgeBases } from '@/shared/api/knowledgeBasesApi';
+import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import {
   colors,
   fontFamilies,
@@ -120,34 +122,51 @@ export function GroupSettingsScreen({
   const [dataSources, setDataSources] = useState<DataSourceSummary[]>([]);
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(() => new Set());
   const runInitialRequest = useInitialRequestLoading();
+  const dirtyRef = useRef(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const [settings, allKnowledge, linkedKnowledge, allSources, linkedSources] =
-        await Promise.all([
-          getGroupSettings(groupId),
-          listKnowledgeBases(),
-          listGroupKnowledgeBases(groupId),
-          listDataSources(),
-          listGroupDataSources(groupId),
-        ]);
-      setName(settings.name);
-      setTiming(settings.analysis.timing);
-      setContentFocus(settings.analysis.contentFocus);
-      setTone(settings.analysis.tone);
-      setCustomTags(settings.analysis.customTags);
-      setKnowledgeBases(allKnowledge.items);
-      setSelectedKnowledgeIds(new Set(linkedKnowledge.items.map((item) => item.id)));
-      setDataSources(allSources.items);
-      setSelectedSourceIds(new Set(linkedSources.items.map((item) => item.id)));
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '分组设置加载失败。');
-    } finally {
-      setLoading(false);
-    }
-  }, [groupId]);
+  const load = useCallback(
+    async (preserveDraft = false) => {
+      if (!preserveDraft) setLoading(true);
+      setError('');
+      try {
+        const [settings, allKnowledge, linkedKnowledge, allSources, linkedSources] =
+          await Promise.all([
+            getGroupSettings(groupId),
+            listKnowledgeBases(),
+            listGroupKnowledgeBases(groupId),
+            listDataSources(),
+            listGroupDataSources(groupId),
+          ]);
+        setKnowledgeBases(allKnowledge.items);
+        setDataSources(allSources.items);
+        if (!preserveDraft || !dirtyRef.current) {
+          setName(settings.name);
+          setTiming(settings.analysis.timing);
+          setContentFocus(settings.analysis.contentFocus);
+          setTone(settings.analysis.tone);
+          setCustomTags(settings.analysis.customTags);
+          setSelectedKnowledgeIds(new Set(linkedKnowledge.items.map((item) => item.id)));
+          setSelectedSourceIds(new Set(linkedSources.items.map((item) => item.id)));
+          dirtyRef.current = false;
+        } else {
+          const validKnowledgeIds = new Set(allKnowledge.items.map((item) => item.id));
+          const validSourceIds = new Set(allSources.items.map((item) => item.id));
+          setSelectedKnowledgeIds(
+            (current) => new Set([...current].filter((id) => validKnowledgeIds.has(id))),
+          );
+          setSelectedSourceIds(
+            (current) => new Set([...current].filter((id) => validSourceIds.has(id))),
+          );
+        }
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : '分组设置加载失败。');
+      } finally {
+        if (!preserveDraft) setLoading(false);
+      }
+    },
+    [groupId],
+  );
+  const screenRefresh = useScreenRefresh(() => load(true));
 
   useEffect(() => {
     const task = setTimeout(() => void runInitialRequest(load), 0);
@@ -155,6 +174,7 @@ export function GroupSettingsScreen({
   }, [load, runInitialRequest]);
 
   const toggle = (setter: typeof setSelectedKnowledgeIds, id: string) => {
+    dirtyRef.current = true;
     setter((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
@@ -177,6 +197,7 @@ export function GroupSettingsScreen({
       return;
     }
     setCustomTags((current) => [...current, value]);
+    dirtyRef.current = true;
     setTagDraft('');
   };
 
@@ -273,19 +294,26 @@ export function GroupSettingsScreen({
           style={styles.loading}
         />
       ) : error && !name ? (
-        <View style={styles.emptyState}>
+        <ScrollView
+          alwaysBounceVertical
+          contentContainerStyle={styles.emptyState}
+          refreshControl={<ScreenRefreshControl {...screenRefresh} />}
+        >
           <Text accessibilityRole="alert" style={styles.errorText}>
             {error}
           </Text>
           <Pressable onPress={() => void load()} style={styles.secondaryButton}>
             <Text style={styles.secondaryButtonText}>重新加载</Text>
           </Pressable>
-        </View>
+        </ScrollView>
       ) : (
         <ScrollView
+          alwaysBounceVertical
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
+          refreshControl={<ScreenRefreshControl {...screenRefresh} />}
           showsVerticalScrollIndicator={false}
+          testID="group-settings-scroll"
         >
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
           {activeTab === 'basic' ? (
@@ -295,7 +323,10 @@ export function GroupSettingsScreen({
               <TextInput
                 accessibilityLabel="分组名称"
                 maxLength={120}
-                onChangeText={setName}
+                onChangeText={(value) => {
+                  setName(value);
+                  dirtyRef.current = true;
+                }}
                 placeholder="分组名称"
                 style={styles.input}
                 value={name}
@@ -308,7 +339,10 @@ export function GroupSettingsScreen({
                     accessibilityRole="radio"
                     accessibilityState={{ checked: timing === value }}
                     key={value}
-                    onPress={() => setTiming(value)}
+                    onPress={() => {
+                      setTiming(value);
+                      dirtyRef.current = true;
+                    }}
                     style={[styles.option, timing === value && styles.optionActive]}
                   >
                     <Text style={styles.optionText}>
@@ -323,7 +357,10 @@ export function GroupSettingsScreen({
                 accessibilityLabel="内容侧重"
                 maxLength={4_000}
                 multiline
-                onChangeText={setContentFocus}
+                onChangeText={(value) => {
+                  setContentFocus(value);
+                  dirtyRef.current = true;
+                }}
                 style={[styles.input, styles.largeInput]}
                 textAlignVertical="top"
                 value={contentFocus}
@@ -334,14 +371,24 @@ export function GroupSettingsScreen({
                 accessibilityLabel="语气风格"
                 maxLength={1_000}
                 multiline
-                onChangeText={setTone}
+                onChangeText={(value) => {
+                  setTone(value);
+                  dirtyRef.current = true;
+                }}
                 style={[styles.input, styles.mediumInput]}
                 textAlignVertical="top"
                 value={tone}
               />
               <View style={styles.chips}>
                 {toneShortcuts.map((shortcut) => (
-                  <Pressable key={shortcut} onPress={() => setTone(shortcut)} style={styles.chip}>
+                  <Pressable
+                    key={shortcut}
+                    onPress={() => {
+                      setTone(shortcut);
+                      dirtyRef.current = true;
+                    }}
+                    style={styles.chip}
+                  >
                     <Text style={styles.chipText}>{shortcut}</Text>
                   </Pressable>
                 ))}
@@ -353,9 +400,10 @@ export function GroupSettingsScreen({
                   <Pressable
                     accessibilityLabel={`删除分析标签：${tag}`}
                     key={tag}
-                    onPress={() =>
-                      setCustomTags((current) => current.filter((item) => item !== tag))
-                    }
+                    onPress={() => {
+                      setCustomTags((current) => current.filter((item) => item !== tag));
+                      dirtyRef.current = true;
+                    }}
                     style={styles.chip}
                   >
                     <Text style={styles.chipText}>{tag} ×</Text>

@@ -75,6 +75,10 @@ jest.mock('@/shared/api/serverHealth', () => ({
   }),
 }));
 
+jest.mock('@/shared/notifications/PushNotificationProvider', () => ({
+  PushNotificationProvider: ({ children }: { children: ReactNode }) => children,
+}));
+
 jest.mock('@/shared/navigation/NavigationLoadingProvider', () => ({
   NavigationLoadingProvider: ({ children }: { children: ReactNode }) => children,
 }));

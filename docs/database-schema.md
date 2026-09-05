@@ -446,6 +446,8 @@ ASR 确认后的情绪分析和角色识别任务。每条任务固化 `analysis
 
 批次内每个上传项或已有音频对应一个任务。状态覆盖 `awaiting_upload`、`scheduled`、`queued`、`running`、`hard_blocked`、成功、带警告成功、失败和取消；阶段覆盖上传、转写、后处理、业务分析和完成。任务保存各阶段 job 指针、单调进度、阻塞/错误摘要、源文件过期时间和 `cancel_requested`，但不复制模型正文。
 
+`stage_sources` 是内部 JSON 对象，为 `transcription / emotion / role / businessAnalysis` 保存 `created / reused / skipped / unavailable` 来源。新任务在选择已有引用或创建新 job 时逐阶段合并写入；旧任务默认空对象，诊断清单按 `unknown` 展示缺失字段，避免猜测历史执行方式。
+
 同一批次通过 `audio_file_id` 或 `client_item_id` 幂等，计划时间和 `run_after` 决定领取资格。任务表及其外键是状态唯一来源；PostgreSQL `LISTEN/NOTIFY` 只负责唤醒，不替代 `FOR UPDATE SKIP LOCKED` 领取与补偿扫描。
 
 ### `audio_analysis_batch_blockers`

@@ -23,7 +23,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { KnowledgeBaseSummary } from '@echowave/contracts';
+import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { SearchSheet } from '@/shared/ui/SearchSheet';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
 
@@ -70,17 +72,18 @@ export function KnowledgeListScreen({
   const [createDescription, setCreateDescription] = useState('');
   const [creating, setCreating] = useState(false);
   const runInitialRequest = useInitialRequestLoading();
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     setError('');
     try {
       setKnowledgeBases((await listKnowledgeBases()).items);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '知识库加载失败。');
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, []);
+  const screenRefresh = useScreenRefresh(() => load(false));
   const create = async () => {
     const name = createName.trim();
     if (!name || creating) return;
@@ -147,7 +150,9 @@ export function KnowledgeListScreen({
       />
 
       <ScrollView
+        alwaysBounceVertical
         contentContainerStyle={styles.listContent}
+        refreshControl={<ScreenRefreshControl {...screenRefresh} />}
         showsVerticalScrollIndicator={false}
         testID="knowledge-list-scroll"
       >

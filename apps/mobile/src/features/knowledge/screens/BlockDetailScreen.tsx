@@ -12,11 +12,13 @@
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { DocumentChunk, KnowledgeDocumentDetail } from '@echowave/contracts';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
+import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 
 import {
@@ -62,19 +64,19 @@ export function BlockDetailScreen({
   const importantBlocks = useImportantBlocks();
   const runInitialRequest = useInitialRequestLoading();
 
+  const load = useCallback(async () => {
+    try {
+      setDocument(await getDocument(knowledgeId, documentId));
+      setError('');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '文本块加载失败。');
+    }
+  }, [documentId, knowledgeId]);
+  const screenRefresh = useScreenRefresh(load);
+
   useEffect(() => {
-    let active = true;
-    void runInitialRequest(() => getDocument(knowledgeId, documentId))
-      .then((value) => {
-        if (active) setDocument(value);
-      })
-      .catch((reason) => {
-        if (active) setError(reason instanceof Error ? reason.message : '文本块加载失败。');
-      });
-    return () => {
-      active = false;
-    };
-  }, [documentId, knowledgeId, runInitialRequest]);
+    void runInitialRequest(load);
+  }, [load, runInitialRequest]);
 
   const index = useMemo(
     () => document?.chunks.findIndex((chunk) => chunk.id === blockId) ?? -1,
@@ -88,10 +90,16 @@ export function BlockDetailScreen({
     return (
       <SafeAreaView style={styles.safeArea}>
         <PageHeader onBack={onBack} onMore={() => showComingSoon('更多操作')} title="文本块详情" />
-        <EmptyState
-          description={error || '正在从服务器读取文本块。'}
-          title={error ? '加载失败' : '正在加载'}
-        />
+        <ScrollView
+          alwaysBounceVertical
+          contentContainerStyle={styles.emptyRefreshContent}
+          refreshControl={<ScreenRefreshControl {...screenRefresh} />}
+        >
+          <EmptyState
+            description={error || '正在从服务器读取文本块。'}
+            title={error ? '加载失败' : '正在加载'}
+          />
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -106,7 +114,12 @@ export function BlockDetailScreen({
         searchLabel="搜索文本块"
         title={`块 ${block.index} · ${block.title || '正文'}`}
       />
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        alwaysBounceVertical
+        contentContainerStyle={styles.content}
+        refreshControl={<ScreenRefreshControl {...screenRefresh} />}
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={styles.sectionTitle}>块详情</Text>
         <View style={styles.metrics}>
           <Metric label="块序号" value={`${block.index}/${document.chunks.length}`} />
@@ -372,6 +385,7 @@ function PaginationButton({
 
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.card, flex: 1 },
+  emptyRefreshContent: { flexGrow: 1 },
   content: { gap: spacing.lg, padding: spacing.md, paddingBottom: spacing.xl },
   sectionTitle: {
     ...typography.heading1,

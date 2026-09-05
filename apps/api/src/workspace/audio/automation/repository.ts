@@ -30,6 +30,12 @@ import { WorkspaceRepositoryError } from '../../errors.ts';
 
 type ConfigurationSnapshot = AudioAnalysisBatch['configurationSnapshot'];
 
+export type AutomationStageSource = 'created' | 'reused' | 'skipped' | 'unavailable';
+export type AutomationStageSources = Partial<
+  Record<'transcription' | 'emotion' | 'role' | 'businessAnalysis', AutomationStageSource>
+>;
+export type AutomationTerminalEventType = 'COMPLETED' | 'PARTIAL_COMPLETED' | 'FAILED';
+
 export type ClaimedAutomationTask = {
   id: string;
   batchId: string;
@@ -43,6 +49,7 @@ export type ClaimedAutomationTask = {
   emotionJobId: string | null;
   roleJobId: string | null;
   businessJobId: string | null;
+  stageSources: AutomationStageSources;
   warningCodes: string[];
   cancelRequested: boolean;
 };
@@ -63,6 +70,23 @@ function strings(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string')
     : [];
+}
+
+function stageSources(value: unknown): AutomationStageSources {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const result: AutomationStageSources = {};
+  for (const key of ['transcription', 'emotion', 'role', 'businessAnalysis'] as const) {
+    const source = (value as Record<string, unknown>)[key];
+    if (
+      source === 'created' ||
+      source === 'reused' ||
+      source === 'skipped' ||
+      source === 'unavailable'
+    ) {
+      result[key] = source;
+    }
+  }
+  return result;
 }
 
 /** 管理固定租户下的自动分析批次和任务。 */
@@ -177,12 +201,24 @@ export class AudioAutomationRepository {
         }
       } else {
         const assets = await client.query(
-          `SELECT id, title, runtime_mode, source_state, source_recovery_state,
-                  acoustic_emotion_ready
-           FROM ${this.table('audio_files')}
-           WHERE tenant_id = $1 AND data_source_id = $2 AND id = ANY($3::uuid[])
-             AND deleted_at IS NULL AND upload_status = 'ready'
-           ORDER BY created_at`,
+          `SELECT af.id, af.title, af.runtime_mode, af.source_state, af.source_recovery_state,
+                  coalesce(latest.acoustic_emotion_ready, false) AS acoustic_emotion_ready
+           FROM ${this.table('audio_files')} af
+           LEFT JOIN LATERAL (
+             SELECT CASE WHEN active_emotion.status = 'ready' OR bundled.status = 'ready'
+                      THEN true ELSE false END AS acoustic_emotion_ready
+             FROM ${this.table('audio_analysis_revisions')} ar
+             LEFT JOIN ${this.table('audio_post_analysis_jobs')} bundled
+               ON bundled.tenant_id = ar.tenant_id AND bundled.id = ar.bundled_emotion_job_id
+             LEFT JOIN ${this.table('audio_post_analysis_jobs')} active_emotion
+               ON active_emotion.tenant_id = ar.tenant_id
+              AND active_emotion.id = ar.active_emotion_job_id
+             WHERE ar.tenant_id = af.tenant_id AND ar.audio_file_id = af.id
+             ORDER BY ar.revision_no DESC LIMIT 1
+           ) latest ON true
+           WHERE af.tenant_id = $1 AND af.data_source_id = $2 AND af.id = ANY($3::uuid[])
+             AND af.deleted_at IS NULL AND af.upload_status = 'ready'
+           ORDER BY af.created_at`,
           [this.tenantId, input.dataSourceId, input.audioFileIds],
         );
         if (assets.rowCount !== input.audioFileIds.length) {
@@ -435,6 +471,7 @@ export class AudioAutomationRepository {
       emotionJobId: row.emotion_job_id ?? null,
       roleJobId: row.role_job_id ?? null,
       businessJobId: row.business_job_id ?? null,
+      stageSources: stageSources(row.stage_sources),
       warningCodes: strings(row.warning_codes),
       cancelRequested: Boolean(row.cancel_requested),
     };
@@ -462,6 +499,7 @@ export class AudioAutomationRepository {
       emotionJobId?: string;
       roleJobId?: string;
       businessJobId?: string;
+      stageSources?: AutomationStageSources;
       progress?: number;
     },
   ): Promise<boolean> {
@@ -470,6 +508,7 @@ export class AudioAutomationRepository {
        SET phase = coalesce($3, phase), analysis_revision_id = coalesce($4, analysis_revision_id),
            emotion_job_id = coalesce($5, emotion_job_id), role_job_id = coalesce($6, role_job_id),
            business_job_id = coalesce($7, business_job_id), progress = coalesce($8, progress),
+           stage_sources = stage_sources || $9::jsonb,
            updated_at = now()
        WHERE tenant_id = $1 AND id = $2 AND status = 'running'`,
       [
@@ -481,6 +520,7 @@ export class AudioAutomationRepository {
         input.roleJobId ?? null,
         input.businessJobId ?? null,
         input.progress ?? null,
+        JSON.stringify(input.stageSources ?? {}),
       ],
     );
     return result.rowCount === 1;
@@ -631,7 +671,10 @@ export class AudioAutomationRepository {
   }
 
   /** 完成任务并原子生成一次批次终态通知事件。 */
-  async complete(task: ClaimedAutomationTask, warnings: string[]): Promise<void> {
+  async complete(
+    task: ClaimedAutomationTask,
+    warnings: string[],
+  ): Promise<AutomationTerminalEventType | null> {
     const status = warnings.length ? 'completed_with_warnings' : 'completed';
     const client = await this.pool.connect();
     try {
@@ -643,8 +686,9 @@ export class AudioAutomationRepository {
          WHERE tenant_id = $1 AND id = $2 AND status = 'running'`,
         [this.tenantId, task.id, status, JSON.stringify([...new Set(warnings)])],
       );
-      await this.createTerminalEventIfBatchFinished(client, task.batchId);
+      const terminalEvent = await this.createTerminalEventIfBatchFinished(client, task.batchId);
       await client.query('COMMIT');
+      return terminalEvent;
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -658,7 +702,7 @@ export class AudioAutomationRepository {
     code: string,
     message: string,
     retryable: boolean,
-  ): Promise<void> {
+  ): Promise<AutomationTerminalEventType | null> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -669,8 +713,9 @@ export class AudioAutomationRepository {
          WHERE tenant_id = $1 AND id = $2 AND status = 'running'`,
         [this.tenantId, task.id, code, message.slice(0, 500), retryable],
       );
-      await this.createTerminalEventIfBatchFinished(client, task.batchId);
+      const terminalEvent = await this.createTerminalEventIfBatchFinished(client, task.batchId);
       await client.query('COMMIT');
+      return terminalEvent;
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -964,7 +1009,7 @@ export class AudioAutomationRepository {
     );
     await client.query(
       `UPDATE ${this.table('audio_business_analysis_jobs')} job
-       SET cancel_requested = true, updated_at = now()
+       SET cancel_requested = true
        WHERE job.tenant_id = $1 AND job.status = 'running'
          AND EXISTS (
            SELECT 1 FROM ${this.table('audio_analysis_tasks')} task
@@ -1010,7 +1055,7 @@ export class AudioAutomationRepository {
   private async createTerminalEventIfBatchFinished(
     client: PoolClient,
     batchId: string,
-  ): Promise<void> {
+  ): Promise<AutomationTerminalEventType | null> {
     const summary = await client.query(
       `SELECT count(*)::int AS total,
                 count(*) FILTER (WHERE status IN ('completed', 'completed_with_warnings'))::int AS completed,
@@ -1023,7 +1068,7 @@ export class AudioAutomationRepository {
     );
     const row = summary.rows[0];
     if (Number(row.active) === 0) {
-      const eventType =
+      const eventType: AutomationTerminalEventType =
         Number(row.failed) > 0
           ? 'FAILED'
           : Number(row.partial) > 0
@@ -1036,7 +1081,7 @@ export class AudioAutomationRepository {
             ? '分析批次部分完成'
             : '分析批次存在失败';
       const body = `共 ${row.total} 项，完成 ${row.completed} 项，失败 ${row.failed} 项。`;
-      await this.insertNotificationEvent(
+      const created = await this.insertNotificationEvent(
         client,
         batchId,
         null,
@@ -1045,7 +1090,9 @@ export class AudioAutomationRepository {
         title,
         body,
       );
+      return created ? eventType : null;
     }
+    return null;
   }
 
   private async insertNotificationEvent(
@@ -1056,7 +1103,7 @@ export class AudioAutomationRepository {
     dedupeKey: string,
     title: string,
     body: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const created = await client.query(
       `INSERT INTO ${this.table('notification_events')}
          (tenant_id, batch_id, task_id, event_type, dedupe_key, title, body)
@@ -1064,7 +1111,7 @@ export class AudioAutomationRepository {
        ON CONFLICT (tenant_id, dedupe_key) DO NOTHING RETURNING id`,
       [this.tenantId, batchId, taskId, eventType, dedupeKey, title, body],
     );
-    if (!created.rows[0]) return;
+    if (!created.rows[0]) return false;
     await client.query(
       `INSERT INTO ${this.table('notification_deliveries')}
          (tenant_id, event_id, device_id)
@@ -1073,5 +1120,109 @@ export class AudioAutomationRepository {
        ON CONFLICT DO NOTHING`,
       [this.tenantId, created.rows[0].id],
     );
+    return true;
+  }
+
+  /** 汇总批次清单所需的非敏感配置、阶段来源与关联 AI 执行记录。 */
+  async batchExecutionManifest(batchId: string): Promise<Record<string, unknown>> {
+    const batch = await this.pool.query(
+      `SELECT id, source_kind, scheduled_for, pipeline_snapshot, configuration_snapshot,
+              created_at, updated_at
+       FROM ${this.table('audio_analysis_batches')}
+       WHERE tenant_id = $1 AND id = $2`,
+      [this.tenantId, batchId],
+    );
+    if (!batch.rows[0]) throw new WorkspaceRepositoryError('NOT_FOUND', '分析批次不存在。');
+    const tasks = await this.pool.query(
+      `SELECT id, audio_file_id, title, runtime_mode, status, phase, progress,
+              analysis_revision_id, emotion_job_id, role_job_id, business_job_id,
+              stage_sources, warning_codes, error_code, error_message, error_retryable,
+              created_at, completed_at
+       FROM ${this.table('audio_analysis_tasks')}
+       WHERE tenant_id = $1 AND batch_id = $2
+       ORDER BY created_at, id`,
+      [this.tenantId, batchId],
+    );
+    const revisionIds = tasks.rows
+      .map((row) => row.analysis_revision_id)
+      .filter((value): value is string => typeof value === 'string');
+    const jobIds = tasks.rows
+      .flatMap((row) => [row.emotion_job_id, row.role_job_id, row.business_job_id])
+      .filter((value): value is string => typeof value === 'string');
+    const runs =
+      revisionIds.length || jobIds.length
+        ? await this.pool.query(
+            `SELECT id, kind, status, audio_file_id, analysis_revision_id, source_job_id,
+                    started_at, completed_at, duration_ms, error_code
+             FROM ${this.table('ai_execution_runs')}
+             WHERE tenant_id = $1
+               AND (source_job_id = ANY($2::uuid[])
+                    OR (kind = 'audio-transcription' AND analysis_revision_id = ANY($3::uuid[])))
+             ORDER BY started_at, id`,
+            [this.tenantId, jobIds, revisionIds],
+          )
+        : { rows: [] };
+    const row = batch.rows[0];
+    const completedAt = tasks.rows.reduce<Date | string | null>((latest, task) => {
+      if (!task.completed_at) return latest;
+      if (!latest || new Date(task.completed_at).getTime() > new Date(latest).getTime()) {
+        return task.completed_at;
+      }
+      return latest;
+    }, null);
+    return {
+      batch: {
+        id: row.id,
+        source: row.source_kind,
+        scheduledFor: iso(row.scheduled_for),
+        pipeline: row.pipeline_snapshot,
+        configuration: row.configuration_snapshot,
+        createdAt: iso(row.created_at),
+        completedAt: iso(completedAt ?? row.updated_at),
+      },
+      tasks: tasks.rows.map((task) => ({
+        id: task.id,
+        audioFileId: task.audio_file_id,
+        title: task.title,
+        runtimeMode: task.runtime_mode,
+        status: task.status,
+        phase: task.phase,
+        progress: Number(task.progress),
+        stageSources: {
+          transcription: stageSources(task.stage_sources).transcription ?? 'unknown',
+          emotion: stageSources(task.stage_sources).emotion ?? 'unknown',
+          role: stageSources(task.stage_sources).role ?? 'unknown',
+          businessAnalysis: stageSources(task.stage_sources).businessAnalysis ?? 'unknown',
+        },
+        references: {
+          analysisRevisionId: task.analysis_revision_id,
+          emotionJobId: task.emotion_job_id,
+          roleJobId: task.role_job_id,
+          businessJobId: task.business_job_id,
+        },
+        warningCodes: strings(task.warning_codes),
+        error: task.error_code
+          ? {
+              code: task.error_code,
+              message: task.error_message,
+              retryable: Boolean(task.error_retryable),
+            }
+          : null,
+        createdAt: iso(task.created_at),
+        completedAt: iso(task.completed_at),
+      })),
+      aiExecutions: runs.rows.map((run) => ({
+        id: run.id,
+        kind: run.kind,
+        status: run.status,
+        audioFileId: run.audio_file_id,
+        analysisRevisionId: run.analysis_revision_id,
+        sourceJobId: run.source_job_id,
+        startedAt: iso(run.started_at),
+        completedAt: iso(run.completed_at),
+        durationMs: run.duration_ms === null ? null : Number(run.duration_ms),
+        errorCode: run.error_code,
+      })),
+    };
   }
 }

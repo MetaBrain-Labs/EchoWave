@@ -18,6 +18,8 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
+import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 
 import {
   colors,
@@ -160,6 +162,7 @@ export function KnowledgeQueryScreen({
       if (mounted.current) setHistoryLoading(false);
     }
   };
+  const screenRefresh = useScreenRefresh(loadHistory);
 
   const openHistory = () => {
     setHistoryVisible(true);
@@ -170,11 +173,13 @@ export function KnowledgeQueryScreen({
     <SafeAreaView style={styles.safeArea}>
       <PageHeader moreLabel="查看历史记录" onBack={onBack} onMore={openHistory} title="问知识库" />
       <ScrollView
+        alwaysBounceVertical
         contentContainerStyle={styles.content}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
         onContentSizeChange={scrollToLatest}
         ref={scrollRef}
+        refreshControl={<ScreenRefreshControl {...screenRefresh} />}
       >
         {turns.length === 0 ? (
           <Text style={styles.hint}>回答只基于已完成解析的知识库文档；依据不足时会明确拒答。</Text>

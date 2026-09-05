@@ -27,6 +27,7 @@ import * as liveUpdateApi from '@/shared/api/liveUpdateStreams';
 import { analysisFixture } from '@/test/workspaceFixtures';
 import { mockAudioPlayers, resetExpoAudioMock } from '@/test/ExpoAudioMock';
 
+jest.mock('expo-router', () => ({ useFocusEffect: jest.fn() }));
 jest.mock('@/shared/api/audioAnalysisApi', () => {
   const actual = jest.requireActual('@/shared/api/audioAnalysisApi');
   return {
