@@ -12,7 +12,7 @@
  */
 import { ApiErrorResponseSchema } from '@echowave/contracts';
 
-import { apiUrl } from './apiUrl';
+import { getApiUrl } from './apiUrl';
 
 /** 工作区读写请求的稳定客户端错误。 */
 export class WorkspaceRequestError extends Error {
@@ -52,7 +52,7 @@ export async function request<T>(
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 20_000);
   const multipart = options.body instanceof FormData;
   try {
-    const response = await fetch(`${apiUrl}${path}`, {
+    const response = await fetch(`${getApiUrl()}${path}`, {
       body:
         options.body === undefined
           ? undefined

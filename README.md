@@ -102,9 +102,9 @@ FFmpeg 是整文件转写的必需能力。配置 `FFMPEG_PATH` 后，API 启动
 EXPO_PUBLIC_API_URL=http://localhost:3001
 ```
 
-`EXPO_PUBLIC_*` 会被写入客户端 bundle，不得放置密码、令牌或其他秘密。修改该文件后，需要在 Expo Go 中执行完整 Reload 才能确认新值已生效。详见 [Expo 环境变量文档](https://docs.expo.dev/guides/environment-variables/)。
+`EXPO_PUBLIC_*` 会被写入客户端 bundle，不得放置密码、令牌或其他秘密。该地址只作为 Development Build 或 Expo Go 尚未保存服务器时的开发默认值；App 内保存的服务器优先。修改该文件后，需要在当前客户端中执行完整 Reload。Production APK 不设置固定的 `EXPO_PUBLIC_API_URL`，并由 EAS profile 的 `EXPO_PUBLIC_REQUIRE_SERVER_SELECTION=true` 强制忽略任何开发默认地址。详见 [Expo 环境变量文档](https://docs.expo.dev/guides/environment-variables/)。
 
-API 的 PostgreSQL 配置继续使用 `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_USER` 等分字段变量。首次启动还必须设置 `CREDENTIAL_MASTER_KEY`、`CONFIGURATION_ADMIN_TOKEN`、`LOCAL_CREDENTIALS_FILE` 和 `TRUSTED_PROXY_CIDRS`。缺少供应商连接、Credential alias 或能力绑定只会禁用对应 AI 能力并返回 `CONFIGURATION_REQUIRED`，健康检查和“更多”页仍可使用。Redis 字段仍仅作未来边界预留。
+API 的 PostgreSQL 配置继续使用 `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_USER` 等分字段变量。首次启动还必须设置 `CREDENTIAL_MASTER_KEY`、`CONFIGURATION_ADMIN_TOKEN`、`LOCAL_CREDENTIALS_FILE`、`TRUSTED_PROXY_CIDRS` 和显式的 `PUSH_NOTIFICATIONS_ENABLED=true|false`。缺少供应商连接、Credential alias 或能力绑定只会禁用对应 AI 能力并返回 `CONFIGURATION_REQUIRED`，健康检查和“更多”页仍可使用。Redis 字段仍仅作未来边界预留。
 
 ### 可选 AI 执行报告
 
@@ -185,49 +185,42 @@ pnpm dev:mobile
 
 进入 Expo 终端后，按 `w` 打开 Web，按 `a` 打开 Android。iOS Simulator 需要在 macOS 上运行。
 
-## 使用 Expo Go 在真机测试
+## Development Build 与真机测试
 
-### SDK 兼容性
+Development Build 是本项目默认的原生开发环境。它包含 EchoWave 自己的原生模块、权限和通知配置；Expo Go 仅保留为不依赖远程推送的源码预览入口。
 
-本项目使用 Expo SDK 57。Expo Go 从 SDK 51 起一次只支持一个 SDK 版本，因此手机上的 Expo Go 必须与项目 SDK 匹配。**截至 2026-08-15，Expo 官方下载页仍将 SDK 56 标为最新 Expo Go，SDK 57 官方建项文档也提示过渡期内实体机 Expo Go 受限。商店版 Expo Go 因此不能被视为当前项目的可靠测试运行时。**开始测试前请在 [Expo Go 下载页](https://expo.dev/go)重新确认 SDK 57 是否已经可用；如果手机提示 SDK 不兼容，这不是二维码或网络故障。
+首次使用需要在 `apps/mobile` 中登录并绑定自己的 EAS 项目，然后创建 Android Development APK：
 
-Android 在官方提供匹配版本后可以安装指定版本的 Expo Go；实体 iOS 受 App Store 分发限制，只能使用当时可分发的版本。项目后续加入 Expo Go 未内置的原生模块时，也必须改用 Development Build。参见 [Expo Go 的能力边界](https://docs.expo.dev/faq/#what-can-i-do-or-cannot-do-with-expo-go)和 [SDK 57 过渡期说明](https://docs.expo.dev/get-started/create-a-project/)。
+```powershell
+Set-Location apps/mobile
+pnpm dlx eas-cli@latest login
+pnpm dlx eas-cli@latest init
+pnpm dlx eas-cli@latest build --platform android --profile development
+```
 
-### 连接步骤
+安装 APK 后，日常开发只需运行 API 和 Metro；普通 TS/TSX 修改不需要重新构建：
 
-以下步骤适用于手机已经安装了与 SDK 57 匹配的 Expo Go：
+```powershell
+pnpm dev:api
+pnpm dev:mobile
+```
 
-1. 让手机和电脑连接同一个可信 Wi-Fi。在 PowerShell 运行 `ipconfig`，找到当前 Wi-Fi 或以太网适配器的 IPv4 地址，例如 `192.168.1.20`。
-2. 确认 `apps/api/.env` 中的 `PORT`，然后把 `apps/mobile/.env` 配置为电脑的局域网地址。例如 API 端口为 `3201`：
+让手机和电脑处于同一可信网络，并把 `apps/mobile/.env` 中的地址设置为电脑局域网地址，例如 `EXPO_PUBLIC_API_URL=http://192.168.1.20:3001`。修改原生依赖、权限、Firebase、通知配置或 Expo SDK 后必须重新构建 Development APK。
 
-   ```dotenv
-   EXPO_PUBLIC_API_URL=http://192.168.1.20:3201
-   ```
+需要临时使用 Expo Go 时运行：
 
-3. 在第一个终端启动 API：
+```powershell
+pnpm --filter @echowave/mobile dev:go -- --lan
+```
 
-   ```powershell
-   pnpm dev:api
-   ```
+Expo Go 不支持本项目的远程推送；应用会安全跳过通知模块。Metro Tunnel 只代理 Expo 流量，不会代理 EchoWave API。
 
-4. 可先用手机浏览器访问 `http://192.168.1.20:3201/api/hello`。能看到 `HelloWorld` 响应，才说明手机能够访问 API；否则检查 IP、端口、同网段状态、路由器的客户端隔离设置和 Windows 防火墙。
-5. 在第二个终端明确以 Expo Go + LAN 模式启动移动端：
+## 开源使用与自托管
 
-   ```powershell
-   pnpm --filter @echowave/mobile exec expo start --go --lan
-   ```
+- **预构建 APK**：从 GitHub Releases 安装签名 Android APK，Clone 仓库并运行 Docker Server，首次打开 App 时填写服务器地址。
+- **源码开发/自行构建**：使用 Expo Go 验证兼容功能，或替换 Expo、包标识、Firebase 和签名身份后创建自己的 Development/Production Build。
 
-6. Android 在 Expo Go 中选择“Scan QR code”；iPhone 使用系统相机扫描。打开 EchoWave 后进入“更多”页，确认 API 状态为在线且消息为 `HelloWorld`。
-
-Expo 官方建议真机和电脑处于同一 Wi-Fi；若只有 Metro 无法连接，可以将上一步的 `--lan` 改为 `--tunnel`。Tunnel 会明显变慢，而且**只代理 Expo/Metro，不会代理 EchoWave API**，所以 `EXPO_PUBLIC_API_URL` 指向的 API 仍需能被手机访问。详见 [Expo 真机启动与网络排查](https://docs.expo.dev/get-started/start-developing/)。
-
-### 常见问题
-
-- 没有二维码：不要从仓库根目录运行 `npx expo start`；使用上面的 workspace 命令，或运行 `pnpm start` 后在 Turbo TUI 中选择 `@echowave/mobile#dev`。
-- 扫码后提示 SDK 不兼容：安装匹配 SDK 57 的 Expo Go；如果官方尚未提供，则等待匹配版本或为项目配置 Development Build，不要把它当作网络问题排查。
-- 手机能打开应用但 API 离线：检查 `apps/mobile/.env` 是否仍写着 `localhost`，并确认它的端口与 `apps/api/.env` 完全一致。
-- 修改 `.env` 后未生效：在 Expo Go 中执行完整 Reload；必要时停止 Metro 后加 `--clear` 重新启动。
-- 公共 Wi-Fi 或访客网络无法连接：优先换用允许设备互访的私人网络或手机热点；仅切换 Metro Tunnel 不能解决自定义 API 不可达的问题。
+完整的 Docker 配置、局域网连接、安全限制和自行构建步骤见 [自托管与自行构建指南](docs/self-hosting.md)。Self-hosted V1 仅使用 SSE 和应用内状态，默认关闭远程推送；当前 API 尚无真实用户鉴权，禁止直接暴露到公网。
 
 ## 可用脚本
 
@@ -239,7 +232,7 @@ pnpm build
 pnpm check
 ```
 
-`build` 会编译共享契约与 Node API，并通过 Expo 为 iOS、Android、Web 生成可移植的 JavaScript bundle。该校验命令跳过 Hermes bytecode；正式原生构建仍由未来的 EAS/原生流水线负责。生成目录和本地缓存不会提交到 Git。
+`build` 会编译共享契约与 Node API，并通过 Expo 为 iOS、Android、Web 生成可移植的 JavaScript bundle。该校验命令跳过 Hermes bytecode；正式原生包使用 `apps/mobile/eas.json` 中的 `development`、`production-apk` 或 `production` profile。仓库暂不自动创建 GitHub Release。
 
 ## 当前功能
 

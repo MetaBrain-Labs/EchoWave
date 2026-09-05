@@ -54,6 +54,27 @@ jest.mock('react-native-safe-area-context', () => {
   };
 });
 
+jest.mock('@/shared/api/ServerConnectionProvider', () => ({
+  ServerConnectionProvider: ({ children }: { children: ReactNode }) => children,
+  useServerConnection: () => ({
+    error: null,
+    phase: 'ready',
+    revision: 0,
+    serverUrl: 'http://localhost:3001',
+  }),
+}));
+
+jest.mock('@/shared/api/serverHealth', () => ({
+  fetchServerHealth: async () => ({
+    name: 'EchoWave',
+    service: 'echowave-api',
+    version: '0.1.0',
+    apiVersion: 1,
+    status: 'ok',
+    capabilities: { remotePush: false },
+  }),
+}));
+
 jest.mock('@/shared/navigation/NavigationLoadingProvider', () => ({
   NavigationLoadingProvider: ({ children }: { children: ReactNode }) => children,
 }));

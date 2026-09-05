@@ -74,6 +74,7 @@ web_modules/
 .env
 .env.*
 !.env.example
+deploy/self-hosted/api.env
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -158,3 +159,10 @@ web-build/
 # Local tool caches
 .cache/
 .tmp/
+
+# Firebase configuration file
+google-services.json
+# Firebase Service Account
+*-firebase-adminsdk-*.json
+firebase-service-account.json
+apps/mobile/@laifqzzrs-team__echowave.jks

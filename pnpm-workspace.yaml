@@ -7,6 +7,12 @@ allowBuilds:
   onnxruntime-node: true
   unrs-resolver: false
 
+overrides:
+  '@expo/cli': 57.0.15
+  '@expo/ui': 57.0.11
+  expo-modules-core: 57.0.11
+  expo-modules-jsi: 57.0.4
+
 minimumReleaseAgeExclude:
   - '@expo/cli@57.0.15'
   - '@expo/config-plugins@57.0.8'
@@ -31,3 +37,4 @@ minimumReleaseAgeExclude:
   - expo-server@57.0.3
   - expo@57.0.13
   - turbo@2.10.10
+  - expo-build-properties@57.0.17

@@ -209,6 +209,7 @@ export function createRagRuntime(config: ApiConfig) {
   const pushNotificationWorker = new PushNotificationWorker({
     repository: pushNotificationRepository,
     wakeup: workerWakeup,
+    enabled: config.notifications.enabled,
     ...(config.notifications.expoPushAccessToken
       ? { accessToken: config.notifications.expoPushAccessToken }
       : {}),

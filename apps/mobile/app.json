@@ -9,18 +9,42 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.echowave.app"
+      "bundleIdentifier": "com.echowave.app",
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "EchoWave 需要连接你在本地网络中运行的自托管服务器。",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
+      }
     },
     "android": {
-      "package": "com.echowave.app"
+      "package": "com.echowave.app",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "bundler": "metro",
       "output": "static"
     },
-    "plugins": ["expo-router", "expo-notifications"],
+    "plugins": [
+      "expo-router",
+      "expo-notifications",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
+    ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "d3f03a48-c952-421c-b55d-971e509e7b30"
+      }
     }
   }
 }

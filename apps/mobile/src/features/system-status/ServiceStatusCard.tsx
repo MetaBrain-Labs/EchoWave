@@ -1,7 +1,7 @@
 /**
  * API 服务状态卡片。
  *
- * 以可观察、可重试的方式展示 HelloWorld 连接状态，区分加载、在线、离线和超时反馈。
+ * 以可观察、可重试的方式展示当前 EchoWave Server 的身份、版本和连接状态。
  *
  * Responsibilities:
  * - 触发并展示健康检查结果。
@@ -22,17 +22,18 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
-import { apiUrl } from '@/shared/api/apiUrl';
+import { useServerConnection } from '@/shared/api/ServerConnectionProvider';
 
-import { fetchHello } from './apiClient';
+import { fetchServerHealth } from './apiClient';
 
 type ServiceState =
   | { phase: 'loading' }
   | { phase: 'online'; message: string }
   | { phase: 'offline'; message: string };
 
-/** 执行 HelloWorld 健康检查并渲染加载、在线、失败和重试状态。 */
-export function ServiceStatusCard() {
+/** 执行健康检查并渲染加载、在线、失败、重试和修改服务器操作。 */
+export function ServiceStatusCard({ onChangeServer }: { onChangeServer: () => void }) {
+  const { serverUrl } = useServerConnection();
   const [state, setState] = useState<ServiceState>({ phase: 'loading' });
   const requestVersion = useRef(0);
 
@@ -41,9 +42,12 @@ export function ServiceStatusCard() {
     setState({ phase: 'loading' });
 
     try {
-      const response = await fetchHello();
+      const response = await fetchServerHealth(serverUrl!);
       if (version === requestVersion.current) {
-        setState({ phase: 'online', message: response.message });
+        setState({
+          phase: 'online',
+          message: `EchoWave ${response.version} · API v${response.apiVersion}`,
+        });
       }
     } catch (error) {
       if (version === requestVersion.current) {
@@ -53,14 +57,18 @@ export function ServiceStatusCard() {
         });
       }
     }
-  }, []);
+  }, [serverUrl]);
 
   useEffect(() => {
     const version = ++requestVersion.current;
-    void fetchHello()
+    if (!serverUrl) return;
+    void fetchServerHealth(serverUrl)
       .then((response) => {
         if (version === requestVersion.current) {
-          setState({ phase: 'online', message: response.message });
+          setState({
+            phase: 'online',
+            message: `EchoWave ${response.version} · API v${response.apiVersion}`,
+          });
         }
       })
       .catch((error: unknown) => {
@@ -75,7 +83,7 @@ export function ServiceStatusCard() {
     return () => {
       requestVersion.current += 1;
     };
-  }, []);
+  }, [serverUrl]);
 
   const isLoading = state.phase === 'loading';
   const isOnline = state.phase === 'online';
@@ -84,7 +92,7 @@ export function ServiceStatusCard() {
     <View style={styles.card} testID="service-status-card">
       <View style={styles.headingRow}>
         <View>
-          <Text style={styles.eyebrow}>HELLOWORLD API</Text>
+          <Text style={styles.eyebrow}>ECHOWAVE SERVER</Text>
           <Text style={styles.title}>服务状态</Text>
         </View>
         <View
@@ -118,7 +126,7 @@ export function ServiceStatusCard() {
       </View>
 
       <Text numberOfLines={1} style={styles.endpoint}>
-        {apiUrl}/api/hello
+        {serverUrl}/health
       </Text>
 
       <Pressable
@@ -134,6 +142,19 @@ export function ServiceStatusCard() {
       >
         <Ionicons color={colors.ink} name="refresh" size={typography.body.lineHeight} />
         <Text style={styles.retryText}>重试连接</Text>
+      </Pressable>
+      <Pressable
+        accessibilityLabel="修改服务器"
+        accessibilityRole="button"
+        onPress={onChangeServer}
+        style={({ pressed }) => [styles.changeButton, pressed && styles.pressedButton]}
+      >
+        <Ionicons
+          color={textColors.secondary}
+          name="server-outline"
+          size={typography.body.lineHeight}
+        />
+        <Text style={styles.changeText}>修改服务器</Text>
       </Pressable>
     </View>
   );
@@ -235,5 +256,17 @@ const styles = StyleSheet.create({
     color: textColors.primary,
     fontFamily: fontFamilies.sansBold,
     fontWeight: 'bold',
+  },
+  changeButton: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'center',
+    marginTop: spacing.sm,
+    minHeight: 44,
+  },
+  changeText: {
+    ...typography.body,
+    color: textColors.secondary,
   },
 });

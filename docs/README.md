@@ -4,6 +4,7 @@
 - [数据库结构](./database-schema.md)：PostgreSQL/pgvector 表、关系、约束与数据生命周期。
 - [音频运行模式](./audio-runtime-modes.md)：混合、对象存储、轻量本地及声学情绪与清理流程。
 - [一键式音频全流程分析](./audio-analysis-automation.md)：批量、定时、断点恢复、取消与 Expo 推送。
+- [自托管与自行构建](./self-hosting.md)：Docker Server、Development Build、APK 与 EAS/Firebase 身份配置。
 - [设计规范](./design-system.md)：移动端视觉令牌、排版、布局与交互约束。
 - [领域语言](./domain-language.md)：知识库、文档 revision、可信回答等统一术语。
 

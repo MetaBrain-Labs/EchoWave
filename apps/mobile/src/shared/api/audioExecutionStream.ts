@@ -17,7 +17,7 @@ import {
 } from '@echowave/contracts';
 import { fetch } from 'expo/fetch';
 
-import { apiUrl } from './apiUrl';
+import { getApiUrl } from './apiUrl';
 import { WorkspaceRequestError } from './request';
 
 type StreamOptions = {
@@ -89,7 +89,7 @@ export async function streamAudioExecutionTrace(options: StreamOptions): Promise
   if (options.cursor) query.set('cursor', options.cursor);
   const suffix = query.size > 0 ? `?${query.toString()}` : '';
   const response = await fetch(
-    `${apiUrl}/api/audio-files/${options.audioFileId}/analysis/executions/stream${suffix}`,
+    `${getApiUrl()}/api/audio-files/${options.audioFileId}/analysis/executions/stream${suffix}`,
     {
       headers: { Accept: 'text/event-stream' },
       signal: options.signal,

@@ -20,4 +20,4 @@ PostgreSQL 的 `audio_analysis_batches` 和 `audio_analysis_tasks` 是状态唯�
 
 App 使用 `expo-notifications`，API 使用 `expo-server-sdk` 和 PostgreSQL outbox。仅发送 `HARD_BLOCKED / FAILED / COMPLETED / PARTIAL_COMPLETED`，通知数据只包含 `type、batchId、taskId`，点击后重新读取批次状态。
 
-远程推送必须使用 Android/iOS Development Build，不能依赖 Expo Go。EAS 项目需要提供 `projectId`；启用 Expo access-token 安全时，在 `apps/api/.env` 设置 `EXPO_PUSH_ACCESS_TOKEN`。部署前还要验证服务器能够访问 `exp.host`。发送 Worker 会退避网络、429 和 5xx，检查 receipt，并在 `DeviceNotRegistered` 时停用 Token。
+远程推送必须使用 Android/iOS Development Build，不能依赖 Expo Go。仅当 `apps/api/.env` 显式设置 `PUSH_NOTIFICATIONS_ENABLED=true` 时，服务端才启动发送 Worker，并通过 `/health` 告知 App 注册设备；Self-hosted 模板默认为 `false`。EAS 项目需要提供 `projectId`；启用 Expo access-token 安全时，再设置 `EXPO_PUSH_ACCESS_TOKEN`。部署前还要验证服务器能够访问 `exp.host`。发送 Worker 会退避网络、429 和 5xx，检查 receipt，并在 `DeviceNotRegistered` 时停用 Token。

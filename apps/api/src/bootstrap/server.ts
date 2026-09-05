@@ -39,6 +39,7 @@ const app = createApp(config, {
   audioAutomationService: ragRuntime.audioAutomationService,
   audioAnalysisRunsService: ragRuntime.audioAnalysisRunsService,
   pushDeviceService: ragRuntime.pushDeviceService,
+  remotePushEnabled: config.notifications.enabled,
   liveUpdateBroker: ragRuntime.liveUpdates,
   settingsService: ragRuntime.settingsService,
   trustedProxyCidrs: config.settingsSecurity.trustedProxyCidrs,

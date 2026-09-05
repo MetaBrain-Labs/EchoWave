@@ -54,6 +54,7 @@ export type AppDependencies = {
   audioAutomationService?: AudioAutomationService;
   pushDeviceService?: PushDeviceService;
   audioAnalysisRunsService?: AudioAnalysisRunsService;
+  remotePushEnabled?: boolean;
 };
 
 /** 创建不启动监听器的 Hono 应用，使生产服务器和测试共享传输入口。 */
@@ -74,7 +75,7 @@ export function createApp(
     }),
   );
 
-  registerHealthRoutes(app);
+  registerHealthRoutes(app, dependencies.remotePushEnabled ?? false);
   if (dependencies.settingsService) {
     registerSettingsRoutes(app, dependencies.settingsService, dependencies.trustedProxyCidrs ?? []);
   }

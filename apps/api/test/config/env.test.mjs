@@ -56,6 +56,7 @@ const completeValues = {
   AI_EXECUTION_REPORT_OUTPUT_ENABLED: 'false',
   AI_EXECUTION_REPORT_REASONING_ENABLED: 'false',
   AI_EXECUTION_REPORT_STT_RAW_RESPONSE_ENABLED: 'true',
+  PUSH_NOTIFICATIONS_ENABLED: 'true',
 };
 
 describe('API environment', () => {
@@ -104,6 +105,7 @@ describe('API environment', () => {
     assert.deepEqual(config.corsOrigins, ['http://localhost:8081', 'http://localhost:19006']);
     assert.deepEqual(config.settingsSecurity.trustedProxyCidrs, ['127.0.0.1/32', '::1/128']);
     assert.equal(config.settingsSecurity.credentialMasterKey.byteLength, 32);
+    assert.equal(config.notifications.enabled, true);
   });
 
   it('resolves file paths relative to the API environment directory when loading a file', () => {
@@ -186,6 +188,9 @@ describe('API environment', () => {
       readApiConfig({ ...completeValues, AUDIO_TRANSCRIPTION_MODEL: 'openai/gpt-4o-transcribe' }),
     );
     assert.throws(() => readApiConfig({ ...completeValues, TRUSTED_PROXY_CIDRS: '10.0.0.0/33' }));
+    assert.throws(() =>
+      readApiConfig({ ...completeValues, PUSH_NOTIFICATIONS_ENABLED: 'sometimes' }),
+    );
   });
 
   it('starts without legacy provider variables and exposes their import completeness', () => {

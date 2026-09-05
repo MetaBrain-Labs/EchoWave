@@ -22,7 +22,7 @@ import {
 } from '@echowave/contracts';
 import { fetch } from 'expo/fetch';
 
-import { apiUrl } from './apiUrl';
+import { getApiUrl } from './apiUrl';
 import { WorkspaceRequestError } from './request';
 
 type Parser<T> = (value: unknown) => T;
@@ -83,7 +83,7 @@ async function streamValidated<T>(options: {
   parse: Parser<T>;
   onEvent: (event: T) => void;
 }): Promise<void> {
-  const response = await fetch(`${apiUrl}${options.path}`, {
+  const response = await fetch(`${getApiUrl()}${options.path}`, {
     headers: { Accept: 'text/event-stream' },
     signal: options.signal,
   });

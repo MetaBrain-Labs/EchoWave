@@ -12,32 +12,38 @@
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 
-import { fetchHello } from '../apiClient';
+import { fetchServerHealth } from '../apiClient';
 import { ServiceStatusCard } from '../ServiceStatusCard';
 import { colors, radii, spacing } from '@/shared/theme/tokens';
 
 jest.mock('../apiClient', () => ({
-  apiUrl: 'http://localhost:3001',
-  fetchHello: jest.fn(),
+  fetchServerHealth: jest.fn(),
+}));
+jest.mock('@/shared/api/ServerConnectionProvider', () => ({
+  useServerConnection: () => ({ serverUrl: 'http://localhost:3001' }),
 }));
 
-const mockedFetchHello = jest.mocked(fetchHello);
+const mockedFetchServerHealth = jest.mocked(fetchServerHealth);
+const health = {
+  name: 'EchoWave' as const,
+  service: 'echowave-api' as const,
+  version: '0.1.0',
+  apiVersion: 1 as const,
+  status: 'ok' as const,
+  capabilities: { remotePush: false },
+};
 
 describe('ServiceStatusCard', () => {
   beforeEach(() => {
-    mockedFetchHello.mockReset();
+    mockedFetchServerHealth.mockReset();
   });
 
   it('shows the online state and API message', async () => {
-    mockedFetchHello.mockResolvedValue({
-      ok: true,
-      service: 'echowave-api',
-      message: 'HelloWorld',
-    });
+    mockedFetchServerHealth.mockResolvedValue(health);
 
-    const screen = render(<ServiceStatusCard />);
+    const screen = render(<ServiceStatusCard onChangeServer={() => undefined} />);
 
-    await waitFor(() => expect(screen.getByText('HelloWorld')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('EchoWave 0.1.0 · API v1')).toBeTruthy());
     expect(screen.getByLabelText('在线')).toBeTruthy();
     expect(StyleSheet.flatten(screen.getByTestId('service-status-card').props.style)).toEqual(
       expect.objectContaining({
@@ -50,20 +56,16 @@ describe('ServiceStatusCard', () => {
   });
 
   it('shows an offline state and retries the request', async () => {
-    mockedFetchHello
+    mockedFetchServerHealth
       .mockRejectedValueOnce(new Error('无法连接 EchoWave API。'))
-      .mockResolvedValueOnce({
-        ok: true,
-        service: 'echowave-api',
-        message: 'HelloWorld',
-      });
+      .mockResolvedValueOnce(health);
 
-    const screen = render(<ServiceStatusCard />);
+    const screen = render(<ServiceStatusCard onChangeServer={() => undefined} />);
 
     await waitFor(() => expect(screen.getByLabelText('离线')).toBeTruthy());
     fireEvent.press(screen.getByLabelText('重试连接'));
 
     await waitFor(() => expect(screen.getByLabelText('在线')).toBeTruthy());
-    expect(mockedFetchHello).toHaveBeenCalledTimes(2);
+    expect(mockedFetchServerHealth).toHaveBeenCalledTimes(2);
   });
 });

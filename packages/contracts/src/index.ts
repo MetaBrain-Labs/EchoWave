@@ -11,6 +11,12 @@
  */
 export { HelloResponseSchema, type HelloResponse } from './hello.ts';
 export {
+  ECHOWAVE_API_VERSION,
+  HealthCapabilitiesSchema,
+  HealthResponseSchema,
+  type HealthResponse,
+} from './health.ts';
+export {
   ApiErrorCodeSchema,
   ApiErrorResponseSchema,
   EntityIdSchema,

@@ -21,7 +21,7 @@ import type { DocumentPickerAsset } from 'expo-document-picker';
 import { File, UploadType } from 'expo-file-system';
 import { Platform } from 'react-native';
 
-import { apiUrl } from './apiUrl';
+import { getApiUrl } from './apiUrl';
 import { request } from './request';
 
 export const listAudioAnalysisBatches = () =>
@@ -74,7 +74,7 @@ export async function createUploadAnalysisBatch(
   for (const target of created.uploads) {
     const asset = indexed.find((item) => item.clientItemId === target.clientItemId)!.asset;
     const uploadUrl = target.session.upload.url.startsWith('/')
-      ? `${apiUrl}${target.session.upload.url}`
+      ? `${getApiUrl()}${target.session.upload.url}`
       : target.session.upload.url;
     if (Platform.OS === 'web' && asset.file) {
       const response = await fetch(uploadUrl, {

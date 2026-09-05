@@ -19,6 +19,7 @@ type PushWorkerOptions = {
   repository: PushNotificationRepository;
   wakeup?: WorkerWakeupSource;
   accessToken?: string;
+  enabled?: boolean;
 };
 
 /** 单执行器发送通知，跨实例互斥由 outbox 的 SKIP LOCKED 与领取租约提供。 */
@@ -34,6 +35,7 @@ export class PushNotificationWorker {
   }
 
   async start(): Promise<void> {
+    if (this.options.enabled === false) return;
     if (this.timer) return;
     this.stopping = false;
     this.unsubscribeWakeup = this.options.wakeup?.subscribe(
