@@ -78,6 +78,18 @@ export const PushNotificationStatusCard = forwardRef<PushNotificationStatusCardH
           ) : null}
         </View>
 
+        <View style={styles.permissionNotice}>
+          <Text style={styles.permissionTitle}>权限说明</Text>
+          <Text style={styles.permissionText}>
+            服务端能力需要服务端开启远程推送；系统权限需要允许 EchoWave
+            发送通知；设备登记需要获取推送设备令牌。
+          </Text>
+          <Text style={styles.permissionText}>
+            Android 设备还需要能访问 Google 推送服务（Google Play services /
+            FCM），否则可能无法获取令牌并完成登记。
+          </Text>
+        </View>
+
         <Pressable
           accessibilityLabel="重新登记推送设备"
           accessibilityRole="button"
@@ -206,6 +218,24 @@ const styles = StyleSheet.create({
   message: {
     ...typography.body,
     color: textColors.primary,
+    fontFamily: fontFamilies.sans,
+  },
+  permissionNotice: {
+    backgroundColor: colors.successSurface,
+    borderRadius: radii.default,
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+    padding: spacing.md,
+  },
+  permissionTitle: {
+    ...typography.heading4,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  permissionText: {
+    ...typography.description,
+    color: textColors.secondary,
     fontFamily: fontFamilies.sans,
   },
   diagnostic: {

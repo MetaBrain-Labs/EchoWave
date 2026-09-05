@@ -13,7 +13,7 @@ import { act, fireEvent, render, waitFor, within } from '@testing-library/react-
 import type { AudioAnalysisStatusStreamEvent } from '@echowave/contracts';
 import { Alert, StyleSheet } from 'react-native';
 
-import { fontFamilies, textColors } from '@/shared/theme/tokens';
+import { fontFamilies, spacing, textColors } from '@/shared/theme/tokens';
 import { AnalysisDetailScreen } from '../AnalysisDetailScreen';
 import {
   setHideIrrelevantSegmentsPreference,
@@ -1094,7 +1094,16 @@ describe('AnalysisDetailScreen', () => {
     const segmentId = analysisFixture.scenes[0].segments[0].id;
     const rail = screen.getByTestId(`timeline-rail-${segmentId}`);
 
-    expect(within(rail).getByLabelText('查看 AI 标签：高频访谈记录场景')).toBeTruthy();
+    expect(StyleSheet.flatten(rail.props.style)).toEqual(
+      expect.objectContaining({ gap: spacing.sm }),
+    );
+    const marker = within(rail).getByLabelText('查看 AI 标签：高频访谈记录场景');
+    expect(StyleSheet.flatten(marker.props.style)).toEqual(
+      expect.objectContaining({ width: '100%' }),
+    );
+    expect(StyleSheet.flatten(within(marker).getByText('高频访谈记录场景').props.style)).toEqual(
+      expect.objectContaining({ flex: 1, minWidth: 0, textAlign: 'right' }),
+    );
     expect(
       screen.getByTestId(
         `ai-tag-timeline-marker-${segmentId}-${analysisFixture.scenes[0].segments[0].aiTag?.id}`,

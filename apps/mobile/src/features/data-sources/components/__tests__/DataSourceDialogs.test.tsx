@@ -12,7 +12,7 @@
  */
 import { fireEvent, render } from '@testing-library/react-native';
 import { AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES } from '@echowave/contracts';
-import { StyleSheet } from 'react-native';
+import { ScrollView, StyleSheet } from 'react-native';
 
 import {
   AudioTranscriptionConfirmDialog,
@@ -83,6 +83,7 @@ describe('AudioTranscriptionConfirmDialog layout', () => {
     );
 
     const vadOption = screen.getByRole('radio', { name: '空闲音频过滤（Silero VAD）' });
+    expect(screen.UNSAFE_getByType(ScrollView).props.showsVerticalScrollIndicator).toBe(false);
     const vadStyle = StyleSheet.flatten(vadOption.props.style);
     expect(vadStyle.flex).toBeUndefined();
     expect(vadStyle.minHeight).toBe(68);

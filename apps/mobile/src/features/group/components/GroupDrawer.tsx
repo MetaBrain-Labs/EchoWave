@@ -103,9 +103,12 @@ export function GroupDrawer({
       <View accessibilityViewIsModal style={styles.drawerOverlay}>
         <Animated.View style={[styles.drawer, { transform: [{ translateX }] }]}>
           <SafeAreaView edges={['top', 'bottom']} style={styles.drawerSafeArea}>
-            <Text accessibilityRole="header" style={styles.brandTitle}>
-              EchoWave
-            </Text>
+            <View style={styles.brandBlock}>
+              <Text accessibilityRole="header" style={styles.brandTitle}>
+                EchoWave
+              </Text>
+              <Text style={styles.brandTagline}>EchoWave — From Voice to Insight.</Text>
+            </View>
 
             {adding ? (
               <View style={styles.createBox}>
@@ -241,14 +244,20 @@ const styles = StyleSheet.create({
   drawer: { backgroundColor: colors.card, maxWidth: 360, width: '78%' },
   drawerSafeArea: { flex: 1, paddingHorizontal: spacing.lg },
   drawerBackdrop: { flex: 1 },
+  brandBlock: { marginBottom: spacing.xl, marginTop: spacing.lg },
   brandTitle: {
     color: textColors.primary,
     fontFamily: fontFamilies.sansBold,
     fontSize: 32,
     fontWeight: 'bold',
     lineHeight: 44,
-    marginBottom: spacing.xl,
-    marginTop: spacing.lg,
+    marginBottom: spacing.xs,
+  },
+  brandTagline: {
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    letterSpacing: 0.2,
   },
   addButton: {
     alignItems: 'center',

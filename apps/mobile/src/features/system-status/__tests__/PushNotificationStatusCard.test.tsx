@@ -40,6 +40,9 @@ describe('PushNotificationStatusCard', () => {
     expect(screen.getByLabelText('已登记')).toBeTruthy();
     expect(screen.getByText('服务端能力')).toBeTruthy();
     expect(screen.getByText('系统权限')).toBeTruthy();
+    expect(screen.getByText('权限说明')).toBeTruthy();
+    expect(screen.getByText(/服务端能力需要服务端开启远程推送/)).toBeTruthy();
+    expect(screen.getByText(/Google 推送服务/)).toBeTruthy();
     expect(screen.getAllByText('已登记')).toHaveLength(2);
     expect(screen.getByText('设备已登记，可接收新分析批次的远程通知。')).toBeTruthy();
     expect(screen.queryByText(/PushToken/)).toBeNull();

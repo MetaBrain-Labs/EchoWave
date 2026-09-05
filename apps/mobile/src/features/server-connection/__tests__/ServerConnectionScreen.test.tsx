@@ -38,6 +38,7 @@ describe('ServerConnectionScreen', () => {
   it('requires a successful probe and invalidates it after editing', async () => {
     jest.mocked(fetchServerHealth).mockResolvedValue(health);
     const screen = render(<ServerConnectionScreen />);
+    expect(screen.getByText('EchoWave — From Voice to Insight.')).toBeTruthy();
     const save = screen.getByLabelText('保存并继续');
     expect(save.props.accessibilityState?.disabled ?? save.props.disabled).toBeTruthy();
 
