@@ -3,11 +3,12 @@
     "name": "EchoWave",
     "slug": "echowave",
     "version": "0.1.0",
+    "icon": "./assets/img/icon.png",
     "orientation": "portrait",
     "scheme": "echowave",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "ios": {
+      "icon": "./assets/img/icon.png",
       "supportsTablet": true,
       "bundleIdentifier": "com.echowave.app",
       "infoPlist": {
@@ -18,16 +19,48 @@
       }
     },
     "android": {
+      "icon": "./assets/img/icon.png",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/img/icon.png",
+        "backgroundColor": "#010A20"
+      },
       "package": "com.echowave.app",
       "googleServicesFile": "./google-services.json"
     },
     "web": {
       "bundler": "metro",
-      "output": "static"
+      "output": "static",
+      "favicon": "./assets/img/favicon.png"
     },
     "plugins": [
       "expo-router",
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/img/notification-icon.png",
+          "color": "#218DED"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#030D2B",
+          "image": "./assets/img/icon.png",
+          "imageWidth": 160,
+          "resizeMode": "contain",
+          "android": {
+            "backgroundColor": "#030D2B",
+            "image": "./assets/img/icon.png",
+            "imageWidth": 160
+          },
+          "ios": {
+            "backgroundColor": "#030D2B",
+            "image": "./assets/img/icon.png",
+            "imageWidth": 160,
+            "resizeMode": "contain"
+          }
+        }
+      ],
       [
         "expo-build-properties",
         {
