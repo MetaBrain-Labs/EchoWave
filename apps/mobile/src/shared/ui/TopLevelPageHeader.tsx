@@ -1,10 +1,10 @@
 /**
  * 一级页面固定页头。
  *
- * 为底部导航对应的一级页面提供统一的安全区后标题节奏与操作按钮视觉。
+ * 为底部导航和独立顶层页面提供统一的安全区后标题节奏、返回与操作按钮视觉。
  *
  * Responsibilities:
- * - 呈现一级页面标题、可选说明和右侧操作。
+ * - 呈现一级页面标题、可选说明、返回和右侧操作。
  * - 统一操作热区、描边按钮、按压反馈与无障碍状态。
  *
  * Notes:
@@ -34,16 +34,37 @@ export type TopLevelPageAction = {
 /** 描述一级页头的标题、说明和操作集合。 */
 export type TopLevelPageHeaderProps = {
   actions?: TopLevelPageAction[];
+  onBack?: () => void;
   subtitle?: string;
   title: string;
 };
 
 /** 渲染安全区之后保持固定的一级页面页头。 */
-export function TopLevelPageHeader({ actions = [], subtitle, title }: TopLevelPageHeaderProps) {
+export function TopLevelPageHeader({
+  actions = [],
+  onBack,
+  subtitle,
+  title,
+}: TopLevelPageHeaderProps) {
   return (
     <View style={styles.header} testID="top-level-page-header">
       <View style={styles.titleRow}>
-        <Text accessibilityRole="header" numberOfLines={1} style={styles.title}>
+        {onBack ? (
+          <Pressable
+            accessibilityLabel="返回"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={onBack}
+            style={({ pressed }) => [styles.backAction, pressed && styles.pressed]}
+          >
+            <Ionicons color={colors.ink} name="chevron-back" size={30} />
+          </Pressable>
+        ) : null}
+        <Text
+          accessibilityRole="header"
+          numberOfLines={1}
+          style={[styles.title, onBack && styles.titleWithBack]}
+        >
           {title}
         </Text>
         {actions.length ? (
@@ -95,6 +116,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     minHeight: 44,
   },
+  backAction: {
+    alignItems: 'center',
+    height: 44,
+    justifyContent: 'center',
+    marginRight: spacing.xs,
+    width: 44,
+  },
   title: {
     ...typography.heading1,
     color: textColors.primary,
@@ -102,6 +130,7 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sansBold,
     fontWeight: 'bold',
   },
+  titleWithBack: { flex: 1 },
   actions: {
     alignItems: 'center',
     flexDirection: 'row',

@@ -11,6 +11,11 @@
       "cache": false,
       "persistent": true
     },
+    "dev:lan": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true
+    },
     "lint": {
       "dependsOn": ["^build"],
       "outputs": []

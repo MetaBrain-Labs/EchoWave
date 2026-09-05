@@ -9,3 +9,5 @@
 export * from './audio/processing.ts';
 export * from './audio/runtime.ts';
 export * from './audio/transcription.ts';
+export * from './audio/automation.ts';
+export * from './audio/analysisRuns.ts';

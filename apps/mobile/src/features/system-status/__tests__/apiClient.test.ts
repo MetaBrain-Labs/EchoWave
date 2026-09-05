@@ -1,17 +1,26 @@
 /**
- * HelloWorld 传输适配器测试。
+ * EchoWave Server 健康探测测试。
  *
- * 验证成功响应、无效负载、网络错误和超时被转换为稳定客户端结果。
+ * 验证成功响应、无效负载、HTTP 错误和超时被转换为稳定客户端结果。
  *
  * Responsibilities:
- * - 覆盖服务状态请求的信任边界。
+ * - 覆盖连接探测的网络信任边界。
  *
  * Notes:
  * - 所有 fetch 响应均由测试替身提供。
  */
-import { fetchHello, ServiceRequestError } from '../apiClient';
+import { fetchServerHealth, ServerHealthError } from '../apiClient';
 
-describe('fetchHello', () => {
+const validHealth = {
+  name: 'EchoWave' as const,
+  service: 'echowave-api' as const,
+  version: '0.1.0',
+  apiVersion: 1 as const,
+  status: 'ok' as const,
+  capabilities: { remotePush: false },
+};
+
+describe('fetchServerHealth', () => {
   afterEach(() => {
     jest.restoreAllMocks();
     jest.useRealTimers();
@@ -20,29 +29,29 @@ describe('fetchHello', () => {
   it('validates and returns a successful response', async () => {
     jest.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
-      json: async () => ({
-        ok: true,
-        service: 'echowave-api',
-        message: 'HelloWorld',
-      }),
+      json: async () => validHealth,
     } as Response);
 
-    await expect(fetchHello('http://localhost:3001')).resolves.toEqual({
-      ok: true,
-      service: 'echowave-api',
-      message: 'HelloWorld',
-    });
+    await expect(fetchServerHealth('http://localhost:3001')).resolves.toEqual(validHealth);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:3001/health',
+      expect.objectContaining({ headers: { Accept: 'application/json' } }),
+    );
   });
 
-  it('rejects responses that violate the shared contract', async () => {
-    jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+  it('separates invalid contracts and HTTP failures', async () => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
       ok: true,
       json: async () => ({ message: 'unexpected' }),
     } as Response);
-
-    await expect(fetchHello()).rejects.toMatchObject({
+    await expect(fetchServerHealth('http://localhost:3001')).rejects.toMatchObject({
       code: 'INVALID_RESPONSE',
-    } satisfies Partial<ServiceRequestError>);
+    } satisfies Partial<ServerHealthError>);
+
+    jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce({ ok: false, status: 503 } as Response);
+    await expect(fetchServerHealth('http://localhost:3001')).rejects.toMatchObject({
+      code: 'HTTP_ERROR',
+    } satisfies Partial<ServerHealthError>);
   });
 
   it('turns an aborted request into a timeout error', async () => {
@@ -50,16 +59,13 @@ describe('fetchHello', () => {
     jest.spyOn(globalThis, 'fetch').mockImplementation(
       (_input, init) =>
         new Promise((_resolve, reject) => {
-          init?.signal?.addEventListener('abort', () => {
-            reject(new Error('aborted'));
-          });
+          init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
         }),
     );
 
-    const request = fetchHello('http://localhost:3001', 20);
+    const request = fetchServerHealth('http://localhost:3001', 20);
     const rejection = expect(request).rejects.toMatchObject({ code: 'TIMEOUT' });
     await jest.advanceTimersByTimeAsync(20);
-
     await rejection;
   });
 });

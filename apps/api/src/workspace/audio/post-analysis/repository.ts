@@ -23,6 +23,17 @@ import type { PoolClient } from 'pg';
 import { quoteIdentifier, type DatabasePool } from '../../../infrastructure/postgres.ts';
 import { WorkspaceRepositoryError } from '../../errors.ts';
 
+/** 后置分析被取消时使用的正常控制流异常。 */
+export class PostAnalysisCanceledError extends Error {
+  readonly code = 'CANCELED';
+  readonly retryable = false;
+
+  constructor(message = '后置分析已取消。') {
+    super(message);
+    this.name = 'PostAnalysisCanceledError';
+  }
+}
+
 export type PostAnalysisTranscriptSegment = {
   id: string;
   speakerKey: string;
@@ -51,6 +62,7 @@ export type ClaimedPostAnalysisJob = {
   bundled: boolean;
   segments: PostAnalysisTranscriptSegment[];
   emotionWindowResults?: EmotionWindowResult[];
+  cancelRequested: boolean;
 };
 
 export type EmotionPublication = SegmentEmotionAnalysis & { segmentId: string };
@@ -160,9 +172,18 @@ export class PostAnalysisRepository {
   async resetInterrupted(type: AudioPostAnalysisType): Promise<void> {
     await this.pool.query(
       `UPDATE ${this.table('audio_post_analysis_jobs')}
+       SET status = 'failed', error_code = 'CANCELED', error_message = '后置分析已取消。',
+           error_retryable = false, completed_at = coalesce(completed_at, now())
+       WHERE tenant_id = $1 AND analysis_type = $2 AND status = 'running'
+         AND cancel_requested = true`,
+      [this.tenantId, type],
+    );
+    await this.pool.query(
+      `UPDATE ${this.table('audio_post_analysis_jobs')}
        SET status = 'queued', progress = 0, error_code = NULL, error_message = NULL,
            error_retryable = NULL, completed_at = NULL
-       WHERE tenant_id = $1 AND analysis_type = $2 AND status = 'running'`,
+       WHERE tenant_id = $1 AND analysis_type = $2 AND status = 'running'
+         AND cancel_requested = false`,
       [this.tenantId, type],
     );
   }
@@ -173,6 +194,7 @@ export class PostAnalysisRepository {
       `WITH candidate AS (
          SELECT id FROM ${this.table('audio_post_analysis_jobs')}
          WHERE tenant_id = $1 AND analysis_type = $2 AND status = 'queued'
+           AND cancel_requested = false
          ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1
        )
        UPDATE ${this.table('audio_post_analysis_jobs')} job
@@ -180,7 +202,8 @@ export class PostAnalysisRepository {
        FROM candidate, ${this.table('audio_files')} af,
             ${this.table('transcript_confirmations')} tc,
             ${this.table('audio_analysis_revisions')} ar
-       WHERE job.id = candidate.id AND af.tenant_id = job.tenant_id
+       WHERE job.id = candidate.id AND job.cancel_requested = false
+         AND af.tenant_id = job.tenant_id
          AND af.id = job.audio_file_id
          AND tc.tenant_id = job.tenant_id AND tc.id = job.transcript_confirmation_id
          AND ar.tenant_id = job.tenant_id AND ar.id = job.analysis_revision_id
@@ -190,6 +213,7 @@ export class PostAnalysisRepository {
                  tc.version_no AS confirmation_version, job.input_snapshot,
                  af.storage_key, af.duration_ms, af.deleted_at, af.source_state,
                  af.runtime_mode, af.storage_backend, af.storage_binding_revision_id,
+                 job.cancel_requested,
                  (ar.bundled_emotion_job_id = job.id) AS bundled`,
       [this.tenantId, type],
     );
@@ -278,6 +302,7 @@ export class PostAnalysisRepository {
       storageBackend: row.storage_backend,
       storageBindingRevisionId: row.storage_binding_revision_id ?? null,
       bundled: Boolean(row.bundled),
+      cancelRequested: Boolean(row.cancel_requested),
       customBusinessRoles: Array.isArray(snapshot.customBusinessRoles)
         ? snapshot.customBusinessRoles.filter((value): value is string => typeof value === 'string')
         : [],
@@ -329,6 +354,7 @@ export class PostAnalysisRepository {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      await this.throwIfCanceled(client, job);
       for (const result of results) {
         await client.query(
           `INSERT INTO ${this.table('segment_emotion_results')}
@@ -385,6 +411,7 @@ export class PostAnalysisRepository {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      await this.throwIfCanceled(client, job);
       for (const result of results) {
         await client.query(
           `INSERT INTO ${this.table('speaker_role_results')}
@@ -438,6 +465,71 @@ export class PostAnalysisRepository {
        WHERE tenant_id = $1 AND id = $2 AND status = 'running'`,
       [this.tenantId, job.id],
     );
+  }
+
+  /** 查询后置分析是否已收到取消请求，供 Worker 处理供应商竞态。 */
+  async isCancelRequested(jobId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `SELECT cancel_requested FROM ${this.table('audio_post_analysis_jobs')}
+       WHERE tenant_id = $1 AND id = $2`,
+      [this.tenantId, jobId],
+    );
+    return Boolean(result.rows[0]?.cancel_requested);
+  }
+
+  /** 请求取消后置分析；排队任务立即终止，运行任务等待当前供应商调用收敛。 */
+  async requestCancel(jobId: string): Promise<'canceled' | 'requested' | 'noop'> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const terminal = await client.query(
+        `UPDATE ${this.table('audio_post_analysis_jobs')}
+         SET status = 'failed', error_code = 'CANCELED', error_message = '后置分析已取消。',
+             error_retryable = false, completed_at = coalesce(completed_at, now())
+         WHERE tenant_id = $1 AND id = $2 AND status = 'queued'
+         RETURNING id`,
+        [this.tenantId, jobId],
+      );
+      if (terminal.rowCount) {
+        await client.query('COMMIT');
+        return 'canceled';
+      }
+      const running = await client.query(
+        `UPDATE ${this.table('audio_post_analysis_jobs')}
+         SET cancel_requested = true
+         WHERE tenant_id = $1 AND id = $2 AND status = 'running' AND cancel_requested = false
+         RETURNING id`,
+        [this.tenantId, jobId],
+      );
+      await client.query('COMMIT');
+      return running.rowCount ? 'requested' : 'noop';
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /** 发布结果前锁定子任务，避免取消请求与发布写入竞态。 */
+  private async throwIfCanceled(client: PoolClient, job: ClaimedPostAnalysisJob): Promise<void> {
+    const current = await client.query(
+      `SELECT cancel_requested, status
+       FROM ${this.table('audio_post_analysis_jobs')}
+       WHERE tenant_id = $1 AND id = $2
+       FOR UPDATE`,
+      [this.tenantId, job.id],
+    );
+    if (!current.rows[0]?.cancel_requested) return;
+    await client.query(
+      `UPDATE ${this.table('audio_post_analysis_jobs')}
+       SET status = 'failed', error_code = 'CANCELED', error_message = '后置分析已取消。',
+           error_retryable = false, completed_at = coalesce(completed_at, now())
+       WHERE tenant_id = $1 AND id = $2 AND status = 'running'`,
+      [this.tenantId, job.id],
+    );
+    await client.query('COMMIT');
+    throw new PostAnalysisCanceledError();
   }
 
   /** 标记当前任务失败，既有 active 结果指针保持不变。 */

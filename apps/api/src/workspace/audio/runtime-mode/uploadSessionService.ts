@@ -24,6 +24,7 @@ import {
   AudioUploadSessionResponseSchema,
   AudioSourceRemountResponseSchema,
   type AudioUploadSessionCreateRequest,
+  type AudioRuntimeMode,
 } from '@echowave/contracts';
 import { parseFile } from 'music-metadata';
 
@@ -98,6 +99,11 @@ export class AudioUploadSessionService {
     },
   ) {}
 
+  /** 返回上传会话将冻结的当前运行模式，供自动批次提前执行兼容性校验。 */
+  async currentRuntimeMode() {
+    return (await this.runtimeRepository.get()).mode;
+  }
+
   private async objectStore(bindingRevisionId?: string): Promise<PrimaryOssStore> {
     const capability = await this.settings.resolveCapability(
       'audio_primary_storage',
@@ -120,12 +126,18 @@ export class AudioUploadSessionService {
   }
 
   /** 为单个音频初始化当前模式对应的上传会话。 */
-  async create(dataSourceId: string, rawInput: AudioUploadSessionCreateRequest) {
+  async create(
+    dataSourceId: string,
+    rawInput: AudioUploadSessionCreateRequest,
+    analysisTaskId: string | null = null,
+    runtimeModeOverride?: AudioRuntimeMode,
+  ) {
     const input = AudioUploadSessionCreateRequestSchema.parse({
       ...rawInput,
       filename: safeFilename(rawInput.filename),
     });
-    const runtime = await this.runtimeRepository.get();
+    const runtimeSettings = await this.runtimeRepository.get();
+    const runtime = { ...runtimeSettings, mode: runtimeModeOverride ?? runtimeSettings.mode };
     if (runtime.mode === 'hybrid' && input.sizeBytes < 0) {
       throw new WorkspaceRepositoryError('CONFLICT', '混合模式请使用现有批量上传接口。');
     }
@@ -157,6 +169,7 @@ export class AudioUploadSessionService {
             key: storageKey,
             strategy: 'api_binary',
           },
+      analysisTaskId,
     );
     const expiresAt = session.expiresAt.toISOString();
     return AudioUploadSessionResponseSchema.parse({
@@ -207,7 +220,7 @@ export class AudioUploadSessionService {
   async complete(id: string) {
     const session = await this.repository.get(id);
     if (session.status === 'ready') {
-      await this.ensureInitialTranscription(session);
+      if (!session.analysisTaskId) await this.ensureInitialTranscription(session);
       return AudioUploadSessionCompleteResponseSchema.parse({
         audioFileId: session.audioFileId,
         status: 'ready',
@@ -247,11 +260,19 @@ export class AudioUploadSessionService {
         );
       }
       await this.repository.complete(id, inspected.durationMs, inspected.sha256);
-      await this.ensureInitialTranscription(session);
+      if (!session.analysisTaskId) await this.ensureInitialTranscription(session);
       return AudioUploadSessionCompleteResponseSchema.parse({
         audioFileId: session.audioFileId,
         status: 'ready',
       });
+    } catch (error) {
+      if (session.analysisTaskId) {
+        await this.repository.fail(
+          id,
+          error instanceof Error ? error.message : '上传音频校验失败。',
+        );
+      }
+      throw error;
     } finally {
       if (temporary) await rm(path.dirname(sourcePath), { force: true, recursive: true });
     }

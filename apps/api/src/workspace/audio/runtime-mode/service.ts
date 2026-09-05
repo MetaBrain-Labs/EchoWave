@@ -43,7 +43,8 @@ export class AudioRuntimeService {
     }
   }
 
-  private async availability(mode: AudioRuntimeMode) {
+  /** 检查指定运行模式是否具备创建新上传批次所需的本地与供应商能力。 */
+  async availabilityForMode(mode: AudioRuntimeMode) {
     const local = this.preprocessor.capabilities();
     if (!local.ffmpeg.available || !local.sileroVad.available) {
       return {
@@ -86,7 +87,7 @@ export class AudioRuntimeService {
     const stored = await this.repository.get();
     const modes = await Promise.all(
       (['hybrid', 'object_storage', 'lightweight_local'] as const).map((mode) =>
-        this.availability(mode),
+        this.availabilityForMode(mode),
       ),
     );
     return AudioRuntimeOverviewSchema.parse({
@@ -106,7 +107,7 @@ export class AudioRuntimeService {
   ): Promise<AudioRuntimeOverview> {
     this.settings.authorize(authorization);
     const request = AudioRuntimeUpdateRequestSchema.parse(input);
-    const availability = await this.availability(request.mode);
+    const availability = await this.availabilityForMode(request.mode);
     if (!availability.available) {
       throw new SettingsError('CONFIGURATION_REQUIRED', availability.unavailableReason!);
     }

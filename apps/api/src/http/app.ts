@@ -22,6 +22,9 @@ import type { AudioUploadSessionService } from '../workspace/audio/runtime-mode/
 import type { DataSourceService } from '../workspace/data-sources/service.ts';
 import type { GroupService } from '../workspace/groups/service.ts';
 import type { SettingsService } from '../settings/service.ts';
+import type { AudioAutomationService } from '../workspace/audio/automation/service.ts';
+import type { PushDeviceService } from '../notifications/service.ts';
+import type { AudioAnalysisRunsService } from '../workspace/audio/analysis-runs/service.ts';
 import type { DashScopeCallbackService } from '../workspace/audio/transcription/dashScopeCallback.ts';
 import { installErrorHandlers } from './errorHandler.ts';
 import { registerAudioRoutes } from './routes/audio.ts';
@@ -33,6 +36,9 @@ import { registerGroupRoutes } from './routes/groups.ts';
 import { registerHealthRoutes } from './routes/health.ts';
 import { registerKnowledgeRoutes } from './routes/knowledge.ts';
 import { registerSettingsRoutes } from './routes/settings.ts';
+import { registerAudioAutomationRoutes } from './routes/audioAutomation.ts';
+import { registerPushDeviceRoutes } from './routes/pushDevices.ts';
+import { registerAudioAnalysisRunsRoutes } from './routes/audioAnalysisRuns.ts';
 
 export type AppDependencies = {
   dashScopeCallbackService?: DashScopeCallbackService;
@@ -45,6 +51,10 @@ export type AppDependencies = {
   liveUpdateBroker?: LiveUpdateBroker;
   settingsService?: SettingsService;
   trustedProxyCidrs?: string[];
+  audioAutomationService?: AudioAutomationService;
+  pushDeviceService?: PushDeviceService;
+  audioAnalysisRunsService?: AudioAnalysisRunsService;
+  remotePushEnabled?: boolean;
 };
 
 /** 创建不启动监听器的 Hono 应用，使生产服务器和测试共享传输入口。 */
@@ -65,7 +75,7 @@ export function createApp(
     }),
   );
 
-  registerHealthRoutes(app);
+  registerHealthRoutes(app, dependencies.remotePushEnabled ?? false);
   if (dependencies.settingsService) {
     registerSettingsRoutes(app, dependencies.settingsService, dependencies.trustedProxyCidrs ?? []);
   }
@@ -85,6 +95,13 @@ export function createApp(
   }
   if (dependencies.audioUploadService) {
     registerAudioUploadRoutes(app, dependencies.audioUploadService);
+  }
+  if (dependencies.audioAutomationService) {
+    registerAudioAutomationRoutes(app, dependencies.audioAutomationService);
+  }
+  if (dependencies.pushDeviceService) registerPushDeviceRoutes(app, dependencies.pushDeviceService);
+  if (dependencies.audioAnalysisRunsService) {
+    registerAudioAnalysisRunsRoutes(app, dependencies.audioAnalysisRunsService);
   }
   installErrorHandlers(app);
   return app;

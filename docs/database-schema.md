@@ -1,12 +1,12 @@
 # EchoWave 数据库结构
 
-本文说明 EchoWave 应用全部 SQL migration 执行后的目标数据库结构。数据库结构的权威来源始终是 [`apps/api/migrations`](../apps/api/migrations/) 中按文件名排序的 SQL；本文用于解释各表的业务职责、关系、约束和生命周期，不记录某一开发环境的临时迁移状态。
+本文说明 EchoWave 应用全部 SQL migration 执行后的目标数据库结构。数据库结构的权威来源始终是 [`apps/api/migrations`](../apps/api/migrations/) 中按文件名排序、符合 `NNN_name.sql` 规则的编号 migration；本文用于解释各表的业务职责、关系、约束和生命周期，不记录某一开发环境的临时迁移状态。`sql.sql` 和 `trigger.sql` 属于历史快照，不进入迁移执行序列，也不作为本文事实来源。
 
 ## 数据库边界
 
 EchoWave 使用 PostgreSQL 作为权威业务存储，并通过 pgvector 支持知识库向量检索。完整结构分为三部分：
 
-- 应用业务 schema：35 张业务表，以及迁移入口创建的 `schema_migrations`。
+- 应用业务 schema：54 张业务表，以及迁移入口创建的 `schema_migrations`。
 - LangGraph 独立 schema：4 张 checkpoint 表，由 `PostgresSaver.setup()` 管理。
 - `public` schema：安装 `vector` 扩展，为 `document_chunks.embedding` 提供 `vector(1024)` 类型和 HNSW 索引能力。
 
@@ -20,6 +20,11 @@ erDiagram
     TENANTS ||--o{ GROUPS : owns
     TENANTS ||--o{ DATA_SOURCES : owns
     TENANTS ||--o{ AUDIO_FILES : owns
+    TENANTS ||--o{ CREDENTIALS : owns
+    TENANTS ||--o{ PROVIDER_CONNECTIONS : configures
+    TENANTS ||--o{ AI_CAPABILITY_BINDINGS : binds
+    TENANTS ||--|| TENANT_AUDIO_RUNTIME_SETTINGS : selects
+    TENANTS ||--o{ PUSH_DEVICES : registers
 
     KNOWLEDGE_BASES ||--o{ DOCUMENTS : contains
     DOCUMENTS ||--o{ DOCUMENT_REVISIONS : versions
@@ -45,6 +50,12 @@ erDiagram
     AUDIO_FILES ||--o{ GROUP_AUDIO_LINKS : shared_to
 
     AUDIO_FILES ||--o{ AUDIO_ANALYSIS_REVISIONS : analyzes
+    AUDIO_FILES ||--o{ AUDIO_UPLOAD_SESSIONS : uploads
+    AUDIO_FILES ||--o{ AUDIO_ANALYSIS_TASKS : automates
+    AUDIO_ANALYSIS_BATCHES ||--o{ AUDIO_ANALYSIS_TASKS : contains
+    AUDIO_ANALYSIS_BATCHES ||--o{ NOTIFICATION_EVENTS : emits
+    NOTIFICATION_EVENTS ||--o{ NOTIFICATION_DELIVERIES : delivers
+    PUSH_DEVICES ||--o{ NOTIFICATION_DELIVERIES : receives
     AUDIO_ANALYSIS_REVISIONS ||--o{ ANALYSIS_SCENES : divides
     ANALYSIS_SCENES ||--o{ TRANSCRIPT_SEGMENTS : contains
     TRANSCRIPT_SEGMENTS ||--o| SEGMENT_AI_TAGS : tagged_by
@@ -78,6 +89,24 @@ erDiagram
 - `applied_at`：成功提交时间。
 
 迁移入口按照文件名排序，只执行尚未记录的 migration。业务 SQL 和迁移记录在同一事务中提交，从而避免只完成一半的迁移状态。
+
+## 租户 AI 配置
+
+### `credentials` 与 `credential_versions`
+
+`credentials` 保存租户内稳定的 Credential 身份与 Provider 类型，不保存明文。`credential_versions` 保存 AES-256-GCM 加密后的不可变 Secret 版本，包括 12 字节 IV、16 字节认证标签、密钥版本和掩码信息。API 只返回配置状态与末四位，不返回密文或明文。
+
+### `provider_connections` 与 `provider_connection_revisions`
+
+连接主表保存名称、Provider 类型、活动 revision 指针和软删除状态。每个 revision 固化普通配置及 `database` 或 `local_file` Credential 来源；Database 来源必须关联同租户 Credential version，Local 来源保存 alias/type，二者不能混用。新 revision 发布后只影响新请求，已排队任务继续使用创建时快照。
+
+### `ai_capability_bindings` 与 `ai_capability_binding_revisions`
+
+能力绑定把 embedding、知识问答、ASR、音频暂存、声学情绪、角色识别、业务分析和原音频对象存储映射到具体 Provider revision。绑定 revision 保存主连接、可选辅助连接、模型和设置快照；文档入库、RAG、音频转写、后处理和业务分析任务均保存实际使用的绑定 revision 外键。
+
+### `configuration_imports`
+
+记录租户从旧 `apps/api/.env` 导入供应商配置的幂等事实。目前来源固定为 `legacy_env`；成功导入后数据库配置优先，历史环境变量只保留升级过渡用途。
 
 ## 知识库与 RAG
 
@@ -266,6 +295,12 @@ group_data_sources 所关联数据源下的音频
 
 每次运行导入的音频数量和总时长通过其关联的 `audio_files` 聚合。页面上传时间线会把本表的完成记录与转写失败的分析修订版合并展示。
 
+## 音频运行与上传
+
+### `tenant_audio_runtime_settings`
+
+每个租户保存一条当前音频运行策略，模式为 `hybrid`、`object_storage` 或 `lightweight_local`。记录递增 revision、原音频保留天数、中间文件保留小时数及更新时间。切换只影响之后创建的资产；`audio_files` 会固化创建时模式、存储后端、绑定 revision、源文件校验值和清理期限。
+
 ## 音频
 
 ### `audio_files`
@@ -297,6 +332,10 @@ group_data_sources 所关联数据源下的音频
 表中不保存音频二进制，只保存相对定位键和元数据；`deleted_at` 用于软删除。当前手动上传实现把二进制写入 `AUDIO_STORAGE_DIR`，归档音频只隐藏业务记录，不物理删除本地文件。
 
 播放接口按当前租户和 `deleted_at IS NULL` 查询记录，并要求 `upload_status = 'ready'` 与非空 `storage_key`。HTTP Range、播放进度和当前播放片段都是传输层或页面内存状态，不写入数据库。
+
+### `audio_upload_sessions`
+
+保存对象直传或 API 二进制上传的短生命周期会话。每条会话冻结租户、数据源、运行模式、上传策略、文件名/MIME、大小和过期时间，可关联最终 `audio_file_id` 与批次 `analysis_task_id`。状态覆盖创建、上传、完成、失败和过期；完成接口必须保持幂等，且单文件仍受 200 MiB 上限约束。
 
 ## 音频分析结果
 
@@ -345,11 +384,23 @@ Qwen Filetrans 提交单个 16kHz 单声道整文件；其带 `speaker_id` 的�
 
 一个确认版本对全部 Raw 片段的完整正文快照。每行通过复合外键同时关联确认版本和原始 `transcript_segment_id`，正文不能为空；确认事务必须完整覆盖当前 revision 的片段集合。Raw 与每个 Confirmed 版本可直接联表计算修正差异，当前里程碑不提供统计或导出接口。
 
+### `audio_speaker_review_jobs`
+
+每个 ASR revision 至多保存一个 Speaker Review 任务，固化能力绑定 revision、模型、状态和脱敏错误。状态为 `queued`、`running`、`ready` 或 `failed`；Worker 通过 PostgreSQL 通知低延迟唤醒，并继续使用 `FOR UPDATE SKIP LOCKED` 领取。
+
+### `speaker_review_findings`
+
+保存规则或模型发现的疑似说话人切换边界。Finding 可以绑定具体 Raw Transcript 片段与 word index，也可以描述整段录音问题；严重程度、原因代码和短说明受约束。迁移 023 增加解决时间与解决来源，用户可逐条或全部解决，但不会改写 Raw Transcript。
+
 ### `audio_post_analysis_jobs`
 
 ASR 确认后的情绪分析和角色识别任务。每条任务固化 `analysis_revision_id`、`transcript_confirmation_id`、`type`、`model` 与 `custom_business_roles_snapshot`，状态为 `queued`、`running`、`ready` 或 `failed`，并保存进度、完成时间和脱敏错误。worker 从固化的 Confirmed Transcript 读取正文；后续再次确认不会改变运行中或已发布任务的输入。部分唯一索引阻止同一 revision、同一类型同时存在多个运行任务，但允许情绪与角色任务并行。
 
 任务由对应 worker 使用 `FOR UPDATE SKIP LOCKED` 领取。进程重启时中断任务重新排队；失败只更新当前任务，不修改 revision 的 active 结果指针。
+
+### `audio_post_analysis_windows`
+
+长 Confirmed Transcript 的情绪或角色分析按窗口保存幂等 checkpoint。复合主键为租户、job 和 `window_index`；每个窗口保存时间范围、片段集合、状态、尝试次数、结构化结果和错误。已完成窗口在恢复时不会再次调用模型，父 job 删除时级联删除。
 
 ### `segment_emotion_results`
 
@@ -371,6 +422,12 @@ ASR 确认后的情绪分析和角色识别任务。每条任务固化 `analysis
 
 `workflow_version` 绑定恢复语义，首版为 `langgraph-v1`；`recovery_attempts` 只记录可重试错误后已安排的恢复，进程中断不消耗该预算；`next_attempt_at` 持久化 15 秒和 60 秒退避截止点，claim 只领取已到期任务。`checkpoint_cleanup_pending` 表示业务已终态但 LangGraph thread 仍需补偿删除。
 
+迁移 030 为业务分析和后处理 job 增加 `cancel_requested`。取消已提交外部调用时只标记请求，等待当前调用收敛后停止后续步骤；领取索引排除已请求取消的 job。
+
+### `audio_business_analysis_windows`
+
+长转写销售复盘的窗口级 checkpoint。结构与后处理窗口一致，以租户、job 和窗口序号保证幂等；最终汇总只消费已完成窗口结果。它补充 LangGraph 节点级 checkpoint，不替代最终业务表。
+
 ### `audio_group_business_analysis_heads`
 
 每个分组和音频只保存一个当前已发布 job 指针，历史 job 及其结果继续保留。摘要、标签、片段证据、知识引用、job 终态和 head 移动在同一发布事务中完成；同 job 已是 `ready` 且仍为 head 时重复发布是幂等成功。
@@ -378,6 +435,36 @@ ASR 确认后的情绪分析和角色识别任务。每条任务固化 `analysis
 ### `business_analysis_summary_sections` 与结构化标签表
 
 `business_analysis_summary_sections` 保存有序复盘摘要；`business_analysis_tags` 保存优点、改进、风险、建议或自定义标签及置信度；`business_analysis_tag_segments` 关联 Confirmed Transcript 对应的原始片段 ID；`business_analysis_citations` 仅允许保存本次检索白名单中的 chunk 与文档定位。
+
+## 批次自动化与推送
+
+### `audio_analysis_batches`
+
+一次“新建”操作形成一个租户级批次，固定数据源、分组、来源类型、可选执行时间、流水线快照和配置快照。取消时间属于批次事实；页面展示的总体状态和计数由任务聚合，不在批次中重复保存。
+
+### `audio_analysis_tasks`
+
+批次内每个上传项或已有音频对应一个任务。状态覆盖 `awaiting_upload`、`scheduled`、`queued`、`running`、`hard_blocked`、成功、带警告成功、失败和取消；阶段覆盖上传、转写、后处理、业务分析和完成。任务保存各阶段 job 指针、单调进度、阻塞/错误摘要、源文件过期时间和 `cancel_requested`，但不复制模型正文。
+
+同一批次通过 `audio_file_id` 或 `client_item_id` 幂等，计划时间和 `run_after` 决定领取资格。任务表及其外键是状态唯一来源；PostgreSQL `LISTEN/NOTIFY` 只负责唤醒，不替代 `FOR UPDATE SKIP LOCKED` 领取与补偿扫描。
+
+### `audio_analysis_batch_blockers`
+
+保存批次内按能力归并的活动硬阻塞，包括额度耗尽、凭据失效和配置缺失。绑定 revision 可为空；部分唯一索引保证同一批次、能力和原因只有一个活动阻塞。恢复后设置 `active=false` 与 `resolved_at`，不删除历史。
+
+### `push_devices`
+
+按租户登记 Expo Push Token 和 iOS/Android 平台，以 Token 唯一。`enabled` 控制后续投递，`last_seen_at` 支持重复注册刷新；`DeviceNotRegistered` 会停用设备而不是删除审计事实。
+
+### `notification_events`
+
+保存批次/任务产生的 `HARD_BLOCKED`、`FAILED`、`COMPLETED` 或 `PARTIAL_COMPLETED` 通知事实。`dedupe_key` 在租户内唯一，保证业务重试不会重复创建同一事件；通知数据只用于引导客户端重新读取权威批次状态。
+
+### `notification_deliveries`
+
+事件与启用设备的逐设备 outbox。状态覆盖等待、已取得 ticket、已送达、重试和失败；保存最多十次尝试、下次执行时间、Expo ticket、receipt 截止时间及脱敏错误。租户、事件和设备唯一，发送 Worker 只领取到期的非终态记录。
+
+## 分析结构化结果与审计
 
 ### `analysis_scenes`
 

@@ -115,6 +115,7 @@ export function audioItem(row: Record<string, any>) {
     sourceState: row.source_state,
     sourceRecoveryState: row.source_recovery_state,
     sourceDeleteAfter: row.source_delete_after ? iso(row.source_delete_after) : null,
+    acousticEmotionReady: Boolean(row.acoustic_emotion_ready),
   };
 }
 

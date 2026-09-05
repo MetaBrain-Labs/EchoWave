@@ -1,18 +1,17 @@
 /**
  * 移动端 API 地址配置。
  *
- * 集中读取并规范化 Expo 公共 API 地址，避免 feature 之间通过传输适配器共享配置。
+ * 保留 Web 开发地址兼容解析，并转发运行时服务器地址访问器。
  *
  * Responsibilities:
  * - 移除配置末尾的斜杠。
  * - Web 页面由 loopback 打开时，让 HTTP API 请求也通过同一 loopback 主机到达服务端。
- * - 为未配置的本地开发环境提供既有地址。
+ * - 让旧调用方逐步迁移到运行时服务器配置。
  *
  * Notes:
  * - `EXPO_PUBLIC_*` 会进入客户端 bundle，不得包含秘密。
  */
-
-const DEFAULT_API_URL = 'http://localhost:3001';
+import { getApiUrl as getRuntimeApiUrl } from './serverUrl';
 
 function isLoopbackHostname(hostname: string): boolean {
   const normalized = hostname
@@ -31,7 +30,7 @@ function isLoopbackHostname(hostname: string): boolean {
  * 仅修改浏览器侧 HTTP 地址，原生端、远程页面与 HTTPS 地址保持显式配置不变。
  */
 export function resolveApiUrl(configuredUrl: string | undefined, browserHostname?: string): string {
-  const normalized = (configuredUrl?.trim() || DEFAULT_API_URL).replace(/\/+$/, '');
+  const normalized = (configuredUrl?.trim() || 'http://localhost:3001').replace(/\/+$/, '');
   if (!browserHostname || !isLoopbackHostname(browserHostname)) return normalized;
 
   try {
@@ -45,13 +44,15 @@ export function resolveApiUrl(configuredUrl: string | undefined, browserHostname
   }
 }
 
-/** 当前移动端请求使用的 EchoWave API 根地址。 */
-export const apiUrl = resolveApiUrl(
-  process.env.EXPO_PUBLIC_API_URL,
-  typeof window !== 'undefined' ? window.location?.hostname : undefined,
-);
+/** 在请求发生时读取当前服务器，并保留 Web loopback 开发兼容行为。 */
+export function getApiUrl(): string {
+  return resolveApiUrl(
+    getRuntimeApiUrl(),
+    typeof window !== 'undefined' ? window.location?.hostname : undefined,
+  );
+}
 
 /** 返回不经过 JSON 适配器的租户内音频媒体地址。 */
 export function audioPlaybackUrl(audioFileId: string): string {
-  return `${apiUrl}/api/audio-files/${encodeURIComponent(audioFileId)}/content`;
+  return `${getApiUrl()}/api/audio-files/${encodeURIComponent(audioFileId)}/content`;
 }

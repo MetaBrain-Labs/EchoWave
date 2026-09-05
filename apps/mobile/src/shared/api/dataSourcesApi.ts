@@ -33,7 +33,7 @@ import {
   type AudioRuntimeMode,
 } from '@echowave/contracts';
 
-import { apiUrl } from './apiUrl';
+import { getApiUrl } from './apiUrl';
 import { request } from './request';
 
 export const listDataSources = () => request('/api/data-sources', DataSourceListResponseSchema);
@@ -112,7 +112,7 @@ export async function uploadSessionAudioFiles(
       throw new Error('运行模式已在上传期间变化，请重新选择文件。');
     }
     const uploadUrl = session.upload.url.startsWith('/')
-      ? `${apiUrl}${session.upload.url}`
+      ? `${getApiUrl()}${session.upload.url}`
       : session.upload.url;
     if (Platform.OS === 'web' && asset.file) {
       const response = await fetch(uploadUrl, {

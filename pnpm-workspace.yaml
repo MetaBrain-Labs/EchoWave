@@ -31,3 +31,4 @@ minimumReleaseAgeExclude:
   - expo-server@57.0.3
   - expo@57.0.13
   - turbo@2.10.10
+  - expo-build-properties@57.0.17

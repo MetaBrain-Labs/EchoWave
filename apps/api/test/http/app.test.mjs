@@ -8,6 +8,7 @@ import { describe, it } from 'node:test';
 import {
   AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
   DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+  HealthResponseSchema,
   HelloResponseSchema,
 } from '@echowave/contracts';
 
@@ -21,6 +22,30 @@ const app = createApp({ corsOrigins: ['http://localhost:8081'] });
 const groupId = '11111111-1111-4111-8111-111111111111';
 
 describe('EchoWave API', () => {
+  it('returns the public self-hosted health contract and capabilities', async () => {
+    const response = await app.request('/health');
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(HealthResponseSchema.parse(body), {
+      name: 'EchoWave',
+      service: 'echowave-api',
+      version: '0.1.0',
+      apiVersion: 1,
+      status: 'ok',
+      capabilities: { remotePush: false },
+    });
+
+    const pushEnabledApp = createApp(
+      { corsOrigins: ['http://localhost:8081'] },
+      { remotePushEnabled: true },
+    );
+    assert.deepEqual(await (await pushEnabledApp.request('/health')).json(), {
+      ...body,
+      capabilities: { remotePush: true },
+    });
+  });
+
   it('returns the shared HelloWorld contract', async () => {
     const response = await app.request('/api/hello');
     const body = await response.json();

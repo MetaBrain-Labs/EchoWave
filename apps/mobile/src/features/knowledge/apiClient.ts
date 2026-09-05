@@ -26,7 +26,7 @@ import {
   RagQueryResponseSchema,
 } from '@echowave/contracts';
 
-import { apiUrl } from '@/shared/api/apiUrl';
+import { getApiUrl } from '@/shared/api/apiUrl';
 
 /** 知识库请求在移动端暴露的稳定错误类型。 */
 export class KnowledgeRequestError extends Error {
@@ -53,7 +53,7 @@ async function request<T>(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(`${apiUrl}${path}`, {
+    const response = await fetch(`${getApiUrl()}${path}`, {
       ...init,
       headers: { Accept: 'application/json', ...init?.headers },
       signal: controller.signal,

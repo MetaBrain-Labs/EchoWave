@@ -36,6 +36,65 @@ export class TranscriptConfirmationRepository {
     return `${this.schema}.${quoteIdentifier(name)}`;
   }
 
+  /** 为自动流水线幂等创建 Raw Transcript 的系统快照，已有确认时保持原确认不变。 */
+  async ensureSystemRawSnapshot(audioFileId: string, revisionId: string): Promise<string> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const active = await client.query(
+        `SELECT ar.active_transcript_confirmation_id
+         FROM ${this.table('audio_files')} af
+         JOIN ${this.table('audio_analysis_revisions')} ar
+           ON ar.tenant_id = af.tenant_id AND ar.id = af.active_analysis_revision_id
+         WHERE af.tenant_id = $1 AND af.id = $2 AND af.deleted_at IS NULL
+           AND ar.id = $3 AND ar.status = 'ready'
+         FOR UPDATE OF ar`,
+        [this.tenantId, audioFileId, revisionId],
+      );
+      const row = active.rows[0];
+      if (!row) throw new WorkspaceRepositoryError('CONFLICT', '自动分析需要已发布的当前转写。');
+      if (row.active_transcript_confirmation_id) {
+        await client.query('COMMIT');
+        return String(row.active_transcript_confirmation_id);
+      }
+      const snapshot = await client.query(
+        `INSERT INTO ${this.table('transcript_confirmations')}
+           (tenant_id, analysis_revision_id, version_no, origin)
+         VALUES ($1, $2, 1, 'system_raw_snapshot') RETURNING id`,
+        [this.tenantId, revisionId],
+      );
+      const confirmationId = String(snapshot.rows[0].id);
+      const copied = await client.query(
+        `INSERT INTO ${this.table('transcript_confirmation_segments')}
+           (tenant_id, transcript_confirmation_id, analysis_revision_id,
+            source_transcript_segment_id, confirmed_segment_id, part_index,
+            speaker_key, start_word_index, end_word_index, start_ms, end_ms, text)
+         SELECT segment.tenant_id, $3, segment.analysis_revision_id,
+                segment.id, segment.id, segment.segment_index, segment.speaker_key, 0,
+                greatest(jsonb_array_length(segment.words), 1),
+                segment.start_ms, segment.end_ms, segment.text
+         FROM ${this.table('transcript_segments')} segment
+         WHERE segment.tenant_id = $1 AND segment.analysis_revision_id = $2`,
+        [this.tenantId, revisionId, confirmationId],
+      );
+      if (!copied.rowCount)
+        throw new WorkspaceRepositoryError('CONFLICT', '转写没有可确认的正文片段。');
+      await client.query(
+        `UPDATE ${this.table('audio_analysis_revisions')}
+         SET active_transcript_confirmation_id = $3
+         WHERE tenant_id = $1 AND id = $2`,
+        [this.tenantId, revisionId, confirmationId],
+      );
+      await client.query('COMMIT');
+      return confirmationId;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   /** 校验乐观版本并原子发布下一版完整确认正文。 */
   async confirm(audioFileId: string, input: AudioTranscriptConfirmationRequest) {
     const client = await this.pool.connect();

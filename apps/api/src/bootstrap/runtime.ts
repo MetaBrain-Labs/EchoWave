@@ -33,6 +33,14 @@ import { SettingsService, type LegacyAiConfiguration } from '../settings/service
 import { createAudioRuntime } from './runtime/audioRuntime.ts';
 import { createKnowledgeRuntime } from './runtime/knowledgeRuntime.ts';
 import { createWorkspaceRuntime } from './runtime/workspaceRuntime.ts';
+import { AudioAutomationRepository } from '../workspace/audio/automation/repository.ts';
+import { AudioAutomationService } from '../workspace/audio/automation/service.ts';
+import { AudioAutomationWorker } from '../workspace/audio/automation/worker.ts';
+import { PushNotificationRepository } from '../notifications/repository.ts';
+import { PushDeviceService } from '../notifications/service.ts';
+import { PushNotificationWorker } from '../notifications/worker.ts';
+import { AudioAnalysisRunsRepository } from '../workspace/audio/analysis-runs/repository.ts';
+import { AudioAnalysisRunsService } from '../workspace/audio/analysis-runs/service.ts';
 
 /** 装配完整 API 运行时，并返回服务器依赖、Worker 与关闭函数。 */
 export function createRagRuntime(config: ApiConfig) {
@@ -173,6 +181,39 @@ export function createRagRuntime(config: ApiConfig) {
       tenantId: config.rag.tenantId,
     },
   );
+  const audioAutomationRepository = new AudioAutomationRepository(
+    pool,
+    config.database.schema,
+    config.rag.tenantId,
+  );
+  const audioAutomationService = new AudioAutomationService(
+    audioAutomationRepository,
+    audioUploadService,
+    settingsService,
+    audioRuntimeService,
+  );
+  const audioAutomationWorker = new AudioAutomationWorker({
+    repository: audioAutomationRepository,
+    audio: audio.audioService,
+    wakeup: workerWakeup,
+  });
+  const audioAnalysisRunsService = new AudioAnalysisRunsService(
+    new AudioAnalysisRunsRepository(pool, config.database.schema, config.rag.tenantId),
+  );
+  const pushNotificationRepository = new PushNotificationRepository(
+    pool,
+    config.database.schema,
+    config.rag.tenantId,
+  );
+  const pushDeviceService = new PushDeviceService(pushNotificationRepository);
+  const pushNotificationWorker = new PushNotificationWorker({
+    repository: pushNotificationRepository,
+    wakeup: workerWakeup,
+    enabled: config.notifications.enabled,
+    ...(config.notifications.expoPushAccessToken
+      ? { accessToken: config.notifications.expoPushAccessToken }
+      : {}),
+  });
 
   return {
     service: knowledge.service,
@@ -181,6 +222,9 @@ export function createRagRuntime(config: ApiConfig) {
     audioService: audio.audioService,
     audioRuntimeService,
     audioUploadService,
+    audioAutomationService,
+    audioAnalysisRunsService,
+    pushDeviceService,
     worker: knowledge.worker,
     transcriptionWorker: audio.transcriptionWorker,
     dashScopeCallbackService: audio.dashScopeCallbackService,
@@ -188,6 +232,8 @@ export function createRagRuntime(config: ApiConfig) {
     roleWorker: audio.roleWorker,
     speakerReviewWorker: audio.speakerReviewWorker,
     businessAnalysisWorker: audio.businessAnalysisWorker,
+    audioAutomationWorker,
+    pushNotificationWorker,
     audioInputPreprocessor: audio.audioInputPreprocessor,
     cleanupExpiredAudio: audio.cleanupExpiredAudio,
     startSourceCleanup: audio.startSourceCleanup,
@@ -196,6 +242,7 @@ export function createRagRuntime(config: ApiConfig) {
     settingsService,
     async close(): Promise<void> {
       await knowledge.disposeAnswers();
+      await Promise.all([audioAutomationWorker.stop(), pushNotificationWorker.stop()]);
       await audio.stop();
       await knowledge.worker.stop();
       await workerWakeup.close();

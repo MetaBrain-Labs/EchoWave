@@ -17,10 +17,12 @@ import {
   type AudioAnalysisStatusStreamEvent,
   type DataSourceAudioStreamEvent,
   type KnowledgeDocumentStreamEvent,
+  AudioAnalysisBatchStreamEventSchema,
+  type AudioAnalysisBatchStreamEvent,
 } from '@echowave/contracts';
 import { fetch } from 'expo/fetch';
 
-import { apiUrl } from './apiUrl';
+import { getApiUrl } from './apiUrl';
 import { WorkspaceRequestError } from './request';
 
 type Parser<T> = (value: unknown) => T;
@@ -81,7 +83,7 @@ async function streamValidated<T>(options: {
   parse: Parser<T>;
   onEvent: (event: T) => void;
 }): Promise<void> {
-  const response = await fetch(`${apiUrl}${options.path}`, {
+  const response = await fetch(`${getApiUrl()}${options.path}`, {
     headers: { Accept: 'text/event-stream' },
     signal: options.signal,
   });
@@ -151,6 +153,20 @@ export function streamKnowledgeDocuments(options: {
     path: `/api/knowledge-bases/${options.knowledgeBaseId}/documents/stream`,
     signal: options.signal,
     parse: (value) => KnowledgeDocumentStreamEventSchema.parse(value),
+    onEvent: options.onEvent,
+  });
+}
+
+/** 连接自动分析批次状态流；断线后的 REST 降级由批次详情页负责。 */
+export function streamAudioAnalysisBatch(options: {
+  batchId: string;
+  signal: AbortSignal;
+  onEvent: (event: AudioAnalysisBatchStreamEvent) => void;
+}) {
+  return streamValidated({
+    path: `/api/audio-analysis-batches/${options.batchId}/stream`,
+    signal: options.signal,
+    parse: (value) => AudioAnalysisBatchStreamEventSchema.parse(value),
     onEvent: options.onEvent,
   });
 }

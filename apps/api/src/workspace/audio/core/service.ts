@@ -55,6 +55,25 @@ export type AudioPlaybackFile = {
   sizeBytes: number;
 };
 
+/** 自动批次冻结后传给阶段创建方法的能力引用。 */
+export type FrozenAudioCapabilityBindings = {
+  transcription?: string | null;
+  staging?: string | null;
+  emotion?: string | null;
+  role?: string | null;
+  businessAnalysis?: string | null;
+  knowledgeEmbedding?: string | null;
+};
+
+/** 自动业务分析冻结的分组输入。 */
+export type FrozenBusinessAnalysisInput = {
+  analysisTiming: 'automatic' | 'manual';
+  contentFocus: string;
+  tone: string;
+  customTags: string[];
+  knowledgeBaseIds: string[];
+};
+
 /** 音频路由依赖的应用服务端口。 */
 export interface AudioService {
   getAudioPlaybackFile(id: string): Promise<AudioPlaybackFile>;
@@ -62,6 +81,7 @@ export interface AudioService {
   startAudioTranscription(
     id: string,
     input: AudioTranscriptionStartRequest,
+    frozenBindings?: FrozenAudioCapabilityBindings,
   ): Promise<AudioTranscriptionStartResponse>;
   listAudioTranscriptions(id: string): ReturnType<AudioAnalysisRepository['listTranscriptions']>;
   selectAudioTranscription(
@@ -84,6 +104,7 @@ export interface AudioService {
     id: string,
     input: AudioTranscriptConfirmationRequest,
   ): Promise<AudioTranscriptConfirmationResponse>;
+  ensureSystemRawTranscriptSnapshot(id: string, revisionId: string): Promise<string>;
   resolveSpeakerReviewFinding(
     id: string,
     findingId: string,
@@ -92,10 +113,13 @@ export interface AudioService {
   startAudioPostAnalysis(
     id: string,
     type: AudioPostAnalysisType,
+    frozenBindings?: FrozenAudioCapabilityBindings,
   ): Promise<AudioPostAnalysisStartResponse>;
   startAudioBusinessAnalysis(
     id: string,
     input: AudioBusinessAnalysisStartRequest,
+    frozenBindings?: FrozenAudioCapabilityBindings,
+    frozenInput?: FrozenBusinessAnalysisInput,
   ): Promise<AudioBusinessAnalysisStartResponse>;
 }
 
@@ -263,14 +287,24 @@ export class DefaultAudioService implements AudioService {
     });
   }
 
-  async startAudioTranscription(id: string, input: AudioTranscriptionStartRequest) {
+  async startAudioTranscription(
+    id: string,
+    input: AudioTranscriptionStartRequest,
+    frozenBindings?: FrozenAudioCapabilityBindings,
+  ) {
     const request = AudioTranscriptionStartRequestSchema.parse(input);
     const assetRuntime = await this.audioAnalysisRepository.getAssetRuntime(id);
-    const transcription = await this.settingsService.resolveCapability('audio_transcription');
+    const transcription = await this.settingsService.resolveCapability(
+      'audio_transcription',
+      frozenBindings?.transcription ?? undefined,
+    );
     const staging =
       assetRuntime.mode === 'lightweight_local'
         ? undefined
-        : await this.settingsService.resolveCapability('audio_staging');
+        : await this.settingsService.resolveCapability(
+            'audio_staging',
+            frozenBindings?.staging ?? undefined,
+          );
     if (
       transcription.provider.type !== 'dashscope' ||
       !('apiKey' in transcription.provider.credential) ||
@@ -282,7 +316,10 @@ export class DefaultAudioService implements AudioService {
     const includeAcousticEmotion =
       assetRuntime.mode === 'lightweight_local' && request.includeAcousticEmotion;
     const emotion = includeAcousticEmotion
-      ? await this.settingsService.resolveCapability('audio_emotion')
+      ? await this.settingsService.resolveCapability(
+          'audio_emotion',
+          frozenBindings?.emotion ?? undefined,
+        )
       : undefined;
     if (
       emotion &&
@@ -385,6 +422,11 @@ export class DefaultAudioService implements AudioService {
     return this.transcriptConfirmationRepository.confirm(id, input);
   }
 
+  /** 供服务端自动流水线创建可审计的系统 Raw Transcript 快照。 */
+  ensureSystemRawTranscriptSnapshot(id: string, revisionId: string) {
+    return this.transcriptConfirmationRepository.ensureSystemRawSnapshot(id, revisionId);
+  }
+
   /** 将当前分析修订中的单个说话人疑点标记为人工审核通过。 */
   async resolveSpeakerReviewFinding(
     id: string,
@@ -405,7 +447,11 @@ export class DefaultAudioService implements AudioService {
   }
 
   /** 校验情绪分析运行依赖后，为当前 ASR 修订创建指定后置任务。 */
-  async startAudioPostAnalysis(id: string, type: AudioPostAnalysisType) {
+  async startAudioPostAnalysis(
+    id: string,
+    type: AudioPostAnalysisType,
+    frozenBindings?: FrozenAudioCapabilityBindings,
+  ) {
     if (type === 'emotion') {
       const assetRuntime = await this.audioAnalysisRepository.getAssetRuntime(id);
       if (assetRuntime.mode === 'lightweight_local') {
@@ -416,10 +462,18 @@ export class DefaultAudioService implements AudioService {
       }
     }
     const capability = type === 'emotion' ? 'audio_emotion' : 'audio_role';
-    const resolved = await this.settingsService.resolveCapability(capability);
+    const resolved = await this.settingsService.resolveCapability(
+      capability,
+      type === 'emotion'
+        ? (frozenBindings?.emotion ?? undefined)
+        : (frozenBindings?.role ?? undefined),
+    );
     let stagingRevisionId: string | null = null;
     if (type === 'emotion') {
-      const staging = await this.settingsService.resolveCapability('audio_staging');
+      const staging = await this.settingsService.resolveCapability(
+        'audio_staging',
+        frozenBindings?.staging ?? undefined,
+      );
       stagingRevisionId = staging.revisionId;
       const ffmpegAvailable = await this.audioInputPreprocessor.refreshFfmpegAvailability();
       if (!ffmpegAvailable) {
@@ -440,13 +494,24 @@ export class DefaultAudioService implements AudioService {
       : this.postAnalysisRepository.queue(id, type, resolved.model);
   }
 
-  async startAudioBusinessAnalysis(id: string, input: AudioBusinessAnalysisStartRequest) {
+  async startAudioBusinessAnalysis(
+    id: string,
+    input: AudioBusinessAnalysisStartRequest,
+    frozenBindings?: FrozenAudioCapabilityBindings,
+    frozenInput?: FrozenBusinessAnalysisInput,
+  ) {
     if (!this.businessAnalysisRepository) {
       throw new WorkspaceRepositoryError('CONFLICT', '业务分析服务尚未配置。');
     }
     const [chat, embedding] = await Promise.all([
-      this.settingsService.resolveCapability('business_analysis'),
-      this.settingsService.resolveCapability('knowledge_embedding'),
+      this.settingsService.resolveCapability(
+        'business_analysis',
+        frozenBindings?.businessAnalysis ?? undefined,
+      ),
+      this.settingsService.resolveCapability(
+        'knowledge_embedding',
+        frozenBindings?.knowledgeEmbedding ?? undefined,
+      ),
     ]);
     return this.businessAnalysisRepository.queue(
       id,
@@ -455,6 +520,7 @@ export class DefaultAudioService implements AudioService {
       input.force,
       chat.revisionId,
       embedding.revisionId,
+      frozenInput,
     );
   }
 }

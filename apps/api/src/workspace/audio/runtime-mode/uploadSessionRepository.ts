@@ -29,6 +29,7 @@ export type StoredUploadSession = {
   includeAcousticEmotion: boolean;
   status: 'created' | 'uploaded' | 'validating' | 'ready' | 'failed' | 'expired';
   expiresAt: Date;
+  analysisTaskId: string | null;
 };
 
 /** 持久化固定租户的上传会话。 */
@@ -62,6 +63,7 @@ export class AudioUploadSessionRepository {
       key: string;
       strategy: StoredUploadSession['strategy'];
     },
+    analysisTaskId: string | null = null,
   ): Promise<StoredUploadSession> {
     const client = await this.pool.connect();
     try {
@@ -110,8 +112,8 @@ export class AudioUploadSessionRepository {
         `INSERT INTO ${this.table('audio_upload_sessions')}
            (tenant_id, data_source_id, audio_file_id, runtime_mode, upload_strategy,
             original_filename, mime_type, size_bytes, storage_key,
-            include_acoustic_emotion, expires_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now() + interval '1 hour')
+            include_acoustic_emotion, expires_at, analysis_task_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now() + interval '1 hour', $11)
          RETURNING id, expires_at`,
         [
           this.tenantId,
@@ -124,8 +126,21 @@ export class AudioUploadSessionRepository {
           input.sizeBytes,
           storage.key,
           input.includeAcousticEmotion,
+          analysisTaskId,
         ],
       );
+      if (analysisTaskId) {
+        const attached = await client.query(
+          `UPDATE ${this.table('audio_analysis_tasks')}
+           SET audio_file_id = $3, runtime_mode = $4, updated_at = now()
+           WHERE tenant_id = $1 AND id = $2 AND status = 'awaiting_upload'
+             AND audio_file_id IS NULL`,
+          [this.tenantId, analysisTaskId, audio.rows[0].id, settings.mode],
+        );
+        if (!attached.rowCount) {
+          throw new WorkspaceRepositoryError('CONFLICT', '自动分析上传任务无法绑定音频。');
+        }
+      }
       await client.query('COMMIT');
       return {
         id: String(session.rows[0].id),
@@ -141,6 +156,7 @@ export class AudioUploadSessionRepository {
         includeAcousticEmotion: input.includeAcousticEmotion,
         status: 'created',
         expiresAt: new Date(session.rows[0].expires_at),
+        analysisTaskId,
       };
     } catch (error) {
       await client.query('ROLLBACK');
@@ -176,6 +192,7 @@ export class AudioUploadSessionRepository {
       includeAcousticEmotion: row.include_acoustic_emotion,
       status: row.status,
       expiresAt: new Date(row.expires_at),
+      analysisTaskId: row.analysis_task_id ?? null,
     };
   }
 
@@ -206,7 +223,19 @@ export class AudioUploadSessionRepository {
              source_sha256 = $4, updated_at = now()
          FROM completed
          WHERE af.tenant_id = $1 AND af.id = completed.audio_file_id
-         RETURNING af.ingestion_run_id
+         RETURNING af.ingestion_run_id, af.id
+       ), released AS (
+         UPDATE ${this.table('audio_analysis_tasks')} task
+         SET status = CASE WHEN task.run_after IS NOT NULL AND task.run_after > now()
+                           THEN 'scheduled' ELSE 'queued' END,
+             phase = 'transcription', progress = 0, updated_at = now()
+         FROM completed, published, ${this.table('audio_upload_sessions')} session
+         WHERE session.tenant_id = $1 AND session.id = $2
+           AND session.audio_file_id = published.id
+           AND task.tenant_id = session.tenant_id
+           AND task.id = session.analysis_task_id
+           AND task.status = 'awaiting_upload'
+         RETURNING task.id
        )
        UPDATE ${this.table('data_source_ingestion_runs')} run
        SET status = 'succeeded', completed_at = now()
@@ -216,6 +245,76 @@ export class AudioUploadSessionRepository {
       [this.tenantId, id, durationMs, sha256],
     );
     if (!result.rowCount) throw new WorkspaceRepositoryError('CONFLICT', '上传会话无法完成确认。');
+  }
+
+  /** 上传校验永久失败时原子终止资产、自动任务并创建一次失败通知。 */
+  async fail(id: string, message: string): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const session = await client.query(
+        `SELECT audio_file_id, analysis_task_id
+         FROM ${this.table('audio_upload_sessions')}
+         WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+        [this.tenantId, id],
+      );
+      const row = session.rows[0];
+      if (!row) throw new WorkspaceRepositoryError('NOT_FOUND', '上传会话不存在。');
+      await client.query(
+        `UPDATE ${this.table('audio_upload_sessions')}
+         SET status = 'failed', error_code = 'UPLOAD_VALIDATION_FAILED', error_message = $3
+         WHERE tenant_id = $1 AND id = $2 AND status <> 'ready'`,
+        [this.tenantId, id, message.slice(0, 500)],
+      );
+      await client.query(
+        `UPDATE ${this.table('audio_files')}
+         SET upload_status = 'failed', error_code = 'UPLOAD_VALIDATION_FAILED',
+             error_message = $3, error_retryable = true, updated_at = now()
+         WHERE tenant_id = $1 AND id = $2 AND upload_status <> 'ready'`,
+        [this.tenantId, row.audio_file_id, message.slice(0, 500)],
+      );
+      if (row.analysis_task_id) {
+        const failed = await client.query(
+          `UPDATE ${this.table('audio_analysis_tasks')}
+           SET status = 'failed', phase = 'done', error_code = 'UPLOAD_VALIDATION_FAILED',
+               error_message = $3, error_retryable = true,
+               completed_at = now(), updated_at = now()
+           WHERE tenant_id = $1 AND id = $2 AND status = 'awaiting_upload'
+           RETURNING batch_id`,
+          [this.tenantId, row.analysis_task_id, message.slice(0, 500)],
+        );
+        if (failed.rows[0]) {
+          const event = await client.query(
+            `INSERT INTO ${this.table('notification_events')}
+               (tenant_id, batch_id, task_id, event_type, dedupe_key, title, body)
+             VALUES ($1, $2, $3, 'FAILED', $4, '音频上传校验失败', $5)
+             ON CONFLICT (tenant_id, dedupe_key) DO NOTHING RETURNING id`,
+            [
+              this.tenantId,
+              failed.rows[0].batch_id,
+              row.analysis_task_id,
+              `upload-failed:${row.analysis_task_id}`,
+              message.slice(0, 500),
+            ],
+          );
+          if (event.rows[0]) {
+            await client.query(
+              `INSERT INTO ${this.table('notification_deliveries')}
+                 (tenant_id, event_id, device_id)
+               SELECT $1, $2, id FROM ${this.table('push_devices')}
+               WHERE tenant_id = $1 AND enabled = true ON CONFLICT DO NOTHING`,
+              [this.tenantId, event.rows[0].id],
+            );
+          }
+        }
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   /** 返回等待用户重新选择原文件的轻量资产指纹。 */
@@ -250,15 +349,34 @@ export class AudioUploadSessionRepository {
 
   /** 指纹校验成功后重新挂载临时源文件，但不隐式创建新的 ASR Run。 */
   async completeRemount(audioFileId: string, storageKey: string): Promise<void> {
-    const result = await this.pool.query(
-      `UPDATE ${this.table('audio_files')}
-       SET storage_key = $3, source_state = 'available', source_recovery_state = 'not_required',
-           cleanup_status = 'not_due', source_delete_after = NULL, updated_at = now()
-       WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
-         AND runtime_mode = 'lightweight_local' AND source_recovery_state = 'required'`,
-      [this.tenantId, audioFileId, storageKey],
-    );
-    if (!result.rowCount)
-      throw new WorkspaceRepositoryError('CONFLICT', '源文件重新挂载状态已变化。');
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query(
+        `UPDATE ${this.table('audio_files')}
+         SET storage_key = $3, source_state = 'available', source_recovery_state = 'not_required',
+             cleanup_status = 'not_due', source_delete_after = NULL, updated_at = now()
+         WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+           AND runtime_mode = 'lightweight_local' AND source_recovery_state = 'required'`,
+        [this.tenantId, audioFileId, storageKey],
+      );
+      if (!result.rowCount) {
+        throw new WorkspaceRepositoryError('CONFLICT', '源文件重新挂载状态已变化。');
+      }
+      await client.query(
+        `UPDATE ${this.table('audio_analysis_tasks')}
+         SET status = 'queued', blocker_reason = NULL, blocker_capability = NULL,
+             blocker_message = NULL, source_expires_at = NULL, updated_at = now()
+         WHERE tenant_id = $1 AND audio_file_id = $2 AND status = 'hard_blocked'
+           AND blocker_reason = 'SOURCE_REMOUNT_REQUIRED'`,
+        [this.tenantId, audioFileId],
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 }

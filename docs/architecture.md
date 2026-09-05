@@ -47,6 +47,7 @@ apps/api/src/
   config/          HTTP、数据库、Redis、模型、音频和报告配置；env.ts 统一加载装配
   http/            app、错误映射、SSE 基础设施及按领域拆分的 routes
   ai-runtime/      跨领域结构化输出和模型调用生命周期基础能力
+  notifications/   Expo Push outbox Worker、receipt 收敛与设备失效
   knowledge/
     catalog/       知识库、文档和块目录
     retrieval/     检索 port、RetrievalChunk 与向量实现
@@ -74,6 +75,14 @@ apps/api/src/
 移动端同样按 feature 拥有状态与展示：Screen 负责页面编排，复杂加载、实时订阅和确认流程进入 feature hook，组件及样式留在所属 feature。`shared/api` 按 groups、data-sources、audio-analysis 等资源拆分，并复用基础请求错误；只有确认存在复杂共享状态机时才进入 `shared/hooks`。
 
 共享契约按 wire domain 拆分，analysis 下区分 transcript、post-analysis、business-analysis，audio 下区分 processing、transcription。拆分不得改变原 schema/type 名称或 JSON 形状。
+
+### 运行时服务器连接
+
+移动端在业务导航外层维护服务器连接门禁。版本化 AsyncStorage 键只保存通过健康检查的规范化服务器根地址，不保存业务数据；PostgreSQL 仍是业务事实的唯一来源。已保存地址优先于 Development/Expo Go 的 `EXPO_PUBLIC_API_URL`，Production profiles 通过 `EXPO_PUBLIC_REQUIRE_SERVER_SELECTION=true` 禁用构建默认地址。
+
+没有可用地址时不挂载业务路由，也不发出业务请求。连接页面使用共享 `HealthResponseSchema` 校验 `GET /health` 的服务身份、语义版本、`apiVersion=1` 和能力字段。REST、上传、SSE、音频媒体和推送设备注册都在发起请求时读取同一个运行时地址，不能捕获构建时常量。
+
+修改服务器会先停止旧 SSE，递增连接 revision 并重新挂载业务导航，从而丢弃页面级缓存和旧服务器状态。地址校验拒绝凭据、query、fragment 和业务路径；局域网 HTTP 只允许本机、私有/链路本地地址或 `.local`，公网必须使用 HTTPS。
 
 ## 数据与发布边界
 
@@ -153,6 +162,8 @@ STT 的 DashScope 任务提交、Polling 状态查询或 EventBridge 回调，�
 
 - `apps/api/.env` 是 API 唯一配置来源，不与系统环境变量合并，也不提供隐式默认值。
 - 数据库 migration 与 LangGraph `setup()` 只由显式 `pnpm --filter @echowave/api migrate` 执行。
-- `EXPO_PUBLIC_API_URL` 会进入客户端 bundle，不得放置密钥。
+- `apps/mobile/.env` 只提供开发默认值；`EXPO_PUBLIC_*` 会进入客户端 bundle，不得放置密钥。正式包的服务器地址在运行时选择。
+- `/health.capabilities.remotePush` 是客户端通知权限与设备注册的门禁。Self-hosted 默认关闭，启用时仍需原生 Build、EAS/Firebase 或 Apple/APNs 凭据。
+- 唯一 EAS 配置位于 `apps/mobile/eas.json`；Development、内部 APK 和商店 profiles 不在仓库根目录维护第二份配置。
 - API 默认不记录完整正文、完整模型上下文、provider 原始错误或 reasoning；本地诊断内容只能通过显式开关启用，密钥始终禁止记录。
 - Redis 仍是未来缓存/协调边界，不参与首期 RAG，也不能成为第二业务真相源。

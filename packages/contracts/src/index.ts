@@ -11,6 +11,12 @@
  */
 export { HelloResponseSchema, type HelloResponse } from './hello.ts';
 export {
+  ECHOWAVE_API_VERSION,
+  HealthCapabilitiesSchema,
+  HealthResponseSchema,
+  type HealthResponse,
+} from './health.ts';
+export {
   ApiErrorCodeSchema,
   ApiErrorResponseSchema,
   EntityIdSchema,
@@ -322,3 +328,13 @@ export {
   type SettingsOverview,
   type TransportSecurityMode,
 } from './settings.ts';
+export * from './audio/automation.ts';
+export * from './audio/analysisRuns.ts';
+export {
+  ExpoPushTokenSchema,
+  PushDeviceDeleteRequestSchema,
+  PushDeviceRegisterRequestSchema,
+  PushDeviceSchema,
+  type PushDevice,
+  type PushDeviceRegisterRequest,
+} from './notifications.ts';

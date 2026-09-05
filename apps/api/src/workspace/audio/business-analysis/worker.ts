@@ -19,7 +19,10 @@ import {
 import type { LiveUpdateBroker } from '../../../infrastructure/liveUpdateBroker.ts';
 import type { WorkerWakeupSource } from '../../../infrastructure/workerWakeup.ts';
 import type { BusinessAnalysisRepository, ClaimedBusinessAnalysisJob } from './repository.ts';
-import { BUSINESS_ANALYSIS_MAX_RECOVERY_ATTEMPTS } from './repository.ts';
+import {
+  BUSINESS_ANALYSIS_MAX_RECOVERY_ATTEMPTS,
+  BusinessAnalysisCanceledError,
+} from './repository.ts';
 import { BusinessAnalysisProviderError } from './salesAnalysisAgent.ts';
 import type { BusinessAnalysisWorkflow } from './workflow.ts';
 
@@ -95,7 +98,8 @@ export class BusinessAnalysisWorker {
       this.active = execution;
     } catch (error) {
       console.error('Failed to claim business analysis job', {
-        error: error instanceof Error ? error.name : 'UnknownError',
+        code: error && typeof error === 'object' && 'code' in error ? error.code : undefined,
+        message: error instanceof Error ? error.message : String(error),
       });
     } finally {
       this.pumping = false;
@@ -151,6 +155,19 @@ export class BusinessAnalysisWorker {
       });
       await this.cleanupCheckpoint(job);
     } catch (error) {
+      let canceled = error instanceof BusinessAnalysisCanceledError;
+      if (!canceled && this.options.repository.isCancelRequested) {
+        try {
+          canceled = await this.options.repository.isCancelRequested(job.id);
+        } catch {
+          canceled = false;
+        }
+      }
+      if (canceled) {
+        await this.options.repository.requestCancel?.(job.id);
+        await this.cleanupCheckpoint(job);
+        return;
+      }
       const known = error instanceof BusinessAnalysisProviderError;
       const code = known ? error.code : 'INTERNAL_ERROR';
       const retryable = known ? error.retryable : true;

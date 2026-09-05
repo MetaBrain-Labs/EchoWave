@@ -26,6 +26,7 @@ import {
   type EmotionPublication,
   type EmotionWindowResult,
   PostAnalysisRepository,
+  PostAnalysisCanceledError,
   type PostAnalysisTranscriptSegment,
 } from './repository.ts';
 import type { AudioArtifactStore } from '../transcription/audioArtifactStore.ts';
@@ -194,6 +195,18 @@ export class AudioPostAnalysisWorker {
         metadata: { durationMs: Date.now() - startedAt },
       });
     } catch (error) {
+      let canceled = error instanceof PostAnalysisCanceledError;
+      if (!canceled && this.options.repository.isCancelRequested) {
+        try {
+          canceled = await this.options.repository.isCancelRequested(job.id);
+        } catch {
+          canceled = false;
+        }
+      }
+      if (canceled) {
+        await this.options.repository.requestCancel?.(job.id);
+        return;
+      }
       const known =
         error instanceof PostAnalysisProviderError ||
         error instanceof AudioWindowPreprocessingError;

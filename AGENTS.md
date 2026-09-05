@@ -120,7 +120,7 @@ pnpm-lock.yaml
 - Keep mock audio, knowledge-base, and data-source records in the mobile presentation layer. Do not make them appear server-backed or persist them in browser storage.
 - Keep server data authoritative. Use browser storage only for non-authoritative UI preferences unless offline-first behavior is explicitly required.
 - Preserve accessibility basics: semantic elements, labels, keyboard behavior, focus management, and readable loading and error states.
-- Expo Go currently works for this code only while all dependencies are included in Expo Go or require no custom native code. Reassess the test workflow before adding a native dependency; use a Development Build when required.
+- Development Build is the default native workflow. Expo Go is only a compatibility preview for features whose dependencies are bundled there; Android remote push is unavailable in Expo Go and must be tested in a native Build.
 
 ### API and Contracts
 
@@ -142,6 +142,8 @@ pnpm-lock.yaml
 - `apps/mobile/.env` is loaded by Expo. Only `EXPO_PUBLIC_*` values are available to client code, and all such values are public bundle content.
 - Keep `.env` files untracked. Update `.env.example` and README when the required configuration contract changes; never copy real passwords or local addresses into tracked files.
 - A physical phone cannot reach the development computer through `localhost`. Use the computer's LAN address in `EXPO_PUBLIC_API_URL` and keep its port aligned with `apps/api/.env`.
+- Keep the only EAS configuration at `apps/mobile/eas.json`, and run EAS commands from `apps/mobile`. Do not create a competing root `eas.json`.
+- Production profiles must require runtime server selection and must not bind a fixed `EXPO_PUBLIC_API_URL`; Development/Expo Go may use it only as an unsaved development default.
 - PostgreSQL uses the existing `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_SCHEMA`, and `POSTGRES_SSL` fields. Redis uses the existing `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_USERNAME`, `REDIS_DB`, and `REDIS_TLS` fields.
 
 ## Source Documentation
@@ -176,6 +178,7 @@ pnpm-lock.yaml
 - Treat verification as a funnel: run the narrowest useful checks needed for fast feedback, then run root `pnpm check` once as the final comprehensive gate when the change warrants it.
 - Build `@echowave/contracts` before validating API or mobile consumers when shared exports changed.
 - Use `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm build`; use `pnpm check` for the complete root verification sequence.
+- Run `pnpm docs:check` after documentation changes; it validates relative links, the topic index, critical repository paths, and the single mobile EAS configuration.
 - After the requested behavior is implemented, focused regressions pass, `git diff --check` passes, and the required root `pnpm check` passes, stop by default. Do not add optional verification unless it resolves a specific acceptance criterion that remains unverified.
 - Do not repeat a successful verification command unless relevant source or configuration changed afterward, or the rerun is required to diagnose a concrete failure.
 - API changes must cover `/api/hello` success and structured 404 behavior when relevant. Contract changes must test valid and rejected payloads. Mobile behavior changes should cover interaction, API failure, timeout, and retry states as applicable.

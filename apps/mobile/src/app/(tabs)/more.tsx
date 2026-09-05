@@ -32,6 +32,13 @@ const navigationCards: readonly {
   title: string;
 }[] = [
   {
+    accessibilityLabel: '打开分析',
+    description: '查看音频分析流程、报告和失败任务。',
+    href: '/analysis' as Href,
+    icon: 'pulse-outline',
+    title: '分析',
+  },
+  {
     accessibilityLabel: '打开服务状态',
     description: '检查 API 连接、数据库和基础服务可用性。',
     href: '/service-status' as Href,
@@ -54,13 +61,13 @@ const navigationCards: readonly {
   },
 ];
 
-/** 将“更多”页面渲染为三个统一的导航入口。 */
+/** 将“更多”页面渲染为四个统一的导航入口。 */
 export default function MoreScreen() {
   const router = useRouter();
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
-      <TopLevelPageHeader subtitle="服务诊断、AI 配置与音频运行策略。" title="更多" />
+      <TopLevelPageHeader subtitle="分析、服务诊断、AI 配置与音频运行策略。" title="更多" />
       <ScrollView contentContainerStyle={styles.content} testID="more-scroll">
         {navigationCards.map((card) => (
           <Pressable

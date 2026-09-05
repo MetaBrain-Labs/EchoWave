@@ -28,8 +28,19 @@ jest.mock('expo-router', () => {
         accessibilityLabel: JSON.stringify(screenOptions),
         testID: 'root-native-stack',
       }),
+    useRouter: () => ({ push: jest.fn() }),
   };
 });
+
+jest.mock('expo-notifications', () => ({
+  AndroidImportance: { HIGH: 4 },
+  addNotificationResponseReceivedListener: () => ({ remove: jest.fn() }),
+  getLastNotificationResponseAsync: async () => null,
+  getPermissionsAsync: async () => ({ status: 'denied' }),
+  requestPermissionsAsync: async () => ({ status: 'denied' }),
+  setNotificationChannelAsync: async () => undefined,
+  setNotificationHandler: jest.fn(),
+}));
 
 jest.mock('expo-status-bar', () => ({
   StatusBar: () => null,
@@ -42,6 +53,27 @@ jest.mock('react-native-safe-area-context', () => {
       React.createElement(React.Fragment, null, children),
   };
 });
+
+jest.mock('@/shared/api/ServerConnectionProvider', () => ({
+  ServerConnectionProvider: ({ children }: { children: ReactNode }) => children,
+  useServerConnection: () => ({
+    error: null,
+    phase: 'ready',
+    revision: 0,
+    serverUrl: 'http://localhost:3001',
+  }),
+}));
+
+jest.mock('@/shared/api/serverHealth', () => ({
+  fetchServerHealth: async () => ({
+    name: 'EchoWave',
+    service: 'echowave-api',
+    version: '0.1.0',
+    apiVersion: 1,
+    status: 'ok',
+    capabilities: { remotePush: false },
+  }),
+}));
 
 jest.mock('@/shared/navigation/NavigationLoadingProvider', () => ({
   NavigationLoadingProvider: ({ children }: { children: ReactNode }) => children,

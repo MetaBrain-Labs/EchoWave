@@ -32,7 +32,7 @@ import {
 } from '@echowave/contracts';
 
 import { request } from './request';
-import { apiUrl } from './apiUrl';
+import { getApiUrl } from './apiUrl';
 import { File, UploadType } from 'expo-file-system';
 import type { DocumentPickerAsset } from 'expo-document-picker';
 
@@ -95,7 +95,7 @@ export const startAudioRoleRecognition = (id: string) =>
 
 /** 流式重新挂载轻量模式原文件，服务端会执行 SHA-256 一致性校验。 */
 export async function remountAudioSource(id: string, asset: DocumentPickerAsset) {
-  const url = `${apiUrl}/api/audio-files/${encodeURIComponent(id)}/source-remount`;
+  const url = `${getApiUrl()}/api/audio-files/${encodeURIComponent(id)}/source-remount`;
   if (asset.file) {
     const response = await fetch(url, {
       method: 'PUT',

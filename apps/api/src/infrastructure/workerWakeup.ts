@@ -25,7 +25,9 @@ export type WorkerQueue =
   | 'audio-emotion-analysis'
   | 'audio-role-analysis'
   | 'audio-speaker-review'
-  | 'audio-business-analysis';
+  | 'audio-business-analysis'
+  | 'audio-analysis-automation'
+  | 'push-notifications';
 
 const workerQueues = new Set<WorkerQueue>([
   'knowledge-ingestion',
@@ -34,6 +36,8 @@ const workerQueues = new Set<WorkerQueue>([
   'audio-role-analysis',
   'audio-speaker-review',
   'audio-business-analysis',
+  'audio-analysis-automation',
+  'push-notifications',
 ]);
 
 type ListenerClient = PoolClient;
