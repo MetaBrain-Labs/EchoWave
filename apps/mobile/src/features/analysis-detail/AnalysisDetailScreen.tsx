@@ -34,6 +34,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
+import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useAudioPlayback } from '@/shared/audio/useAudioPlayback';
 import { streamAudioExecutionTrace } from '@/shared/api/audioExecutionStream';
 import { streamAudioAnalysisStatus } from '@/shared/api/liveUpdateStreams';
@@ -54,6 +55,7 @@ import {
 import { getGroupSettings } from '@/shared/api/groupsApi';
 import { WorkspaceRequestError } from '@/shared/api/request';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { applyExecutionTraceEvent, hasRunningExecution } from './executionTraceState';
 import {
   colors,
@@ -363,6 +365,18 @@ export function AnalysisDetailScreen({
     },
     [currentExecutionScope, detailId, groupId],
   );
+  const refreshPage = useCallback(async () => {
+    await Promise.all([
+      load(false),
+      groupId
+        ? getGroupSettings(groupId)
+            .then((settings) => setAnalysisTiming(settings.analysis.timing))
+            .catch(() => undefined)
+        : Promise.resolve(),
+      activeTab === 'model' ? loadExecutionTrace(false) : Promise.resolve(),
+    ]);
+  }, [activeTab, groupId, load, loadExecutionTrace]);
+  const screenRefresh = useScreenRefresh(refreshPage);
   useEffect(() => {
     if (
       activeTab !== 'model' ||
@@ -869,7 +883,11 @@ export function AnalysisDetailScreen({
         <View style={styles.unknownTopBar}>
           <IconButton icon="chevron-back" label="返回" onPress={requestBack} />
         </View>
-        <View accessibilityRole="alert" style={styles.emptyState}>
+        <ScrollView
+          alwaysBounceVertical
+          contentContainerStyle={styles.emptyState}
+          refreshControl={<ScreenRefreshControl {...screenRefresh} />}
+        >
           <Ionicons color={colors.secondary} name="document-outline" size={36} />
           <Text style={styles.emptyTitle}>未找到分析详情</Text>
           <Text accessibilityRole="alert" style={styles.emptyDescription}>
@@ -889,7 +907,7 @@ export function AnalysisDetailScreen({
           >
             <Text style={styles.returnButtonText}>返回分组</Text>
           </Pressable>
-        </View>
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -1068,11 +1086,15 @@ export function AnalysisDetailScreen({
             segmentPlaybackPlaying={sourceAvailable && playback.isPlaying}
             reviewPlaybackAvailable={sourceAvailable}
             selectedSegmentIds={selectedTag?.evidenceSegmentIds ?? []}
+            onRefresh={screenRefresh.onRefresh}
+            refreshing={screenRefresh.refreshing}
           />
         </View>
         <ScrollView
+          alwaysBounceVertical
           contentContainerStyle={styles.tasksContent}
           nestedScrollEnabled
+          refreshControl={<ScreenRefreshControl {...screenRefresh} />}
           showsVerticalScrollIndicator={false}
           style={[styles.page, { width: pageWidth }]}
           testID="analysis-tasks-scroll"
@@ -1102,14 +1124,16 @@ export function AnalysisDetailScreen({
         </ScrollView>
         {hasSummary ? (
           <View style={[styles.page, { width: pageWidth }]}>
-            <SummaryContent detail={detail} />
+            <SummaryContent detail={detail} {...screenRefresh} />
           </View>
         ) : null}
         <View style={[styles.page, { width: pageWidth }]}>
           <ModelExecutionContent
             error={executionTraceError}
             loading={executionTraceLoading}
+            onRefresh={screenRefresh.onRefresh}
             onRetry={() => void loadExecutionTrace()}
+            refreshing={screenRefresh.refreshing}
             trace={currentExecutionTrace}
           />
         </View>

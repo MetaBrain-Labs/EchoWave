@@ -50,4 +50,16 @@ describe('buildBusinessAnalysisWindows', () => {
       [0, 1],
     );
   });
+
+  it('uses the full time envelope when confirmed segments are not chronological', () => {
+    const windows = buildBusinessAnalysisWindows([
+      { id: 'late', startMs: 2_000, endMs: 3_000, text: '后段' },
+      { id: 'early', startMs: 500, endMs: 1_000, text: '前段' },
+    ]);
+
+    assert.deepEqual(
+      { startMs: windows[0].startMs, endMs: windows[0].endMs },
+      { startMs: 500, endMs: 3_000 },
+    );
+  });
 });

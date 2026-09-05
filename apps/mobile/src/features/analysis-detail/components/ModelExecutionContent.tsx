@@ -28,6 +28,8 @@ import {
   View,
 } from 'react-native';
 
+import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
+
 import {
   colors,
   fontFamilies,
@@ -406,18 +408,27 @@ function RunCard({
 export function ModelExecutionContent({
   error,
   loading,
+  onRefresh = () => undefined,
   onRetry,
+  refreshing = false,
   trace,
 }: {
   error: string;
   loading: boolean;
+  onRefresh?: () => void;
   onRetry: () => void;
+  refreshing?: boolean;
   trace?: AudioAiExecutionTraceResponse;
 }) {
   const [expandedId, setExpandedId] = useState<string>();
 
   return (
-    <ScrollView contentContainerStyle={styles.container} testID="model-execution-scroll">
+    <ScrollView
+      alwaysBounceVertical
+      contentContainerStyle={styles.container}
+      refreshControl={<ScreenRefreshControl onRefresh={onRefresh} refreshing={refreshing} />}
+      testID="model-execution-scroll"
+    >
       <View style={styles.notice}>
         <Ionicons color={colors.secondary} name="shield-checkmark-outline" size={20} />
         <Text style={styles.noticeText}>

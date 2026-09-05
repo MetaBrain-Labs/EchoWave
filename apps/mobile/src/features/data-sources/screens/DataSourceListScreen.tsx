@@ -25,7 +25,9 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 import { createDataSource, listDataSources } from '@/shared/api/dataSourcesApi';
+import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { SearchSheet } from '@/shared/ui/SearchSheet';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
 
@@ -103,17 +105,18 @@ export function DataSourceListScreen({
   const [formError, setFormError] = useState('');
   const [creating, setCreating] = useState(false);
   const runInitialRequest = useInitialRequestLoading();
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     setError('');
     try {
       setDataSources((await listDataSources()).items);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '数据源加载失败。');
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, []);
+  const screenRefresh = useScreenRefresh(() => load(false));
   useEffect(() => {
     const task = setTimeout(() => void runInitialRequest(load), 0);
     return () => clearTimeout(task);
@@ -197,7 +200,9 @@ export function DataSourceListScreen({
         title="数据源"
       />
       <ScrollView
+        alwaysBounceVertical
         contentContainerStyle={styles.content}
+        refreshControl={<ScreenRefreshControl {...screenRefresh} />}
         showsVerticalScrollIndicator={false}
         testID="data-source-list-scroll"
       >

@@ -16,6 +16,8 @@ import { settingsApi } from '@/shared/api/settingsApi';
 import { WorkspaceRequestError } from '@/shared/api/request';
 import { SettingsScreen } from '../SettingsScreen';
 
+jest.mock('expo-router', () => ({ useFocusEffect: jest.fn() }));
+
 jest.mock('@/shared/api/settingsApi', () => ({
   settingsApi: {
     transport: jest.fn(),

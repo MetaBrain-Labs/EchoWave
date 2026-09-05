@@ -177,12 +177,24 @@ export class AudioAutomationRepository {
         }
       } else {
         const assets = await client.query(
-          `SELECT id, title, runtime_mode, source_state, source_recovery_state,
-                  acoustic_emotion_ready
-           FROM ${this.table('audio_files')}
-           WHERE tenant_id = $1 AND data_source_id = $2 AND id = ANY($3::uuid[])
-             AND deleted_at IS NULL AND upload_status = 'ready'
-           ORDER BY created_at`,
+          `SELECT af.id, af.title, af.runtime_mode, af.source_state, af.source_recovery_state,
+                  coalesce(latest.acoustic_emotion_ready, false) AS acoustic_emotion_ready
+           FROM ${this.table('audio_files')} af
+           LEFT JOIN LATERAL (
+             SELECT CASE WHEN active_emotion.status = 'ready' OR bundled.status = 'ready'
+                      THEN true ELSE false END AS acoustic_emotion_ready
+             FROM ${this.table('audio_analysis_revisions')} ar
+             LEFT JOIN ${this.table('audio_post_analysis_jobs')} bundled
+               ON bundled.tenant_id = ar.tenant_id AND bundled.id = ar.bundled_emotion_job_id
+             LEFT JOIN ${this.table('audio_post_analysis_jobs')} active_emotion
+               ON active_emotion.tenant_id = ar.tenant_id
+              AND active_emotion.id = ar.active_emotion_job_id
+             WHERE ar.tenant_id = af.tenant_id AND ar.audio_file_id = af.id
+             ORDER BY ar.revision_no DESC LIMIT 1
+           ) latest ON true
+           WHERE af.tenant_id = $1 AND af.data_source_id = $2 AND af.id = ANY($3::uuid[])
+             AND af.deleted_at IS NULL AND af.upload_status = 'ready'
+           ORDER BY af.created_at`,
           [this.tenantId, input.dataSourceId, input.audioFileIds],
         );
         if (assets.rowCount !== input.audioFileIds.length) {
@@ -964,7 +976,7 @@ export class AudioAutomationRepository {
     );
     await client.query(
       `UPDATE ${this.table('audio_business_analysis_jobs')} job
-       SET cancel_requested = true, updated_at = now()
+       SET cancel_requested = true
        WHERE job.tenant_id = $1 AND job.status = 'running'
          AND EXISTS (
            SELECT 1 FROM ${this.table('audio_analysis_tasks')} task

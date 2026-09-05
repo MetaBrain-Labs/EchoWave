@@ -17,7 +17,7 @@ import type {
 } from '@echowave/contracts';
 import * as DocumentPicker from 'expo-document-picker';
 import { useRouter, type Href } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -42,7 +42,9 @@ import {
 } from '@/shared/api/dataSourcesApi';
 import { getGroupSettings } from '@/shared/api/groupsApi';
 import { getAudioRuntime } from '@/shared/api/audioRuntimeApi';
+import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { colors, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
+import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
 
 const pipeline = {
@@ -71,6 +73,7 @@ export function AnalysisBatchCreateScreen() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [recentBatches, setRecentBatches] = useState<AudioAnalysisBatch[]>([]);
+  const [refreshError, setRefreshError] = useState('');
 
   useEffect(() => {
     void Promise.all([listDataSources(), getAudioRuntime(), listAudioAnalysisBatches()])
@@ -109,6 +112,62 @@ export function AnalysisBatchCreateScreen() {
       )
       .catch(() => setPreview('配置预览暂时不可用，服务端仍会在入队时冻结。'));
   }, [groupId]);
+
+  const refreshPage = useCallback(async () => {
+    try {
+      const [sourceResponse, runtime, batches] = await Promise.all([
+        listDataSources(),
+        getAudioRuntime(),
+        listAudioAnalysisBatches(),
+      ]);
+      const nextSourceId = sourceResponse.items.some((item) => item.id === sourceId)
+        ? sourceId
+        : (sourceResponse.items[0]?.id ?? '');
+      setSources(sourceResponse.items);
+      setSourceId(nextSourceId);
+      setRuntimeMode(runtime.mode);
+      setRecentBatches(batches.items);
+
+      if (!nextSourceId) {
+        setGroups([]);
+        setGroupId('');
+        setAudioFiles([]);
+        setSelectedAudioIds([]);
+        setPreview('选择分组后显示冻结配置');
+        setRefreshError('');
+        return;
+      }
+
+      const [groupResponse, audioResponse] = await Promise.all([
+        listDataSourceGroups(nextSourceId),
+        listDataSourceAudioFiles(nextSourceId),
+      ]);
+      const nextGroupId = groupResponse.items.some((item) => item.id === groupId)
+        ? groupId
+        : (groupResponse.items[0]?.id ?? '');
+      setGroups(groupResponse.items);
+      setGroupId(nextGroupId);
+      setAudioFiles(audioResponse.items);
+      setSelectedAudioIds((current) =>
+        current.filter((id) => {
+          const audio = audioResponse.items.find((item) => item.id === id);
+          return audio ? existingAudioDisabledReason(audio, runtime.mode) === null : false;
+        }),
+      );
+      if (nextGroupId) {
+        const settings = await getGroupSettings(nextGroupId);
+        setPreview(
+          `重点：${settings.analysis.contentFocus}\n语气：${settings.analysis.tone}\n标签：${settings.analysis.customTags.join('、') || '无'}`,
+        );
+      } else {
+        setPreview('选择分组后显示冻结配置');
+      }
+      setRefreshError('');
+    } catch (error) {
+      setRefreshError(error instanceof Error ? error.message : '刷新失败，请稍后重试。');
+    }
+  }, [groupId, sourceId]);
+  const screenRefresh = useScreenRefresh(refreshPage);
 
   const selectedCount = sourceKind === 'uploads' ? assets.length : selectedAudioIds.length;
   const incompatibility = useMemo(
@@ -191,7 +250,17 @@ export function AnalysisBatchCreateScreen() {
         subtitle="上传后由服务器自动完成转写、情绪、角色和业务分析"
         title="一键分析"
       />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        alwaysBounceVertical
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={<ScreenRefreshControl {...screenRefresh} />}
+      >
+        {refreshError ? (
+          <Text accessibilityRole="alert" style={styles.danger}>
+            刷新失败：{refreshError}
+          </Text>
+        ) : null}
         <Section title="1. 数据源">
           <ChoiceRow
             items={sources.map((item) => ({ id: item.id, label: item.name }))}

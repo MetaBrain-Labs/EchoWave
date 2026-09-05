@@ -33,8 +33,10 @@ import {
 import { remountAudioSource } from '@/shared/api/audioAnalysisApi';
 import { streamAudioAnalysisBatch } from '@/shared/api/liveUpdateStreams';
 import { backOrReplace } from '@/shared/navigation/routeBack';
+import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { colors, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 
 const statusLabels: Record<AudioAnalysisTask['status'], string> = {
   awaiting_upload: '等待上传',
@@ -72,9 +74,17 @@ export function AnalysisBatchDetailScreen({
   const [busy, setBusy] = useState(false);
 
   async function refresh() {
-    setBatch(await getAudioAnalysisBatch(batchId));
-    setError('');
+    try {
+      setBatch(await getAudioAnalysisBatch(batchId));
+      setError('');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '加载失败。');
+      throw reason;
+    }
   }
+  const screenRefresh = useScreenRefresh(async () => {
+    await refresh().catch(() => undefined);
+  });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -133,14 +143,27 @@ export function AnalysisBatchDetailScreen({
           <ActivityIndicator color={colors.ink} />
         </View>
       ) : null}
-      {error ? (
-        <View accessibilityRole="alert" style={styles.center}>
+      {error && !batch ? (
+        <ScrollView
+          alwaysBounceVertical
+          contentContainerStyle={styles.center}
+          refreshControl={<ScreenRefreshControl {...screenRefresh} />}
+        >
           <Text style={styles.danger}>{error}</Text>
           <Action label="重试" onPress={() => void refresh()} />
-        </View>
+        </ScrollView>
       ) : null}
       {batch ? (
-        <ScrollView contentContainerStyle={styles.content}>
+        <ScrollView
+          alwaysBounceVertical
+          contentContainerStyle={styles.content}
+          refreshControl={<ScreenRefreshControl {...screenRefresh} />}
+        >
+          {error ? (
+            <Text accessibilityRole="alert" style={styles.danger}>
+              {error}
+            </Text>
+          ) : null}
           <View style={styles.summary}>
             <Text style={styles.title}>共 {batch.counts.total} 项</Text>
             <Text style={styles.summaryText}>

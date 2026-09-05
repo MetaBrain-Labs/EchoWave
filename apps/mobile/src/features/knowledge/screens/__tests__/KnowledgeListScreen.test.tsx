@@ -17,6 +17,7 @@ import { createKnowledgeBase, listKnowledgeBases } from '../../apiClient';
 import { knowledge, knowledgeSummary } from '../../testing/fixtures';
 import { colors, radii, spacing } from '@/shared/theme/tokens';
 
+jest.mock('expo-router', () => ({ useFocusEffect: jest.fn() }));
 jest.mock('../../apiClient');
 
 describe('KnowledgeListScreen', () => {

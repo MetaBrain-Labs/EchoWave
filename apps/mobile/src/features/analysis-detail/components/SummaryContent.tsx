@@ -11,9 +11,18 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { colors, fontFamilies, spacing, textColors, typography } from '@/shared/theme/tokens';
+import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import type { AnalysisDetailView } from '../model';
 
-export function SummaryContent({ detail }: { detail: AnalysisDetailView }) {
+export function SummaryContent({
+  detail,
+  onRefresh = () => undefined,
+  refreshing = false,
+}: {
+  detail: AnalysisDetailView;
+  onRefresh?: () => void;
+  refreshing?: boolean;
+}) {
   const businessResult = detail.businessAnalysis.result;
   const knowledgeStatusLabel = businessResult
     ? businessResult.knowledgeStatus === 'used'
@@ -24,7 +33,9 @@ export function SummaryContent({ detail }: { detail: AnalysisDetailView }) {
     : null;
   return (
     <ScrollView
+      alwaysBounceVertical
       contentContainerStyle={styles.summaryContent}
+      refreshControl={<ScreenRefreshControl onRefresh={onRefresh} refreshing={refreshing} />}
       showsVerticalScrollIndicator={false}
       style={styles.pageScroll}
     >

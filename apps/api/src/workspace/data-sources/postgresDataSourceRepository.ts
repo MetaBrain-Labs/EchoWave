@@ -358,6 +358,7 @@ export class PostgresDataSourceRepository implements DataSourceRepository {
               latest.network_attempt AS analysis_network_attempt,
               latest.structure_attempt AS analysis_structure_attempt,
               latest.processing_updated_at AS analysis_processing_updated_at,
+              coalesce(latest.acoustic_emotion_ready, false) AS acoustic_emotion_ready,
               af.error_code AS audio_error_code,
               af.error_message AS audio_error_message,
               af.error_retryable AS audio_error_retryable

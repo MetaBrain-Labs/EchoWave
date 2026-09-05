@@ -36,6 +36,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
 import { useGroupAssociationEditor } from '@/shared/hooks/useGroupAssociationEditor';
+import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useAudioPlayback } from '@/shared/audio/useAudioPlayback';
 import {
   colors,
@@ -48,6 +49,7 @@ import {
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { PageTabs } from '@/shared/ui/PageTabs';
 import { SearchSheet } from '@/shared/ui/SearchSheet';
+import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import {
   getDataSource,
@@ -220,6 +222,20 @@ export function DataSourceDetailScreen({
     const task = setTimeout(() => void runInitialRequest(load), 0);
     return () => clearTimeout(task);
   }, [load, runInitialRequest]);
+
+  const refreshPage = useCallback(async () => {
+    try {
+      await Promise.all([
+        load(false),
+        getAudioTranscriptionCapabilities().then(setTranscriptionCapabilities),
+        getAudioRuntime().then((runtime) => setAudioRuntimeMode(runtime.mode)),
+      ]);
+    } catch (reason) {
+      setProgressRefreshError(reason instanceof Error ? reason.message : '刷新数据源失败。');
+      throw reason;
+    }
+  }, [load]);
+  const screenRefresh = useScreenRefresh(refreshPage);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
@@ -444,7 +460,11 @@ export function DataSourceDetailScreen({
     return (
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
         <PageHeader onBack={onBack} onMore={() => showComingSoon('更多操作')} title="数据源详情" />
-        <View style={styles.emptyState}>
+        <ScrollView
+          alwaysBounceVertical
+          contentContainerStyle={styles.emptyState}
+          refreshControl={<ScreenRefreshControl {...screenRefresh} />}
+        >
           <Ionicons color={colors.secondary} name="git-network-outline" size={40} />
           <Text style={styles.emptyTitle}>
             {error.includes('不存在') ? '未找到数据源' : '数据源加载失败'}
@@ -459,7 +479,7 @@ export function DataSourceDetailScreen({
           >
             <Text style={styles.retryText}>重新加载</Text>
           </Pressable>
-        </View>
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -766,7 +786,9 @@ export function DataSourceDetailScreen({
         testID="data-source-detail-pager"
       >
         <ScrollView
+          alwaysBounceVertical
           contentContainerStyle={styles.pageContent}
+          refreshControl={<ScreenRefreshControl {...screenRefresh} />}
           showsVerticalScrollIndicator={false}
           stickyHeaderIndices={[1]}
           style={[styles.page, { width: pageWidth }]}
@@ -795,7 +817,9 @@ export function DataSourceDetailScreen({
         </ScrollView>
 
         <ScrollView
+          alwaysBounceVertical
           contentContainerStyle={styles.pageContent}
+          refreshControl={<ScreenRefreshControl {...screenRefresh} />}
           showsVerticalScrollIndicator={false}
           stickyHeaderIndices={[0]}
           style={[styles.page, { width: pageWidth }]}
@@ -831,7 +855,9 @@ export function DataSourceDetailScreen({
         </ScrollView>
 
         <ScrollView
+          alwaysBounceVertical
           contentContainerStyle={styles.pageContent}
+          refreshControl={<ScreenRefreshControl {...screenRefresh} />}
           showsVerticalScrollIndicator={false}
           stickyHeaderIndices={[0]}
           style={[styles.page, { width: pageWidth }]}
@@ -868,7 +894,9 @@ export function DataSourceDetailScreen({
         </ScrollView>
 
         <ScrollView
+          alwaysBounceVertical
           contentContainerStyle={styles.pageContent}
+          refreshControl={<ScreenRefreshControl {...screenRefresh} />}
           showsVerticalScrollIndicator={false}
           stickyHeaderIndices={[0]}
           style={[styles.page, { width: pageWidth }]}

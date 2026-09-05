@@ -39,10 +39,13 @@ export function buildBusinessAnalysisWindows<T extends BusinessAnalysisWindowSeg
   let chars = 0;
   const flush = () => {
     if (current.length === 0) return;
+    // 确认片段可能因分片完成顺序而不是按时间排序，窗口范围必须覆盖所有片段。
+    const startMs = Math.min(...current.map((segment) => segment.startMs));
+    const endMs = Math.max(...current.map((segment) => segment.endMs));
     windows.push({
       index: windows.length,
-      startMs: current[0]!.startMs,
-      endMs: current[current.length - 1]!.endMs,
+      startMs,
+      endMs,
       segments: current,
     });
     current = [];

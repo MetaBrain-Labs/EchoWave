@@ -13,6 +13,7 @@ import * as automationApi from '@/shared/api/audioAutomationApi';
 const mockPush = jest.fn();
 
 jest.mock('expo-router', () => ({
+  useFocusEffect: jest.fn(),
   useRouter: () => ({ push: mockPush }),
 }));
 jest.mock('@/shared/api/audioAutomationApi', () => ({

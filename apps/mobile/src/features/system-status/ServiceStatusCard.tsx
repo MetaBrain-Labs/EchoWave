@@ -11,7 +11,7 @@
  * - 状态仅用于当前卡片生命周期。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
@@ -31,8 +31,16 @@ type ServiceState =
   | { phase: 'online'; message: string }
   | { phase: 'offline'; message: string };
 
+/** 服务状态卡暴露给宿主页面复用的刷新句柄。 */
+export type ServiceStatusCardHandle = {
+  refresh: () => Promise<void>;
+};
+
 /** 执行健康检查并渲染加载、在线、失败、重试和修改服务器操作。 */
-export function ServiceStatusCard({ onChangeServer }: { onChangeServer: () => void }) {
+export const ServiceStatusCard = forwardRef<
+  ServiceStatusCardHandle,
+  { onChangeServer: () => void }
+>(function ServiceStatusCard({ onChangeServer }, ref) {
   const { serverUrl } = useServerConnection();
   const [state, setState] = useState<ServiceState>({ phase: 'loading' });
   const requestVersion = useRef(0);
@@ -40,6 +48,11 @@ export function ServiceStatusCard({ onChangeServer }: { onChangeServer: () => vo
   const refresh = useCallback(async () => {
     const version = ++requestVersion.current;
     setState({ phase: 'loading' });
+
+    if (!serverUrl) {
+      setState({ phase: 'offline', message: '请先配置 EchoWave API 地址。' });
+      return;
+    }
 
     try {
       const response = await fetchServerHealth(serverUrl!);
@@ -58,6 +71,7 @@ export function ServiceStatusCard({ onChangeServer }: { onChangeServer: () => vo
       }
     }
   }, [serverUrl]);
+  useImperativeHandle(ref, () => ({ refresh }), [refresh]);
 
   useEffect(() => {
     const version = ++requestVersion.current;
@@ -158,7 +172,7 @@ export function ServiceStatusCard({ onChangeServer }: { onChangeServer: () => vo
       </Pressable>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   card: {

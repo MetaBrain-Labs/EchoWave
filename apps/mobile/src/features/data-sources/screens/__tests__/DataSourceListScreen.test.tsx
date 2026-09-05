@@ -17,6 +17,7 @@ import * as workspaceApi from '@/shared/api/dataSourcesApi';
 import { colors, radii, spacing } from '@/shared/theme/tokens';
 import { dataSourceDetailFixture, sourceFixtures } from '@/test/workspaceFixtures';
 
+jest.mock('expo-router', () => ({ useFocusEffect: jest.fn() }));
 jest.mock('@/shared/api/dataSourcesApi', () => ({
   createDataSource: jest.fn(),
   listDataSources: jest.fn(),

@@ -6,7 +6,7 @@
  * Responsibilities:
  * - 覆盖设置导航、标签规范化和关联集合替换交互。
  */
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 
 import { GroupSettingsScreen } from '../GroupSettingsScreen';
@@ -15,6 +15,7 @@ import * as dataSourcesApi from '@/shared/api/dataSourcesApi';
 import * as knowledgeBasesApi from '@/shared/api/knowledgeBasesApi';
 import { groupFixture, knowledgeFixtures, sourceFixtures } from '@/test/workspaceFixtures';
 
+jest.mock('expo-router', () => ({ useFocusEffect: jest.fn() }));
 jest.mock('@/shared/api/groupsApi', () => ({
   archiveGroup: jest.fn(),
   getGroupSettings: jest.fn(),
@@ -114,5 +115,28 @@ describe('GroupSettingsScreen', () => {
         ids: [knowledgeFixtures[0].id, knowledgeFixtures[1].id],
       }),
     );
+  });
+
+  it('keeps unsaved form values while refreshing server-backed options', async () => {
+    const screen = await renderSettings();
+    fireEvent.changeText(screen.getByLabelText('分组名称'), '未保存草稿');
+    jest.mocked(workspaceApi.getGroupSettings).mockResolvedValue({
+      groupId: groupFixture.id,
+      name: '服务器新名称',
+      analysis: {
+        timing: 'manual',
+        contentFocus: '服务器新侧重',
+        tone: '服务器新语气',
+        customTags: [],
+      },
+      updatedAt: '2026-08-28T08:02:00.000Z',
+    });
+
+    await act(async () => {
+      screen.getByTestId('group-settings-scroll').props.refreshControl.props.onRefresh();
+    });
+
+    expect(screen.getByLabelText('分组名称').props.value).toBe('未保存草稿');
+    expect(workspaceApi.listKnowledgeBases).toHaveBeenCalledTimes(2);
   });
 });

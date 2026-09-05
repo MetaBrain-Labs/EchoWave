@@ -23,6 +23,7 @@ import {
   sourceFixtures,
 } from '@/test/workspaceFixtures';
 
+jest.mock('expo-router', () => ({ useFocusEffect: jest.fn() }));
 jest.mock('@/shared/api/groupsApi', () => ({
   createGroup: jest.fn(),
   listGroups: jest.fn(),

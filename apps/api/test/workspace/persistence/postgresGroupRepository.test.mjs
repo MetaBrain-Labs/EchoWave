@@ -65,6 +65,7 @@ describe('PostgresGroupRepository group audio', () => {
                 outputLength: null,
                 outputSha256: null,
               },
+              acoustic_emotion_ready: true,
             },
             {
               id: '55555555-5555-4555-8555-555555555555',
@@ -86,6 +87,7 @@ describe('PostgresGroupRepository group audio', () => {
               analysis_network_attempt: 1,
               analysis_structure_attempt: 3,
               analysis_processing_updated_at: new Date('2026-08-24T15:00:00.000Z'),
+              acoustic_emotion_ready: false,
             },
           ],
         };
@@ -99,10 +101,12 @@ describe('PostgresGroupRepository group audio', () => {
     assert.equal(response.items[0].status.stage, 'transcription');
     assert.equal(response.items[0].status.details.category, 'preprocessing');
     assert.equal(response.items[0].status.details.issues[0].code, 'UNSUPPORTED_CODEC');
+    assert.equal(response.items[0].acousticEmotionReady, true);
     assert.equal(response.items[1].status.kind, 'transcribing');
     assert.equal(response.items[1].status.activity.stage, 'correcting');
     assert.equal(response.items[1].status.activity.chunkIndex, 2);
     assert.equal(response.items[1].status.activity.structureAttempt, 3);
+    assert.equal(response.items[1].acousticEmotionReady, false);
     assert.match(calls[1].sql, /error_details/);
     assert.match(calls[0].sql, /UNION/);
     assert.match(calls[0].sql, /data_sources/);
@@ -110,6 +114,10 @@ describe('PostgresGroupRepository group audio', () => {
     assert.match(calls[1].sql, /group_audio_links/);
     assert.match(calls[1].sql, /group_data_sources/);
     assert.match(calls[1].sql, /ds\.deleted_at IS NULL/);
+    assert.match(
+      calls[1].sql,
+      /coalesce\(latest\.acoustic_emotion_ready, false\) AS acoustic_emotion_ready/,
+    );
     assert.deepEqual(calls[1].values, [tenantId, groupId]);
   });
 });

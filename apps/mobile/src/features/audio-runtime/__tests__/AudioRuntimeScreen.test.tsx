@@ -3,11 +3,12 @@
  *
  * 验证公开查看、不可用模式门禁和管理员口令保存流程。
  */
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 import { AudioRuntimeScreen } from '../AudioRuntimeScreen';
 import * as runtimeApi from '@/shared/api/audioRuntimeApi';
 
+jest.mock('expo-router', () => ({ useFocusEffect: jest.fn() }));
 jest.mock('@/shared/api/audioRuntimeApi', () => ({
   getAudioRuntime: jest.fn(),
   updateAudioRuntime: jest.fn(),
@@ -66,5 +67,21 @@ describe('AudioRuntimeScreen', () => {
     const objectMode = await screen.findByRole('radio', { name: '对象存储模式' });
     expect(objectMode.props.accessibilityState.disabled).toBe(true);
     expect(screen.getByText('尚未绑定权威音频对象存储。')).toBeTruthy();
+  });
+
+  it('refreshes server availability without overwriting a dirty mode draft', async () => {
+    const screen = render(<AudioRuntimeScreen onBack={jest.fn()} />);
+    const objectMode = await screen.findByRole('radio', { name: '对象存储模式' });
+    fireEvent.press(objectMode);
+    jest.mocked(runtimeApi.getAudioRuntime).mockResolvedValue({ ...overview, revision: 4 });
+
+    await act(async () => {
+      screen.getByTestId('audio-runtime-scroll').props.refreshControl.props.onRefresh();
+    });
+
+    expect(
+      screen.getByRole('radio', { name: '对象存储模式' }).props.accessibilityState.checked,
+    ).toBe(true);
+    expect(runtimeApi.getAudioRuntime).toHaveBeenCalledTimes(2);
   });
 });

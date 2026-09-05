@@ -36,9 +36,11 @@ import type {
 import { linkKnowledgeBaseGroups, listKnowledgeBaseGroups } from '@/shared/api/knowledgeBasesApi';
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
 import { useGroupAssociationEditor } from '@/shared/hooks/useGroupAssociationEditor';
+import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { PageTabs } from '@/shared/ui/PageTabs';
 import { SearchSheet } from '@/shared/ui/SearchSheet';
+import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import {
   colors,
@@ -328,6 +330,7 @@ export function KnowledgeDetailScreen({
     const task = setTimeout(() => void runInitialRequest(load), 0);
     return () => clearTimeout(task);
   }, [load, runInitialRequest]);
+  const screenRefresh = useScreenRefresh(() => load(false));
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
@@ -469,10 +472,16 @@ export function KnowledgeDetailScreen({
     return (
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
         <PageHeader onBack={onBack} onMore={() => showComingSoon('更多操作')} title="知识库详情" />
-        <EmptyState
-          description="该知识库可能已被移除，请返回知识库列表。"
-          title={error || '未找到知识库'}
-        />
+        <ScrollView
+          alwaysBounceVertical
+          contentContainerStyle={styles.emptyRefreshContent}
+          refreshControl={<ScreenRefreshControl {...screenRefresh} />}
+        >
+          <EmptyState
+            description="该知识库可能已被移除，请返回知识库列表。"
+            title={error || '未找到知识库'}
+          />
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -625,7 +634,9 @@ export function KnowledgeDetailScreen({
         testID="knowledge-detail-pager"
       >
         <ScrollView
+          alwaysBounceVertical
           contentContainerStyle={styles.pageContent}
+          refreshControl={<ScreenRefreshControl {...screenRefresh} />}
           showsVerticalScrollIndicator={false}
           stickyHeaderIndices={[1]}
           style={[styles.page, { width: pageWidth }]}
@@ -711,8 +722,10 @@ export function KnowledgeDetailScreen({
         </ScrollView>
 
         <ScrollView
+          alwaysBounceVertical
           contentContainerStyle={styles.pageContent}
           keyboardShouldPersistTaps="handled"
+          refreshControl={<ScreenRefreshControl {...screenRefresh} />}
           showsVerticalScrollIndicator={false}
           stickyHeaderIndices={[0]}
           style={[styles.page, { width: pageWidth }]}
@@ -746,7 +759,9 @@ export function KnowledgeDetailScreen({
         </ScrollView>
 
         <ScrollView
+          alwaysBounceVertical
           contentContainerStyle={styles.pageContent}
+          refreshControl={<ScreenRefreshControl {...screenRefresh} />}
           showsVerticalScrollIndicator={false}
           stickyHeaderIndices={[0]}
           style={[styles.page, { width: pageWidth }]}
@@ -773,6 +788,7 @@ export function KnowledgeDetailScreen({
 
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.card, flex: 1 },
+  emptyRefreshContent: { flexGrow: 1 },
   loading: { marginTop: spacing.xl },
   pager: { flex: 1 },
   page: { flex: 1 },

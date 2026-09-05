@@ -10,18 +10,23 @@
  * Notes:
  * - 服务状态与路由使用轻量替身，避免真实网络和导航副作用。
  */
-import { fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 import { Pressable as MockPressable, StyleSheet, Text as MockText } from 'react-native';
 
 import CreateScreen from '../create';
 import MoreScreen from '../more';
 import AnalysisRoute from '../../analysis';
 import { colors, radii, spacing } from '@/shared/theme/tokens';
+import { getAudioRuntime } from '@/shared/api/audioRuntimeApi';
 
 const mockPush = jest.fn();
 const mockBack = jest.fn();
+let focusCallback: (() => void) | undefined;
 
 jest.mock('expo-router', () => ({
+  useFocusEffect: (callback: () => void) => {
+    focusCallback = callback;
+  },
   useRouter: () => ({ back: mockBack, push: mockPush }),
 }));
 jest.mock('@/features/analysis-runs/AnalysisRunsScreen', () => ({
@@ -49,6 +54,7 @@ jest.mock('@/shared/api/groupsApi', () => ({ getGroupSettings: jest.fn() }));
 describe('Top-level tab screens', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    focusCallback = undefined;
   });
 
   it('keeps the More header fixed and uses four unified navigation cards', () => {
@@ -100,5 +106,17 @@ describe('Top-level tab screens', () => {
     expect(screen.getByRole('header', { name: '一键分析' })).toBeTruthy();
     expect(screen.getByText('上传后由服务器自动完成转写、情绪、角色和业务分析')).toBeTruthy();
     expect(await screen.findByText('1. 数据源')).toBeTruthy();
+  });
+
+  it('refreshes the one-click analysis runtime mode when the tab regains focus', async () => {
+    jest.mocked(getAudioRuntime).mockResolvedValueOnce({ mode: 'object_storage' } as never);
+    const screen = render(<CreateScreen />);
+
+    expect(await screen.findByText(/本批次冻结模式：object_storage/)).toBeTruthy();
+    await act(async () => focusCallback?.());
+    jest.mocked(getAudioRuntime).mockResolvedValue({ mode: 'hybrid' } as never);
+    await act(async () => focusCallback?.());
+
+    expect(await screen.findByText(/本批次冻结模式：hybrid/)).toBeTruthy();
   });
 });

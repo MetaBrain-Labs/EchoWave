@@ -24,6 +24,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getAudioRuntime, updateAudioRuntime } from '@/shared/api/audioRuntimeApi';
 import { WorkspaceRequestError } from '@/shared/api/request';
+import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import {
   colors,
   fontFamilies,
@@ -33,6 +34,7 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 
 const modeCopy: Record<
   AudioRuntimeMode,
@@ -70,12 +72,16 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
+  const [dirty, setDirty] = useState(false);
+  const [baseRevision, setBaseRevision] = useState<number>();
 
   const applyOverview = (value: AudioRuntimeOverview) => {
     setOverview(value);
+    setBaseRevision(value.revision);
     setSelected(value.mode);
     setOriginalDays(value.retention.originalRetentionDays?.toString() ?? '');
     setIntermediateHours(value.retention.intermediateRetentionHours.toString());
+    setDirty(false);
   };
 
   useEffect(() => {
@@ -85,14 +91,30 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
       .finally(() => setLoading(false));
   }, []);
 
+  const refreshPage = async () => {
+    try {
+      const value = await getAudioRuntime();
+      setOverview(value);
+      if (!dirty) {
+        applyOverview(value);
+      } else if (!value.modes.find((item) => item.mode === selected)?.available) {
+        setSelected(value.mode);
+      }
+      setError(undefined);
+    } catch (reason) {
+      setError(errorText(reason));
+    }
+  };
+  const screenRefresh = useScreenRefresh(refreshPage);
+
   const save = async () => {
-    if (!overview || !token.trim()) return;
+    if (!overview || !baseRevision || !token.trim()) return;
     setSaving(true);
     setError(undefined);
     try {
       const updated = await updateAudioRuntime(token.trim(), {
         mode: selected,
-        expectedRevision: overview.revision,
+        expectedRevision: baseRevision,
         retention: {
           originalRetentionDays: originalDays.trim() ? Number(originalDays) : null,
           intermediateRetentionHours: Number(intermediateHours),
@@ -110,7 +132,13 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
       <PageHeader onBack={onBack} onMore={() => undefined} title="运行模式" />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        alwaysBounceVertical
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={<ScreenRefreshControl {...screenRefresh} />}
+        testID="audio-runtime-scroll"
+      >
         <View style={styles.notice}>
           <Ionicons color={colors.secondary} name="information-circle-outline" size={22} />
           <Text style={styles.noticeText}>
@@ -129,7 +157,10 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
                   accessibilityState={{ checked: active, disabled: !availability.available }}
                   disabled={!availability.available || saving}
                   key={availability.mode}
-                  onPress={() => setSelected(availability.mode)}
+                  onPress={() => {
+                    setSelected(availability.mode);
+                    setDirty(true);
+                  }}
                   style={[
                     styles.modeCard,
                     active && styles.selectedCard,
@@ -160,7 +191,10 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
             <TextInput
               accessibilityLabel="原音频保留天数"
               inputMode="numeric"
-              onChangeText={setOriginalDays}
+              onChangeText={(value) => {
+                setOriginalDays(value);
+                setDirty(true);
+              }}
               style={styles.input}
               value={originalDays}
             />
@@ -168,7 +202,10 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
             <TextInput
               accessibilityLabel="中间文件保留小时数"
               inputMode="numeric"
-              onChangeText={setIntermediateHours}
+              onChangeText={(value) => {
+                setIntermediateHours(value);
+                setDirty(true);
+              }}
               style={styles.input}
               value={intermediateHours}
             />
