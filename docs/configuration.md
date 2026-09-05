@@ -1,17 +1,18 @@
 # 配置与 Credential 指南
 
-EchoWave 将配置分成三个边界：`apps/api/.env` 保存启动级配置，PostgreSQL 保存租户级普通配置，Credential Provider 保存密钥。移动端入口位于“更多 → AI 配置”。
+EchoWave 将服务端配置分成三个边界：`apps/api/.env` 保存启动级配置，PostgreSQL 保存租户级普通配置，Credential Provider 保存密钥。移动端还单独保存当前服务器根地址。AI 配置入口位于“更多 → AI 配置”，服务器地址位于“更多 → 服务状态”。
 
 ## 启动级 `.env`
 
-从 `apps/api/.env.example` 创建本地 `.env`。除 HTTP、PostgreSQL、Redis、目录、FFmpeg、Worker 和诊断字段外，下列安全字段必须显式配置：
+从 `apps/api/.env.example` 创建本地 `.env`。API 只读取这一个文件，不合并启动进程的系统环境变量。除 HTTP、PostgreSQL、Redis、目录、FFmpeg、Worker 和诊断字段外，下列安全字段必须显式配置：
 
 - `CREDENTIAL_MASTER_KEY`：恰好 32 个随机字节的规范 Base64，用于 AES-256-GCM。
 - `CONFIGURATION_ADMIN_TOKEN`：至少 32 字符的随机管理口令。
 - `LOCAL_CREDENTIALS_FILE`：服务器本地 YAML 的显式路径；不使用隐式默认路径。
 - `TRUSTED_PROXY_CIDRS`：可覆写 `X-Forwarded-Proto` 的反向代理 IPv4/IPv6 CIDR，多个值用逗号分隔；没有可信代理时显式设置为空字符串。
+- `PUSH_NOTIFICATIONS_ENABLED`：必须显式为 `true` 或 `false`；Self-hosted 默认使用 `false`。
 
-供应商 URL、Bucket、模型、Thinking、通知模式、回调 URL 和能力绑定不再属于启动级 `.env`。
+供应商 URL、Bucket、模型、Thinking、DashScope 通知模式、回调 URL 和能力绑定不再属于启动级 `.env`。只有启用了 Expo Push access-token 安全的项目才设置可选 `EXPO_PUSH_ACCESS_TOKEN`；它是服务端 Secret，不能使用 `EXPO_PUBLIC_` 前缀。
 
 ## Local Credential Provider
 
@@ -19,7 +20,7 @@ EchoWave 将配置分成三个边界：`apps/api/.env` 保存启动级配置，P
 
 - Linux/macOS：`~/.echowave/credentials.yaml`
 - Windows：`C:\Users\<user>\.echowave\credentials.yaml`
-- Docker：`/app/data/secrets/credentials.yaml`
+- Docker：`/app/.data/secrets/credentials.yaml`
 
 文件格式固定为：
 
@@ -54,10 +55,35 @@ Windows 应通过文件“属性 → 安全”仅授予当前用户或 API 服�
 services:
   api:
     volumes:
-      - ./data/secrets/credentials.yaml:/app/data/secrets/credentials.yaml:ro
+      - ./deploy/self-hosted/.data/secrets:/app/.data/secrets:ro
 ```
 
 Provider 会在文件版本变化时完整重读，只有成功校验后才原子替换内存快照。无效更新会保留本进程最后一次有效快照供已创建任务继续使用，但阻止新连接或新能力绑定。Local alias 是任务版本的一部分；轮换时新增 alias、切换数据库连接引用，确认旧任务结束后再删除旧 alias，不要原地覆盖。
+
+## 移动端服务器地址
+
+`apps/mobile/.env` 由 Expo CLI 加载，客户端可见变量必须使用 `EXPO_PUBLIC_` 前缀，且会作为公开内容进入 bundle。`EXPO_PUBLIC_API_URL` 仅是 Development Build 或 Expo Go 尚无已保存地址时的开发默认值，不得包含密码或令牌。
+
+App 将通过 `GET /health` 验证的规范化服务器根地址写入 AsyncStorage。已保存地址优先；REST、上传、SSE、音频媒体和推送设备登记都在请求发生时读取同一个运行时地址。修改服务器会终止旧连接、清空页面级状态并重新挂载业务导航。
+
+`production-apk` 和 `production` profiles 设置 `EXPO_PUBLIC_REQUIRE_SERVER_SELECTION=true`，因此即使构建环境意外提供了 `EXPO_PUBLIC_API_URL`，Production Build 也会忽略它并要求首次手动连接。
+
+地址只接受没有凭据、query、fragment 或业务路径的 HTTP/HTTPS origin。HTTP 仅允许 localhost、私有 IPv4、回环/链路本地 IPv6、共享地址空间和 `.local` 主机；公网地址必须使用 HTTPS。健康响应必须满足共享契约：
+
+```json
+{
+  "name": "EchoWave",
+  "service": "echowave-api",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "status": "ok",
+  "capabilities": {
+    "remotePush": false
+  }
+}
+```
+
+`remotePush=false` 时 App 不请求通知权限、不加载设备注册流程；`true` 时仅原生 Build 会继续注册 Expo Push Token。Expo Go 保持安全降级。
 
 ## 连接安全规则
 

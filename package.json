@@ -9,10 +9,11 @@
   },
   "scripts": {
     "build": "turbo run build",
-    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "check": "pnpm docs:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "dev": "turbo run dev",
     "dev:api": "pnpm --filter @echowave/contracts build && pnpm --filter @echowave/api dev",
     "dev:mobile": "pnpm --filter @echowave/contracts build && pnpm --filter @echowave/mobile dev",
+    "docs:check": "node --test --test-isolation=none scripts/check-docs.test.mjs && node scripts/check-docs.mjs",
     "lint": "turbo run lint",
     "start": "turbo run dev --ui=tui",
     "test": "turbo run test",

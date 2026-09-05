@@ -1,7 +1,7 @@
 /**
  * Expo 远程推送注册与分析批次深链。
  *
- * 原生 Development Build 获取 Token 后登记到固定租户 API；权限拒绝、Web 或缺少 EAS
+ * 原生 Development/Production Build 获取 Token 后登记到固定租户 API；权限拒绝、Web 或缺少 EAS
  * projectId 时静默降级为应用内 REST/SSE 状态。
  *
  * Responsibilities:
@@ -36,7 +36,7 @@ export function canUseRemotePush(): boolean {
   return !isRunningInExpoGo() && (Platform.OS === 'ios' || Platform.OS === 'android');
 }
 
-/** 仅在 Development Build 中延迟加载通知模块，避免 Expo Go Android 初始化失败。 */
+/** 仅在原生 Build 中延迟加载通知模块，避免 Expo Go Android 初始化失败。 */
 async function loadNotifications(): Promise<NotificationsModule | null> {
   if (!canUseRemotePush()) return null;
   notificationsModulePromise ??= import('expo-notifications');

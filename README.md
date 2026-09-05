@@ -1,230 +1,139 @@
 # EchoWave
 
-EchoWave 是一个面向音频分析、知识库关联和数据源连接场景的跨平台应用。当前里程碑提供 Expo 三端界面、Node.js API、基于 PostgreSQL/pgvector 的首期 RAG 知识库，以及通过 DashScope 官方接口完成的版本化音频转写；仍不包含真实鉴权。
+EchoWave 是一个面向音频分析、知识库检索和数据源管理的跨平台应用。仓库当前提供 Expo Android/iOS/Web 客户端、Node.js API、PostgreSQL/pgvector RAG、版本化音频转写与分析，以及可在可信局域网部署的 Docker Self-hosted Server。
+
+当前版本仍使用固定开发租户，没有真实账号、鉴权和公网部署所需的完整安全边界。仓库尚未发布可供普通用户下载的正式 APK；GitHub Releases + Self-hosted Server 是正式 APK 发布后的使用路径。
 
 ## 技术基线
 
-- Node.js 24
-- pnpm 11.3.0
-- Turborepo
+- Node.js 24、pnpm 11.3.0、Turborepo
 - Expo SDK 57、React Native 0.86、React 19
-- Hono、Zod、TypeScript、LangChain、LangGraph、DeepAgents
+- Hono、Zod、TypeScript、LangGraph/DeepAgents
 - PostgreSQL 15+、pgvector 0.8.0+
+- FFmpeg、Silero VAD、DashScope、DeepSeek
 
 ## 仓库结构
 
 ```text
-apps/
-  api/
-    src/
-      bootstrap/       服务启动、领域 runtime/seed 工厂与显式迁移入口
-      ai-observability/ AI 执行报告与安全诊断记录
-      ai-runtime/      跨领域模型调用与结构化输出基础能力
-      config/          分模块配置解析，env.ts 统一装配 .env
-      infrastructure/ PostgreSQL 连接设施
-      http/            Hono 组合入口、SSE 与领域路由
-      knowledge/       知识目录、检索、回答、入库与持久化
-      workspace/
-        groups/        分组 Service 与 PostgreSQL Repository
-        data-sources/  数据源 Service 与 PostgreSQL Repository
-        audio/         core、transcription、post-analysis、business-analysis、execution
-  mobile/
-    src/
-      app/              Expo Router 薄路由
-      shared/           分资源 API 客户端、Hook、导航、主题与通用 UI
-      features/         analysis-detail、data-sources、group、knowledge、system-status
-packages/
-  contracts/
-    src/                按领域拆分的 Zod 网络契约与兼容根导出
-docs/
-  README.md            文档索引
-  architecture.md      架构与技术决策
-  database-schema.md   数据库表、关系与生命周期
-  design-system.md     移动端设计规范
-  domain-language.md   领域术语
+apps/api/                 Node.js API、领域服务、Worker 与 SQL migrations
+apps/mobile/              Expo Router 移动端与 Web 客户端
+packages/contracts/       API 与 App 共用的 Zod 网络契约
+deploy/self-hosted/       Docker Self-hosted 配置模板
+docs/                     架构、数据库、配置、运行模式与构建指南
+scripts/check-docs.mjs    文档结构和关键入口校验
+compose.yaml              PostgreSQL、migration 与 API 服务
 ```
 
-模块职责和依赖方向详见 [架构说明](./docs/architecture.md)，数据库表与关系详见 [数据库结构](./docs/database-schema.md)，领域名词以 [领域语言](./docs/domain-language.md) 为准。
+完整主题入口见[文档索引](./docs/README.md)和[文档导览](./docs/documentation-guide.md)。
 
-## 本地启动
+## 本地开发
 
-### 1. 准备工具链
+### 1. 安装与配置
 
-确认当前使用 Node.js 24 和 pnpm 11.3.0：
+确认使用仓库要求的工具链：
 
 ```powershell
 node --version
 pnpm --version
-```
-
-如果尚未安装 pnpm，请先按 [pnpm 官方安装说明](https://pnpm.io/installation)安装 11.3.0。本仓库日常命令直接使用 `pnpm`，不要求通过 Corepack 调用。
-
-### 2. 安装依赖
-
-```powershell
 pnpm install
 ```
 
-根目录 `packageManager` 和 `pnpm-lock.yaml` 会共同保证可重复安装。
-
-### 3. 配置环境变量
-
-首次运行时，从示例创建两个本地配置文件：
+首次运行时创建未跟踪的本地配置：
 
 ```powershell
 Copy-Item apps/api/.env.example apps/api/.env
 Copy-Item apps/mobile/.env.example apps/mobile/.env
 ```
 
-`apps/api/.env` 中的 `AUDIO_STORAGE_DIR` 同时承载混合模式的持久原音频和轻量模式的临时原音频；每条资产会在 PostgreSQL 固化创建时的运行模式和保留策略。生产或容器环境必须显式挂载该目录，混合模式还需要备份。对象存储模式的原音频直接进入租户配置的权威 OSS，不在该目录长期保存。三种模式、清理边界和接口见[音频运行模式](docs/audio-runtime-modes.md)。
-
-“新建”页支持上传或选择最多 20 条已有音频并由服务端执行完整流水线；对象和混合模式支持一次性定时，轻量模式只支持立即批量。任务、恢复点和通知 outbox 均以 PostgreSQL 为准，具体边界见[一键式音频全流程分析](docs/audio-analysis-automation.md)。
-
-FFmpeg 是整文件转写的必需能力。配置 `FFMPEG_PATH` 后，API 启动时会非致命探测可执行文件；缺失或检查失败不会阻止知识库嵌入和 API 启动，但会禁用音频转写。临时单声道 MP3 写入 `AUDIO_TRANSCRIPTION_TEMP_DIR`，转写模型固定为 `qwen-audio-3.0-asr-flash-filetrans`，失败时不会自动切换模型。API 还会校验仓库内固定的 Silero VAD v6.2.1 ONNX 模型；VAD 不可用时仍可由用户明确选择整文件模式，服务端不会静默回退。
-
-按说话轮次分段使用北京地域 `qwen-audio-3.0-asr-flash-filetrans`。供应商端点、模型、通知方式和能力绑定由 PostgreSQL 配置中心管理；Credential 可选择 AES-256-GCM 加密入库，或由服务器本地只读 `credentials.yaml` 提供。混合与对象模式通过 `audio_staging` OSS 短期中转预处理音频；轻量模式使用 DashScope Instant 临时文件区并提交 `oss://` 地址。三种路径都持久化 Provider 任务 ID 和 Checkpoint，恢复时不会重复提交已经创建的任务。
-
-`polling` 模式每次只查询一次 DashScope 任务状态，按 2/5/10/15 秒递增间隔把下次查询时间写入数据库并释放 worker，worker 按最近持久化截止时间精确唤醒，六小时后停止查询。所有后台任务在事务提交后通过 PostgreSQL `LISTEN/NOTIFY` 低延迟唤醒，15 秒扫描只作为通知丢失、监听重连和进程恢复的安全兜底；任务表与 `FOR UPDATE SKIP LOCKED` 仍是权威事实和领取机制。该监听固定占用连接池中的一个连接。`eventbridge` 模式的回调地址固定指向 `POST /api/webhooks/dashscope/async-task-finished`；在华北 2（北京）地域 default 事件总线创建规则，筛选 `source=acs.dashscope`、`type=dashscope:System:AsyncTaskFinish` 和模型后缀 `:qwen-audio-3.0-asr-flash-filetrans`，HTTP 目标选择“完整事件”并填写相同 Token。回调 URL 必须可由 EventBridge 通过公网或已配置 VPC 访问；反向代理后的外部完整 URL 必须与环境变量和 EventBridge 目标完全一致。`AUDIO_TRANSCRIPTION_MAX_IN_FLIGHT` 同时约束两种模式中等待供应商终态的任务数，首次部署建议保持 `1`。
-
-转写发布后，供应商正文作为不可变 Raw Transcript 保存；同一音频允许多个 ASR Run，并可手动固定成功版本或自动跟随最新成功版本。混合与对象模式在用户确认 Transcript 后独立启动声学情绪和角色识别。轻量模式默认把声学情绪绑定到 ASR Run，内部按 `ASR → 声学情绪 → 清理` 执行；关闭开关后该 Run 返回 `not_requested`，ASR 成功即删除临时音频。角色识别和业务工作流始终只依赖当前选中的 Transcript。
-
-分析详情和数据源音频列表使用 `expo-audio` 播放原始上传文件。API 通过租户隔离的 `GET/HEAD /api/audio-files/:audioFileId/content` 提供媒体流并支持单段 HTTP Range；客户端不会接收 `storage_key` 或服务器路径。详情页顶部播放器提供真实进度、倍速和跳转，正文片段按钮只播放对应时间范围并在片段结束时自动暂停。播放器仅在当前页面前台运行，离页即停止，不启用后台或锁屏播放。
-
-分析详情的“模型详情”标签页按当前 ASR 修订展示转写、情绪、角色和当前分组业务分析的运行记录。它从 PostgreSQL 安全审计表读取模型、状态、耗时、Token、执行步骤、工具调用、检索查询、知识库名称和命中文档定位；不展示模型隐藏推理、完整提示词、原始模型输出或知识块正文。功能上线前的历史运行不会回填或伪造轨迹。
-
-销售复盘使用持久化 LangGraph 组织“准备 → 检索规划 → 并行检索 → DeepAgent 分析 → 结构校验 → 原子发布”。检索规划使用独立的非思考模型，输出上限 768 tokens、超时 30 秒；主结构化分析使用非思考模型，输出上限 6000 tokens、单次模型超时 60 秒、工作流总超时 120 秒；结构修复使用 4096 tokens、超时 45 秒。进程中断会使用原 thread 从最后成功节点继续；可重试错误会在 15 秒和 60 秒后最多恢复两次。长转写会按窗口保存分析结果，已完成窗口不会重复调用，最终汇总只消费窗口摘要。任务终态后会删除 checkpoint，清理失败不影响已发布结果，并在下次 API 启动时补偿。
-
-音频上传支持 MP3、WAV、M4A、AAC、FLAC、OGG 和 WebM，单文件上限为 200 MB，服务端在上传完成时校验不超过 12 小时。上传通过流式会话写入，长音频进入异步转写；超过限制时请先压缩或拆分。
-
-`apps/api/.env` 只保存启动、基础设施、路径、运维开关和根安全配置；供应商普通配置与能力绑定保存在 PostgreSQL，Secret 由 Database 或 Local Credential Provider 提供。API 仍只直接读取该 `.env` 文件，不合并 `process.env`。完整边界、HTTPS/localhost 判定、`credentials.yaml`、Docker 只读挂载和旧变量导入见 [配置与 Credential 指南](docs/configuration.md)。移动端由 Expo CLI 自动加载 `apps/mobile/.env`，其中客户端可用变量必须以 `EXPO_PUBLIC_` 开头：
+至少完成 PostgreSQL、`CREDENTIAL_MASTER_KEY`、`CONFIGURATION_ADMIN_TOKEN`、`LOCAL_CREDENTIALS_FILE` 和目录配置。供应商连接、能力绑定与 Credential 边界见[配置与 Credential 指南](./docs/configuration.md)。物理手机不能通过 `localhost` 访问电脑；`apps/mobile/.env` 应使用电脑的局域网地址并与 API 端口一致：
 
 ```dotenv
-EXPO_PUBLIC_API_URL=http://localhost:3001
+EXPO_PUBLIC_API_URL=http://<SERVER_LAN_IP>:<API_PORT>
 ```
 
-`EXPO_PUBLIC_*` 会被写入客户端 bundle，不得放置密码、令牌或其他秘密。该地址只作为 Development Build 或 Expo Go 尚未保存服务器时的开发默认值；App 内保存的服务器优先。修改该文件后，需要在当前客户端中执行完整 Reload。Production APK 不设置固定的 `EXPO_PUBLIC_API_URL`，并由 EAS profile 的 `EXPO_PUBLIC_REQUIRE_SERVER_SELECTION=true` 强制忽略任何开发默认地址。详见 [Expo 环境变量文档](https://docs.expo.dev/guides/environment-variables/)。
-
-API 的 PostgreSQL 配置继续使用 `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_USER` 等分字段变量。首次启动还必须设置 `CREDENTIAL_MASTER_KEY`、`CONFIGURATION_ADMIN_TOKEN`、`LOCAL_CREDENTIALS_FILE`、`TRUSTED_PROXY_CIDRS` 和显式的 `PUSH_NOTIFICATIONS_ENABLED=true|false`。缺少供应商连接、Credential alias 或能力绑定只会禁用对应 AI 能力并返回 `CONFIGURATION_REQUIRED`，健康检查和“更多”页仍可使用。Redis 字段仍仅作未来边界预留。
-
-### 可选 AI 执行报告
-
-知识问答、文档入库、音频 ASR、角色/情绪识别和销售复盘支持本地 Markdown 执行报告。它用于开发与测试诊断，不是单元测试覆盖率或 CI 测试结果。报告默认关闭；需要时在 `apps/api/.env` 设置：
-
-这里的本地文件报告与移动端“模型详情”相互独立：关闭下列开关不会关闭 PostgreSQL 中字段受限的产品审计；本地报告也不会通过模型详情 API 暴露。
-
-```dotenv
-AI_EXECUTION_REPORT_ENABLED="true"
-AI_EXECUTION_REPORT_OUTPUT_DIR=".ai-execution-reports"
-AI_EXECUTION_REPORT_CONTEXT_ENABLED="false"
-AI_EXECUTION_REPORT_TOOL_CONTENT_ENABLED="false"
-AI_EXECUTION_REPORT_OUTPUT_ENABLED="false"
-AI_EXECUTION_REPORT_REASONING_ENABLED="false"
-AI_EXECUTION_REPORT_STT_RAW_RESPONSE_ENABLED="false"
-```
-
-启用 `AI_EXECUTION_REPORT_ENABLED=true` 后，每一次真实模型调用都会写入 `Model Calls`：聊天模型按实际发送顺序记录带显式 `role` 的消息（包括 `system` 后面的 `user`），并记录模型可见输出、工具调用、状态、耗时、Token 和尝试次数。Embedding 仅记录输入文本与向量数量、维度、Token、费用摘要，不记录向量；音频输入固定显示为 `[OMITTED_AUDIO]`。销售复盘会单独生成 `audio-business-analysis` 报告，覆盖主动检索规划、Agent 各轮调用、知识工具、结构校验、发布和失败。
-
-每个输入消息和输出分别进行脱敏与最多 120,000 字符截断；截断项会保留原始字符数、SHA-256 和 `[truncated]` 标记，因此一个超长调用不会吞掉后续调用。鉴权信息、签名 URL 查询参数、本地路径、长 Base64、音频正文与 Embedding 向量不会写入报告。报告可能包含完整转写和知识库正文，只能在受控测试环境短期开启，并按敏感业务数据管理。
-
-`AI_EXECUTION_REPORT_CONTEXT_ENABLED`、`AI_EXECUTION_REPORT_TOOL_CONTENT_ENABLED` 和 `AI_EXECUTION_REPORT_OUTPUT_ENABLED` 仅控制额外的 Context、Tool Content 与汇总 Output 章节，不会关闭 `Model Calls` 中的实际 Prompt/Output。隐藏 reasoning 仍只由 `AI_EXECUTION_REPORT_REASONING_ENABLED` 控制。关闭总开关时不创建报告，也不执行额外写盘。
-
-每个转写修订按“任务提交”和“终态完成”生成独立的 `audio-transcription` 阶段报告，记录所选模型、预处理、供应商等待耗时、结果下载、发布和失败持久化。模型返回的规范化转写片段会作为可见输出记录；连接地址、`storage_key`、文件路径、音频、base64、密钥和 Provider 原始错误包不会进入通用报告。
-
-`AI_EXECUTION_REPORT_STT_RAW_RESPONSE_ENABLED=true` 独立启用逐 HTTP 响应的 JSON 测试报告，即使通用 Markdown 报告关闭也会生效。DashScope 的任务提交、Polling 的 `task_status` 响应或 EventBridge 完成回调，以及最终 Qwen 转写 JSON 会写入 `.ai-execution-reports/stt-raw/YYYY-MM-DD/`。报告包含供应商、响应阶段、模型、修订、尝试、HTTP 状态和经过保护的原始响应文本；请求音频、鉴权头与完整响应头不会进入文件，OSS 签名查询参数会脱敏。单响应最多保留 2 MiB 文本，超限时记录原始字节数和 SHA-256，报告写入失败不影响转写。
-
-FFmpeg/VAD 模式将录音流式转为 16kHz 单声道 MP3，保留原时间轴 Manifest 后提交一个 Qwen Filetrans 任务，以维持整段录音的 Speaker ID 连续性；不会按 45 秒拆分。长音频业务分析会按最多 50 个片段或约 6000 个中文字分层处理并持久化窗口 checkpoint。
-
-转写只使用 DashScope Filetrans：默认先以 Silero VAD 检测人声，仅压缩连续超过 30 秒的非人声区间，再由 FFmpeg 生成 16kHz 单声道整文件 MP3；用户也可明确选择保留完整音频。两种通知模式都经短期 OSS 对象和签名 URL 异步提交，并开启 `diarization_enabled=true`。Polling 通过到期任务的单次 `/tasks/{task_id}` 查询发现终态；EventBridge 通过原始 Body、Token、时间窗和 RSA 签名校验后快速落库，且该模式绝不查询任务状态。两种来源最终都由同一后台完成路径下载结果、校验并发布。VAD 清单随 revision 持久化，供应商时间戳发布前恢复到原录音时间轴，被删除区间写入无效片段表。结果严格要求每句包含 `speaker_id` 和有序有效毫秒时间戳：Speaker 变化或同一 Speaker 停顿达到 1500ms 时开始新段，相邻同 Speaker 在不足 1500ms 且合并后不超过 240 字时合并，供应商单句不会被硬拆。业务角色和情绪始终为 `unknown`。
-
-数据源转写、分析详情和知识文档入库均以 REST 快照作为权威首帧，并在存在进行中任务时通过 SSE 接收状态增量；健康连接下不会周期刷新完整页面。连接连续失败后移动端临时使用 5 秒 REST 降级，并每 30 秒尝试恢复 SSE。音频卡片显示 `排队 → 预处理 → 模型转写 → 等待模型完成 → 校验 → 发布` 的持久化阶段和单调百分比；模型正文始终不会进入进度接口或弹窗。
-
-`AI_EXECUTION_REPORT_OUTPUT_ENABLED="false"` 是附加汇总 Output 章节的安全默认值，并且不控制 Model Calls 的 Prompt/Output 或独立 STT 原始响应报告。两类报告目录都已被 Git 忽略且不会自动清理，避免后台任务误删诊断证据；已生成的历史报告不会回填或重新执行。
-
-首次启动前显式执行迁移；普通 API 启动不会修改数据库 schema：
+首次启动前显式执行 migration；需要演示数据时再运行幂等 seed：
 
 ```powershell
 pnpm --filter @echowave/api migrate
-```
-
-如需在本地还原移动端音频工作区演示内容，请在迁移完成后执行幂等开发 seed：
-
-```powershell
 pnpm --filter @echowave/api seed:dev
 ```
 
-开发 seed 使用固定演示 UUID，可安全重复执行；它不会写入 migration，也不保存音频二进制或连接凭据。
+### 2. 启动 API 与客户端
 
-迁移会创建业务 schema、`vector(1024)` HNSW 索引、固定开发租户和独立 LangGraph checkpoint schema。PostgreSQL 必须已经安装 `vector` 扩展。
-
-如果 API 报告端口已被占用，说明已有另一个服务实例监听了 `apps/api/.env` 中的 `PORT`。停止旧实例，或修改该 `PORT`，并同步更新 `apps/mobile/.env` 中 URL 的端口。
-
-不同运行环境需要使用不同主机地址：
-
-- Web、iOS Simulator：`http://localhost:<API_PORT>`
-- Android Emulator：通常为 `http://10.0.2.2:<API_PORT>`
-- Android/iOS 真机：使用开发电脑的局域网地址，例如 `http://192.168.1.20:<API_PORT>`
-
-这里的 `<API_PORT>` 必须等于 `apps/api/.env` 中的 `PORT`。真机与开发电脑需要处于同一网络，且本机防火墙需要允许 Node.js 和该 API 端口通过专用网络。若 Expo Web 使用了非 8081 端口，请同步修改 API 的 `CORS_ORIGINS`。
-
-### 4. 启动
-
-同时启动 Expo 与 API：
+可通过 Turbo TUI 同时启动：
 
 ```powershell
 pnpm start
 ```
 
-该命令使用 Turborepo 的交互式终端界面。选择 `@echowave/mobile#dev` 任务即可查看 Expo 的二维码、`exp://` 地址和快捷键；按 `Enter` 可进入该任务并向 Expo 发送按键。
-
-也可以分开启动，便于操作 Expo 的交互式终端：
+也可在两个终端分别运行：
 
 ```powershell
 pnpm dev:api
-pnpm dev:mobile
 ```
 
-进入 Expo 终端后，按 `w` 打开 Web，按 `a` 打开 Android。iOS Simulator 需要在 macOS 上运行。
+```powershell
+pnpm dev:mobile -- --lan
+```
 
-## Development Build 与真机测试
+Metro 报告缓存无法反序列化时，停止旧进程后清缓存启动：
 
-Development Build 是本项目默认的原生开发环境。它包含 EchoWave 自己的原生模块、权限和通知配置；Expo Go 仅保留为不依赖远程推送的源码预览入口。
+```powershell
+pnpm dev:mobile -- --lan --clear
+```
 
-首次使用需要在 `apps/mobile` 中登录并绑定自己的 EAS 项目，然后创建 Android Development APK：
+不同客户端使用的 API 主机通常为：
+
+- Web、iOS Simulator：`http://localhost:<API_PORT>`
+- Android Emulator：`http://10.0.2.2:<API_PORT>`
+- Android/iOS 真机：`http://<SERVER_LAN_IP>:<API_PORT>`
+
+## Development Build 与 Expo Go
+
+Development Build 是默认原生开发环境，支持项目自己的原生依赖、Firebase 和远程推送。当前官方 EAS 项目已经绑定；维护者必须在 `apps/mobile` 中执行 EAS 命令，不要在仓库根目录重新运行 `eas init`：
 
 ```powershell
 Set-Location apps/mobile
 pnpm dlx eas-cli@latest login
-pnpm dlx eas-cli@latest init
 pnpm dlx eas-cli@latest build --platform android --profile development
 ```
 
-安装 APK 后，日常开发只需运行 API 和 Metro；普通 TS/TSX 修改不需要重新构建：
+普通 TS/TSX 修改通过 Metro/Fast Refresh 生效。升级 Expo SDK、添加或升级原生依赖、修改原生权限、Firebase 或通知配置后，需要重新构建 Development APK。
 
-```powershell
-pnpm dev:api
-pnpm dev:mobile
-```
-
-让手机和电脑处于同一可信网络，并把 `apps/mobile/.env` 中的地址设置为电脑局域网地址，例如 `EXPO_PUBLIC_API_URL=http://192.168.1.20:3001`。修改原生依赖、权限、Firebase、通知配置或 Expo SDK 后必须重新构建 Development APK。
-
-需要临时使用 Expo Go 时运行：
+Expo Go 只用于不依赖远程推送的兼容功能预览：
 
 ```powershell
 pnpm --filter @echowave/mobile dev:go -- --lan
 ```
 
-Expo Go 不支持本项目的远程推送；应用会安全跳过通知模块。Metro Tunnel 只代理 Expo 流量，不会代理 EchoWave API。
+Android Expo Go 从 SDK 53 起不提供远程推送能力，EchoWave 会在该运行时安全跳过通知模块。完整的 Firebase/EAS 设置、Push 验收和 Production APK 流程见[自托管与自行构建](./docs/self-hosting.md)。
 
-## 开源使用与自托管
+## 运行时服务器连接
 
-- **预构建 APK**：从 GitHub Releases 安装签名 Android APK，Clone 仓库并运行 Docker Server，首次打开 App 时填写服务器地址。
-- **源码开发/自行构建**：使用 Expo Go 验证兼容功能，或替换 Expo、包标识、Firebase 和签名身份后创建自己的 Development/Production Build。
+App 将通过健康检查验证的服务器根地址保存到 AsyncStorage，所有 REST、上传、SSE、音频和通知注册请求都在调用时读取该地址。已保存地址优先于 Development/Expo Go 的 `EXPO_PUBLIC_API_URL` 默认值。
 
-完整的 Docker 配置、局域网连接、安全限制和自行构建步骤见 [自托管与自行构建指南](docs/self-hosting.md)。Self-hosted V1 仅使用 SSE 和应用内状态，默认关闭远程推送；当前 API 尚无真实用户鉴权，禁止直接暴露到公网。
+`production-apk` 与 `production` profile 强制忽略开发默认地址。清除应用数据后的 Production Build 首次只显示“连接到 EchoWave Server”，通过 `GET /health` 后才能保存并进入主应用。“更多 → 服务状态”可以修改服务器并重新挂载业务导航。
 
-## 可用脚本
+客户端只允许 HTTP 指向 localhost、私有/链路本地地址或 `.local` 主机；公网服务器必须使用 HTTPS。`GET /health` 的 `capabilities.remotePush` 决定 App 是否请求通知权限并注册设备。
+
+## Self-hosted
+
+当前可从源码运行 Self-hosted Server：
 
 ```powershell
+Copy-Item deploy/self-hosted/api.env.example deploy/self-hosted/api.env
+docker compose config
+docker compose up -d --build
+```
+
+模板默认关闭远程推送，使用 PostgreSQL/pgvector、SSE 和应用内状态。正式 Release APK 发布后，普通用户可以安装 APK 并连接自己的局域网服务器。配置生成、持久卷、端口、防火墙和安全限制见[自托管与自行构建](./docs/self-hosting.md)。
+
+当前 API 没有真实用户鉴权，不得直接暴露到公网。
+
+## 常用命令
+
+```powershell
+pnpm docs:check
 pnpm lint
 pnpm typecheck
 pnpm test
@@ -232,30 +141,28 @@ pnpm build
 pnpm check
 ```
 
-`build` 会编译共享契约与 Node API，并通过 Expo 为 iOS、Android、Web 生成可移植的 JavaScript bundle。该校验命令跳过 Hermes bytecode；正式原生包使用 `apps/mobile/eas.json` 中的 `development`、`production-apk` 或 `production` profile。仓库暂不自动创建 GitHub Release。
+`pnpm build` 编译共享契约与 API，并为 Android、iOS、Web 导出 Expo bundle；它不会生成可安装 APK。原生包使用 `apps/mobile/eas.json` 中的 `development`、`production-apk` 和 `production` profiles。仓库当前不自动创建 GitHub Release。
 
-## 当前功能
+## 当前能力与边界
 
-- 分组主界面的目录切换、创建与归档，以及音频分析、关联知识库和连接数据源标签
-- 分组内跨标签搜索、音频创建时间排序与多状态筛选
-- 音频完成、跨分组、待分析、上传中、分析中状态示例
-- 分组、知识库、新建、分析、更多五项导航
-- Markdown、DOCX、XLSX 单文件上传、异步解析、分块、嵌入与 SSE 状态增量（REST 降级）
-- PostgreSQL 租户隔离、revision 原子发布、HNSW 检索和引用回溯
-- PostgreSQL 数据源创建、编辑、软归档、分组关联/解除，以及本地批量音频上传与软归档
-- PostgreSQL 音频上传时间线和版本化分析结果查询纵切片
-- 数据源音频的后台 ASR、尽力而为的 Speaker 分离、实际响应时间戳及分块级实时进度
-- Raw Transcript 与版本化 Confirmed Transcript 分离、逐片段修正和确认前分析门槛
-- 基于 Qwen3.5-Omni 的逐片段声学情绪分析，以及基于 DeepSeek 的录音级说话人业务角色识别
-- DeepSeek + DeepAgents 知识问答、无证据拒答与短会话 checkpoint
-- LangGraph 持久化销售复盘、并行检索恢复、有界重试与幂等发布
-- 可选的知识问答、入库与音频转写 Markdown 执行诊断报告
-- 移动端知识库列表、文档/块详情、上传、动态问答反馈、最近六轮只读历史和可返回聊天的引用跳转
-- 更多页中的 API 加载、在线、离线、超时和重试状态
-- `GET /api/hello` HelloWorld 接口及共享 Zod 契约
+当前已经实现：
 
-## 当前边界
+- 分组、知识库、数据源、音频上传和软归档的 PostgreSQL 纵切片
+- 文档解析、pgvector 检索、可信引用问答和短历史
+- DashScope 版本化 ASR、Confirmed Transcript、说话人复核、情绪与角色分析
+- LangGraph 销售复盘、批次自动化、恢复/取消、SSE 状态与可选原生推送
+- AI 供应商配置、Credential revision、能力绑定与安全执行审计
+- Development/Production EAS profiles、运行时服务器选择和 Docker Self-hosted 模板
 
-本里程碑不包含真实鉴权、转写修正统计或 Correction Dataset 导出、意图分析、跨录音业务聚合、情绪融合评分、精确声学数值测量、数据源同步、Redis、OCR、PDF、旧版 Office、独立 Worker 部署或 EAS Build。API 和 Worker 仍在同一进程；混合与轻量模式的本地音频路径只支持单 API 主机，对象存储模式虽不依赖本地持久盘，但多实例前仍需把进程内 SSE 失效信号改为跨实例分发。详见 [文档索引](./docs/README.md)、[架构说明](./docs/architecture.md)与[音频运行模式](./docs/audio-runtime-modes.md)。
+当前不包含真实鉴权、数据源自动同步、OCR/PDF/旧版 Office、Redis 实现、独立 Worker 部署、自动 Release、二维码/mDNS 发现、官方云服务或手机内置离线后端。API 与 Worker 仍在同一进程；本地音频路径和进程内 SSE 唤醒要求单 API 实例。iOS 原生运行与推送验收需要 macOS/Xcode 和 Apple/APNs 凭据。
 
-在 Windows 上无法运行 iOS Simulator；iOS 本轮通过 Expo bundle 导出、TypeScript 检查和应用配置校验，最终原生运行验收需在 macOS/Xcode 环境完成。
+专题说明：
+
+- [架构说明](./docs/architecture.md)
+- [数据库结构](./docs/database-schema.md)
+- [配置与 Credential](./docs/configuration.md)
+- [音频运行模式](./docs/audio-runtime-modes.md)
+- [一键式音频全流程分析](./docs/audio-analysis-automation.md)
+- [自托管与自行构建](./docs/self-hosting.md)
+- [设计规范](./docs/design-system.md)
+- [领域语言](./docs/domain-language.md)

@@ -10,7 +10,7 @@
  * - 在失败时回滚当前 migration 并关闭资源。
  *
  * Notes:
- * - migration 文件是数据库契约的权威历史。
+ * - 只有符合 NNN_name.sql 规则的编号 migration 才是数据库契约的权威历史。
  */
 import { readFile, readdir } from 'node:fs/promises';
 
@@ -22,6 +22,7 @@ import {
   quoteIdentifier,
 } from '../infrastructure/postgres.ts';
 import { readApiConfigFile } from '../config/env.ts';
+import { orderedMigrationFileNames } from './migrationFiles.ts';
 
 const config = readApiConfigFile(new URL('../../.env', import.meta.url));
 const pool = createDatabasePool(config.database);
@@ -41,7 +42,7 @@ async function migrate() {
   `);
 
   const migrationUrl = new URL('../../migrations/', import.meta.url);
-  const migrations = (await readdir(migrationUrl)).filter((name) => name.endsWith('.sql')).sort();
+  const migrations = orderedMigrationFileNames(await readdir(migrationUrl));
 
   for (const name of migrations) {
     const alreadyApplied = await pool.query(
