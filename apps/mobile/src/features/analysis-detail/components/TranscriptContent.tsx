@@ -910,6 +910,7 @@ const styles = StyleSheet.create({
   },
   segmentRail: {
     alignItems: 'flex-end',
+    gap: spacing.sm,
     justifyContent: 'center',
     width: 96,
   },
@@ -993,19 +994,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.xs,
     minHeight: 32,
+    width: '100%',
   },
   aiTagNode: {
     alignItems: 'center',
     backgroundColor: colors.canvas,
     height: typography.label.lineHeight,
     justifyContent: 'center',
+    flexShrink: 0,
     width: typography.label.lineHeight,
   },
   aiTagText: {
     ...typography.label,
     color: textColors.primary,
+    flex: 1,
     fontFamily: fontFamilies.sansBold,
     fontWeight: 'bold',
+    minWidth: 0,
+    textAlign: 'right',
     textDecorationLine: 'underline',
   },
   segmentTime: {

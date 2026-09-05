@@ -121,6 +121,7 @@ export function ServerConnectionScreen({ onCancel, onSaved }: ServerConnectionSc
             <Ionicons color={colors.white} name="radio-outline" size={30} />
           </View>
           <Text style={styles.title}>连接到 EchoWave Server</Text>
+          <Text style={styles.tagline}>EchoWave — From Voice to Insight.</Text>
           <Text style={styles.description}>
             输入运行 EchoWave API 的电脑、NAS 或服务器地址。连接成功后会保存在当前设备。
           </Text>
@@ -229,6 +230,14 @@ const styles = StyleSheet.create({
     color: textColors.primary,
     fontFamily: fontFamilies.sansBold,
     fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  tagline: {
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    letterSpacing: 0.3,
+    marginTop: spacing.xs,
     textAlign: 'center',
   },
   description: {

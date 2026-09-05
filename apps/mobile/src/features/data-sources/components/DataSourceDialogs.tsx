@@ -554,7 +554,7 @@ export function AudioTranscriptionConfirmDialog({
         <View accessibilityViewIsModal style={[styles.dialogCard, styles.transcriptionDialogCard]}>
           <ScrollView
             contentContainerStyle={styles.transcriptionDialogContent}
-            showsVerticalScrollIndicator
+            showsVerticalScrollIndicator={false}
             style={styles.transcriptionDialogScroll}
           >
             <Text accessibilityRole="header" style={styles.sheetTitle}>
