@@ -100,7 +100,13 @@ Copy-Item apps/mobile/.env.example apps/mobile/.env
 pnpm --filter @echowave/api migrate
 ```
 
-两个终端分别运行：
+通过 Turbo TUI 一次启动 API 与使用 LAN 模式的 Development Build 客户端：
+
+```powershell
+pnpm start
+```
+
+也可以在两个终端分别运行：
 
 ```powershell
 pnpm dev:api

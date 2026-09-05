@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch src/bootstrap/server.ts",
+    "dev:lan": "tsx watch src/bootstrap/server.ts",
     "lint": "eslint src test",
     "migrate": "tsx src/bootstrap/migrate.ts",
     "seed:dev": "tsx src/bootstrap/seed.ts",

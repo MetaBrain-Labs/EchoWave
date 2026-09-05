@@ -60,7 +60,7 @@ pnpm --filter @echowave/api seed:dev
 
 ### 2. 启动 API 与客户端
 
-可通过 Turbo TUI 同时启动：
+可通过 Turbo TUI 一次启动 API 与使用 LAN 模式的 Development Build 客户端：
 
 ```powershell
 pnpm start

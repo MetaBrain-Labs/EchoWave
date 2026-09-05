@@ -7,6 +7,7 @@
     "android": "cross-env EXPO_NO_TELEMETRY=1 expo start --dev-client --android",
     "build": "cross-env EXPO_NO_TELEMETRY=1 expo export --platform all --max-workers 1 --no-bytecode",
     "dev": "cross-env EXPO_NO_TELEMETRY=1 expo start --dev-client",
+    "dev:lan": "cross-env EXPO_NO_TELEMETRY=1 expo start --dev-client --lan",
     "dev:go": "cross-env EXPO_NO_TELEMETRY=1 expo start --go",
     "ios": "cross-env EXPO_NO_TELEMETRY=1 expo start --dev-client --ios",
     "lint": "eslint .",

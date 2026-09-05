@@ -15,7 +15,7 @@
     "dev:mobile": "pnpm --filter @echowave/contracts build && pnpm --filter @echowave/mobile dev",
     "docs:check": "node --test --test-isolation=none scripts/check-docs.test.mjs && node scripts/check-docs.mjs",
     "lint": "turbo run lint",
-    "start": "turbo run dev --ui=tui",
+    "start": "turbo run dev:lan --ui=tui",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
     "format": "prettier . --write",
