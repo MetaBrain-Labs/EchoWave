@@ -20,6 +20,7 @@ import {
   GroupSettingsSchema,
   GroupSettingsUpdateRequestSchema,
   KnowledgeBaseListResponseSchema,
+  TemplateExampleSchema,
   type GroupCreateRequest,
   type GroupResourceLinksUpdateRequest,
   type GroupSettingsUpdateRequest,
@@ -36,6 +37,8 @@ export const createGroup = (input: GroupCreateRequest) =>
 export const archiveGroup = (id: string) =>
   request(`/api/groups/${id}`, null, { method: 'DELETE' });
 export const getGroup = (id: string) => request(`/api/groups/${id}`, GroupDetailSchema);
+export const getGroupTemplateExample = (id: string) =>
+  request(`/api/groups/${id}/template-example`, TemplateExampleSchema);
 export const getGroupSettings = (id: string) =>
   request(`/api/groups/${id}/settings`, GroupSettingsSchema);
 export const updateGroupSettings = (id: string, input: GroupSettingsUpdateRequest) =>

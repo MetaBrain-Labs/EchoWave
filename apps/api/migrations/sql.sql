@@ -267,6 +267,7 @@ create table public.audio_analysis_tasks (
   created_at timestamp with time zone not null default now(),
   updated_at timestamp with time zone not null default now(),
   completed_at timestamp with time zone,
+  stage_sources jsonb not null default '{}'::jsonb,
   foreign key (tenant_id, analysis_revision_id, emotion_job_id) references public.audio_post_analysis_jobs (tenant_id, analysis_revision_id, id)
   match simple on update no action on delete no action,
   foreign key (tenant_id, analysis_revision_id, role_job_id) references public.audio_post_analysis_jobs (tenant_id, analysis_revision_id, id)
@@ -667,11 +668,13 @@ create table public.data_sources (
   updated_at timestamp with time zone not null default now(),
   deleted_at timestamp with time zone,
   custom_business_roles jsonb not null default '[]'::jsonb,
+  starter_template_key text,
   foreign key (tenant_id) references public.tenants (id)
   match simple on update no action on delete no action
 );
 create unique index data_sources_tenant_id_id_key on data_sources using btree (tenant_id, id);
 create index data_sources_tenant_updated_idx on data_sources using btree (tenant_id, updated_at) WHERE (deleted_at IS NULL);
+create unique index data_sources_tenant_starter_template_key_idx on data_sources using btree (tenant_id, starter_template_key) WHERE (starter_template_key IS NOT NULL);
 
 create table public.document_chunks (
   id uuid primary key not null default gen_random_uuid(),
@@ -814,11 +817,13 @@ create table public.groups (
   created_at timestamp with time zone not null default now(),
   updated_at timestamp with time zone not null default now(),
   deleted_at timestamp with time zone,
+  starter_template_key text,
   foreign key (tenant_id) references public.tenants (id)
   match simple on update no action on delete no action
 );
 create unique index groups_tenant_id_id_key on groups using btree (tenant_id, id);
 create index groups_tenant_updated_idx on groups using btree (tenant_id, updated_at) WHERE (deleted_at IS NULL);
+create unique index groups_tenant_starter_template_key_idx on groups using btree (tenant_id, starter_template_key) WHERE (starter_template_key IS NOT NULL);
 
 create table public.ingestion_jobs (
   id uuid primary key not null default gen_random_uuid(),
@@ -1080,6 +1085,15 @@ create table public.speaker_role_results (
   evidence_segment_ids jsonb not null default '[]'::jsonb,
   primary key (tenant_id, job_id, speaker_key),
   foreign key (tenant_id, analysis_revision_id, job_id) references public.audio_post_analysis_jobs (tenant_id, analysis_revision_id, id)
+  match simple on update no action on delete cascade
+);
+
+create table public.starter_template_installations (
+  tenant_id uuid not null,
+  catalog_version integer not null,
+  installed_at timestamp with time zone not null default now(),
+  primary key (tenant_id, catalog_version),
+  foreign key (tenant_id) references public.tenants (id)
   match simple on update no action on delete cascade
 );
 

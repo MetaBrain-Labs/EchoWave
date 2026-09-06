@@ -66,7 +66,7 @@ export class PostgresGroupRepository implements GroupRepository {
          WHERE va.tenant_id = $1
          GROUP BY va.group_id
        )
-       SELECT g.id, g.name, g.updated_at,
+       SELECT g.id, g.name, g.starter_template_key, g.updated_at,
               coalesce(gas.analysis_count, 0)::int AS analysis_count,
               coalesce(gas.audio_count, 0)::int AS audio_count,
               count(DISTINCT gkb.knowledge_base_id)::int AS knowledge_count,
@@ -89,6 +89,7 @@ export class PostgresGroupRepository implements GroupRepository {
       items: result.rows.map((row) => ({
         id: row.id,
         name: row.name,
+        starterTemplateKey: row.starter_template_key,
         metrics: {
           analysisCount: row.analysis_count,
           audioCount: row.audio_count,
@@ -188,6 +189,7 @@ export class PostgresGroupRepository implements GroupRepository {
     return GroupDetailSchema.parse({
       id: row.id,
       name: row.name,
+      starterTemplateKey: null,
       metrics: { analysisCount: 0, audioCount: 0, knowledgeCount: 0, sourceCount: 0 },
       updatedAt: iso(row.updated_at),
     });

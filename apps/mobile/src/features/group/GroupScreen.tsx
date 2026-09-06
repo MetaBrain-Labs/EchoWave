@@ -18,8 +18,9 @@ import type {
   DataSourceSummary,
   GroupSummary,
   KnowledgeBaseSummary,
+  TemplateExample,
 } from '@echowave/contracts';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   type NativeScrollEvent,
@@ -34,6 +35,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   createGroup,
+  getGroupTemplateExample,
   listGroupAudioFiles,
   listGroupDataSources,
   listGroupKnowledgeBases,
@@ -42,6 +44,7 @@ import {
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { useStarterTour, useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import {
   colors,
   fontFamilies,
@@ -80,17 +83,15 @@ export type TabKey = (typeof tabs)[number]['key'];
 const tabKeys = tabs.map((tab) => tab.key);
 const headerCollapseGuardMs = 250;
 
-function IconButton({
-  disabled = false,
-  icon,
-  label,
-  onPress,
-}: {
-  disabled?: boolean;
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  onPress: () => void;
-}) {
+const IconButton = forwardRef<
+  View,
+  {
+    disabled?: boolean;
+    icon: keyof typeof Ionicons.glyphMap;
+    label: string;
+    onPress: () => void;
+  }
+>(function IconButton({ disabled = false, icon, label, onPress }, ref) {
   return (
     <Pressable
       accessibilityLabel={label}
@@ -98,6 +99,7 @@ function IconButton({
       disabled={disabled}
       hitSlop={10}
       onPress={onPress}
+      ref={ref}
       style={({ pressed }) => [
         styles.iconButton,
         disabled && styles.disabled,
@@ -107,7 +109,7 @@ function IconButton({
       <Ionicons color={colors.ink} name={icon} size={29} />
     </Pressable>
   );
-}
+});
 
 /** 渲染分组工作区并协调分组目录与三个同级内容页。 */
 export function GroupScreen({
@@ -117,6 +119,7 @@ export function GroupScreen({
   onOpenKnowledge,
   onOpenSource,
   onOpenSettings,
+  onOpenTemplateExample,
   onGroupChange,
   onTabChange,
 }: {
@@ -126,10 +129,15 @@ export function GroupScreen({
   onOpenKnowledge?: (id: string, groupId: string) => void;
   onOpenSource?: (id: string, groupId: string) => void;
   onOpenSettings?: (id: string) => void;
+  onOpenTemplateExample?: (id: string) => void;
   onGroupChange?: (groupId?: string) => void;
   onTabChange?: (tab: TabKey) => void;
 }) {
   const runInitialRequest = useInitialRequestLoading();
+  const { offerStarterTemplates } = useStarterTour();
+  const menuTourRef = useStarterTourTarget('group-menu');
+  const settingsTourRef = useStarterTourTarget('group-settings');
+  const titleTourRef = useStarterTourTarget('group-title');
   const [activeTab, setActiveTab] = useState<TabKey>(initialTab ?? 'audio');
   const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [group, setGroup] = useState<GroupSummary>();
@@ -154,6 +162,9 @@ export function GroupScreen({
   const [audioItems, setAudioItems] = useState<AudioFileSummary[]>([]);
   const [audioLoading, setAudioLoading] = useState(true);
   const [audioError, setAudioError] = useState('');
+  const [templateExample, setTemplateExample] = useState<TemplateExample>();
+  const [templateExampleLoading, setTemplateExampleLoading] = useState(false);
+  const [templateExampleError, setTemplateExampleError] = useState('');
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseSummary[]>([]);
   const [knowledgeLoading, setKnowledgeLoading] = useState(true);
   const [knowledgeError, setKnowledgeError] = useState('');
@@ -215,6 +226,26 @@ export function GroupScreen({
     }
   }, []);
 
+  const loadTemplateExample = useCallback(async (nextGroup: GroupSummary) => {
+    setTemplateExample(undefined);
+    setTemplateExampleError('');
+    if (!nextGroup.starterTemplateKey) {
+      setTemplateExampleLoading(false);
+      return;
+    }
+    setTemplateExampleLoading(true);
+    try {
+      const response = await getGroupTemplateExample(nextGroup.id);
+      if (selectedGroupId.current === nextGroup.id) setTemplateExample(response);
+    } catch (reason) {
+      if (selectedGroupId.current === nextGroup.id) {
+        setTemplateExampleError(reason instanceof Error ? reason.message : '模板示例加载失败。');
+      }
+    } finally {
+      if (selectedGroupId.current === nextGroup.id) setTemplateExampleLoading(false);
+    }
+  }, []);
+
   const loadSources = useCallback(async (groupId: string) => {
     setSourcesLoading(true);
     setSourcesError('');
@@ -242,6 +273,9 @@ export function GroupScreen({
     setSourceLocations(new Set());
     setSourceStatuses(new Set());
     setAudioItems([]);
+    setTemplateExample(undefined);
+    setTemplateExampleError('');
+    setTemplateExampleLoading(false);
     setKnowledgeBases([]);
     setDataSources([]);
     setAudioError('');
@@ -272,16 +306,19 @@ export function GroupScreen({
       setSourceLocations(new Set());
       setSourceStatuses(new Set());
       setAudioItems([]);
+      setTemplateExample(undefined);
+      setTemplateExampleError('');
       setKnowledgeBases([]);
       setDataSources([]);
       setCollapsedTabs({ audio: false, knowledge: false, sources: false });
       await Promise.all([
         loadAudio(nextGroup.id),
+        loadTemplateExample(nextGroup),
         loadKnowledgeBases(nextGroup.id),
         loadSources(nextGroup.id),
       ]);
     },
-    [loadAudio, loadKnowledgeBases, loadSources],
+    [loadAudio, loadKnowledgeBases, loadSources, loadTemplateExample],
   );
 
   const loadDirectory = useCallback(
@@ -291,6 +328,7 @@ export function GroupScreen({
       try {
         const response = await listGroups();
         setGroups(response.items);
+        offerStarterTemplates(response.items);
         const routedGroup = response.items.find((item) => item.id === requestedGroupId.current);
         const firstGroup = routedGroup ?? response.items[0];
         if (firstGroup) {
@@ -308,15 +346,21 @@ export function GroupScreen({
         if (showLoading) setDirectoryLoading(false);
       }
     },
-    [clearSelection, selectGroup],
+    [clearSelection, offerStarterTemplates, selectGroup],
   );
 
   const refreshPage = useCallback(async () => {
     await loadDirectory(false);
     const groupId = selectedGroupId.current;
     if (!groupId) return;
-    await Promise.all([loadAudio(groupId), loadKnowledgeBases(groupId), loadSources(groupId)]);
-  }, [loadAudio, loadDirectory, loadKnowledgeBases, loadSources]);
+    const currentGroup = groups.find((item) => item.id === groupId);
+    await Promise.all([
+      loadAudio(groupId),
+      currentGroup ? loadTemplateExample(currentGroup) : Promise.resolve(),
+      loadKnowledgeBases(groupId),
+      loadSources(groupId),
+    ]);
+  }, [groups, loadAudio, loadDirectory, loadKnowledgeBases, loadSources, loadTemplateExample]);
   const screenRefresh = useScreenRefresh(refreshPage);
 
   useEffect(() => {
@@ -488,11 +532,15 @@ export function GroupScreen({
               setCreateError('');
               setDrawerVisible(true);
             }}
+            ref={menuTourRef}
           />
           {headerCollapsed ? (
-            <Text testID="group-inline-title" style={styles.inlineTitle}>
-              {group?.name}
-            </Text>
+            <View style={styles.inlineTitleRow}>
+              <Text testID="group-inline-title" style={styles.inlineTitle}>
+                {group?.name}
+              </Text>
+              {group?.starterTemplateKey ? <Text style={styles.templateBadge}>模板</Text> : null}
+            </View>
           ) : null}
         </View>
         <View style={styles.topActions}>
@@ -509,14 +557,18 @@ export function GroupScreen({
             onPress={() => {
               if (group) onOpenSettings?.(group.id);
             }}
+            ref={settingsTourRef}
           />
         </View>
       </View>
 
       {!headerCollapsed ? (
-        <Text testID="group-display-title" style={styles.displayTitle}>
-          {directoryLoading ? '正在加载分组' : (group?.name ?? '暂无分组')}
-        </Text>
+        <View collapsable={false} ref={titleTourRef} style={styles.displayTitleRow}>
+          <Text testID="group-display-title" style={styles.displayTitle}>
+            {directoryLoading ? '正在加载分组' : (group?.name ?? '暂无分组')}
+          </Text>
+          {group?.starterTemplateKey ? <Text style={styles.templateBadge}>模板</Text> : null}
+        </View>
       ) : null}
 
       {directoryLoading ? (
@@ -588,9 +640,16 @@ export function GroupScreen({
                     if (group) onOpenAudio?.(id, group.id);
                   }}
                   onOpenFilter={() => setFilterVisible(true)}
+                  onOpenTemplateExample={() => onOpenTemplateExample?.(group.id)}
                   onRetry={() => {
                     void loadAudio(group.id);
                   }}
+                  onRetryTemplateExample={() => {
+                    void loadTemplateExample(group);
+                  }}
+                  templateExample={templateExample}
+                  templateExampleError={templateExampleError}
+                  templateExampleLoading={templateExampleLoading}
                 />
               </ScrollView>
             </View>
@@ -681,6 +740,7 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sansBold,
     fontWeight: 'bold',
   },
+  inlineTitleRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.xs },
   iconButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
   disabled: { opacity: 0.35 },
   pressed: { backgroundColor: colors.background, borderRadius: radii.default },
@@ -688,11 +748,27 @@ const styles = StyleSheet.create({
   displayTitle: {
     ...typography.groupName,
     color: textColors.primary,
+    flexShrink: 1,
     fontFamily: fontFamilies.sansBold,
     fontWeight: 'bold',
+  },
+  displayTitleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
     marginBottom: spacing.xl,
     marginHorizontal: spacing.md,
     marginTop: spacing.sm,
+  },
+  templateBadge: {
+    ...typography.label,
+    backgroundColor: colors.successSurface,
+    borderRadius: radii.round,
+    color: colors.success,
+    fontFamily: fontFamilies.sansBold,
+    overflow: 'hidden',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
   },
   pager: { flex: 1 },
   page: { height: '100%' },

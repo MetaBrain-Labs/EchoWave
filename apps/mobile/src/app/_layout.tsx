@@ -27,6 +27,7 @@ import { subscribeToNotificationNavigation } from '@/shared/notifications/pushNo
 import { PushNotificationProvider } from '@/shared/notifications/PushNotificationProvider';
 import { colors, fontFamilies, spacing, textColors, typography } from '@/shared/theme/tokens';
 import { StatusBarBackdrop } from '@/shared/ui/StatusBarBackdrop';
+import { StarterTourProvider } from '@/shared/onboarding/StarterTourProvider';
 
 /** 装载应用级 provider、字体门禁与根路由栈。 */
 export default function RootLayout() {
@@ -90,14 +91,20 @@ function RootContent() {
 
   if (connection.phase === 'unconfigured') return <ServerConnectionScreen />;
 
+  if (!connection.serverUrl) {
+    return <FontGateState description="请重新选择 EchoWave Server。" title="服务器地址不可用" />;
+  }
+
   return (
     <View style={styles.stage}>
       <View style={styles.canvas}>
-        <NavigationLoadingProvider key={connection.revision}>
-          <Stack screenOptions={{ headerShown: false }} />
-          <StatusBar style="dark" />
-          <StatusBarBackdrop />
-        </NavigationLoadingProvider>
+        <StarterTourProvider key={connection.revision} serverUrl={connection.serverUrl}>
+          <NavigationLoadingProvider>
+            <Stack screenOptions={{ headerShown: false }} />
+            <StatusBar style="dark" />
+            <StatusBarBackdrop />
+          </NavigationLoadingProvider>
+        </StarterTourProvider>
       </View>
     </View>
   );

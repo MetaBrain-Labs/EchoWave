@@ -1,0 +1,68 @@
+/**
+ * 模板只读示例页面测试。
+ *
+ * 验证不可播放提示、完整报告和独立失败重试状态。
+ */
+import { fireEvent, render } from '@testing-library/react-native';
+
+import { TemplateExampleScreen } from '../TemplateExampleScreen';
+import { getGroupTemplateExample } from '@/shared/api/groupsApi';
+
+jest.mock('@/shared/api/groupsApi', () => ({ getGroupTemplateExample: jest.fn() }));
+jest.mock('@/shared/onboarding/StarterTourContext', () => ({
+  useStarterTourTarget: () => undefined,
+}));
+
+const example = {
+  templateKey: 'sales_call_review' as const,
+  exampleVersion: 1,
+  title: 'B2B 首次需求沟通示例',
+  scenario: '首次沟通',
+  playbackAvailable: false as const,
+  roles: [{ id: 'sales', label: '销售' }],
+  transcript: [
+    {
+      id: 's1',
+      roleId: 'sales',
+      roleLabel: '销售',
+      emotion: '平静',
+      startMs: 0,
+      endMs: 1000,
+      text: '先了解当前流程',
+    },
+  ],
+  summarySections: [{ title: '沟通结果', body: '已约定演示' }],
+  analysisTags: [
+    {
+      kind: 'strength' as const,
+      title: '有效追问',
+      detail: '形成问题链',
+      evidenceSegmentIds: ['s1'],
+    },
+  ],
+  recommendations: ['确认决策人'],
+  limitations: ['产品演示内容'],
+};
+
+describe('TemplateExampleScreen', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('shows the non-playable transcript and report', async () => {
+    jest.mocked(getGroupTemplateExample).mockResolvedValue(example);
+    const screen = render(<TemplateExampleScreen groupId="group-1" onBack={jest.fn()} />);
+    expect(await screen.findByText('示例不包含原始音频，无法播放')).toBeTruthy();
+    expect(screen.getByText('有效追问')).toBeTruthy();
+    expect(screen.getByText(/确认决策人/)).toBeTruthy();
+  });
+
+  it('keeps failure local and retries the example request', async () => {
+    jest
+      .mocked(getGroupTemplateExample)
+      .mockRejectedValueOnce(new Error('示例加载失败'))
+      .mockResolvedValueOnce(example);
+    const screen = render(<TemplateExampleScreen groupId="group-1" onBack={jest.fn()} />);
+    expect(await screen.findByText('示例加载失败')).toBeTruthy();
+    fireEvent.press(screen.getByText('重新加载'));
+    expect(await screen.findByText('B2B 首次需求沟通示例')).toBeTruthy();
+  });
+});

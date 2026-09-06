@@ -23,6 +23,7 @@ import {
 } from '../infrastructure/postgres.ts';
 import { readApiConfigFile } from '../config/env.ts';
 import { orderedMigrationFileNames } from './migrationFiles.ts';
+import { provisionStarterTemplates } from '../workspace/starter-templates/provisioner.ts';
 
 const config = readApiConfigFile(new URL('../../.env', import.meta.url));
 const pool = createDatabasePool(config.database);
@@ -72,6 +73,7 @@ async function migrate() {
     `INSERT INTO ${schema}.tenants (id, name) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING`,
     [config.rag.tenantId, 'EchoWave 开发租户'],
   );
+  await provisionStarterTemplates(pool, config.database.schema, config.rag.tenantId);
 
   const checkpointer = PostgresSaver.fromConnString(
     createPostgresConnectionString(config.database),

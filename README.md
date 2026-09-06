@@ -51,7 +51,7 @@ Copy-Item apps/mobile/.env.example apps/mobile/.env
 EXPO_PUBLIC_API_URL=http://<SERVER_LAN_IP>:<API_PORT>
 ```
 
-首次启动前显式执行 migration；需要演示数据时再运行幂等 seed：
+首次启动前显式执行 migration；该命令会为当前固定租户一次性安装“销售通话复盘”、“个人表达教练”与共享上传数据源。已有项目重新执行 migration 也会安装一次，之后不会恢复用户已修改或归档的模板。需要额外演示数据时再运行幂等 seed：
 
 ```powershell
 pnpm --filter @echowave/api migrate
@@ -112,6 +112,10 @@ Android Expo Go 从 SDK 53 起不提供远程推送能力，EchoWave 会在该�
 
 App 将通过健康检查验证的服务器根地址保存到 AsyncStorage，所有 REST、上传、SSE、音频和通知注册请求都在调用时读取该地址。已保存地址优先于 Development/Expo Go 的 `EXPO_PUBLIC_API_URL` 默认值。
 
+当两个起步模板分组首次在当前设备加载成功时，App 只自动展示一次“基础引导”。“更多 → 新手引导”提供基础、知识库、数据源、AI 配置、运行模式和查看分析六项独立引导，完成或跳过状态按规范化 Server URL 保存为设备 UI 偏好；旧版基础引导完成状态会自动迁移。
+
+每个活动模板分组还通过 `GET /api/groups/:groupId/template-example` 提供一份代码维护的只读分析示例。示例不包含原始音频，不写入音频、转写、任务或分析表，也不计入分组统计；普通分组和已归档模板返回结构化 `404`。
+
 `production-apk` 与 `production` profile 强制忽略开发默认地址。清除应用数据后的 Production Build 首次只显示“连接到 EchoWave Server”，通过 `GET /health` 后才能保存并进入主应用。“更多 → 服务状态”可以修改服务器并重新挂载业务导航。
 
 客户端只允许 HTTP 指向 localhost、私有/链路本地地址或 `.local` 主机；公网服务器必须使用 HTTPS。`GET /health` 的 `capabilities.remotePush` 决定 App 是否请求通知权限并注册设备。
@@ -148,6 +152,7 @@ pnpm check
 当前已经实现：
 
 - 分组、知识库、数据源、音频上传和软归档的 PostgreSQL 纵切片
+- 一次性起步模板分组、可直接上传的共享数据源与跨页新手引导
 - 文档解析、pgvector 检索、可信引用问答和短历史
 - DashScope 版本化 ASR、Confirmed Transcript、说话人复核、情绪与角色分析
 - LangGraph 销售复盘、批次自动化、恢复/取消、SSE 状态与可选原生推送

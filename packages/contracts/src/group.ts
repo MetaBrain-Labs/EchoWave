@@ -17,6 +17,9 @@ export const DEFAULT_GROUP_ANALYSIS_FOCUS =
   '重点分析销售话术的有效性，提炼表现优秀之处及其对话证据，指出待改进点、潜在风险和可执行优化建议；结合客户回应、销售阶段、异议处理、需求探索、价值表达、促成动作与关联知识库进行判断；所有结论必须引用实际转写片段，不得补充录音外事实。';
 export const DEFAULT_GROUP_ANALYSIS_TONE = '正式、专业、结构清晰';
 
+/** EchoWave 一次性安装的可编辑起步分组标识。 */
+export const StarterTemplateKeySchema = z.enum(['sales_call_review', 'personal_speaking_coach']);
+
 /** 分组确认转写后的业务分析触发方式。 */
 export const GroupAnalysisTimingSchema = z.enum(['automatic', 'manual']);
 
@@ -78,6 +81,7 @@ export const GroupMetricsSchema = z.object({
 export const GroupSummarySchema = z.object({
   id: EntityIdSchema,
   name: z.string(),
+  starterTemplateKey: StarterTemplateKeySchema.nullable().default(null),
   metrics: GroupMetricsSchema,
   updatedAt: z.string().datetime(),
 });
@@ -87,6 +91,7 @@ export const GroupDetailSchema = GroupSummarySchema;
 
 export type GroupMetrics = z.infer<typeof GroupMetricsSchema>;
 export type GroupSummary = z.infer<typeof GroupSummarySchema>;
+export type StarterTemplateKey = z.infer<typeof StarterTemplateKeySchema>;
 export type GroupCreateRequest = z.infer<typeof GroupCreateRequestSchema>;
 export type GroupAnalysisTiming = z.infer<typeof GroupAnalysisTimingSchema>;
 export type GroupAnalysisSettings = z.infer<typeof GroupAnalysisSettingsSchema>;

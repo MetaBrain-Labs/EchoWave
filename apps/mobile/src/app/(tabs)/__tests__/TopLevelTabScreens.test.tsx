@@ -50,6 +50,10 @@ jest.mock('@/shared/api/audioRuntimeApi', () => ({
   getAudioRuntime: jest.fn(async () => ({ mode: 'object_storage' })),
 }));
 jest.mock('@/shared/api/groupsApi', () => ({ getGroupSettings: jest.fn() }));
+jest.mock('@/shared/onboarding/StarterTourContext', () => ({
+  useStarterTour: () => ({ replay: jest.fn() }),
+  useStarterTourTarget: () => undefined,
+}));
 
 describe('Top-level tab screens', () => {
   beforeEach(() => {
@@ -57,7 +61,7 @@ describe('Top-level tab screens', () => {
     focusCallback = undefined;
   });
 
-  it('keeps the More header fixed and uses four unified navigation cards', () => {
+  it('keeps the More header fixed and exposes navigation plus the replayable tour', () => {
     const screen = render(<MoreScreen />);
 
     const header = screen.getByTestId('top-level-page-header');
@@ -70,6 +74,7 @@ describe('Top-level tab screens', () => {
       screen.getByLabelText('打开服务状态'),
       screen.getByLabelText('打开 AI 配置'),
       screen.getByLabelText('打开运行模式'),
+      screen.getByLabelText('打开新手引导中心'),
     ]) {
       expect(StyleSheet.flatten(card.props.style)).toEqual(
         expect.objectContaining({
@@ -90,6 +95,9 @@ describe('Top-level tab screens', () => {
     expect(mockPush).toHaveBeenCalledWith('/service-status');
     fireEvent.press(screen.getByLabelText('打开运行模式'));
     expect(mockPush).toHaveBeenCalledWith('/audio-runtime');
+    expect(screen.getByText('新手引导')).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('打开新手引导中心'));
+    expect(mockPush).toHaveBeenCalledWith('/guides');
   });
 
   it('opens the independent analysis route with a back action', () => {
@@ -106,6 +114,9 @@ describe('Top-level tab screens', () => {
     expect(screen.getByRole('header', { name: '一键分析' })).toBeTruthy();
     expect(screen.getByText('上传后由服务器自动完成转写、情绪、角色和业务分析')).toBeTruthy();
     expect(await screen.findByText('1. 数据源')).toBeTruthy();
+    expect(StyleSheet.flatten(screen.getByRole('radio', { name: '新上传' }).props.style)).toEqual(
+      expect.objectContaining({ borderRadius: radii.default }),
+    );
   });
 
   it('refreshes the one-click analysis runtime mode when the tab regains focus', async () => {

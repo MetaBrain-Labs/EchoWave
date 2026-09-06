@@ -6,7 +6,7 @@
 
 EchoWave 使用 PostgreSQL 作为权威业务存储，并通过 pgvector 支持知识库向量检索。完整结构分为三部分：
 
-- 应用业务 schema：54 张业务表，以及迁移入口创建的 `schema_migrations`。
+- 应用业务 schema：55 张业务表，以及迁移入口创建的 `schema_migrations`。
 - LangGraph 独立 schema：4 张 checkpoint 表，由 `PostgresSaver.setup()` 管理。
 - `public` schema：安装 `vector` 扩展，为 `document_chunks.embedding` 提供 `vector(1024)` 类型和 HNSW 索引能力。
 
@@ -25,6 +25,7 @@ erDiagram
     TENANTS ||--o{ AI_CAPABILITY_BINDINGS : binds
     TENANTS ||--|| TENANT_AUDIO_RUNTIME_SETTINGS : selects
     TENANTS ||--o{ PUSH_DEVICES : registers
+    TENANTS ||--o{ STARTER_TEMPLATE_INSTALLATIONS : installs
 
     KNOWLEDGE_BASES ||--o{ DOCUMENTS : contains
     DOCUMENTS ||--o{ DOCUMENT_REVISIONS : versions
@@ -89,6 +90,12 @@ erDiagram
 - `applied_at`：成功提交时间。
 
 迁移入口按照文件名排序，只执行尚未记录的 migration。业务 SQL 和迁移记录在同一事务中提交，从而避免只完成一半的迁移状态。
+
+### `starter_template_installations`
+
+记录租户已安装的起步模板目录版本。迁移入口在建立当前固定租户后，以 `(tenant_id, catalog_version)` 插入作为并发和重复运行门禁；版本标记、分组、数据源和关联在同一事务中提交。
+
+当前目录版本为 `1`，安装“销售通话复盘”、“个人表达教练”和“快速录音上传”。安装成功后不再根据名称或内容回填，因此用户的改名、设置修改、解除关联和软归档都会保留。
 
 ## 租户 AI 配置
 
@@ -219,6 +226,8 @@ erDiagram
 
 租户内组织知识库、数据源和音频的工作空间，对应移动端“分组”页面。
 
+`starter_template_key` 为可空的稳定模板身份，当前只用于起步分组的标识与首次引导；租户内非空值唯一。改名或修改分析设置不改变该身份，归档后也不会释放标识用于重建。
+
 表中只保存名称、租户、创建更新时间和软删除时间。分析数、音频数、知识库数和数据源数均通过事实表聚合，不保存为可写计数字段。
 
 ### `group_knowledge_bases`
@@ -254,7 +263,7 @@ group_data_sources 所关联数据源下的音频
 
 ### `data_sources`
 
-描述音频从哪里进入系统，以及进入后采用哪些分析设置。
+描述音频从哪里进入系统，以及进入后采用哪些分析设置。`starter_template_key` 为可空、租户内唯一的起步资源身份；当前 `starter_audio_upload` 表示与两个模板分组共享的手动上传数据源。
 
 接入信息：
 

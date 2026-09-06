@@ -26,7 +26,10 @@ import {
   DataSourceUpdateRequestSchema,
   GroupCreateRequestSchema,
   GroupResourceLinksUpdateRequestSchema,
+  GroupSummarySchema,
   GroupSettingsUpdateRequestSchema,
+  StarterTemplateKeySchema,
+  TemplateExampleSchema,
   AudioPostAnalysisStartResponseSchema,
   AudioPostAnalysisStateSchema,
   AudioAnalysisStatusStreamEventSchema,
@@ -63,6 +66,56 @@ describe('workspace contracts', () => {
     assert.throws(() => GroupCreateRequestSchema.parse({ name: '   ' }));
     assert.throws(() => GroupCreateRequestSchema.parse({ name: '分'.repeat(121) }));
     assert.throws(() => GroupCreateRequestSchema.parse({ name: 42 }));
+  });
+
+  it('identifies starter groups while accepting older ordinary-group responses', () => {
+    assert.equal(StarterTemplateKeySchema.parse('sales_call_review'), 'sales_call_review');
+    assert.throws(() => StarterTemplateKeySchema.parse('unknown_template'));
+    const group = GroupSummarySchema.parse({
+      id: firstId,
+      name: '普通分组',
+      metrics: { analysisCount: 0, audioCount: 0, knowledgeCount: 0, sourceCount: 0 },
+      updatedAt: '2026-09-06T00:00:00.000Z',
+    });
+    assert.equal(group.starterTemplateKey, null);
+  });
+
+  it('validates template example timing and evidence references', () => {
+    const base = {
+      templateKey: 'sales_call_review',
+      exampleVersion: 1,
+      title: '示例',
+      scenario: '场景',
+      playbackAvailable: false,
+      roles: [{ id: 'sales', label: '销售' }],
+      transcript: [
+        {
+          id: 's1',
+          roleId: 'sales',
+          roleLabel: '销售',
+          emotion: '平静',
+          startMs: 0,
+          endMs: 1000,
+          text: '你好',
+        },
+      ],
+      summarySections: [{ title: '摘要', body: '内容' }],
+      analysisTags: [
+        { kind: 'strength', title: '有效', detail: '说明', evidenceSegmentIds: ['s1'] },
+      ],
+      recommendations: ['继续'],
+      limitations: ['只读示例'],
+    };
+    assert.equal(TemplateExampleSchema.parse(base).playbackAvailable, false);
+    assert.throws(() =>
+      TemplateExampleSchema.parse({
+        ...base,
+        analysisTags: [{ ...base.analysisTags[0], evidenceSegmentIds: ['missing'] }],
+      }),
+    );
+    assert.throws(() =>
+      TemplateExampleSchema.parse({ ...base, transcript: [{ ...base.transcript[0], endMs: 0 }] }),
+    );
   });
 
   it('validates analysis settings and atomic resource-link replacements', () => {

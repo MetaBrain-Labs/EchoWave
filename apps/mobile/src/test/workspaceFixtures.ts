@@ -23,6 +23,7 @@ import type {
 export const groupFixture: GroupSummary = {
   id: '10000000-0000-4000-8000-000000000001',
   name: '产品研究组',
+  starterTemplateKey: null,
   metrics: { analysisCount: 2, audioCount: 5, knowledgeCount: 2, sourceCount: 3 },
   updatedAt: '2026-08-21T10:00:00.000Z',
 };

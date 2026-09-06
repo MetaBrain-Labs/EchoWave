@@ -29,6 +29,7 @@ describe('PostgresGroupRepository group audio', () => {
               {
                 id: groupId,
                 name: '产品研究组',
+                starter_template_key: 'sales_call_review',
                 updated_at: new Date('2026-08-21T10:00:00.000Z'),
                 analysis_count: 0,
                 audio_count: 1,
@@ -111,6 +112,7 @@ describe('PostgresGroupRepository group audio', () => {
     assert.match(calls[0].sql, /UNION/);
     assert.match(calls[0].sql, /data_sources/);
     assert.match(calls[0].sql, /linked_source\.deleted_at IS NULL/);
+    assert.match(calls[0].sql, /starter_template_key/);
     assert.match(calls[1].sql, /group_audio_links/);
     assert.match(calls[1].sql, /group_data_sources/);
     assert.match(calls[1].sql, /ds\.deleted_at IS NULL/);

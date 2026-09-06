@@ -8,7 +8,7 @@
  * - 由 GroupScreen 持有分页、导航和远端加载状态。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { AudioFileSummary, AudioProcessingStatus } from '@echowave/contracts';
+import type { AudioFileSummary, AudioProcessingStatus, TemplateExample } from '@echowave/contracts';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
@@ -19,6 +19,7 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 function formatDuration(durationMs: number | null) {
   if (durationMs === null) return '--:--';
   const seconds = Math.floor(durationMs / 1_000);
@@ -118,6 +119,11 @@ export function AudioContent({
   onOpenAudio,
   onOpenFilter,
   onRetry,
+  onOpenTemplateExample,
+  onRetryTemplateExample,
+  templateExample,
+  templateExampleError,
+  templateExampleLoading,
 }: {
   error: string;
   emptyMessage: string;
@@ -126,52 +132,143 @@ export function AudioContent({
   onOpenAudio?: (id: string) => void;
   onOpenFilter: () => void;
   onRetry: () => void;
+  onOpenTemplateExample?: () => void;
+  onRetryTemplateExample: () => void;
+  templateExample?: TemplateExample;
+  templateExampleError: string;
+  templateExampleLoading: boolean;
 }) {
-  if (loading) {
-    return <ActivityIndicator accessibilityLabel="正在加载分组音频" color={colors.ink} />;
-  }
-  if (error) {
-    return (
-      <View style={styles.card}>
-        <Text accessibilityRole="alert" style={styles.metaText}>
-          {error}
-        </Text>
-        <Pressable accessibilityRole="button" onPress={onRetry}>
-          <Text style={styles.filterText}>重新加载</Text>
-        </Pressable>
-      </View>
-    );
-  }
   return (
     <>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>共 {items.length} 份音频</Text>
-        <Pressable
-          accessibilityLabel="音频排序筛选"
-          accessibilityRole="button"
-          onPress={onOpenFilter}
-          style={({ pressed }) => [styles.filterButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.filterText}>排序筛选</Text>
-          <Ionicons
-            color={colors.secondary}
-            name="filter-outline"
-            size={typography.heading5.lineHeight}
-          />
-        </Pressable>
-      </View>
-      {items.length ? (
-        items.map((item) => <AudioCard key={item.id} item={item} onOpenAudio={onOpenAudio} />)
-      ) : (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyText}>{emptyMessage}</Text>
+      <TemplateExampleCard
+        error={templateExampleError}
+        example={templateExample}
+        loading={templateExampleLoading}
+        onOpen={onOpenTemplateExample}
+        onRetry={onRetryTemplateExample}
+      />
+      {loading ? (
+        <ActivityIndicator accessibilityLabel="正在加载分组音频" color={colors.ink} />
+      ) : error ? (
+        <View style={styles.card}>
+          <Text accessibilityRole="alert" style={styles.metaText}>{error}</Text>
+          <Pressable accessibilityRole="button" onPress={onRetry}>
+            <Text style={styles.filterText}>重新加载</Text>
+          </Pressable>
         </View>
+      ) : (
+        <>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>共 {items.length} 份音频</Text>
+            <Pressable accessibilityLabel="音频排序筛选" accessibilityRole="button"
+              onPress={onOpenFilter} style={({ pressed }) => [styles.filterButton, pressed && styles.pressed]}>
+              <Text style={styles.filterText}>排序筛选</Text>
+              <Ionicons color={colors.secondary} name="filter-outline" size={typography.heading5.lineHeight} />
+            </Pressable>
+          </View>
+          {items.length ? items.map((item) => <AudioCard key={item.id} item={item} onOpenAudio={onOpenAudio} />) : (
+            <View style={styles.emptyState}><Text style={styles.emptyText}>{emptyMessage}</Text></View>
+          )}
+        </>
       )}
     </>
   );
 }
 
+/** 独立呈现不计入真实音频统计的模板示例入口。 */
+function TemplateExampleCard({
+  error,
+  example,
+  loading,
+  onOpen,
+  onRetry,
+}: {
+  error: string;
+  example?: TemplateExample;
+  loading: boolean;
+  onOpen?: () => void;
+  onRetry: () => void;
+}) {
+  const tourRef = useStarterTourTarget('group-template-example');
+  if (!loading && !error && !example) return null;
+  return (
+    <View collapsable={false} ref={tourRef} style={styles.exampleRegion}>
+      <View style={styles.exampleHeadingRow}>
+        <Text style={styles.exampleHeading}>模板示例</Text>
+        <Text style={styles.exampleBadge}>只读示例</Text>
+      </View>
+      {loading ? (
+        <ActivityIndicator accessibilityLabel="正在加载模板示例" color={colors.ink} />
+      ) : error ? (
+        <View style={styles.exampleErrorRow}>
+          <Text accessibilityRole="alert" style={styles.metaText}>
+            {error}
+          </Text>
+          <Pressable accessibilityRole="button" onPress={onRetry}>
+            <Text style={styles.filterText}>重试</Text>
+          </Pressable>
+        </View>
+      ) : example ? (
+        <Pressable
+          accessibilityHint="打开不包含原始音频的只读分析示例"
+          accessibilityRole="button"
+          onPress={onOpen}
+          style={({ pressed }) => [styles.exampleCard, pressed && styles.pressed]}
+        >
+          <View style={styles.exampleCopy}>
+            <Text style={styles.cardTitle}>{example.title}</Text>
+            <Text numberOfLines={2} style={styles.exampleDescription}>
+              {example.scenario}
+            </Text>
+          </View>
+          <Ionicons color={colors.ink} name="arrow-forward" size={22} />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  exampleRegion: { marginBottom: spacing.xl },
+  exampleHeadingRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  exampleHeading: {
+    ...typography.heading3,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  exampleBadge: {
+    ...typography.label,
+    backgroundColor: colors.background,
+    borderRadius: radii.default,
+    color: textColors.secondary,
+    overflow: 'hidden',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  exampleCard: {
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderColor: colors.ink,
+    borderLeftWidth: 3,
+    borderRadius: radii.default,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'space-between',
+    padding: spacing.md,
+  },
+  exampleCopy: { flex: 1, gap: spacing.xs },
+  exampleDescription: {
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+  },
+  exampleErrorRow: { gap: spacing.sm },
   pressed: {
     backgroundColor: colors.background,
     borderRadius: radii.default,
