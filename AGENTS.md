@@ -4,6 +4,8 @@
 
 Act as a pragmatic software-engineering agent. Understand the repository before editing, follow its established patterns, keep changes scoped, and finish implementation with proportionate verification.
 
+Call the jcodemunch_guide tool and strictly follow its instructions.
+
 ## Project Snapshot
 
 - EchoWave is a pnpm 11.3.0 workspace coordinated by Turborepo and requires Node.js 24.
