@@ -73,20 +73,24 @@ describe('StarterTourProvider', () => {
   it('automatically runs and completes only the basic guide when templates are ready', async () => {
     const screen = renderTour();
     expect(await screen.findByText('欢迎使用 EchoWave')).toBeTruthy();
+    expect(screen.getByTestId('starter-tour-state-ready')).toBeTruthy();
+    expect(screen.getByTestId('starter-tour-overlay')).toBeTruthy();
+    expect(screen.getByTestId('starter-tour-skip')).toBeTruthy();
     expect(mockReplace).toHaveBeenCalledWith({
       pathname: '/',
       params: { groupId: templates[0].id },
     });
     for (let index = 0; index < GUIDE_REGISTRY.basic.steps.length - 1; index += 1) {
-      fireEvent.press(screen.getByText('下一步'));
+      fireEvent.press(screen.getByTestId('starter-tour-next'));
     }
-    fireEvent.press(screen.getByText('完成引导'));
+    fireEvent.press(screen.getByTestId('starter-tour-finish'));
     await waitFor(() =>
       expect(AsyncStorage.setItem).toHaveBeenCalledWith(
         guideStorageKey(serverUrl),
         expect.stringContaining('"basic":"completed"'),
       ),
     );
+    expect(screen.getByTestId('starter-tour-state-ready')).toBeTruthy();
     expect(screen.queryByText('上传第一段录音')).toBeNull();
   });
 
@@ -103,6 +107,7 @@ describe('StarterTourProvider', () => {
         expect.stringContaining('"basic":"completed"'),
       ),
     );
+    expect(screen.getByTestId('starter-tour-state-ready')).toBeTruthy();
     expect(screen.queryByText('欢迎使用 EchoWave')).toBeNull();
   });
 
@@ -137,6 +142,7 @@ describe('StarterTourProvider', () => {
   it('does not auto-start when one starter template is unavailable', async () => {
     const screen = renderTour(<Controls groups={[templates[0]]} />);
     await waitFor(() => expect(AsyncStorage.getItem).toHaveBeenCalled());
+    expect(screen.queryByTestId('starter-tour-state-ready')).toBeNull();
     expect(screen.queryByText('欢迎使用 EchoWave')).toBeNull();
   });
 });

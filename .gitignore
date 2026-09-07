@@ -12,6 +12,9 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 # Local AI execution diagnostics
 .ai-execution-reports/
 
+# Local Android E2E evidence
+.artifacts/maestro/
+
 # Runtime data
 pids
 *.pid
@@ -166,3 +169,4 @@ google-services.json
 *-firebase-adminsdk-*.json
 firebase-service-account.json
 apps/mobile/@laifqzzrs-team__echowave.jks
+hierarchy.json

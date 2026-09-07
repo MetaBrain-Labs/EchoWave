@@ -44,6 +44,7 @@ describe('TopLevelPageHeader', () => {
             icon: 'add',
             label: '新建',
             onPress: onCreate,
+            testID: 'e2e-new-knowledge-base',
           },
         ]}
         title="知识库"
@@ -52,6 +53,7 @@ describe('TopLevelPageHeader', () => {
 
     const search = screen.getByLabelText('搜索知识库');
     const create = screen.getByLabelText('新建知识库');
+    expect(screen.getByTestId('e2e-new-knowledge-base')).toBe(create);
     expect(StyleSheet.flatten(search.props.style)).toEqual(
       expect.objectContaining({ height: 44, width: 44 }),
     );

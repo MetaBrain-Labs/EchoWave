@@ -107,7 +107,7 @@ export function ServerConnectionScreen({ onCancel, onSaved }: ServerConnectionSc
   };
 
   return (
-    <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
+    <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea} testID="echowave-ready">
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.flex}
@@ -140,6 +140,7 @@ export function ServerConnectionScreen({ onCancel, onSaved }: ServerConnectionSc
               placeholder="http://192.168.1.7:3001"
               placeholderTextColor={textColors.tertiary}
               style={styles.input}
+              testID="服务器地址"
               value={input}
             />
             {usesLocalHttp ? (
@@ -151,7 +152,11 @@ export function ServerConnectionScreen({ onCancel, onSaved }: ServerConnectionSc
               </View>
             ) : null}
             {probe.phase === 'success' ? (
-              <View accessibilityRole="alert" style={styles.success}>
+              <View
+                accessibilityRole="alert"
+                style={styles.success}
+                testID="server-connection-success"
+              >
                 <Ionicons color={colors.success} name="checkmark-circle" size={18} />
                 <Text style={styles.successText}>连接成功 · EchoWave {probe.version}</Text>
               </View>
@@ -168,6 +173,7 @@ export function ServerConnectionScreen({ onCancel, onSaved }: ServerConnectionSc
               disabled={probe.phase === 'loading' || saving}
               onPress={() => void testConnection()}
               style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
+              testID="测试连接"
             >
               {probe.phase === 'loading' ? (
                 <ActivityIndicator color={colors.ink} />
@@ -186,6 +192,7 @@ export function ServerConnectionScreen({ onCancel, onSaved }: ServerConnectionSc
                 !canSave && styles.disabled,
                 pressed && canSave && styles.pressed,
               ]}
+              testID="保存并继续"
             >
               {saving ? <ActivityIndicator color={colors.white} /> : null}
               <Text style={styles.primaryButtonText}>保存并继续</Text>
@@ -196,6 +203,7 @@ export function ServerConnectionScreen({ onCancel, onSaved }: ServerConnectionSc
                 accessibilityRole="button"
                 onPress={onCancel}
                 style={styles.cancelButton}
+                testID="取消修改服务器"
               >
                 <Text style={styles.cancelText}>取消</Text>
               </Pressable>

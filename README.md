@@ -26,6 +26,8 @@ compose.yaml              PostgreSQL、migration 与 API 服务
 
 完整主题入口见[文档索引](./docs/README.md)和[文档导览](./docs/documentation-guide.md)。
 
+Android 真机回归使用专用 E2E Development Build，通过 Maestro 覆盖稳定 UI 流程与显式付费的真实 ASR/LLM 集成。环境准备、命令和诊断/修复门禁见 [Android 真机全量回归](./docs/mobile-e2e.md)。设备 E2E 不属于常规 `pnpm check`。
+
 ## 本地开发
 
 ### 1. 安装与配置

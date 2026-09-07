@@ -603,7 +603,12 @@ export function GroupScreen({
         </ScrollView>
       ) : (
         <>
-          <PageTabs activeTab={activeTab} onChange={selectTab} tabs={tabs} />
+          <PageTabs
+            activeTab={activeTab}
+            onChange={selectTab}
+            tabs={tabs}
+            testIDPrefix="group-tab"
+          />
           <ScrollView
             accessibilityLabel="分组内容分页"
             directionalLockEnabled

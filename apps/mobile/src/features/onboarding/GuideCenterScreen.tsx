@@ -60,7 +60,10 @@ export function GuideCenterScreen({ onBack }: { onBack: () => void }) {
                     {guide.steps.length} 步 · {statusCopy[status]}
                   </Text>
                 </View>
-                <Text style={[styles.status, status === 'completed' && styles.completed]}>
+                <Text
+                  accessibilityLabel={`${status === 'not_started' ? '未完成' : '已完成'}${guide.title}`}
+                  style={[styles.status, status === 'completed' && styles.completed]}
+                >
                   {statusCopy[status]}
                 </Text>
               </View>

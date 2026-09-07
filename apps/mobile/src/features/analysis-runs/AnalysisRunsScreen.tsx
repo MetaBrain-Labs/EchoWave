@@ -100,7 +100,7 @@ export function AnalysisRunsScreen({ onBack }: { onBack?: () => void } = {}) {
   };
 
   return (
-    <SafeAreaView edges={['top']} style={styles.safeArea}>
+    <SafeAreaView edges={['top']} style={styles.safeArea} testID="analysis-runs-screen">
       <TopLevelPageHeader onBack={onBack} subtitle="查看所有音频分析流程与报告" title="分析" />
       <View style={styles.filters}>
         {filters.map(([value, label]) => (

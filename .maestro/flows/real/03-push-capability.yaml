@@ -1,0 +1,30 @@
+appId: com.echowave.app
+name: real-push-capability
+tags:
+  - real
+---
+- runFlow: ../../subflows/prepare-e2e-app.yaml
+- startRecording:
+    path: 'real-push-capability'
+    optional: true
+- tapOn:
+    id: 'e2e-tab-more'
+- tapOn: '打开服务状态'
+- extendedWaitUntil:
+    visible: '推送通知'
+    timeout: 30000
+- assertVisible: '服务端能力'
+- assertVisible: '系统权限'
+- assertVisible: '设备登记'
+- runFlow:
+    when:
+      visible: '未启用'
+    commands:
+      - assertVisible: '服务端能力需要服务端开启远程推送.*'
+- runFlow:
+    when:
+      visible: '已登记'
+    commands:
+      - assertVisible: '刷新登记'
+- takeScreenshot: 'real/03-push-capability'
+- stopRecording

@@ -1,0 +1,10 @@
+appId: com.echowave.app
+---
+- launchApp:
+    appId: com.echowave.app
+- openLink:
+    link: 'echowave://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081'
+- extendedWaitUntil:
+    visible:
+      id: 'echowave-ready'
+    timeout: 120000

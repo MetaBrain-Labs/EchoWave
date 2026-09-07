@@ -200,6 +200,7 @@ export function DataSourceListScreen({
                 setFormVisible(true);
               },
               targetRef: createTourRef,
+              testID: 'e2e-new-data-source',
             },
           ]}
           title="数据源"

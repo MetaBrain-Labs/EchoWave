@@ -31,6 +31,7 @@ export type TopLevelPageAction = {
   label?: string;
   onPress: () => void;
   targetRef?: Ref<View>;
+  testID?: string;
 };
 
 /** 描述一级页头的标题、说明和操作集合。 */
@@ -88,6 +89,7 @@ export function TopLevelPageHeader({
                     action.disabled && styles.disabled,
                     pressed && styles.pressed,
                   ]}
+                  testID={action.testID}
                 >
                   <Ionicons
                     color={colors.ink}

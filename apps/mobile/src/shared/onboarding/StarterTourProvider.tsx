@@ -276,10 +276,17 @@ export function StarterTourProvider({
       templates,
     ],
   );
+  const basicGuideSettled =
+    hydrated && (statuses.basic !== 'not_started' || activeGuide === 'basic');
 
   return (
     <StarterTourContext.Provider value={value}>
-      {children}
+      <View
+        style={styles.provider}
+        testID={basicGuideSettled ? 'starter-tour-state-ready' : undefined}
+      >
+        {children}
+      </View>
       {definition && step ? (
         <StarterTourOverlay
           current={stepIndex}
@@ -341,7 +348,7 @@ function StarterTourOverlay({
       transparent
       visible={visible}
     >
-      <View style={styles.overlay}>
+      <View style={styles.overlay} testID="starter-tour-overlay">
         {spotlight ? (
           <>
             <View style={[styles.mask, { height: spotlight.top, left: 0, right: 0, top: 0 }]} />
@@ -392,7 +399,12 @@ function StarterTourOverlay({
             <Text accessibilityRole="header" style={styles.title}>
               {step.title}
             </Text>
-            <Pressable accessibilityLabel="跳过当前引导" hitSlop={8} onPress={onClose}>
+            <Pressable
+              accessibilityLabel="跳过当前引导"
+              hitSlop={8}
+              onPress={onClose}
+              testID="starter-tour-skip"
+            >
               <Ionicons color={textColors.secondary} name="close" size={22} />
             </Pressable>
           </View>
@@ -413,7 +425,12 @@ function StarterTourOverlay({
                   <Text style={styles.backText}>上一步</Text>
                 </Pressable>
               ) : null}
-              <Pressable accessibilityRole="button" onPress={onNext} style={styles.nextButton}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={onNext}
+                style={styles.nextButton}
+                testID={current === stepCount - 1 ? 'starter-tour-finish' : 'starter-tour-next'}
+              >
                 <Text style={styles.nextText}>
                   {current === stepCount - 1 ? '完成引导' : '下一步'}
                 </Text>
@@ -427,6 +444,7 @@ function StarterTourOverlay({
 }
 
 const styles = StyleSheet.create({
+  provider: { flex: 1 },
   overlay: { flex: 1 },
   mask: { backgroundColor: 'rgba(16, 24, 40, 0.68)', position: 'absolute' },
   spotlight: {

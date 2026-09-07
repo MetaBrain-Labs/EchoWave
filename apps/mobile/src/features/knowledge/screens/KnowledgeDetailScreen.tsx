@@ -488,7 +488,12 @@ export function KnowledgeDetailScreen({
 
   const renderTabs = () => (
     <View style={styles.tabsSurface}>
-      <PageTabs activeTab={activeTab} onChange={selectTab} tabs={detailTabs} />
+      <PageTabs
+        activeTab={activeTab}
+        onChange={selectTab}
+        tabs={detailTabs}
+        testIDPrefix="knowledge-detail-tab"
+      />
     </View>
   );
   const renderHero = () => (

@@ -1,0 +1,27 @@
+appId: com.echowave.app
+name: stable-invalid-server
+tags:
+  - stable
+---
+- runFlow: ../../subflows/prepare-e2e-app.yaml
+- startRecording:
+    path: 'stable-invalid-server'
+    optional: true
+- tapOn:
+    id: 'e2e-tab-more'
+- tapOn: '打开服务状态'
+- tapOn: '修改服务器'
+- tapOn:
+    id: '服务器地址'
+- eraseText
+- inputText: 'http://127.0.0.1:39999'
+- hideKeyboard
+- tapOn:
+    id: '测试连接'
+- extendedWaitUntil:
+    visible: '无法连接服务器.*'
+    timeout: 15000
+- takeScreenshot: 'stable/04-invalid-server'
+- tapOn:
+    id: '取消修改服务器'
+- stopRecording

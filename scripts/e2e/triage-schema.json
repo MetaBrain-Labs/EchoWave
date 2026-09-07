@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "classification",
+    "failingFlows",
+    "failedSteps",
+    "evidence",
+    "likelyRootCause",
+    "confidence",
+    "reproduction",
+    "proposedFiles",
+    "proposedChanges",
+    "verificationCommands",
+    "needsUserAction",
+    "userAction"
+  ],
+  "properties": {
+    "classification": {
+      "type": "string",
+      "enum": ["application", "test_flow", "backend", "external_provider", "device", "environment"]
+    },
+    "failingFlows": { "type": "array", "items": { "type": "string" } },
+    "failedSteps": { "type": "array", "items": { "type": "string" } },
+    "evidence": { "type": "array", "items": { "type": "string" } },
+    "likelyRootCause": { "type": "string" },
+    "confidence": { "type": "string", "enum": ["low", "medium", "high"] },
+    "reproduction": { "type": "array", "items": { "type": "string" } },
+    "proposedFiles": { "type": "array", "items": { "type": "string" } },
+    "proposedChanges": { "type": "array", "items": { "type": "string" } },
+    "verificationCommands": { "type": "array", "items": { "type": "string" } },
+    "needsUserAction": { "type": "boolean" },
+    "userAction": { "type": "string" }
+  }
+}

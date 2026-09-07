@@ -96,7 +96,7 @@ function RootContent() {
   }
 
   return (
-    <View style={styles.stage}>
+    <View style={styles.stage} testID="echowave-ready">
       <View style={styles.canvas}>
         <StarterTourProvider key={connection.revision} serverUrl={connection.serverUrl}>
           <NavigationLoadingProvider>

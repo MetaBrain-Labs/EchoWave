@@ -1,0 +1,53 @@
+appId: com.echowave.app
+name: stable-bootstrap-navigation
+tags:
+  - stable
+---
+- runFlow: ../../subflows/prepare-e2e-app.yaml
+- startRecording:
+    path: 'stable-bootstrap-navigation'
+    optional: true
+- assertVisible:
+    id: 'e2e-tab-groups'
+- assertVisible:
+    id: 'e2e-tab-knowledge'
+- assertVisible:
+    id: 'e2e-tab-create'
+- assertVisible:
+    id: 'e2e-tab-sources'
+- assertVisible:
+    id: 'e2e-tab-more'
+- takeScreenshot: 'stable/01-groups'
+- tapOn:
+    id: 'e2e-tab-knowledge'
+- assertVisible:
+    id: 'knowledge-list-scroll'
+- takeScreenshot: 'stable/01-knowledge'
+- tapOn:
+    id: 'e2e-tab-create'
+- assertVisible: '一键分析'
+- takeScreenshot: 'stable/01-create'
+- tapOn:
+    id: 'e2e-tab-sources'
+- assertVisible:
+    id: 'data-source-list-scroll'
+- takeScreenshot: 'stable/01-data-sources'
+- tapOn:
+    id: 'e2e-tab-more'
+- assertVisible:
+    id: 'more-scroll'
+- takeScreenshot: 'stable/01-more'
+- tapOn: '打开分析'
+- assertVisible:
+    id: 'analysis-runs-screen'
+- pressKey: BACK
+- tapOn: '打开服务状态'
+- assertVisible: '服务状态'
+- pressKey: BACK
+- tapOn: '打开 AI 配置'
+- assertVisible: 'AI 配置'
+- pressKey: BACK
+- tapOn: '打开运行模式'
+- assertVisible: '运行模式'
+- pressKey: BACK
+- stopRecording

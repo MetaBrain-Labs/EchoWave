@@ -156,6 +156,7 @@ export function KnowledgeListScreen({
               label: '新建',
               onPress: () => setShowCreate((current) => !current),
               targetRef: createTourRef,
+              testID: 'e2e-new-knowledge-base',
             },
           ]}
           title="知识库"

@@ -1,0 +1,52 @@
+appId: com.echowave.app
+name: real-knowledge-rag
+tags:
+  - real
+---
+- runFlow: ../../subflows/prepare-e2e-app.yaml
+- startRecording:
+    path: 'real-knowledge-rag'
+    optional: true
+- tapOn:
+    id: 'e2e-tab-knowledge'
+- tapOn:
+    id: 'e2e-new-knowledge-base'
+- tapOn: '知识库名称'
+- inputText: '${REAL_KB_NAME}'
+- tapOn: '知识库描述'
+- inputText: 'Paid E2E retrieval fixture'
+- hideKeyboard
+- tapOn: '创建并打开'
+- extendedWaitUntil:
+    visible: '${REAL_KB_NAME}'
+    timeout: 30000
+- tapOn: '关联分组'
+- tapOn: '关联新分组'
+- tapOn: '选择分组：${REAL_GROUP_NAME}'
+- tapOn: '确认关联'
+- assertVisible: '${REAL_GROUP_NAME}'
+- tapOn:
+    id: 'knowledge-detail-tab-files'
+- tapOn: '上传文档'
+- runFlow: ../../subflows/select-knowledge-file.yaml
+- extendedWaitUntil:
+    visible: '解析完成'
+    timeout: 600000
+- takeScreenshot: 'real/02-document-ready'
+- tapOn: '问知识库'
+- tapOn: '输入知识库问题'
+- inputText: 'What is the verification code?'
+- hideKeyboard
+- tapOn: '发送问题'
+- extendedWaitUntil:
+    visible: 'ECHO-4827'
+    timeout: 300000
+- assertVisible: '.*条引用来源'
+- takeScreenshot: 'real/02-answer-with-citation'
+- tapOn: "\\[1\\] EchoWave-E2E-Knowledge.md"
+- assertVisible: '原文'
+- takeScreenshot: 'real/02-citation-open'
+- pressKey: BACK
+- pressKey: BACK
+- pressKey: BACK
+- stopRecording
