@@ -168,7 +168,12 @@ export function DocumentDetailScreen({
         searchLabel={activeTab === 'parsed' ? '聚焦文本块搜索' : '搜索文档原文'}
         title={document.title}
       />
-      <PageTabs activeTab={activeTab} onChange={selectTab} tabs={tabs} />
+      <PageTabs
+        activeTab={activeTab}
+        onChange={selectTab}
+        tabs={tabs}
+        testIDPrefix="document-detail-tab"
+      />
       <ScrollView
         directionalLockEnabled
         horizontal

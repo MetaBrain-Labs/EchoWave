@@ -23,9 +23,16 @@ import {
   sourceFixtures,
 } from '@/test/workspaceFixtures';
 
+const mockOfferStarterTemplates = jest.fn();
+
 jest.mock('expo-router', () => ({ useFocusEffect: jest.fn() }));
+jest.mock('@/shared/onboarding/StarterTourContext', () => ({
+  useStarterTour: () => ({ offerStarterTemplates: mockOfferStarterTemplates }),
+  useStarterTourTarget: () => undefined,
+}));
 jest.mock('@/shared/api/groupsApi', () => ({
   createGroup: jest.fn(),
+  getGroupTemplateExample: jest.fn(),
   listGroups: jest.fn(),
   listGroupAudioFiles: jest.fn(),
   listGroupKnowledgeBases: jest.fn(),
@@ -37,6 +44,31 @@ const secondGroup = {
   id: '10000000-0000-4000-8000-000000000002',
   name: '客户体验组',
   updatedAt: '2026-08-20T10:00:00.000Z',
+};
+const templateExample = {
+  templateKey: 'sales_call_review' as const,
+  exampleVersion: 1,
+  title: 'B2B 首次需求沟通示例',
+  scenario: '销售首次沟通',
+  playbackAvailable: false as const,
+  roles: [{ id: 'sales', label: '销售' }],
+  transcript: [
+    {
+      id: 's1',
+      roleId: 'sales',
+      roleLabel: '销售',
+      emotion: '平静',
+      startMs: 0,
+      endMs: 1000,
+      text: '你好',
+    },
+  ],
+  summarySections: [{ title: '摘要', body: '内容' }],
+  analysisTags: [
+    { kind: 'strength' as const, title: '有效', detail: '说明', evidenceSegmentIds: ['s1'] },
+  ],
+  recommendations: ['继续'],
+  limitations: ['只读'],
 };
 
 async function renderGroup(props?: ComponentProps<typeof GroupScreen>) {
@@ -62,6 +94,7 @@ describe('GroupScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.mocked(workspaceApi.createGroup).mockResolvedValue(secondGroup);
+    jest.mocked(workspaceApi.getGroupTemplateExample).mockResolvedValue(templateExample);
     jest.mocked(workspaceApi.listGroups).mockResolvedValue({ items: [groupFixture] });
     jest
       .mocked(workspaceApi.listGroupAudioFiles)
@@ -121,6 +154,40 @@ describe('GroupScreen', () => {
         expect.objectContaining({ fontSize: 16, lineHeight: 24 }),
       );
     }
+  });
+
+  it('marks starter groups as editable templates in the page and drawer', async () => {
+    jest.mocked(workspaceApi.listGroups).mockResolvedValue({
+      items: [{ ...groupFixture, starterTemplateKey: 'sales_call_review' }],
+    });
+    const screen = await renderGroup();
+
+    expect(screen.getByText('模板')).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('菜单'));
+    expect(screen.getAllByText('模板')).toHaveLength(2);
+  });
+
+  it('shows a read-only template example without changing the real audio count', async () => {
+    const onOpenTemplateExample = jest.fn();
+    jest.mocked(workspaceApi.listGroups).mockResolvedValue({
+      items: [{ ...groupFixture, starterTemplateKey: 'sales_call_review' }],
+    });
+    const screen = await renderGroup({ onOpenTemplateExample });
+    expect(await screen.findByText('B2B 首次需求沟通示例')).toBeTruthy();
+    expect(screen.getByText('共 5 份音频')).toBeTruthy();
+    fireEvent.press(screen.getByText('B2B 首次需求沟通示例'));
+    expect(onOpenTemplateExample).toHaveBeenCalledWith(groupFixture.id);
+  });
+
+  it('keeps real audio visible when the template example request fails', async () => {
+    jest.mocked(workspaceApi.listGroups).mockResolvedValue({
+      items: [{ ...groupFixture, starterTemplateKey: 'sales_call_review' }],
+    });
+    jest.mocked(workspaceApi.getGroupTemplateExample).mockRejectedValue(new Error('示例暂不可用'));
+    const screen = await renderGroup();
+    expect(await screen.findByText('示例暂不可用')).toBeTruthy();
+    expect(screen.getByText('共 5 份音频')).toBeTruthy();
+    expect(screen.getByText('产品访谈分析')).toBeTruthy();
   });
 
   it('moves the group name beside the menu after each page scrolls', async () => {

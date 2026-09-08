@@ -1,0 +1,57 @@
+appId: com.echowave.app
+name: stable-onboarding-validation
+tags:
+  - stable
+---
+- runFlow: ../../subflows/prepare-e2e-app.yaml
+- startRecording:
+    path: 'stable-onboarding-validation'
+    optional: true
+- tapOn:
+    id: 'e2e-tab-more'
+- tapOn: '打开新手引导中心'
+- assertVisible: '新手引导'
+- runFlow:
+    when:
+      visible: '开始数据源引导'
+    commands:
+      - tapOn: '开始数据源引导'
+- runFlow:
+    when:
+      visible: '重播数据源引导'
+    commands:
+      - tapOn: '重播数据源引导'
+- assertVisible: '数据源，第 1 步，共 2 步'
+- tapOn:
+    id: 'starter-tour-next'
+- assertVisible: '新建数据源，第 2 步，共 2 步'
+- tapOn:
+    id: 'starter-tour-finish'
+- tapOn:
+    id: 'e2e-tab-more'
+- tapOn: '打开新手引导中心'
+- assertVisible: '已完成数据源引导'
+- takeScreenshot: 'stable/05-onboarding-completed'
+- pressKey: BACK
+- tapOn:
+    id: 'e2e-tab-create'
+- tapOn: '上传并开始全流程'
+- assertVisible: '无法创建'
+- assertVisible: '请选择数据源、分组和 1 至 20 个音频。'
+- tapOn: 'OK'
+- scrollUntilVisible:
+    element:
+      text: '市场调研资料'
+    direction: UP
+- tapOn: '市场调研资料'
+- tapOn: '市场洞察组'
+- scrollUntilVisible:
+    element:
+      text: '新上传'
+    direction: DOWN
+- tapOn: '新上传'
+- tapOn: '选择多个音频.*'
+- pressKey: BACK
+- assertVisible: '选择多个音频（0/20）'
+- takeScreenshot: 'stable/05-batch-validation'
+- stopRecording

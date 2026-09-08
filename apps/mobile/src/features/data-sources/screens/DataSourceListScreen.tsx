@@ -30,6 +30,7 @@ import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingP
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { SearchSheet } from '@/shared/ui/SearchSheet';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
+import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 
 import { DataSourceFormSheet, type DataSourceFormValue } from '../components/DataSourceDialogs';
 
@@ -96,6 +97,8 @@ export function DataSourceListScreen({
 }: {
   onOpenSource: (sourceId: string) => void;
 }) {
+  const headerTourRef = useStarterTourTarget('data-sources-header');
+  const createTourRef = useStarterTourTarget('data-sources-create');
   const [dataSources, setDataSources] = useState<DataSourceSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -180,25 +183,29 @@ export function DataSourceListScreen({
         pending={creating}
         visible={formVisible}
       />
-      <TopLevelPageHeader
-        actions={[
-          {
-            accessibilityLabel: '搜索数据源',
-            icon: 'search-outline',
-            onPress: () => setSearchVisible(true),
-          },
-          {
-            accessibilityLabel: '新建数据源',
-            icon: 'add',
-            label: '新建',
-            onPress: () => {
-              setFormError('');
-              setFormVisible(true);
+      <View collapsable={false} ref={headerTourRef}>
+        <TopLevelPageHeader
+          actions={[
+            {
+              accessibilityLabel: '搜索数据源',
+              icon: 'search-outline',
+              onPress: () => setSearchVisible(true),
             },
-          },
-        ]}
-        title="数据源"
-      />
+            {
+              accessibilityLabel: '新建数据源',
+              icon: 'add',
+              label: '新建',
+              onPress: () => {
+                setFormError('');
+                setFormVisible(true);
+              },
+              targetRef: createTourRef,
+              testID: 'e2e-new-data-source',
+            },
+          ]}
+          title="数据源"
+        />
+      </View>
       <ScrollView
         alwaysBounceVertical
         contentContainerStyle={styles.content}

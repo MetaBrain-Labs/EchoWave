@@ -1,0 +1,39 @@
+appId: com.echowave.app
+name: stable-seeded-analysis
+tags:
+  - stable
+---
+- runFlow: ../../subflows/prepare-e2e-app.yaml
+- startRecording:
+    path: 'stable-seeded-analysis'
+    optional: true
+- tapOn:
+    id: 'e2e-tab-groups'
+- tapOn: '菜单'
+- tapOn: '切换到分组：产品研究组'
+- extendedWaitUntil:
+    visible: '产品访谈分析'
+    timeout: 30000
+- tapOn: '产品访谈分析'
+# 如果存在分析前检查弹窗，则点击取消进行后续操作
+- runFlow:
+    when:
+      visible: '分析前检查'
+    commands:
+      - tapOn: '取消'
+- assertVisible: '转写分析'
+- assertVisible: '分析任务'
+- assertVisible: '分析总结'
+- assertVisible: '模型详情'
+- takeScreenshot: 'stable/03-transcript'
+- tapOn: '分析任务'
+- assertVisible: 'ASR 版本'
+- takeScreenshot: 'stable/03-tasks'
+- tapOn: '分析总结'
+- assertVisible: '访谈背景'
+- takeScreenshot: 'stable/03-summary'
+- tapOn: '模型详情'
+- assertVisible: '原始推理属于模型未验证的中间过程，不代表最终结论；完整提示词和原始最终输出仍不展示。'
+- takeScreenshot: 'stable/03-model'
+- pressKey: BACK
+- stopRecording

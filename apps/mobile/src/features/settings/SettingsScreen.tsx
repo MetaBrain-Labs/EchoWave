@@ -44,6 +44,7 @@ import {
 } from '@/shared/theme/tokens';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
+import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 
 const INSECURE_MESSAGE =
   '当前连接不是 HTTPS，不能通过此页面提交 Credential。请在服务器本地配置 credentials.yaml，然后选择对应的 Local Credential alias。';
@@ -178,6 +179,8 @@ function providerInput(draft: ProviderDraft): ProviderConnectionWrite {
 
 /** 渲染配置中心并将返回行为交给路由层。 */
 export function SettingsScreen({ onBack }: { onBack: () => void }) {
+  const securityTourRef = useStarterTourTarget('ai-security');
+  const configurationTourRef = useStarterTourTarget('ai-configuration');
   const [tokenInput, setTokenInput] = useState('');
   const [token, setToken] = useState<string | null>(null);
   const [overview, setOverview] = useState<SettingsOverview | null>(null);
@@ -314,140 +317,149 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
         keyboardShouldPersistTaps="handled"
         refreshControl={<ScreenRefreshControl {...screenRefresh} />}
       >
-        <SecurityBanner mode={transportMode} secretAllowed={secretAllowed} />
+        <View collapsable={false} ref={securityTourRef}>
+          <SecurityBanner mode={transportMode} secretAllowed={secretAllowed} />
+        </View>
         {error ? (
           <View accessibilityRole="alert" style={styles.errorCard}>
             <Text style={styles.errorText}>{error}</Text>
             {token ? <ActionButton label="刷新配置" onPress={() => void refresh()} /> : null}
           </View>
         ) : null}
-        {!token ? (
-          <Section title="管理员验证">
-            <Text style={styles.help}>口令只保存在当前页面内存，离开页面后会清除。</Text>
-            <Field
-              label="CONFIGURATION_ADMIN_TOKEN"
-              onChangeText={setTokenInput}
-              secureTextEntry
-              value={tokenInput}
-            />
-            <ActionButton
-              disabled={busy || !tokenInput.trim()}
-              label="进入配置中心"
-              onPress={login}
-            />
-          </Section>
-        ) : overview ? (
-          <>
-            <LocalProviderCard overview={overview} />
-            <Section title="供应商连接">
-              {overview.providers.map((provider) => (
-                <Pressable
-                  accessibilityRole="button"
-                  key={provider.id}
-                  onPress={() => setDraft(draftFromProvider(provider))}
-                  style={styles.listRow}
-                >
-                  <View style={styles.flex}>
-                    <Text style={styles.rowTitle}>{provider.name}</Text>
-                    <Text style={styles.help}>
-                      {providerLabels[provider.type]} ·{' '}
-                      {provider.credential.source === 'local_file'
-                        ? `Local · ${provider.credential.alias}`
-                        : `Database · ${provider.credential.maskedValue ?? '已配置'}`}
-                    </Text>
-                  </View>
-                  <Text style={styles.link}>修改</Text>
-                </Pressable>
-              ))}
-              <ProviderEditor
-                draft={draft}
-                localAliases={overview.localCredentials.credentials}
-                onChange={setDraft}
-                onSave={() => void saveProvider()}
-                secretAllowed={secretAllowed}
-                busy={busy}
+        <View collapsable={false} ref={configurationTourRef}>
+          {!token ? (
+            <Section title="管理员验证">
+              <Text style={styles.help}>口令只保存在当前页面内存，离开页面后会清除。</Text>
+              <Field
+                label="CONFIGURATION_ADMIN_TOKEN"
+                onChangeText={setTokenInput}
+                secureTextEntry
+                value={tokenInput}
+              />
+              <ActionButton
+                disabled={busy || !tokenInput.trim()}
+                label="进入配置中心"
+                onPress={login}
               />
             </Section>
-            <Section title="能力绑定">
-              {capabilities.map((capability) => {
-                const current = overview.bindings.find((item) => item.capability === capability.id);
-                const provider = overview.providers.find(
-                  (item) => item.id === current?.providerConnectionId,
-                );
-                return (
+          ) : overview ? (
+            <>
+              <LocalProviderCard overview={overview} />
+              <Section title="供应商连接">
+                {overview.providers.map((provider) => (
                   <Pressable
                     accessibilityRole="button"
-                    key={capability.id}
-                    onPress={() => beginBinding(capability.id)}
+                    key={provider.id}
+                    onPress={() => setDraft(draftFromProvider(provider))}
                     style={styles.listRow}
                   >
                     <View style={styles.flex}>
-                      <Text style={styles.rowTitle}>{capability.label}</Text>
+                      <Text style={styles.rowTitle}>{provider.name}</Text>
                       <Text style={styles.help}>
-                        {provider ? `${provider.name} · ${current?.model}` : '尚未配置'}
+                        {providerLabels[provider.type]} ·{' '}
+                        {provider.credential.source === 'local_file'
+                          ? `Local · ${provider.credential.alias}`
+                          : `Database · ${provider.credential.maskedValue ?? '已配置'}`}
                       </Text>
                     </View>
-                    <Text style={styles.link}>设置</Text>
+                    <Text style={styles.link}>修改</Text>
                   </Pressable>
-                );
-              })}
-              {bindingCapability ? (
-                <View style={styles.editor}>
-                  <Text style={styles.rowTitle}>
-                    {capabilities.find(({ id }) => id === bindingCapability)?.label}
-                  </Text>
-                  <ChoiceRow
-                    options={compatibleProviders.map((item) => ({ id: item.id, label: item.name }))}
-                    selected={bindingProviderId}
-                    onSelect={setBindingProviderId}
-                  />
-                  <Field label="模型" onChangeText={setBindingModel} value={bindingModel} />
-                  {bindingCapability === 'knowledge_chat' ||
-                  bindingCapability === 'business_analysis' ? (
-                    <ChoiceRow
-                      options={[
-                        { id: 'off', label: 'Thinking 关闭' },
-                        { id: 'on', label: 'Thinking 开启' },
-                      ]}
-                      selected={bindingThinking ? 'on' : 'off'}
-                      onSelect={(value) => setBindingThinking(value === 'on')}
-                    />
-                  ) : null}
-                  <ActionButton
-                    disabled={busy || !bindingProviderId || !bindingModel.trim()}
-                    label="保存能力绑定"
-                    onPress={() => void saveBinding()}
-                  />
-                </View>
-              ) : null}
-            </Section>
-            <Section title="旧 .env 导入">
-              <Text style={styles.help}>
-                {overview.legacy.importedAt
-                  ? `已导入：${new Date(overview.legacy.importedAt).toLocaleString()}`
-                  : `检测到 ${overview.legacy.detectedVariables.length} 项，缺少 ${overview.legacy.missingVariables.length} 项。导入不会覆盖数据库配置。`}
-              </Text>
-              {!overview.legacy.importedAt ? (
-                <ActionButton
-                  disabled={busy || !overview.legacy.ready}
-                  label="从服务器旧 .env 导入"
-                  onPress={async () => {
-                    if (!token) return;
-                    setBusy(true);
-                    setError(null);
-                    try {
-                      setOverview(await settingsApi.importLegacy(token));
-                    } catch (reason) {
-                      setError(errorMessage(reason));
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
+                ))}
+                <ProviderEditor
+                  draft={draft}
+                  localAliases={overview.localCredentials.credentials}
+                  onChange={setDraft}
+                  onSave={() => void saveProvider()}
+                  secretAllowed={secretAllowed}
+                  busy={busy}
                 />
-              ) : null}
-            </Section>
-          </>
-        ) : null}
+              </Section>
+              <Section title="能力绑定">
+                {capabilities.map((capability) => {
+                  const current = overview.bindings.find(
+                    (item) => item.capability === capability.id,
+                  );
+                  const provider = overview.providers.find(
+                    (item) => item.id === current?.providerConnectionId,
+                  );
+                  return (
+                    <Pressable
+                      accessibilityRole="button"
+                      key={capability.id}
+                      onPress={() => beginBinding(capability.id)}
+                      style={styles.listRow}
+                    >
+                      <View style={styles.flex}>
+                        <Text style={styles.rowTitle}>{capability.label}</Text>
+                        <Text style={styles.help}>
+                          {provider ? `${provider.name} · ${current?.model}` : '尚未配置'}
+                        </Text>
+                      </View>
+                      <Text style={styles.link}>设置</Text>
+                    </Pressable>
+                  );
+                })}
+                {bindingCapability ? (
+                  <View style={styles.editor}>
+                    <Text style={styles.rowTitle}>
+                      {capabilities.find(({ id }) => id === bindingCapability)?.label}
+                    </Text>
+                    <ChoiceRow
+                      options={compatibleProviders.map((item) => ({
+                        id: item.id,
+                        label: item.name,
+                      }))}
+                      selected={bindingProviderId}
+                      onSelect={setBindingProviderId}
+                    />
+                    <Field label="模型" onChangeText={setBindingModel} value={bindingModel} />
+                    {bindingCapability === 'knowledge_chat' ||
+                    bindingCapability === 'business_analysis' ? (
+                      <ChoiceRow
+                        options={[
+                          { id: 'off', label: 'Thinking 关闭' },
+                          { id: 'on', label: 'Thinking 开启' },
+                        ]}
+                        selected={bindingThinking ? 'on' : 'off'}
+                        onSelect={(value) => setBindingThinking(value === 'on')}
+                      />
+                    ) : null}
+                    <ActionButton
+                      disabled={busy || !bindingProviderId || !bindingModel.trim()}
+                      label="保存能力绑定"
+                      onPress={() => void saveBinding()}
+                    />
+                  </View>
+                ) : null}
+              </Section>
+              <Section title="旧 .env 导入">
+                <Text style={styles.help}>
+                  {overview.legacy.importedAt
+                    ? `已导入：${new Date(overview.legacy.importedAt).toLocaleString()}`
+                    : `检测到 ${overview.legacy.detectedVariables.length} 项，缺少 ${overview.legacy.missingVariables.length} 项。导入不会覆盖数据库配置。`}
+                </Text>
+                {!overview.legacy.importedAt ? (
+                  <ActionButton
+                    disabled={busy || !overview.legacy.ready}
+                    label="从服务器旧 .env 导入"
+                    onPress={async () => {
+                      if (!token) return;
+                      setBusy(true);
+                      setError(null);
+                      try {
+                        setOverview(await settingsApi.importLegacy(token));
+                      } catch (reason) {
+                        setError(errorMessage(reason));
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  />
+                ) : null}
+              </Section>
+            </>
+          ) : null}
+        </View>
         {busy ? <ActivityIndicator color={colors.ink} style={styles.busy} /> : null}
       </ScrollView>
     </SafeAreaView>

@@ -83,6 +83,7 @@ export {
   GroupResourceLinksUpdateRequestSchema,
   GroupSettingsSchema,
   GroupSettingsUpdateRequestSchema,
+  StarterTemplateKeySchema,
   type GroupAnalysisSettings,
   type GroupAnalysisTiming,
   type GroupCreateRequest,
@@ -91,7 +92,16 @@ export {
   type GroupSettings,
   type GroupSettingsUpdateRequest,
   type GroupSummary,
+  type StarterTemplateKey,
 } from './group.ts';
+export {
+  TemplateExampleAnalysisTagSchema,
+  TemplateExampleRoleSchema,
+  TemplateExampleSchema,
+  TemplateExampleSummarySectionSchema,
+  TemplateExampleTranscriptSegmentSchema,
+  type TemplateExample,
+} from './templateExample.ts';
 export {
   AudioFailureStageSchema,
   AudioFailureDiagnosticCategorySchema,

@@ -1,0 +1,4 @@
+appId: com.echowave.app
+---
+- runFlow: open-e2e-app.yaml
+- runFlow: connect-server.yaml

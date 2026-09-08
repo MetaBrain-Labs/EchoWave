@@ -4,7 +4,7 @@
  * 展示当前应用与 API 连接状态，为开发和用户提供可观察的 HelloWorld 健康检查。
  *
  * Responsibilities:
- * - 组合页面说明、服务状态与 AI 配置入口。
+ * - 组合页面说明、服务状态、AI 配置与新手引导入口。
  *
  * Notes:
  * - 不保存服务器健康状态。
@@ -61,7 +61,7 @@ const navigationCards: readonly {
   },
 ];
 
-/** 将“更多”页面渲染为四个统一的导航入口。 */
+/** 将“更多”页面渲染为统一的导航与引导入口。 */
 export default function MoreScreen() {
   const router = useRouter();
 
@@ -87,6 +87,21 @@ export default function MoreScreen() {
             <Ionicons color={textColors.tertiary} name="chevron-forward" size={22} />
           </Pressable>
         ))}
+        <Pressable
+          accessibilityLabel="打开新手引导中心"
+          accessibilityRole="button"
+          onPress={() => router.push('/guides' as Href)}
+          style={({ pressed }) => [styles.navigationCard, pressed && styles.pressed]}
+        >
+          <View style={styles.navigationIcon}>
+            <Ionicons color={colors.ink} name="navigate-outline" size={22} />
+          </View>
+          <View style={styles.navigationCopy}>
+            <Text style={styles.navigationTitle}>新手引导</Text>
+            <Text style={styles.navigationText}>按主题开始、跳过或重播六项产品引导。</Text>
+          </View>
+          <Ionicons color={textColors.tertiary} name="chevron-forward" size={22} />
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );

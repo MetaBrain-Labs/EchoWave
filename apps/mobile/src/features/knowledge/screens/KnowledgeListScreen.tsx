@@ -28,6 +28,7 @@ import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingP
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { SearchSheet } from '@/shared/ui/SearchSheet';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
+import { useStarterTour, useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 
 import {
   colors,
@@ -62,6 +63,10 @@ export function KnowledgeListScreen({
 }: {
   onOpenKnowledge: (id: string) => void;
 }) {
+  const { activeStep } = useStarterTour();
+  const headerTourRef = useStarterTourTarget('knowledge-header');
+  const createTourRef = useStarterTourTarget('knowledge-create');
+  const formTourRef = useStarterTourTarget('knowledge-form');
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -106,6 +111,11 @@ export function KnowledgeListScreen({
     const task = setTimeout(() => void runInitialRequest(load), 0);
     return () => clearTimeout(task);
   }, [load, runInitialRequest]);
+  useEffect(() => {
+    if (activeStep !== 'knowledge-form') return undefined;
+    const task = setTimeout(() => setShowCreate(true), 0);
+    return () => clearTimeout(task);
+  }, [activeStep]);
 
   const visibleKnowledgeBases = useMemo(() => {
     const normalized = searchQuery.trim().toLocaleLowerCase();
@@ -131,23 +141,27 @@ export function KnowledgeListScreen({
           visible
         />
       ) : null}
-      <TopLevelPageHeader
-        actions={[
-          {
-            accessibilityLabel: '搜索知识库',
-            icon: 'search-outline',
-            onPress: () => setSearchVisible(true),
-          },
-          {
-            accessibilityLabel: '新建知识库',
-            disabled: loading || creating,
-            icon: 'add',
-            label: '新建',
-            onPress: () => setShowCreate((current) => !current),
-          },
-        ]}
-        title="知识库"
-      />
+      <View collapsable={false} ref={headerTourRef}>
+        <TopLevelPageHeader
+          actions={[
+            {
+              accessibilityLabel: '搜索知识库',
+              icon: 'search-outline',
+              onPress: () => setSearchVisible(true),
+            },
+            {
+              accessibilityLabel: '新建知识库',
+              disabled: loading || creating,
+              icon: 'add',
+              label: '新建',
+              onPress: () => setShowCreate((current) => !current),
+              targetRef: createTourRef,
+              testID: 'e2e-new-knowledge-base',
+            },
+          ]}
+          title="知识库"
+        />
+      </View>
 
       <ScrollView
         alwaysBounceVertical
@@ -157,7 +171,12 @@ export function KnowledgeListScreen({
         testID="knowledge-list-scroll"
       >
         {showCreate ? (
-          <View accessibilityLabel="新建知识库表单" style={styles.createPanel}>
+          <View
+            accessibilityLabel="新建知识库表单"
+            collapsable={false}
+            ref={formTourRef}
+            style={styles.createPanel}
+          >
             <TextInput
               accessibilityLabel="知识库名称"
               maxLength={120}

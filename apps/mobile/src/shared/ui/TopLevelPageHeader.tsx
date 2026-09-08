@@ -11,6 +11,7 @@
  * - 安全区由页面容器负责，组件自身只管理安全区之后的固定页头布局。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
+import type { Ref } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
@@ -29,6 +30,8 @@ export type TopLevelPageAction = {
   icon: keyof typeof Ionicons.glyphMap;
   label?: string;
   onPress: () => void;
+  targetRef?: Ref<View>;
+  testID?: string;
 };
 
 /** 描述一级页头的标题、说明和操作集合。 */
@@ -80,11 +83,13 @@ export function TopLevelPageHeader({
                   hitSlop={labeled ? undefined : 8}
                   key={action.accessibilityLabel}
                   onPress={action.onPress}
+                  ref={action.targetRef}
                   style={({ pressed }) => [
                     labeled ? styles.labeledAction : styles.iconAction,
                     action.disabled && styles.disabled,
                     pressed && styles.pressed,
                   ]}
+                  testID={action.testID}
                 >
                   <Ionicons
                     color={colors.ink}

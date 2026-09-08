@@ -1,0 +1,80 @@
+appId: com.echowave.app
+name: showcase-search-lifecycle
+tags:
+  - showcase
+---
+- runFlow: ../../subflows/prepare-e2e-app.yaml
+- startRecording:
+    path: 'showcase-search-lifecycle'
+    optional: true
+- tapOn:
+    id: 'e2e-tab-sources'
+- scrollUntilVisible:
+    element: '打开数据源：${SHOWCASE_SOURCE_NAME}'
+    direction: DOWN
+- tapOn: '打开数据源：${SHOWCASE_SOURCE_NAME}'
+- tapOn: '搜索数据源内容'
+- tapOn: '输入数据源内容搜索关键词'
+- inputText: '${SHOWCASE_AUDIO_TITLE}'
+- hideKeyboard
+- tapOn: '执行搜索'
+- assertVisible: '${SHOWCASE_AUDIO_TITLE}'
+- takeScreenshot: 'showcase/05-search-result'
+- tapOn: '搜索数据源内容'
+- tapOn: '清除搜索'
+- tapOn: '执行搜索'
+- tapOn: '更多操作'
+- tapOn: '编辑数据源'
+- tapOn: '数据源描述'
+- eraseText
+- inputText: 'Interview source reviewed and ready for team insights'
+- hideKeyboard
+- tapOn: '确认'
+- tapOn:
+    id: 'data-source-tab-overview'
+- assertVisible: 'Interview source reviewed and ready for team insights'
+- takeScreenshot: 'showcase/05-source-edited'
+- tapOn:
+    id: 'data-source-tab-audio'
+- scrollUntilVisible:
+    element:
+      text: '${SHOWCASE_AUDIO_TITLE}'
+    direction: DOWN
+- tapOn:
+    text: '播放音频：${SHOWCASE_AUDIO_TITLE}'
+- scrollUntilVisible:
+    element:
+      text: '${SHOWCASE_AUDIO_TITLE}更多操作'
+    direction: DOWN
+- tapOn: '${SHOWCASE_AUDIO_TITLE}更多操作'
+- tapOn: '归档'
+- assertVisible: '归档音频？'
+- tapOn: '归档音频'
+- assertNotVisible: '${SHOWCASE_AUDIO_TITLE}'
+- tapOn: '更多操作'
+- tapOn: '归档数据源'
+- assertVisible: '归档数据源？'
+- tapOn: '确认归档'
+- extendedWaitUntil:
+    visible: '数据源'
+    timeout: 30000
+- assertNotVisible: '${SHOWCASE_SOURCE_NAME}'
+- takeScreenshot: 'showcase/05-source-archived'
+- tapOn:
+    id: 'e2e-tab-groups'
+- tapOn: '菜单'
+- tapOn: '切换到分组：${SHOWCASE_GROUP_NAME}'
+- tapOn: '分组设置'
+- tapOn: '基本设置'
+- scrollUntilVisible:
+    element: '归档分组'
+    direction: DOWN
+- tapOn: '归档分组'
+- assertVisible: '归档分组？'
+- tapOn: '归档分组'
+- extendedWaitUntil:
+    visible:
+      id: 'group-top-bar'
+    timeout: 30000
+- takeScreenshot: 'showcase/05-lifecycle-completed'
+- stopRecording

@@ -486,7 +486,12 @@ export function DataSourceDetailScreen({
 
   const renderTabs = () => (
     <View style={styles.tabsSurface}>
-      <PageTabs activeTab={activeTab} onChange={selectTab} tabs={detailTabs} />
+      <PageTabs
+        activeTab={activeTab}
+        onChange={selectTab}
+        tabs={detailTabs}
+        testIDPrefix="data-source-tab"
+      />
     </View>
   );
   const filteredAudioItems = source.audioItems.filter((item) =>

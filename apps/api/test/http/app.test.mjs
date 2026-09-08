@@ -174,6 +174,31 @@ describe('workspace routes', () => {
       metrics: { analysisCount: 1, audioCount: 2, knowledgeCount: 1, sourceCount: 1 },
       updatedAt: '2026-08-21T10:00:00.000Z',
     }),
+    getTemplateExample: async () => ({
+      templateKey: 'sales_call_review',
+      exampleVersion: 1,
+      title: '销售示例',
+      scenario: '首次沟通',
+      playbackAvailable: false,
+      roles: [{ id: 'sales', label: '销售' }],
+      transcript: [
+        {
+          id: 's1',
+          roleId: 'sales',
+          roleLabel: '销售',
+          emotion: '平静',
+          startMs: 0,
+          endMs: 1000,
+          text: '你好',
+        },
+      ],
+      summarySections: [{ title: '摘要', body: '内容' }],
+      analysisTags: [
+        { kind: 'strength', title: '有效', detail: '说明', evidenceSegmentIds: ['s1'] },
+      ],
+      recommendations: ['继续追问'],
+      limitations: ['只读示例'],
+    }),
     createGroup: async (input) => {
       createdGroupInput = input;
       return {
@@ -402,6 +427,12 @@ describe('workspace routes', () => {
 
     const invalid = await workspaceApp.request('/api/groups/not-a-uuid');
     assert.equal(invalid.status, 400);
+
+    const example = await workspaceApp.request(`/api/groups/${groupId}/template-example`);
+    assert.equal(example.status, 200);
+    assert.equal((await example.json()).playbackAvailable, false);
+    const invalidExample = await workspaceApp.request('/api/groups/not-a-uuid/template-example');
+    assert.equal(invalidExample.status, 400);
   });
 
   it('creates trimmed groups and archives validated identifiers', async () => {

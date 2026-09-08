@@ -108,11 +108,25 @@ export async function seedPublishedAnalysis(
     await client.query(
       `INSERT INTO ${table('transcript_confirmation_segments')}
          (tenant_id, transcript_confirmation_id, analysis_revision_id,
-          transcript_segment_id, text)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (tenant_id, transcript_confirmation_id, transcript_segment_id)
-       DO UPDATE SET text = EXCLUDED.text`,
-      [tenantId, confirmation.rows[0].id, value.analysis, segment[0], segment[8]],
+          source_transcript_segment_id, confirmed_segment_id, part_index,
+          speaker_key, start_word_index, end_word_index, start_ms, end_ms, text)
+       VALUES ($1, $2, $3, $4, $4, $5, $6, 0, 1, $7, $8, $9)
+       ON CONFLICT (tenant_id, transcript_confirmation_id, confirmed_segment_id)
+       DO UPDATE SET source_transcript_segment_id = EXCLUDED.source_transcript_segment_id,
+         part_index = EXCLUDED.part_index, speaker_key = EXCLUDED.speaker_key,
+         start_word_index = EXCLUDED.start_word_index, end_word_index = EXCLUDED.end_word_index,
+         start_ms = EXCLUDED.start_ms, end_ms = EXCLUDED.end_ms, text = EXCLUDED.text`,
+      [
+        tenantId,
+        confirmation.rows[0].id,
+        value.analysis,
+        segment[0],
+        segment[2],
+        segment[3],
+        segment[6],
+        segment[7],
+        segment[8],
+      ],
     );
   }
   await client.query(

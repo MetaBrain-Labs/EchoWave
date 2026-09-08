@@ -44,6 +44,7 @@ export default function TabsLayout() {
         options={{
           title: '分组',
           tabBarAccessibilityLabel: '分组',
+          tabBarButtonTestID: 'e2e-tab-groups',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons color={color} name={focused ? 'albums' : 'albums-outline'} size={27} />
           ),
@@ -54,6 +55,7 @@ export default function TabsLayout() {
         options={{
           title: '知识库',
           tabBarAccessibilityLabel: '知识库',
+          tabBarButtonTestID: 'e2e-tab-knowledge',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons color={color} name={focused ? 'book' : 'book-outline'} size={27} />
           ),
@@ -64,6 +66,7 @@ export default function TabsLayout() {
         options={{
           title: '新建',
           tabBarAccessibilityLabel: '新建',
+          tabBarButtonTestID: 'e2e-tab-create',
           tabBarIcon: () => (
             <View style={styles.createButton}>
               <Ionicons color={colors.white} name="add" size={42} />
@@ -76,6 +79,7 @@ export default function TabsLayout() {
         options={{
           title: '数据源',
           tabBarAccessibilityLabel: '数据源',
+          tabBarButtonTestID: 'e2e-tab-sources',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               color={color}
@@ -90,6 +94,7 @@ export default function TabsLayout() {
         options={{
           title: '更多',
           tabBarAccessibilityLabel: '更多',
+          tabBarButtonTestID: 'e2e-tab-more',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons color={color} name={focused ? 'grid' : 'grid-outline'} size={27} />
           ),

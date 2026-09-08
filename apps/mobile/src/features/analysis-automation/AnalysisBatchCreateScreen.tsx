@@ -17,7 +17,7 @@ import type {
 } from '@echowave/contracts';
 import * as DocumentPicker from 'expo-document-picker';
 import { useRouter, type Href } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -43,6 +43,7 @@ import {
 import { getGroupSettings } from '@/shared/api/groupsApi';
 import { getAudioRuntime } from '@/shared/api/audioRuntimeApi';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
+import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import { colors, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
@@ -58,6 +59,13 @@ const pipeline = {
 /** 渲染新建标签的一键分析表单。 */
 export function AnalysisBatchCreateScreen() {
   const router = useRouter();
+  const scrollRef = useRef<ScrollView>(null);
+  const prepareAudioTourTarget = useCallback(() => {
+    scrollRef.current?.scrollTo({ animated: true, y: 180 });
+  }, []);
+  const sourceTourRef = useStarterTourTarget('create-source');
+  const groupTourRef = useStarterTourTarget('create-group');
+  const audioTourRef = useStarterTourTarget('create-audio', prepareAudioTourTarget);
   const [sources, setSources] = useState<DataSourceSummary[]>([]);
   const [sourceId, setSourceId] = useState('');
   const [groups, setGroups] = useState<LinkedDataSourceGroup[]>([]);
@@ -254,6 +262,7 @@ export function AnalysisBatchCreateScreen() {
         alwaysBounceVertical
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
+        ref={scrollRef}
         refreshControl={<ScreenRefreshControl {...screenRefresh} />}
       >
         {refreshError ? (
@@ -261,82 +270,90 @@ export function AnalysisBatchCreateScreen() {
             刷新失败：{refreshError}
           </Text>
         ) : null}
-        <Section title="1. 数据源">
-          <ChoiceRow
-            items={sources.map((item) => ({ id: item.id, label: item.name }))}
-            selected={sourceId}
-            onSelect={selectSource}
-          />
-        </Section>
-        <Section title="2. 分组（单选）">
-          {groups.length ? (
+        <View collapsable={false} ref={sourceTourRef}>
+          <Section title="1. 数据源">
             <ChoiceRow
-              items={groups.map((item) => ({ id: item.id, label: item.name }))}
-              selected={groupId}
-              onSelect={setGroupId}
+              items={sources.map((item) => ({ id: item.id, label: item.name }))}
+              selected={sourceId}
+              onSelect={selectSource}
             />
-          ) : (
-            <Text style={styles.hint}>当前数据源尚未关联分组。</Text>
-          )}
-        </Section>
-        <Section title="3. 音频">
-          <ChoiceRow
-            items={[
-              { id: 'uploads', label: '新上传' },
-              { id: 'existing_audio', label: '已有音频' },
-            ]}
-            selected={sourceKind}
-            onSelect={(id) => setSourceKind(id as typeof sourceKind)}
-          />
-          {sourceKind === 'uploads' ? (
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => void pickFiles()}
-              style={styles.secondaryButton}
-            >
-              <Ionicons color={colors.ink} name="cloud-upload-outline" size={20} />
-              <Text style={styles.buttonText}>选择多个音频（{assets.length}/20）</Text>
-            </Pressable>
-          ) : (
-            <View style={styles.list}>
-              {audioFiles.map((audio) => {
-                const selected = selectedAudioIds.includes(audio.id);
-                const disabledReason = existingAudioDisabledReason(audio, runtimeMode);
-                return (
-                  <Pressable
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: selected, disabled: Boolean(disabledReason) }}
-                    disabled={Boolean(disabledReason)}
-                    key={audio.id}
-                    onPress={() =>
-                      setSelectedAudioIds((current) =>
-                        selected
-                          ? current.filter((id) => id !== audio.id)
-                          : current.length < 20
-                            ? [...current, audio.id]
-                            : current,
-                      )
-                    }
-                    style={[styles.checkRow, disabledReason && styles.disabled]}
-                  >
-                    <Ionicons
-                      color={selected ? colors.success : colors.muted}
-                      name={selected ? 'checkbox' : 'square-outline'}
-                      size={22}
-                    />
-                    <Text numberOfLines={1} style={styles.checkLabel}>
-                      {audio.title}
-                    </Text>
-                    <View style={styles.checkMeta}>
-                      <Text style={styles.hint}>{audio.runtimeMode ?? '模式未知'}</Text>
-                      {disabledReason ? <Text style={styles.danger}>{disabledReason}</Text> : null}
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </View>
-          )}
-        </Section>
+          </Section>
+        </View>
+        <View collapsable={false} ref={groupTourRef}>
+          <Section title="2. 分组（单选）">
+            {groups.length ? (
+              <ChoiceRow
+                items={groups.map((item) => ({ id: item.id, label: item.name }))}
+                selected={groupId}
+                onSelect={setGroupId}
+              />
+            ) : (
+              <Text style={styles.hint}>当前数据源尚未关联分组。</Text>
+            )}
+          </Section>
+        </View>
+        <View collapsable={false} ref={audioTourRef}>
+          <Section title="3. 音频">
+            <ChoiceRow
+              items={[
+                { id: 'uploads', label: '新上传' },
+                { id: 'existing_audio', label: '已有音频' },
+              ]}
+              selected={sourceKind}
+              onSelect={(id) => setSourceKind(id as typeof sourceKind)}
+            />
+            {sourceKind === 'uploads' ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => void pickFiles()}
+                style={styles.secondaryButton}
+              >
+                <Ionicons color={colors.ink} name="cloud-upload-outline" size={20} />
+                <Text style={styles.buttonText}>选择多个音频（{assets.length}/20）</Text>
+              </Pressable>
+            ) : (
+              <View style={styles.list}>
+                {audioFiles.map((audio) => {
+                  const selected = selectedAudioIds.includes(audio.id);
+                  const disabledReason = existingAudioDisabledReason(audio, runtimeMode);
+                  return (
+                    <Pressable
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: selected, disabled: Boolean(disabledReason) }}
+                      disabled={Boolean(disabledReason)}
+                      key={audio.id}
+                      onPress={() =>
+                        setSelectedAudioIds((current) =>
+                          selected
+                            ? current.filter((id) => id !== audio.id)
+                            : current.length < 20
+                              ? [...current, audio.id]
+                              : current,
+                        )
+                      }
+                      style={[styles.checkRow, disabledReason && styles.disabled]}
+                    >
+                      <Ionicons
+                        color={selected ? colors.success : colors.muted}
+                        name={selected ? 'checkbox' : 'square-outline'}
+                        size={22}
+                      />
+                      <Text numberOfLines={1} style={styles.checkLabel}>
+                        {audio.title}
+                      </Text>
+                      <View style={styles.checkMeta}>
+                        <Text style={styles.hint}>{audio.runtimeMode ?? '模式未知'}</Text>
+                        {disabledReason ? (
+                          <Text style={styles.danger}>{disabledReason}</Text>
+                        ) : null}
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
+          </Section>
+        </View>
         <Section title="4. 执行时间">
           <ChoiceRow
             items={[
@@ -484,7 +501,7 @@ const styles = StyleSheet.create({
   choices: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   choice: {
     borderColor: colors.divider,
-    borderRadius: radii.round,
+    borderRadius: radii.default,
     borderWidth: 1,
     paddingHorizontal: spacing.base,
     paddingVertical: spacing.sm,

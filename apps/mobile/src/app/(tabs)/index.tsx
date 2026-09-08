@@ -46,6 +46,9 @@ export default function GroupRoute() {
       onOpenSettings={(groupId) => {
         router.push({ pathname: '/groups/[groupId]/settings', params: { groupId } });
       }}
+      onOpenTemplateExample={(groupId) => {
+        router.push({ pathname: '/groups/[groupId]/template-example', params: { groupId } });
+      }}
       onTabChange={(tab) => router.setParams({ tab })}
     />
   );

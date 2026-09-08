@@ -1,0 +1,21 @@
+appId: com.echowave.app
+---
+- runFlow:
+    when:
+      visible: '允许|Allow'
+    commands:
+      - tapOn: '允许|Allow'
+- runFlow:
+    when:
+      visible: '下载|Downloads'
+    commands:
+      - tapOn: '下载|Downloads'
+- extendedWaitUntil:
+    visible: '${DEVICE_AUDIO_NAME}'
+    timeout: 30000
+- tapOn: '${DEVICE_AUDIO_NAME}'
+- runFlow:
+    when:
+      visible: '确定|OK|Open'
+    commands:
+      - tapOn: '确定|OK|Open'

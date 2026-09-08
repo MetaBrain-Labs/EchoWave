@@ -1,0 +1,70 @@
+appId: com.echowave.app
+name: stable-settings-archive
+tags:
+  - stable
+---
+- runFlow: ../../subflows/prepare-e2e-app.yaml
+- startRecording:
+    path: 'stable-settings-archive'
+    optional: true
+- tapOn:
+    id: 'e2e-tab-groups'
+- tapOn: '菜单'
+- tapOn: '切换到分组：${GROUP_NAME}'
+- tapOn: '分组设置'
+- assertVisible: '基本设置'
+- tapOn: '内容侧重'
+- eraseText
+- inputText: 'E2E regression focus'
+- hideKeyboard
+- scrollUntilVisible:
+    element: '保存设置'
+    direction: DOWN
+- tapOn: '保存设置'
+- assertVisible: '保存成功'
+- tapOn: 'OK'
+- tapOn: '知识库设置'
+- scrollUntilVisible:
+    element: '${KB_NAME}'
+    direction: UP
+- tapOn: '${KB_NAME}'
+- scrollUntilVisible:
+    element: '保存关联'
+    direction: DOWN
+- tapOn: '保存关联'
+- assertVisible: '保存成功'
+- tapOn: 'OK'
+- scrollUntilVisible:
+    element: '${KB_NAME}'
+    direction: UP
+- assertVisible: '${KB_NAME}'
+- tapOn: '数据源设置'
+- assertVisible: '${SOURCE_NAME}'
+- takeScreenshot: 'stable/06-group-settings'
+- tapOn: '基本设置'
+- scrollUntilVisible:
+    element: '归档分组'
+    direction: DOWN
+- tapOn: '归档分组'
+- assertVisible: '归档分组？'
+- tapOn: '归档分组'
+- extendedWaitUntil:
+    visible:
+      id: 'group-top-bar'
+    timeout: 30000
+- tapOn:
+    id: 'e2e-tab-sources'
+- scrollUntilVisible:
+    element: '打开数据源：${SOURCE_NAME}'
+    direction: DOWN
+- tapOn: '打开数据源：${SOURCE_NAME}'
+- tapOn: '更多操作'
+- tapOn: '归档数据源'
+- assertVisible: '归档数据源？'
+- tapOn: '确认归档'
+- extendedWaitUntil:
+    visible: '数据源'
+    timeout: 30000
+- assertNotVisible: '${SOURCE_NAME}'
+- takeScreenshot: 'stable/06-archived'
+- stopRecording

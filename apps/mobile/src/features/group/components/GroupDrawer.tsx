@@ -205,9 +205,14 @@ export function GroupDrawer({
                         }}
                         style={({ pressed }) => [styles.groupMain, pressed && styles.pressed]}
                       >
-                        <Text numberOfLines={1} style={styles.groupName}>
-                          {group.name}
-                        </Text>
+                        <View style={styles.groupNameRow}>
+                          <Text numberOfLines={1} style={styles.groupName}>
+                            {group.name}
+                          </Text>
+                          {group.starterTemplateKey ? (
+                            <Text style={styles.templateBadge}>模板</Text>
+                          ) : null}
+                        </View>
                         <Text style={styles.groupMetrics}>
                           {group.metrics.analysisCount} 份分析{selected ? ' · 当前分组' : ''}
                         </Text>
@@ -355,8 +360,20 @@ const styles = StyleSheet.create({
   groupName: {
     ...typography.heading2,
     color: textColors.primary,
+    flexShrink: 1,
     fontFamily: fontFamilies.sansBold,
     fontWeight: 'bold',
+  },
+  groupNameRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
+  templateBadge: {
+    ...typography.label,
+    backgroundColor: colors.successSurface,
+    borderRadius: radii.round,
+    color: colors.success,
+    fontFamily: fontFamilies.sansBold,
+    overflow: 'hidden',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
   },
   groupMetrics: {
     ...typography.body,

@@ -35,6 +35,7 @@ import {
 } from '@/shared/theme/tokens';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
+import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 
 const modeCopy: Record<
   AudioRuntimeMode,
@@ -64,6 +65,9 @@ function errorText(error: unknown): string {
 
 /** 渲染运行模式选择与管理员保存流程。 */
 export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
+  const noticeTourRef = useStarterTourTarget('runtime-notice');
+  const modesTourRef = useStarterTourTarget('runtime-modes');
+  const saveTourRef = useStarterTourTarget('runtime-save');
   const [overview, setOverview] = useState<AudioRuntimeOverview>();
   const [selected, setSelected] = useState<AudioRuntimeMode>('hybrid');
   const [originalDays, setOriginalDays] = useState('');
@@ -139,51 +143,53 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
         refreshControl={<ScreenRefreshControl {...screenRefresh} />}
         testID="audio-runtime-scroll"
       >
-        <View style={styles.notice}>
+        <View collapsable={false} ref={noticeTourRef} style={styles.notice}>
           <Ionicons color={colors.secondary} name="information-circle-outline" size={22} />
           <Text style={styles.noticeText}>
             模式和期限修改只影响之后上传的音频，不迁移或删除已有资产。
           </Text>
         </View>
         {loading ? <ActivityIndicator color={colors.ink} /> : null}
-        {overview
-          ? overview.modes.map((availability) => {
-              const copy = modeCopy[availability.mode];
-              const active = selected === availability.mode;
-              return (
-                <Pressable
-                  accessibilityLabel={copy.title}
-                  accessibilityRole="radio"
-                  accessibilityState={{ checked: active, disabled: !availability.available }}
-                  disabled={!availability.available || saving}
-                  key={availability.mode}
-                  onPress={() => {
-                    setSelected(availability.mode);
-                    setDirty(true);
-                  }}
-                  style={[
-                    styles.modeCard,
-                    active && styles.selectedCard,
-                    !availability.available && styles.disabled,
-                  ]}
-                >
-                  <Ionicons color={colors.ink} name={copy.icon} size={24} />
-                  <View style={styles.modeCopy}>
-                    <Text style={styles.title}>{copy.title}</Text>
-                    <Text style={styles.description}>{copy.description}</Text>
-                    {!availability.available ? (
-                      <Text style={styles.warning}>{availability.unavailableReason}</Text>
-                    ) : null}
-                  </View>
-                  <Ionicons
-                    color={colors.ink}
-                    name={active ? 'radio-button-on' : 'radio-button-off'}
-                    size={22}
-                  />
-                </Pressable>
-              );
-            })
-          : null}
+        <View collapsable={false} ref={modesTourRef} style={styles.modeList}>
+          {overview
+            ? overview.modes.map((availability) => {
+                const copy = modeCopy[availability.mode];
+                const active = selected === availability.mode;
+                return (
+                  <Pressable
+                    accessibilityLabel={copy.title}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: active, disabled: !availability.available }}
+                    disabled={!availability.available || saving}
+                    key={availability.mode}
+                    onPress={() => {
+                      setSelected(availability.mode);
+                      setDirty(true);
+                    }}
+                    style={[
+                      styles.modeCard,
+                      active && styles.selectedCard,
+                      !availability.available && styles.disabled,
+                    ]}
+                  >
+                    <Ionicons color={colors.ink} name={copy.icon} size={24} />
+                    <View style={styles.modeCopy}>
+                      <Text style={styles.title}>{copy.title}</Text>
+                      <Text style={styles.description}>{copy.description}</Text>
+                      {!availability.available ? (
+                        <Text style={styles.warning}>{availability.unavailableReason}</Text>
+                      ) : null}
+                    </View>
+                    <Ionicons
+                      color={colors.ink}
+                      name={active ? 'radio-button-on' : 'radio-button-off'}
+                      size={22}
+                    />
+                  </Pressable>
+                );
+              })
+            : null}
+        </View>
         {selected === 'object_storage' ? (
           <View style={styles.formCard}>
             <Text style={styles.title}>对象生命周期</Text>
@@ -211,7 +217,7 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
             />
           </View>
         ) : null}
-        <View style={styles.formCard}>
+        <View collapsable={false} ref={saveTourRef} style={styles.formCard}>
           <Text style={styles.title}>管理员确认</Text>
           <Text style={styles.description}>保存会改变整个租户的新音频处理策略。</Text>
           <TextInput
@@ -244,6 +250,7 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.canvas, flex: 1 },
   content: { gap: spacing.sm, padding: spacing.md, paddingBottom: spacing.xxl },
+  modeList: { gap: spacing.sm },
   notice: {
     alignItems: 'flex-start',
     backgroundColor: colors.background,

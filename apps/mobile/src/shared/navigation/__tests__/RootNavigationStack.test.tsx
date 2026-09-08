@@ -83,6 +83,10 @@ jest.mock('@/shared/navigation/NavigationLoadingProvider', () => ({
   NavigationLoadingProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
+jest.mock('@/shared/onboarding/StarterTourProvider', () => ({
+  StarterTourProvider: ({ children }: { children: ReactNode }) => children,
+}));
+
 jest.mock('@/shared/ui/StatusBarBackdrop', () => ({
   StatusBarBackdrop: () => null,
 }));

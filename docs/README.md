@@ -6,6 +6,8 @@
 - [配置与 Credential](./configuration.md)：启动配置、租户 Provider、密钥存储与连接安全。
 - [音频运行模式](./audio-runtime-modes.md)：混合、对象存储、轻量本地及声学情绪与清理流程。
 - [一键式音频全流程分析](./audio-analysis-automation.md)：批量、定时、断点恢复、取消与 Expo 推送。
+- [Android 真机全量回归](./mobile-e2e.md)：Codex + Maestro 的稳定套件、真实集成、证据与修复门禁。
+- [Android E2E 问题汇总](./mobile-e2e-troubleshooting.md)：真机、迁移、seed、Metro、Flow、键盘和进程清理问题的排障结论。
 - [自托管与自行构建](./self-hosting.md)：Docker Server、Development Build、APK 与 EAS/Firebase 身份配置。
 - [设计规范](./design-system.md)：移动端视觉令牌、排版、布局与交互约束。
 - [领域语言](./domain-language.md)：知识库、文档 revision、可信回答等统一术语。

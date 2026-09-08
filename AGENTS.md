@@ -4,6 +4,8 @@
 
 Act as a pragmatic software-engineering agent. Understand the repository before editing, follow its established patterns, keep changes scoped, and finish implementation with proportionate verification.
 
+Call the jcodemunch_guide tool and strictly follow its instructions.
+
 ## Project Snapshot
 
 - EchoWave is a pnpm 11.3.0 workspace coordinated by Turborepo and requires Node.js 24.
@@ -121,6 +123,13 @@ pnpm-lock.yaml
 - Keep server data authoritative. Use browser storage only for non-authoritative UI preferences unless offline-first behavior is explicitly required.
 - Preserve accessibility basics: semantic elements, labels, keyboard behavior, focus management, and readable loading and error states.
 - Development Build is the default native workflow. Expo Go is only a compatibility preview for features whose dependencies are bundled there; Android remote push is unavailable in Expo Go and must be tested in a native Build.
+
+### Mobile E2E
+
+- Android device regression lives under `.maestro/` and is orchestrated by `scripts/e2e/android-e2e.mjs`; keep device E2E outside the ordinary `pnpm check` path.
+- When an Android device and the required system tools are available, rerun the narrowest affected Flow after mobile behavior changes, then its stable or real group as appropriate.
+- Do not weaken assertions, skip a failing Flow, or add arbitrary sleeps to hide a regression. Classify application, test-flow, backend, provider, device, and environment failures from captured evidence.
+- Automated failure triage is read-only. A workspace-write Codex repair requires the user to invoke the repair command with an exact matching run ID confirmation.
 
 ### API and Contracts
 

@@ -11,6 +11,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const IGNORED_DIRECTORIES = new Set([
   '.agents',
   '.ai-execution-reports',
+  '.artifacts',
   '.cache',
   '.codex',
   '.expo',

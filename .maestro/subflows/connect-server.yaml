@@ -1,0 +1,62 @@
+appId: com.echowave.app
+---
+- runFlow:
+    when:
+      visible:
+        id: 'server-connection-screen'
+    commands:
+      - tapOn:
+          id: '服务器地址'
+      - eraseText
+      - inputText: '${SERVER_URL}'
+      - hideKeyboard
+      - tapOn:
+          id: '测试连接'
+      - extendedWaitUntil:
+          visible:
+            id: 'server-connection-success'
+          timeout: 30000
+      - tapOn:
+          id: '保存并继续'
+- extendedWaitUntil:
+    visible:
+      id: 'starter-tour-overlay|e2e-tab-groups'
+    timeout: 60000
+- runFlow:
+    when:
+      visible:
+        id: 'starter-tour-overlay'
+    commands:
+      - tapOn:
+          id: 'starter-tour-skip'
+- extendedWaitUntil:
+    visible:
+      id: 'e2e-tab-groups'
+    timeout: 60000
+- tapOn:
+    id: 'e2e-tab-groups'
+- extendedWaitUntil:
+    visible:
+      id: 'group-top-bar'
+    timeout: 30000
+- extendedWaitUntil:
+    visible:
+      id: 'starter-tour-state-ready'
+    timeout: 60000
+- runFlow:
+    when:
+      visible:
+        id: 'starter-tour-overlay'
+    commands:
+      - tapOn:
+          id: 'starter-tour-skip'
+- extendedWaitUntil:
+    visible:
+      id: 'e2e-tab-groups'
+    timeout: 30000
+- tapOn:
+    id: 'e2e-tab-groups'
+- extendedWaitUntil:
+    visible:
+      id: 'group-top-bar'
+    timeout: 30000

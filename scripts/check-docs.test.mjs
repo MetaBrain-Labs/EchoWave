@@ -62,8 +62,9 @@ function createFixture(testContext) {
   return rootDirectory;
 }
 
-test('accepts a complete documentation structure', (testContext) => {
+test('accepts a complete documentation structure and ignores runtime artifacts', (testContext) => {
   const rootDirectory = createFixture(testContext);
+  writeFixtureFile(rootDirectory, '.artifacts/maestro/E2E_TEST/triage.md', '# Runtime report');
   assert.deepEqual(validateRepositoryDocs(rootDirectory).errors, []);
 });
 

@@ -1,0 +1,56 @@
+appId: com.echowave.app
+name: showcase-onboarding-navigation
+tags:
+  - showcase
+---
+- runFlow: ../../subflows/prepare-e2e-app.yaml
+- startRecording:
+    path: 'showcase-onboarding-navigation'
+    optional: true
+- assertVisible:
+    id: 'e2e-tab-groups'
+- takeScreenshot: 'showcase/01-groups'
+- tapOn:
+    id: 'e2e-tab-knowledge'
+- assertVisible:
+    id: 'knowledge-list-scroll'
+- takeScreenshot: 'showcase/01-knowledge'
+- tapOn:
+    id: 'e2e-tab-create'
+- assertVisible: '一键分析'
+- takeScreenshot: 'showcase/01-create'
+- tapOn:
+    id: 'e2e-tab-sources'
+- assertVisible:
+    id: 'data-source-list-scroll'
+- takeScreenshot: 'showcase/01-data-sources'
+- tapOn:
+    id: 'e2e-tab-more'
+- assertVisible:
+    id: 'more-scroll'
+- takeScreenshot: 'showcase/01-more'
+- tapOn: '打开新手引导中心'
+- assertVisible: '新手引导'
+- runFlow:
+    when:
+      visible: '开始数据源引导'
+    commands:
+      - tapOn: '开始数据源引导'
+- runFlow:
+    when:
+      visible: '重播数据源引导'
+    commands:
+      - tapOn: '重播数据源引导'
+- assertVisible: '数据源，第 1 步，共 2 步'
+- takeScreenshot: 'showcase/01-guide-source'
+- tapOn:
+    id: 'starter-tour-next'
+- assertVisible: '新建数据源，第 2 步，共 2 步'
+- tapOn:
+    id: 'starter-tour-finish'
+- tapOn:
+    id: 'e2e-tab-more'
+- tapOn: '打开新手引导中心'
+- assertVisible: '已完成数据源引导'
+- takeScreenshot: 'showcase/01-onboarding-completed'
+- stopRecording

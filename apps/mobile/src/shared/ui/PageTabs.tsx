@@ -19,10 +19,12 @@ export function PageTabs<Tab extends string>({
   activeTab,
   onChange,
   tabs,
+  testIDPrefix,
 }: {
   activeTab: Tab;
   onChange: (tab: Tab) => void;
   tabs: readonly { key: Tab; label: string }[];
+  testIDPrefix?: string;
 }) {
   return (
     <View accessibilityRole="tablist" style={styles.tabs}>
@@ -35,6 +37,7 @@ export function PageTabs<Tab extends string>({
             accessibilityState={{ selected }}
             onPress={() => onChange(tab.key)}
             style={({ pressed }) => [styles.tab, pressed && styles.pressed]}
+            testID={testIDPrefix ? `${testIDPrefix}-${tab.key}` : undefined}
           >
             <Text style={[styles.tabText, selected && styles.activeTabText]}>{tab.label}</Text>
             <View style={[styles.tabLine, selected && styles.activeTabLine]} />
