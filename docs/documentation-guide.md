@@ -21,13 +21,14 @@
 
 ## 配置、运行与部署
 
-| 文档                                                   | 目标读者                             | 内容与权威来源                                                                                                             |
-| ------------------------------------------------------ | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| [配置与 Credential](./configuration.md)                | 部署者与后端维护者                   | `.env`、Provider/Credential revision、移动端服务器地址和安全规则。以环境模板、Zod 配置解析器和设置 API 为准。              |
-| [音频运行模式](./audio-runtime-modes.md)               | 产品与音频后端维护者                 | 混合、对象存储、轻量本地模式及源文件生命周期。以运行模式契约、migration 和 Service 为准。                                  |
-| [一键式音频全流程分析](./audio-analysis-automation.md) | 产品、移动端与 Worker 维护者         | 批次、定时、恢复、取消、推送和 outbox。以批次契约、Worker 与迁移为准。                                                     |
-| [Android 真机全量回归](./mobile-e2e.md)                | 移动端、API 与测试维护者             | Maestro 稳定/真实套件、设备前置条件、证据、只读诊断和显式修复门禁。以 `.maestro` 与 E2E 编排器为准。                       |
-| [自托管与自行构建](./self-hosting.md)                  | Self-hosted 用户、维护者与 Fork 作者 | Docker、局域网连接、EAS/Firebase、Development/Production Build 和验收步骤。以 Compose、EAS profiles 与 Expo 官方文档为准。 |
+| 文档                                                    | 目标读者                             | 内容与权威来源                                                                                                             |
+| ------------------------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| [配置与 Credential](./configuration.md)                 | 部署者与后端维护者                   | `.env`、Provider/Credential revision、移动端服务器地址和安全规则。以环境模板、Zod 配置解析器和设置 API 为准。              |
+| [音频运行模式](./audio-runtime-modes.md)                | 产品与音频后端维护者                 | 混合、对象存储、轻量本地模式及源文件生命周期。以运行模式契约、migration 和 Service 为准。                                  |
+| [一键式音频全流程分析](./audio-analysis-automation.md)  | 产品、移动端与 Worker 维护者         | 批次、定时、恢复、取消、推送和 outbox。以批次契约、Worker 与迁移为准。                                                     |
+| [Android 真机全量回归](./mobile-e2e.md)                 | 移动端、API 与测试维护者             | Maestro 稳定/真实套件、设备前置条件、证据、只读诊断和显式修复门禁。以 `.maestro` 与 E2E 编排器为准。                       |
+| [Android E2E 问题汇总](./mobile-e2e-troubleshooting.md) | 移动端、API 与测试维护者             | 真机回归期间的常见错误、根因、处理结果和证据定位。以 `.artifacts/maestro`、Flow 与 E2E 编排器为准。                        |
+| [自托管与自行构建](./self-hosting.md)                   | Self-hosted 用户、维护者与 Fork 作者 | Docker、局域网连接、EAS/Firebase、Development/Production Build 和验收步骤。以 Compose、EAS profiles 与 Expo 官方文档为准。 |
 
 ## 移动端设计与资源
 

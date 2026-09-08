@@ -2,5 +2,6 @@ appId: com.echowave.app
 flows:
   - flows/stable/*.yaml
   - flows/real/*.yaml
+  - flows/showcase/*.yaml
 executionOrder:
   continueOnFailure: false

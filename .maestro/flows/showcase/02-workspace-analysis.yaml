@@ -1,0 +1,85 @@
+appId: com.echowave.app
+name: showcase-workspace-analysis
+tags:
+  - showcase
+---
+- runFlow: ../../subflows/prepare-e2e-app.yaml
+- startRecording:
+    path: 'showcase-workspace-analysis'
+    optional: true
+- tapOn:
+    id: 'e2e-tab-groups'
+- tapOn: '菜单'
+- tapOn: '添加分组'
+- tapOn: '分组名称'
+- inputText: '${SHOWCASE_GROUP_NAME}'
+- hideKeyboard
+- tapOn: '创建'
+- extendedWaitUntil:
+    visible: '${SHOWCASE_GROUP_NAME}'
+    timeout: 30000
+- takeScreenshot: 'showcase/02-group-created'
+- tapOn:
+    id: 'e2e-tab-sources'
+- tapOn:
+    id: 'e2e-new-data-source'
+- tapOn: '数据源名称'
+- inputText: '${SHOWCASE_SOURCE_NAME}'
+- tapOn: '数据源描述'
+- inputText: 'Customer interview recordings for product research'
+- hideKeyboard
+- tapOn: '确认'
+- extendedWaitUntil:
+    visible: '${SHOWCASE_SOURCE_NAME}'
+    timeout: 30000
+- tapOn: '关联分组'
+- tapOn: '关联新分组'
+- tapOn: '选择分组：${SHOWCASE_GROUP_NAME}'
+- tapOn: '确认关联'
+- assertVisible: '${SHOWCASE_GROUP_NAME}'
+- takeScreenshot: 'showcase/02-source-created'
+- pressKey: BACK
+- tapOn:
+    id: 'e2e-tab-create'
+- assertVisible: '一键分析'
+- tapOn: '${SHOWCASE_SOURCE_NAME}'
+- tapOn: '${SHOWCASE_GROUP_NAME}'
+- scrollUntilVisible:
+    element:
+      text: '新上传'
+    direction: DOWN
+- tapOn: '新上传'
+- tapOn: '选择多个音频.*'
+- runFlow: ../../subflows/select-audio-file.yaml
+- assertVisible: '选择多个音频（1/20）'
+- takeScreenshot: 'showcase/02-analysis-ready'
+- scrollUntilVisible:
+    element:
+      text: '上传并开始全流程'
+    direction: DOWN
+- tapOn: '上传并开始全流程'
+- assertVisible: '分析批次'
+- takeScreenshot: 'showcase/02-analysis-processing'
+- extendedWaitUntil:
+    visible: '查看分析报告'
+    timeout: 1200000
+- takeScreenshot: 'showcase/02-analysis-completed'
+- tapOn: '查看分析报告'
+- assertVisible: '转写分析'
+- assertVisible: '分析任务'
+- assertVisible: '分析总结'
+- assertVisible: '模型详情'
+- assertVisible: '全部标签'
+- takeScreenshot: 'showcase/02-report-transcript'
+- tapOn: '分析任务'
+- assertVisible: '后置分析'
+- assertVisible: '情绪分析与角色识别'
+- assertVisible: '业务分析'
+- takeScreenshot: 'showcase/02-report-tasks'
+- tapOn: '分析总结'
+- assertVisible: '摘要'
+- takeScreenshot: 'showcase/02-report-summary'
+- tapOn: '模型详情'
+- assertVisible: '模型'
+- takeScreenshot: 'showcase/02-report-models'
+- stopRecording

@@ -11,9 +11,11 @@ import {
   parseEnvPort,
   parseAdbDevices,
   parseArgs,
+  runRetriableCleanupRequest,
   renderTriageMarkdown,
   selectFlowsFrom,
 } from './lib.mjs';
+import { SHOWCASE_FLOWS, showcaseNames, suiteFlows } from './suite-config.mjs';
 
 const repoRoot = resolve(import.meta.dirname, '..', '..');
 
@@ -63,6 +65,75 @@ test('selectFlowsFrom starts a fresh run at an exact flow basename', () => {
   assert.deepEqual(selectFlowsFrom(flows, '02-resource-crud'), flows.slice(1));
   assert.deepEqual(selectFlowsFrom(flows, undefined), flows);
   assert.throws(() => selectFlowsFrom(flows, '02'), /未知起始 Flow/u);
+});
+
+test('showcase suite is explicit, ordered, and excluded from the ordinary full regression', () => {
+  assert.deepEqual(suiteFlows('showcase'), SHOWCASE_FLOWS);
+  assert.deepEqual(suiteFlows('showcase', '03-knowledge-rag'), SHOWCASE_FLOWS.slice(2));
+  assert.equal(
+    suiteFlows('full').some((flow) => flow.includes('/showcase/')),
+    false,
+  );
+});
+
+test('showcase names are public-friendly and do not expose a run ID', () => {
+  const names = showcaseNames(new Date('2026-09-08T08:00:00.000Z'));
+  assert.deepEqual(names, {
+    audioTitle: 'EchoWave Product Interview',
+    deviceAudioName: 'EchoWave Product Interview.mp3',
+    deviceKnowledgeName: 'EchoWave-Product-Brief.md',
+    groupName: '产品访谈 · 0908',
+    dataSourceName: '用户研究录音 · 0908',
+    knowledgeBaseName: '产品研究知识库 · 0908',
+  });
+  assert.doesNotMatch(JSON.stringify(names), /E2E_[A-Z0-9]/u);
+});
+
+test('cleanup retries one transport interruption and records both attempts', async () => {
+  let calls = 0;
+  const updates = [];
+  const body = await runRetriableCleanupRequest({
+    stage: 'list-groups',
+    url: 'http://127.0.0.1:3201/api/groups?token=secret',
+    request: async () => {
+      calls += 1;
+      if (calls === 1) throw new Error('fetch failed', { cause: new Error('ECONNRESET') });
+      return { items: [] };
+    },
+    onUpdate(operation) {
+      updates.push(structuredClone(operation));
+    },
+  });
+
+  assert.deepEqual(body, { items: [] });
+  assert.equal(calls, 2);
+  assert.equal(updates.at(-1).status, 'passed');
+  assert.deepEqual(updates.at(-1).attempts, [
+    { attempt: 1, status: 'failed', causes: ['fetch failed', 'ECONNRESET'] },
+    { attempt: 2, status: 'passed' },
+  ]);
+  assert.equal(updates.at(-1).url, 'http://127.0.0.1:3201/api/groups');
+});
+
+test('cleanup exhaustion keeps request context and the nested transport cause', async () => {
+  await assert.rejects(
+    runRetriableCleanupRequest({
+      stage: 'delete-group:42',
+      url: 'http://127.0.0.1:3201/api/groups/42?credential=secret',
+      options: { method: 'DELETE' },
+      request: async () => {
+        throw new Error('fetch failed', { cause: new Error('ECONNREFUSED') });
+      },
+    }),
+    (error) => {
+      assert.match(error.message, /delete-group:42/u);
+      assert.match(error.message, /DELETE http:\/\/127\.0\.0\.1:3201\/api\/groups\/42/u);
+      assert.match(error.message, /ECONNREFUSED/u);
+      assert.doesNotMatch(error.message, /credential|secret/u);
+      assert.equal(error.cleanupOperation.attempts.length, 2);
+      return true;
+    },
+  );
 });
 
 test('Metro readiness does not accept an IPv6 localhost fallback for the adb reverse endpoint', async () => {
@@ -147,6 +218,42 @@ test('Maestro recordings remain inside each flow artifact directory', () => {
     assert.ok(recordingPath, `${path} must configure a recording path`);
     assert.doesNotMatch(recordingPath, /(^|[\\/])\.\.([\\/]|$)/u, `${path} recording escapes`);
   }
+});
+
+test('showcase flows cover the public story and capture the required evidence', () => {
+  const source = SHOWCASE_FLOWS.map((flow) =>
+    readFileSync(join(repoRoot, '.maestro', flow), 'utf8'),
+  ).join('\n');
+  for (const marker of [
+    'showcase/01-onboarding-completed',
+    'showcase/02-analysis-ready',
+    'showcase/02-analysis-processing',
+    'showcase/02-analysis-completed',
+    'showcase/02-report-transcript',
+    'showcase/02-report-tasks',
+    'showcase/02-report-summary',
+    'showcase/02-report-models',
+    'showcase/03-answer-with-citation',
+    'showcase/03-citation-open',
+    'showcase/04-resource-associations',
+    'showcase/04-invalid-server',
+    'showcase/05-search-result',
+    'showcase/05-lifecycle-completed',
+  ]) {
+    assert.match(source, new RegExp(marker.replaceAll('/', '\\/'), 'u'));
+  }
+  assert.match(source, /ECHO-4827/u);
+  assert.match(source, /SHOWCASE_GROUP_NAME/u);
+  assert.doesNotMatch(source, /E2E_\$\{/u);
+});
+
+test('root scripts expose showcase recording and rendering explicitly', () => {
+  const manifest = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8'));
+  assert.equal(
+    manifest.scripts['e2e:android:showcase'],
+    'node scripts/e2e/android-e2e.mjs showcase',
+  );
+  assert.equal(manifest.scripts['showcase:video'], 'node scripts/showcase/render-video.mjs');
 });
 
 test('system file picker subflows confirm multi-select providers when required', () => {

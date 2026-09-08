@@ -14,6 +14,11 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 # Local Android E2E evidence
 .artifacts/maestro/
+.artifacts/maestro-localappdata/
+
+# Local Showcase renders and downloaded media tools
+.artifacts/showcase-video/
+.artifacts/tools/
 
 # Runtime data
 pids

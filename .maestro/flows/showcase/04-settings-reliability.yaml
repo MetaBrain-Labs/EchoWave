@@ -1,0 +1,44 @@
+appId: com.echowave.app
+name: showcase-settings-reliability
+tags:
+  - showcase
+---
+- runFlow: ../../subflows/prepare-e2e-app.yaml
+- startRecording:
+    path: 'showcase-settings-reliability'
+    optional: true
+- tapOn:
+    id: 'e2e-tab-groups'
+- tapOn: '菜单'
+- tapOn: '切换到分组：${SHOWCASE_GROUP_NAME}'
+- tapOn: '分组设置'
+- assertVisible: '基本设置'
+- tapOn: '知识库设置'
+- scrollUntilVisible:
+    element: '${SHOWCASE_KB_NAME}'
+    direction: UP
+- assertVisible: '${SHOWCASE_KB_NAME}'
+- tapOn: '数据源设置'
+- assertVisible: '${SHOWCASE_SOURCE_NAME}'
+- takeScreenshot: 'showcase/04-resource-associations'
+- pressKey: BACK
+- tapOn:
+    id: 'e2e-tab-more'
+- tapOn: '打开服务状态'
+- assertVisible: '服务状态'
+- takeScreenshot: 'showcase/04-service-status'
+- tapOn: '修改服务器'
+- tapOn:
+    id: '服务器地址'
+- eraseText
+- inputText: 'http://127.0.0.1:39999'
+- hideKeyboard
+- tapOn:
+    id: '测试连接'
+- extendedWaitUntil:
+    visible: '无法连接服务器.*'
+    timeout: 15000
+- takeScreenshot: 'showcase/04-invalid-server'
+- tapOn:
+    id: '取消修改服务器'
+- stopRecording

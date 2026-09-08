@@ -29,12 +29,14 @@ EchoWave 使用 Codex + Maestro 在一台通过 ADB 连接（USB 或 Android 无
 pnpm e2e:android:preflight
 pnpm e2e:android
 pnpm e2e:android:real
+pnpm e2e:android:showcase
 pnpm e2e:android:full
 ```
 
 - `e2e:android:preflight` 只检查 Java、Maestro、ADB、唯一设备、已安装 App、fixture、API 和 Metro。API/Metro 未运行仅为提示，因为测试命令会按需启动它们。
 - `e2e:android` 执行稳定套件，不调用完整模型分析。
 - `e2e:android:real` 是产生外部调用与费用的显式入口，最长等待单个完整音频链路 20 分钟。
+- `e2e:android:showcase` 使用公开展示名称，按用户故事录制引导、工作区分析、知识库 RAG、可靠性和资源生命周期；它同样会产生真实模型调用与费用。
 - `e2e:android:full` 先执行 `pnpm check`，再依次执行稳定与真实 Flow。
 
 修复某个 Flow 后，可以从该 Flow 开始一次新的运行；例如跳过已经通过的首个稳定 Flow：
@@ -51,7 +53,7 @@ pnpm e2e:android -- --from 02-resource-crud
 
 ## Flow 稳定性约定
 
-所有顶层稳定与真实 Flow 都先执行 `.maestro/subflows/prepare-e2e-app.yaml`。公共准备流程负责加载 Development Build、按需连接 API、等待基础引导状态完成异步恢复，并在首次运行时跳过基础引导，最终统一回到分组主页。引导专项 Flow 通过引导中心显式重播目标引导，不依赖首次安装状态。
+所有顶层稳定、真实与 Showcase Flow 都先执行 `.maestro/subflows/prepare-e2e-app.yaml`。公共准备流程负责加载 Development Build、按需连接 API、等待基础引导状态完成异步恢复，并在首次运行时跳过基础引导，最终统一回到分组主页。引导专项 Flow 通过引导中心显式重播目标引导，不依赖首次安装状态。
 
 Maestro 的 `id` 选择器只用于 React Native `testID`。唯一且稳定的 `accessibilityLabel` 使用文本选择器；底部导航、页面页签、图标按钮、重复操作和动态列表入口使用专用 `testID` 或包含运行 ID 的可访问名称。输入框完成最后一次输入后必须先关闭软键盘，再点击测试、搜索或保存按钮。异步页面使用可见状态等待，需要滚动的操作使用 `scrollUntilVisible`，不以固定休眠掩盖时序或布局问题。
 
@@ -61,9 +63,21 @@ Maestro 的 `id` 选择器只用于 React Native `testID`。唯一且稳定的 `
 
 真实 Flow 位于 `.maestro/flows/real`，覆盖固定 MP3 的上传、ASR、说话人/时间戳、情绪与角色后置分析、业务分析、报告发布；还会上传 `.maestro/fixtures/echowave-e2e-knowledge.md`，等待解析与 Embedding，并验证回答包含可打开引用。推送检查根据服务端能力展示降级状态或设备登记状态，不发送真实推送。
 
-每次运行使用严格格式的 ASCII ID（例如 `E2E_20260906T010203Z_A1B2C3`）。成功后，清理器只归档或删除 `context.json` 记录且名称完全相等的分组、数据源、音频和知识库；不会按 `E2E_` 前缀批量清理。失败时不清理，以保留现场。`seed:dev` 会把固定演示记录恢复到 seed 定义状态，这是使用现有开发后端的已知影响。
+Showcase Flow 位于 `.maestro/flows/showcase`，将同一组核心能力组织成五段可公开演示的用户故事，并在分析就绪、处理中、完成、转写、分析任务、总结、模型详情、RAG 回答、引用原文、设置关联与归档等节点截图。设备端音频和知识文档名称由 runner 参数化，画面不使用运行 ID 命名业务资源。
+
+每次运行使用严格格式的 ASCII ID（例如 `E2E_20260906T010203Z_A1B2C3`）。成功后，清理器只归档或删除 `context.json` 记录且名称完全相等的分组、数据源、音频和知识库；不会按 `E2E_` 前缀批量清理。Flow 与清理状态分别记录；清理失败会保留请求阶段、方法、去敏 URL、底层原因、已完成操作和部分 `cleanup.json`，不会被误报成 Flow 断言失败。Flow 失败时不清理，以保留现场。`seed:dev` 会把固定演示记录恢复到 seed 定义状态，这是使用现有开发后端的已知影响。
 
 当前产品只支持音频文件上传分析，没有真实麦克风录音能力，因此套件不会虚构录音权限测试。
+
+## Showcase 视频渲染
+
+Showcase 或既有 stable 运行完成后，可以生成 150 秒、1920×1080、30fps 的中英双语审阅版：
+
+```powershell
+pnpm showcase:video -- --run E2E_20260906T010203Z_A1B2C3 --prepare-tools
+```
+
+渲染器从 `commands.json` 生成剪辑时间参考，优先选择 Showcase 截图并在缺失时标记 stable 降级素材；它输出主成片、无旁白 clean 版、中文神经 TTS、独立音乐与音效、ASS 字幕、视频脚本、缩略图、manifest 和 QA 报告到 `.artifacts/showcase-video/<run-id>/`。Windows 受限环境可以先生成计划，再使用 `scripts/showcase/render-video-from-plan.ps1` 渲染；`--mask-overlay` / `-MaskOverlay` 只用于现有素材的已知浮动调试按钮，正式 Showcase 录制仍应在预览检查时关闭覆盖物。
 
 ## 报告、诊断与修复门禁
 

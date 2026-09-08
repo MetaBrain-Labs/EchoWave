@@ -128,6 +128,83 @@ export function collectExactCleanupTargets(resources, context) {
   };
 }
 
+/**
+ * 将请求地址压缩为可诊断但不暴露查询参数和凭据的形式。
+ */
+export function redactRequestUrl(value) {
+  try {
+    const url = new URL(value);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return '[invalid-url]';
+  }
+}
+
+/**
+ * 提取 Error cause 链，避免网络异常最终只剩下笼统的 fetch failed。
+ */
+export function errorCauseChain(error) {
+  const messages = [];
+  const visited = new Set();
+  let current = error;
+  while (current && !visited.has(current)) {
+    visited.add(current);
+    const message = current instanceof Error ? current.message : String(current);
+    if (message && !messages.includes(message)) messages.push(message);
+    current = current instanceof Error ? current.cause : undefined;
+  }
+  return messages;
+}
+
+/**
+ * 执行可安全重试的清理请求，并把每次尝试写入调用方持有的操作记录。
+ */
+export async function runRetriableCleanupRequest({
+  request,
+  stage,
+  url,
+  options = {},
+  maxAttempts = 2,
+  onUpdate = () => undefined,
+}) {
+  const method = String(options.method ?? 'GET').toUpperCase();
+  const attemptLimit = ['GET', 'DELETE'].includes(method) ? maxAttempts : 1;
+  const operation = {
+    stage,
+    method,
+    url: redactRequestUrl(url),
+    status: 'running',
+    attempts: [],
+  };
+  onUpdate(operation);
+
+  for (let attempt = 1; attempt <= attemptLimit; attempt += 1) {
+    try {
+      const body = await request(url, options);
+      operation.attempts.push({ attempt, status: 'passed' });
+      operation.status = 'passed';
+      onUpdate(operation);
+      return body;
+    } catch (error) {
+      const causes = errorCauseChain(error);
+      operation.attempts.push({ attempt, status: 'failed', causes });
+      onUpdate(operation);
+      if (error?.retryable === false || attempt === attemptLimit) {
+        operation.status = 'failed';
+        onUpdate(operation);
+        const failure = new Error(
+          `套后清理失败 [${stage}] ${method} ${operation.url}，尝试 ${attempt} 次：${causes.join(' -> ')}`,
+          { cause: error },
+        );
+        failure.cleanupOperation = operation;
+        throw failure;
+      }
+    }
+  }
+
+  throw new Error(`套后清理请求未执行：${stage}`);
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll('&', '&amp;')
@@ -147,7 +224,7 @@ export function renderHtmlReport(summary) {
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><title>${escapeHtml(summary.runId)}</title>
 <style>body{font:14px system-ui;margin:32px;color:#172033}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccd3df;padding:8px;text-align:left}.passed{color:#137333}.failed{color:#b3261e}</style></head>
-<body><h1>EchoWave Android E2E Detailed Report</h1><p>运行：${escapeHtml(summary.runId)}</p><p>套件：${escapeHtml(summary.suite)}</p><p class="${escapeHtml(summary.status)}">结果：${escapeHtml(summary.status)}</p><p>每个 JUnit 链接指向同目录的截图、录像、commands JSON 与 Maestro 日志。</p>
+<body><h1>EchoWave Android E2E Detailed Report</h1><p>运行：${escapeHtml(summary.runId)}</p><p>套件：${escapeHtml(summary.suite)}</p><p class="${escapeHtml(summary.status)}">结果：${escapeHtml(summary.status)}</p><p>Flow：${escapeHtml(summary.flowStatus ?? '')}；套后清理：${escapeHtml(summary.cleanupStatus ?? '')}；失败阶段：${escapeHtml(summary.failureStage ?? '无')}</p><p>每个 JUnit 链接指向同目录的截图、录像、commands JSON 与 Maestro 日志。</p>
 <table><thead><tr><th>Flow</th><th>状态</th><th>耗时 (ms)</th><th>JUnit</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
 }
 

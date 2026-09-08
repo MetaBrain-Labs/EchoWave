@@ -22,8 +22,9 @@ import {
   parseArgs,
   renderHtmlReport,
   renderTriageMarkdown,
-  selectFlowsFrom,
+  runRetriableCleanupRequest,
 } from './lib.mjs';
+import { showcaseNames, suiteFlows } from './suite-config.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDir, '..', '..');
@@ -136,7 +137,11 @@ process.once('SIGTERM', () => handleTerminationSignal('SIGTERM'));
 
 async function fetchJson(url, options) {
   const response = await fetch(url, { ...options, signal: AbortSignal.timeout(5_000) });
-  if (!response.ok) throw new Error(`${response.status} ${response.statusText}: ${url}`);
+  if (!response.ok) {
+    const error = new Error(`${response.status} ${response.statusText}: ${url}`);
+    error.retryable = false;
+    throw error;
+  }
   if (response.status === 204) return null;
   return response.json();
 }
@@ -273,26 +278,36 @@ function assertRequiredChecks(checks) {
   }
 }
 
-function suiteFlows(suite, fromFlow) {
-  const stable = [
-    'flows/stable/01-bootstrap-navigation.yaml',
-    'flows/stable/02-resource-crud.yaml',
-    'flows/stable/03-seeded-analysis.yaml',
-    'flows/stable/04-lifecycle-errors.yaml',
-    'flows/stable/05-onboarding-validation.yaml',
-    'flows/stable/06-settings-archive.yaml',
-  ];
-  const real = [
-    'flows/real/01-audio-analysis.yaml',
-    'flows/real/02-knowledge-rag.yaml',
-    'flows/real/03-push-capability.yaml',
-  ];
-  const flows = suite === 'stable' ? stable : suite === 'real' ? real : [...stable, ...real];
-  return selectFlowsFrom(flows, fromFlow);
-}
-
 function contextFor(runId, suite) {
   const suffix = runId.slice(-6);
+  const showcase = showcaseNames();
+  const stableNames = {
+    groups: [`E2E_${suffix}_GROUP`],
+    dataSources: [`E2E_${suffix}_SOURCE`],
+    knowledgeBases: [`E2E_${suffix}_KB`],
+  };
+  const realNames = {
+    groups: [`E2E_${suffix}_REAL_GROUP`],
+    dataSources: [`E2E_${suffix}_REAL_SOURCE`],
+    knowledgeBases: [`E2E_${suffix}_REAL_KB`],
+  };
+  const showcaseResourceNames = {
+    groups: [showcase.groupName],
+    dataSources: [showcase.dataSourceName],
+    knowledgeBases: [showcase.knowledgeBaseName],
+  };
+  const createdResources =
+    suite === 'stable'
+      ? stableNames
+      : suite === 'real'
+        ? realNames
+        : suite === 'showcase'
+          ? showcaseResourceNames
+          : {
+              groups: [...stableNames.groups, ...realNames.groups],
+              dataSources: [...stableNames.dataSources, ...realNames.dataSources],
+              knowledgeBases: [...stableNames.knowledgeBases, ...realNames.knowledgeBases],
+            };
   return {
     runId,
     suite,
@@ -300,19 +315,23 @@ function contextFor(runId, suite) {
     startedAt: new Date().toISOString(),
     serverUrl,
     metroUrl,
-    deviceAudioName: 'EchoWave-E2E.mp3',
-    audioTitle: 'EchoWave-E2E',
-    deviceKnowledgeName: 'EchoWave-E2E-Knowledge.md',
+    deviceAudioName: suite === 'showcase' ? showcase.deviceAudioName : 'EchoWave-E2E.mp3',
+    audioTitle: suite === 'showcase' ? showcase.audioTitle : 'EchoWave-E2E',
+    deviceKnowledgeName:
+      suite === 'showcase' ? showcase.deviceKnowledgeName : 'EchoWave-E2E-Knowledge.md',
     stableGroupName: `E2E_${suffix}_GROUP`,
     stableDataSourceName: `E2E_${suffix}_SOURCE`,
     stableKnowledgeBaseName: `E2E_${suffix}_KB`,
     realGroupName: `E2E_${suffix}_REAL_GROUP`,
     realDataSourceName: `E2E_${suffix}_REAL_SOURCE`,
     realKnowledgeBaseName: `E2E_${suffix}_REAL_KB`,
+    showcaseGroupName: showcase.groupName,
+    showcaseDataSourceName: showcase.dataSourceName,
+    showcaseKnowledgeBaseName: showcase.knowledgeBaseName,
     createdResources: {
-      groupNames: [`E2E_${suffix}_GROUP`, `E2E_${suffix}_REAL_GROUP`],
-      dataSourceNames: [`E2E_${suffix}_SOURCE`, `E2E_${suffix}_REAL_SOURCE`],
-      knowledgeBaseNames: [`E2E_${suffix}_KB`, `E2E_${suffix}_REAL_KB`],
+      groupNames: createdResources.groups,
+      dataSourceNames: createdResources.dataSources,
+      knowledgeBaseNames: createdResources.knowledgeBases,
     },
   };
 }
@@ -331,6 +350,10 @@ function maestroEnvironment(context) {
     REAL_GROUP_NAME: context.realGroupName,
     REAL_SOURCE_NAME: context.realDataSourceName,
     REAL_KB_NAME: context.realKnowledgeBaseName,
+    SHOWCASE_GROUP_NAME: context.showcaseGroupName,
+    SHOWCASE_SOURCE_NAME: context.showcaseDataSourceName,
+    SHOWCASE_KB_NAME: context.showcaseKnowledgeBaseName,
+    SHOWCASE_AUDIO_TITLE: context.audioTitle,
   };
 }
 
@@ -399,22 +422,15 @@ async function prepareServices(commands, runDir, started) {
   }
 }
 
-function prepareDevice(adb, serial) {
+function prepareDevice(adb, serial, context) {
   for (const port of [String(apiPort), String(metroPort)]) {
     runCommand(adb, ['-s', serial, 'reverse', `tcp:${port}`, `tcp:${port}`]);
   }
-  runCommand(adb, ['-s', serial, 'push', audioFixture, '/sdcard/Download/EchoWave-E2E.mp3']);
-  runCommand(adb, [
-    '-s',
-    serial,
-    'push',
-    knowledgeFixture,
-    '/sdcard/Download/EchoWave-E2E-Knowledge.md',
-  ]);
-  for (const devicePath of [
-    '/sdcard/Download/EchoWave-E2E.mp3',
-    '/sdcard/Download/EchoWave-E2E-Knowledge.md',
-  ]) {
+  const deviceAudioPath = `/sdcard/Download/${context.deviceAudioName}`;
+  const deviceKnowledgePath = `/sdcard/Download/${context.deviceKnowledgeName}`;
+  runCommand(adb, ['-s', serial, 'push', audioFixture, deviceAudioPath]);
+  runCommand(adb, ['-s', serial, 'push', knowledgeFixture, deviceKnowledgePath]);
+  for (const devicePath of [deviceAudioPath, deviceKnowledgePath]) {
     runCommand(adb, [
       '-s',
       serial,
@@ -430,49 +446,93 @@ function prepareDevice(adb, serial) {
 }
 
 async function cleanupRunResources(context, runDir) {
-  const list = async (path) => {
-    const body = await fetchJson(`${serverUrl}${path}`);
+  const cleanup = {
+    status: 'running',
+    startedAt: new Date().toISOString(),
+    operations: [],
+    cleaned: { audioFiles: [], dataSources: [], knowledgeBases: [], groups: [] },
+  };
+  const persist = () =>
+    writeFileSync(join(runDir, 'cleanup.json'), `${JSON.stringify(cleanup, null, 2)}\n`);
+  const request = (stage, url, options = {}) =>
+    runRetriableCleanupRequest({
+      request: fetchJson,
+      stage,
+      url,
+      options,
+      onUpdate(operation) {
+        if (!cleanup.operations.includes(operation)) cleanup.operations.push(operation);
+        persist();
+      },
+    });
+  const list = async (stage, path) => {
+    const body = await request(stage, `${serverUrl}${path}`);
     return Array.isArray(body) ? body : (body.items ?? []);
   };
-  const targets = collectExactCleanupTargets(
-    {
-      groups: await list('/api/groups'),
-      dataSources: await list('/api/data-sources'),
-      knowledgeBases: await list('/api/knowledge-bases'),
-    },
-    context,
-  );
-  const cleaned = { audioFiles: [], dataSources: [], knowledgeBases: [], groups: [] };
 
-  for (const source of targets.dataSources) {
-    const audioBody = await fetchJson(
-      `${serverUrl}/api/data-sources/${encodeURIComponent(source.id)}/audio-files`,
+  persist();
+  try {
+    await request('health-check', `${serverUrl}/health`);
+    const targets = collectExactCleanupTargets(
+      {
+        groups: await list('list-groups', '/api/groups'),
+        dataSources: await list('list-data-sources', '/api/data-sources'),
+        knowledgeBases: await list('list-knowledge-bases', '/api/knowledge-bases'),
+      },
+      context,
     );
-    for (const audio of audioBody.items ?? audioBody) {
-      await fetchJson(
-        `${serverUrl}/api/data-sources/${encodeURIComponent(source.id)}/audio-files/${encodeURIComponent(audio.id)}`,
+
+    for (const source of targets.dataSources) {
+      const sourcePath = `/api/data-sources/${encodeURIComponent(source.id)}`;
+      const audioBody = await request(
+        `list-audio:${source.id}`,
+        `${serverUrl}${sourcePath}/audio-files`,
+      );
+      for (const audio of audioBody.items ?? audioBody) {
+        await request(
+          `delete-audio:${audio.id}`,
+          `${serverUrl}${sourcePath}/audio-files/${encodeURIComponent(audio.id)}`,
+          { method: 'DELETE' },
+        );
+        cleanup.cleaned.audioFiles.push(audio.id);
+        persist();
+      }
+      await request(`delete-data-source:${source.id}`, `${serverUrl}${sourcePath}`, {
+        method: 'DELETE',
+      });
+      cleanup.cleaned.dataSources.push(source.id);
+      persist();
+    }
+    for (const knowledgeBase of targets.knowledgeBases) {
+      await request(
+        `delete-knowledge-base:${knowledgeBase.id}`,
+        `${serverUrl}/api/knowledge-bases/${encodeURIComponent(knowledgeBase.id)}`,
         { method: 'DELETE' },
       );
-      cleaned.audioFiles.push(audio.id);
+      cleanup.cleaned.knowledgeBases.push(knowledgeBase.id);
+      persist();
     }
-    await fetchJson(`${serverUrl}/api/data-sources/${encodeURIComponent(source.id)}`, {
-      method: 'DELETE',
-    });
-    cleaned.dataSources.push(source.id);
+    for (const group of targets.groups) {
+      await request(
+        `delete-group:${group.id}`,
+        `${serverUrl}/api/groups/${encodeURIComponent(group.id)}`,
+        { method: 'DELETE' },
+      );
+      cleanup.cleaned.groups.push(group.id);
+      persist();
+    }
+    cleanup.status = 'passed';
+    cleanup.completedAt = new Date().toISOString();
+    persist();
+    return cleanup;
+  } catch (error) {
+    cleanup.status = 'failed';
+    cleanup.completedAt = new Date().toISOString();
+    cleanup.error = error instanceof Error ? error.message : String(error);
+    if (error?.cleanupOperation) cleanup.failedOperation = error.cleanupOperation;
+    persist();
+    throw error;
   }
-  for (const knowledgeBase of targets.knowledgeBases) {
-    await fetchJson(`${serverUrl}/api/knowledge-bases/${encodeURIComponent(knowledgeBase.id)}`, {
-      method: 'DELETE',
-    });
-    cleaned.knowledgeBases.push(knowledgeBase.id);
-  }
-  for (const group of targets.groups) {
-    await fetchJson(`${serverUrl}/api/groups/${encodeURIComponent(group.id)}`, {
-      method: 'DELETE',
-    });
-    cleaned.groups.push(group.id);
-  }
-  writeFileSync(join(runDir, 'cleanup.json'), `${JSON.stringify(cleaned, null, 2)}\n`);
 }
 
 function newestPngs(root, limit = 3) {
@@ -562,7 +622,16 @@ async function runSuite(suite, fromFlow) {
   const serial = requireValue(environment.serial, '没有唯一已授权设备。');
   const started = [];
   let logcat = null;
-  const summary = { runId, suite, fromFlow: fromFlow || null, status: 'failed', flows: [] };
+  const summary = {
+    runId,
+    suite,
+    fromFlow: fromFlow || null,
+    status: 'running',
+    flowStatus: 'running',
+    cleanupStatus: 'not-run',
+    failureStage: null,
+    flows: [],
+  };
   const cleanupStartedProcesses = () => {
     if (logcat) {
       stopProcessTree(logcat);
@@ -575,12 +644,12 @@ async function runSuite(suite, fromFlow) {
   try {
     if (suite === 'full') runCommand(pnpm, ['check'], { inherit: true });
     await prepareServices(environment.commands, runDir, started);
-    prepareDevice(adb, serial);
+    prepareDevice(adb, serial, context);
     const health = await fetchJson(`${serverUrl}/health`);
     const audioRuntime = await fetchJson(`${serverUrl}/api/audio-runtime`);
     writeFileSync(join(runDir, 'health.json'), `${JSON.stringify(health, null, 2)}\n`);
     writeFileSync(join(runDir, 'audio-runtime.json'), `${JSON.stringify(audioRuntime, null, 2)}\n`);
-    if ((suite === 'stable' || suite === 'full') && audioRuntime.mode !== 'hybrid') {
+    if (['stable', 'full', 'showcase'].includes(suite) && audioRuntime.mode !== 'hybrid') {
       throw new Error(
         `稳定套件要求 hybrid 音频模式，当前为 ${audioRuntime.mode}；编排器不会修改租户设置。`,
       );
@@ -639,15 +708,27 @@ async function runSuite(suite, fromFlow) {
       if (result.status !== 0) throw new Error(`Maestro Flow 失败：${flow}`);
     }
 
-    summary.status = 'passed';
-    summary.completedAt = new Date().toISOString();
+    summary.flowStatus = 'passed';
+    summary.cleanupStatus = 'running';
     writeFileSync(join(runDir, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
     writeFileSync(join(runDir, 'report-detailed.html'), renderHtmlReport(summary));
     await cleanupRunResources(context, runDir);
+    summary.status = 'passed';
+    summary.cleanupStatus = 'passed';
+    summary.completedAt = new Date().toISOString();
+    writeFileSync(join(runDir, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
+    writeFileSync(join(runDir, 'report-detailed.html'), renderHtmlReport(summary));
     console.log(`E2E 通过：${runId}`);
     console.log(`报告：${join(runDir, 'report-detailed.html')}`);
   } catch (error) {
     summary.status = 'failed';
+    if (summary.flowStatus !== 'passed') {
+      summary.flowStatus = 'failed';
+      summary.failureStage = 'flow-or-environment';
+    } else {
+      summary.cleanupStatus = 'failed';
+      summary.failureStage = 'post-suite-cleanup';
+    }
     summary.completedAt = new Date().toISOString();
     summary.error = error instanceof Error ? error.message : String(error);
     writeFileSync(join(runDir, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
@@ -679,7 +760,7 @@ async function main() {
     assertRequiredChecks(environment.checks);
     return;
   }
-  if (['stable', 'real', 'full'].includes(action)) {
+  if (['stable', 'real', 'showcase', 'full'].includes(action)) {
     await runSuite(action, options.from);
     return;
   }
@@ -692,7 +773,7 @@ async function main() {
     return;
   }
   throw new Error(
-    '用法：android-e2e.mjs <preflight|stable|real|full|triage|repair> [--from <flow-name>]',
+    '用法：android-e2e.mjs <preflight|stable|real|showcase|full|triage|repair> [--from <flow-name>]',
   );
 }
 
