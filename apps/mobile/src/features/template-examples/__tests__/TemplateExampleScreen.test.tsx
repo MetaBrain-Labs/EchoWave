@@ -6,6 +6,7 @@
 import { fireEvent, render } from '@testing-library/react-native';
 
 import { TemplateExampleScreen } from '../TemplateExampleScreen';
+import { toTemplateAnalysisView } from '../templateAnalysisAdapter';
 import { getGroupTemplateExample } from '@/shared/api/groupsApi';
 
 jest.mock('@/shared/api/groupsApi', () => ({ getGroupTemplateExample: jest.fn() }));
@@ -51,8 +52,43 @@ describe('TemplateExampleScreen', () => {
     jest.mocked(getGroupTemplateExample).mockResolvedValue(example);
     const screen = render(<TemplateExampleScreen groupId="group-1" onBack={jest.fn()} />);
     expect(await screen.findByText('示例不包含原始音频，无法播放')).toBeTruthy();
+    expect(screen.getByRole('tab', { name: '转写分析' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: '分析总结' })).toBeTruthy();
     expect(screen.getByText('有效追问')).toBeTruthy();
     expect(screen.getByText(/确认决策人/)).toBeTruthy();
+    expect(screen.queryByText('分析任务')).toBeNull();
+    expect(screen.queryByText('编辑并确认')).toBeNull();
+    expect(screen.queryByRole('button', { name: /播放/ })).toBeNull();
+
+    fireEvent.press(
+      screen.getByTestId(
+        'ai-tag-timeline-marker-template:sales_call_review:segment:s1-template:sales_call_review:tag:strength:0',
+      ),
+    );
+    expect(screen.getByTestId('ai-tag-sheet')).toBeTruthy();
+    expect(screen.getByText('证据：s1')).toBeTruthy();
+  });
+
+  it('maps template timestamps, roles, emotions, and evidence to stable read-only IDs', () => {
+    const detail = toTemplateAnalysisView(example, 'zh-CN');
+    const segment = detail.scenes[0].segments[0];
+
+    expect(detail.id).toBe('template:sales_call_review:example:1');
+    expect(segment).toEqual(
+      expect.objectContaining({
+        businessRole: '销售',
+        emotion: '平静',
+        endSeconds: 1,
+        speakerKey: 'sales',
+        startSeconds: 0,
+      }),
+    );
+    expect(segment.aiTags[0]).toEqual(
+      expect.objectContaining({
+        evidenceSegmentIds: [segment.id],
+        title: '有效追问',
+      }),
+    );
   });
 
   it('keeps failure local and retries the example request', async () => {
@@ -63,6 +99,6 @@ describe('TemplateExampleScreen', () => {
     const screen = render(<TemplateExampleScreen groupId="group-1" onBack={jest.fn()} />);
     expect(await screen.findByText('示例加载失败')).toBeTruthy();
     fireEvent.press(screen.getByText('重新加载'));
-    expect(await screen.findByText('B2B 首次需求沟通示例')).toBeTruthy();
+    expect((await screen.findAllByText('B2B 首次需求沟通示例')).length).toBeGreaterThan(0);
   });
 });

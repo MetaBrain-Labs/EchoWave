@@ -11,7 +11,7 @@
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter, type Href } from 'expo-router';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -28,20 +28,14 @@ import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 /** 将“更多”页面渲染为统一的导航与引导入口。 */
 export default function MoreScreen() {
   const router = useRouter();
-  const { language, setLanguage, t } = useAppLanguage();
+  const { t } = useAppLanguage();
   const navigationCards = [
     { key: 'analysis', href: '/analysis' as Href, icon: 'pulse-outline' as const },
     { key: 'service', href: '/service-status' as Href, icon: 'pulse-outline' as const },
+    { key: 'general', href: '/general-settings' as Href, icon: 'settings-outline' as const },
     { key: 'ai', href: '/settings' as Href, icon: 'options-outline' as const },
     { key: 'runtime', href: '/audio-runtime' as Href, icon: 'layers-outline' as const },
   ] as const;
-  const changeLanguage = async (next: 'zh-CN' | 'en') => {
-    try {
-      await setLanguage(next);
-    } catch {
-      Alert.alert(t('common.saveFailed'), t('language.saveError'));
-    }
-  };
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
@@ -65,30 +59,6 @@ export default function MoreScreen() {
             <Ionicons color={textColors.tertiary} name="chevron-forward" size={22} />
           </Pressable>
         ))}
-        <View style={styles.languageCard}>
-          <Text style={styles.navigationTitle}>{t('language.section')}</Text>
-          <View accessibilityRole="radiogroup" style={styles.languageOptions}>
-            {(['zh-CN', 'en'] as const).map((option) => (
-              <Pressable
-                accessibilityRole="radio"
-                accessibilityState={{ checked: language === option }}
-                key={option}
-                onPress={() => void changeLanguage(option)}
-                style={[styles.languageOption, language === option && styles.languageSelected]}
-              >
-                <Text
-                  style={[
-                    styles.languageLabel,
-                    language === option && styles.languageSelectedLabel,
-                  ]}
-                >
-                  {t(option === 'zh-CN' ? 'language.zhCN' : 'language.en')}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-          <Text style={styles.navigationText}>{t('language.supported')}</Text>
-        </View>
         <Pressable
           accessibilityLabel={t('more.guides.accessibility')}
           accessibilityRole="button"
@@ -151,23 +121,4 @@ const styles = StyleSheet.create({
     color: textColors.secondary,
     fontFamily: fontFamilies.sans,
   },
-  languageCard: {
-    backgroundColor: colors.card,
-    borderColor: colors.divider,
-    borderRadius: radii.default,
-    borderWidth: StyleSheet.hairlineWidth,
-    gap: spacing.sm,
-    padding: spacing.md,
-  },
-  languageOptions: { flexDirection: 'row', gap: spacing.sm },
-  languageOption: {
-    borderColor: colors.divider,
-    borderRadius: radii.default,
-    borderWidth: 1,
-    flex: 1,
-    padding: spacing.base,
-  },
-  languageSelected: { backgroundColor: colors.ink, borderColor: colors.ink },
-  languageLabel: { ...typography.body, color: textColors.primary, textAlign: 'center' },
-  languageSelectedLabel: { color: colors.white },
 });

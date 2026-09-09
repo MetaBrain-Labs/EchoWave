@@ -72,6 +72,7 @@ describe('Top-level tab screens', () => {
     for (const card of [
       screen.getByLabelText('打开分析'),
       screen.getByLabelText('打开服务状态'),
+      screen.getByLabelText('打开通用设置'),
       screen.getByLabelText('打开 AI 配置'),
       screen.getByLabelText('打开运行模式'),
       screen.getByLabelText('打开新手引导中心'),
@@ -93,9 +94,13 @@ describe('Top-level tab screens', () => {
     expect(mockPush).toHaveBeenCalledWith('/settings');
     fireEvent.press(screen.getByLabelText('打开服务状态'));
     expect(mockPush).toHaveBeenCalledWith('/service-status');
+    fireEvent.press(screen.getByLabelText('打开通用设置'));
+    expect(mockPush).toHaveBeenCalledWith('/general-settings');
     fireEvent.press(screen.getByLabelText('打开运行模式'));
     expect(mockPush).toHaveBeenCalledWith('/audio-runtime');
     expect(screen.getByText('新手引导')).toBeTruthy();
+    expect(screen.queryByRole('radiogroup')).toBeNull();
+    expect(screen.queryByLabelText('简体中文')).toBeNull();
     fireEvent.press(screen.getByLabelText('打开新手引导中心'));
     expect(mockPush).toHaveBeenCalledWith('/guides');
   });

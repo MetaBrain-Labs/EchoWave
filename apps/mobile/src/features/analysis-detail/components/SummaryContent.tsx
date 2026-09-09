@@ -15,17 +15,30 @@ import { colors, fontFamilies, spacing, textColors, typography } from '@/shared/
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import type { AnalysisDetailView } from '../model';
 
+export type SummaryContentProps = {
+  detail: AnalysisDetailView;
+  generatedAt?: string;
+  limitations?: readonly string[];
+  limitationsTitle?: string;
+  onRefresh?: () => void;
+  recommendations?: readonly string[];
+  recommendationsTitle?: string;
+  refreshing?: boolean;
+};
+
 export function SummaryContent({
   detail,
+  generatedAt,
+  limitations,
+  limitationsTitle,
   onRefresh = () => undefined,
+  recommendations,
+  recommendationsTitle,
   refreshing = false,
-}: {
-  detail: AnalysisDetailView;
-  onRefresh?: () => void;
-  refreshing?: boolean;
-}) {
+}: SummaryContentProps) {
   const { t } = useAppLanguage();
   const businessResult = detail.businessAnalysis.result;
+  const displayLimitations = limitations ?? businessResult?.limitations ?? [];
   const knowledgeStatusLabel = businessResult
     ? businessResult.knowledgeStatus === 'used'
       ? t('analysis.knowledgeUsed', { count: businessResult.knowledgeBaseIds.length })
@@ -48,9 +61,11 @@ export function SummaryContent({
         <Ionicons color={colors.success} name="sparkles" size={34} />
         <Text style={styles.summaryTitle}>{detail.title}</Text>
       </View>
-      <Text style={styles.generatedAt}>
-        {t('analysis.generatedAt', { date: detail.generatedAt })}
-      </Text>
+      {(generatedAt ?? detail.generatedAt) ? (
+        <Text style={styles.generatedAt}>
+          {t('analysis.generatedAt', { date: generatedAt ?? detail.generatedAt })}
+        </Text>
+      ) : null}
       {businessResult ? (
         <Text style={styles.generatedAt}>
           {t('analysis.confirmedVersion', {
@@ -63,10 +78,12 @@ export function SummaryContent({
         <Text style={styles.knowledgeStatus}>{knowledgeStatusLabel}</Text>
       ) : null}
       <View style={styles.summaryDivider} />
-      {detail.businessAnalysis.result?.limitations.length ? (
+      {displayLimitations.length ? (
         <View accessibilityRole="alert" style={styles.limitations}>
-          <Text style={styles.limitationsTitle}>{t('analysis.limitations')}</Text>
-          {detail.businessAnalysis.result.limitations.map((limitation) => (
+          <Text style={styles.limitationsTitle}>
+            {limitationsTitle ?? t('analysis.limitations')}
+          </Text>
+          {displayLimitations.map((limitation) => (
             <Text key={limitation} style={styles.limitationsBody}>
               • {limitation}
             </Text>
@@ -79,6 +96,18 @@ export function SummaryContent({
           <Text style={styles.summaryBody}>{section.body}</Text>
         </View>
       ))}
+      {recommendations?.length ? (
+        <View accessibilityRole="summary" style={styles.recommendations}>
+          <Text style={styles.summarySectionTitle}>
+            {recommendationsTitle ?? t('analysis.recommendations')}
+          </Text>
+          {recommendations.map((recommendation) => (
+            <Text key={recommendation} style={styles.summaryBody}>
+              • {recommendation}
+            </Text>
+          ))}
+        </View>
+      ) : null}
     </ScrollView>
   );
 }
@@ -162,4 +191,5 @@ const styles = StyleSheet.create({
     color: textColors.primary,
     fontFamily: fontFamilies.sans,
   },
+  recommendations: { marginBottom: spacing.xl },
 });

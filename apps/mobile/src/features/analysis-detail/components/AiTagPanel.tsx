@@ -49,6 +49,7 @@ function locatorLabel(
 }
 
 export function AiTagPanel({
+  allowHideIrrelevant = true,
   analysis,
   audioExpanded,
   hideIrrelevant,
@@ -57,11 +58,12 @@ export function AiTagPanel({
   onOpenCitation,
   segments,
 }: {
+  allowHideIrrelevant?: boolean;
   analysis: AiTagAnalysis | undefined;
   audioExpanded: boolean;
   hideIrrelevant: boolean;
   onClose: () => void;
-  onHideIrrelevantChange: (value: boolean) => void;
+  onHideIrrelevantChange?: (value: boolean) => void;
   onOpenCitation?: (knowledgeBaseId: string, documentId: string, chunkId: string) => void;
   segments: readonly TranscriptSegment[];
 }) {
@@ -98,13 +100,15 @@ export function AiTagPanel({
             )
             .join('、')}
         </Text>
-        <View style={styles.sheetCheckbox}>
-          <Checkbox
-            checked={hideIrrelevant}
-            label={t('analysis.hideIrrelevant')}
-            onPress={() => onHideIrrelevantChange(!hideIrrelevant)}
-          />
-        </View>
+        {allowHideIrrelevant && onHideIrrelevantChange ? (
+          <View style={styles.sheetCheckbox}>
+            <Checkbox
+              checked={hideIrrelevant}
+              label={t('analysis.hideIrrelevant')}
+              onPress={() => onHideIrrelevantChange(!hideIrrelevant)}
+            />
+          </View>
+        ) : null}
       </View>
       <ScrollView
         contentContainerStyle={styles.sheetContent}

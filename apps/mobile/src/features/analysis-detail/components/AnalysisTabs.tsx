@@ -26,16 +26,22 @@ export function DetailTabs({
   activeTab,
   onChange,
   showSummary = true,
+  visibleTabs,
 }: {
   activeTab: AnalysisTab;
   onChange: (tab: AnalysisTab) => void;
   showSummary?: boolean;
+  visibleTabs?: readonly AnalysisTab[];
 }) {
   const { t } = useAppLanguage();
   return (
     <View accessibilityRole="tablist" style={styles.detailTabs}>
       {analysisTabs
-        .filter((tab) => showSummary || tab.key !== 'summary')
+        .filter(
+          (tab) =>
+            (showSummary || tab.key !== 'summary') &&
+            (visibleTabs === undefined || visibleTabs.includes(tab.key)),
+        )
         .map((tab) => {
           const selected = tab.key === activeTab;
           return (
