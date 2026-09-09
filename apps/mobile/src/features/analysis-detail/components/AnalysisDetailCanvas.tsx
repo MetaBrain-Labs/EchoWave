@@ -28,18 +28,22 @@ import { TranscriptContent, type TranscriptContentProps } from './TranscriptCont
 export function AnalysisSourceUnavailableCard({
   description,
   onBack,
+  showBackButton = true,
   testID = 'analysis-source-unavailable',
   title,
 }: {
   description: string;
   onBack: () => void;
+  showBackButton?: boolean;
   testID?: string;
   title: string;
 }) {
   const { t } = useAppLanguage();
   return (
     <View accessibilityRole="alert" style={styles.sourceUnavailableCard} testID={testID}>
-      <IconButton icon="chevron-back" label={t('common.back')} onPress={onBack} />
+      {showBackButton ? (
+        <IconButton icon="chevron-back" label={t('common.back')} onPress={onBack} />
+      ) : null}
       <Ionicons color={colors.secondary} name="volume-mute-outline" size={24} />
       <View style={styles.sourceUnavailableCopy}>
         <Text style={styles.sourceUnavailableTitle}>{title}</Text>
@@ -62,11 +66,14 @@ export type AnalysisDetailCanvasProps = {
   selectedTag?: AiTagAnalysis;
   showTagFilter?: boolean;
   summary?: Omit<SummaryContentProps, 'detail'>;
+  summaryLeadingContent?: ReactNode;
   summaryTargetRef?: Ref<View>;
   tagSegments?: readonly TranscriptSegment[];
   tasksContent?: ReactNode;
+  tabsInsidePages?: boolean;
   topContent: ReactNode;
   transcript: Omit<TranscriptContentProps, 'detail'>;
+  transcriptLeadingContent?: ReactNode;
   transcriptTargetRef?: Ref<View>;
 };
 
@@ -84,11 +91,14 @@ export function AnalysisDetailCanvas({
   selectedTag,
   showTagFilter = true,
   summary,
+  summaryLeadingContent,
   summaryTargetRef,
   tagSegments,
   tasksContent,
+  tabsInsidePages = false,
   topContent,
   transcript,
+  transcriptLeadingContent,
   transcriptTargetRef,
 }: AnalysisDetailCanvasProps) {
   const { t } = useAppLanguage();
@@ -104,11 +114,12 @@ export function AnalysisDetailCanvas({
     tabs,
   });
   const segments = tagSegments ?? detail.scenes.flatMap((scene) => scene.segments);
+  const pageTabs = <DetailTabs activeTab={activeTab} onChange={selectTab} visibleTabs={tabs} />;
 
   return (
     <>
       {topContent}
-      <DetailTabs activeTab={activeTab} onChange={selectTab} visibleTabs={tabs} />
+      {tabsInsidePages ? null : pageTabs}
       <ScrollView
         accessibilityLabel={t('analysisDetail.pager')}
         directionalLockEnabled
@@ -127,7 +138,20 @@ export function AnalysisDetailCanvas({
           style={[styles.page, { width: pageWidth }]}
           testID="analysis-transcript-page"
         >
-          <TranscriptContent detail={detail} {...transcript} />
+          <TranscriptContent
+            detail={detail}
+            {...transcript}
+            leadingContent={
+              tabsInsidePages ? (
+                <>
+                  {transcriptLeadingContent}
+                  {pageTabs}
+                </>
+              ) : (
+                transcript.leadingContent
+              )
+            }
+          />
         </View>
         {tasksContent !== undefined ? (
           <View style={[styles.page, { width: pageWidth }]} testID="analysis-tasks-page">
@@ -141,7 +165,20 @@ export function AnalysisDetailCanvas({
             style={[styles.page, { width: pageWidth }]}
             testID="analysis-summary-page"
           >
-            <SummaryContent detail={detail} {...summary} />
+            <SummaryContent
+              detail={detail}
+              {...summary}
+              leadingContent={
+                tabsInsidePages ? (
+                  <>
+                    {summaryLeadingContent}
+                    {pageTabs}
+                  </>
+                ) : (
+                  summary.leadingContent
+                )
+              }
+            />
           </View>
         ) : null}
         {modelContent !== undefined ? (

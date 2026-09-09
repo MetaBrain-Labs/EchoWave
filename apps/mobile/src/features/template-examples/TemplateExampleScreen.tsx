@@ -108,6 +108,7 @@ export function TemplateExampleScreen({
           onHideIrrelevantChange={() => undefined}
           selectedTag={selectedTag}
           showTagFilter={false}
+          summaryLeadingContent={null}
           summary={{
             generatedAt: '',
             limitations: example.limitations,
@@ -119,7 +120,9 @@ export function TemplateExampleScreen({
           }}
           summaryTargetRef={reportRef}
           tagSegments={detail.scenes.flatMap((scene) => scene.segments)}
-          topContent={
+          tabsInsidePages
+          topContent={null}
+          transcriptLeadingContent={
             <>
               <View collapsable={false} ref={overviewRef} style={styles.overviewCard}>
                 <View style={styles.badgeRow}>
@@ -145,6 +148,7 @@ export function TemplateExampleScreen({
               <AnalysisSourceUnavailableCard
                 description={t('templateExample.noAudioDescription')}
                 onBack={onBack}
+                showBackButton={false}
                 testID="template-source-unavailable"
                 title={t('templateExample.noAudio')}
               />

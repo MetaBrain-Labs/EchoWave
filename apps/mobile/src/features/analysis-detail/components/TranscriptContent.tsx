@@ -8,6 +8,7 @@
  * - 页面级状态和导航仍由 AnalysisDetailScreen 统一协调。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
+import type { ReactNode } from 'react';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -469,6 +470,7 @@ export type TranscriptContentProps = {
   readOnly?: boolean;
   resolvingReviewFinding?: string;
   refreshing?: boolean;
+  leadingContent?: ReactNode;
   segmentPlaybackDisabled: boolean;
   segmentPlaybackLoading: boolean;
   segmentPlaybackPlaying: boolean;
@@ -501,6 +503,7 @@ export function TranscriptContent({
   readOnly = false,
   resolvingReviewFinding,
   refreshing = false,
+  leadingContent,
   segmentPlaybackDisabled,
   segmentPlaybackLoading,
   segmentPlaybackPlaying,
@@ -578,6 +581,7 @@ export function TranscriptContent({
       showsVerticalScrollIndicator={false}
       style={styles.pageScroll}
     >
+      {leadingContent}
       <View accessibilityRole="summary" style={styles.confirmationCard}>
         {readOnly ? (
           <>

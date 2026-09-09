@@ -8,6 +8,7 @@
  * - 页面级状态和导航仍由 AnalysisDetailScreen 统一协调。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
+import type { ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
@@ -18,6 +19,7 @@ import type { AnalysisDetailView } from '../model';
 export type SummaryContentProps = {
   detail: AnalysisDetailView;
   generatedAt?: string;
+  leadingContent?: ReactNode;
   limitations?: readonly string[];
   limitationsTitle?: string;
   onRefresh?: () => void;
@@ -29,6 +31,7 @@ export type SummaryContentProps = {
 export function SummaryContent({
   detail,
   generatedAt,
+  leadingContent,
   limitations,
   limitationsTitle,
   onRefresh = () => undefined,
@@ -56,6 +59,7 @@ export function SummaryContent({
       showsVerticalScrollIndicator={false}
       style={styles.pageScroll}
     >
+      {leadingContent}
       <Text style={styles.summaryDescription}>{t('analysis.aiDisclaimer')}</Text>
       <View style={styles.summaryTitleRow}>
         <Ionicons color={colors.success} name="sparkles" size={34} />

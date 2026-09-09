@@ -52,8 +52,10 @@ describe('TemplateExampleScreen', () => {
     jest.mocked(getGroupTemplateExample).mockResolvedValue(example);
     const screen = render(<TemplateExampleScreen groupId="group-1" onBack={jest.fn()} />);
     expect(await screen.findByText('示例不包含原始音频，无法播放')).toBeTruthy();
-    expect(screen.getByRole('tab', { name: '转写分析' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: '分析总结' })).toBeTruthy();
+    expect(screen.getAllByTestId('top-level-page-header')).toHaveLength(1);
+    expect(screen.getAllByLabelText('返回')).toHaveLength(1);
+    expect(screen.getAllByRole('tab', { name: '转写分析' })).toHaveLength(2);
+    expect(screen.getAllByRole('tab', { name: '分析总结' })).toHaveLength(2);
     expect(screen.getByText('有效追问')).toBeTruthy();
     expect(screen.getByText(/确认决策人/)).toBeTruthy();
     expect(screen.queryByText('分析任务')).toBeNull();
