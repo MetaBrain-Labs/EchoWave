@@ -13,6 +13,7 @@
  */
 import {
   AudioBusinessAnalysisStartRequestSchema,
+  AudioPostAnalysisStartRequestSchema,
   SpeakerReviewResolutionResponseSchema,
   AudioTranscriptConfirmationRequestSchema,
   AudioTranscriptionStartRequestSchema,
@@ -166,16 +167,32 @@ export function registerAudioRoutes(
       ),
     ),
   );
-  app.post('/api/audio-files/:audioFileId/analysis/emotion', async (context) =>
-    context.json(
-      await service.startAudioPostAnalysis(entityId(context.req.param('audioFileId')), 'emotion'),
+  app.post('/api/audio-files/:audioFileId/analysis/emotion', async (context) => {
+    const input = AudioPostAnalysisStartRequestSchema.parse(
+      await context.req.json().catch(() => ({})),
+    );
+    return context.json(
+      await service.startAudioPostAnalysis(
+        entityId(context.req.param('audioFileId')),
+        'emotion',
+        undefined,
+        input.language,
+      ),
       202,
-    ),
-  );
-  app.post('/api/audio-files/:audioFileId/analysis/role', async (context) =>
-    context.json(
-      await service.startAudioPostAnalysis(entityId(context.req.param('audioFileId')), 'role'),
+    );
+  });
+  app.post('/api/audio-files/:audioFileId/analysis/role', async (context) => {
+    const input = AudioPostAnalysisStartRequestSchema.parse(
+      await context.req.json().catch(() => ({})),
+    );
+    return context.json(
+      await service.startAudioPostAnalysis(
+        entityId(context.req.param('audioFileId')),
+        'role',
+        undefined,
+        input.language,
+      ),
       202,
-    ),
-  );
+    );
+  });
 }

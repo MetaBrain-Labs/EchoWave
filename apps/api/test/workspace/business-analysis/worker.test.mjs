@@ -37,6 +37,7 @@ function makeJob(overrides = {}) {
     knowledgeBaseIds: [],
     knowledgeBases: [],
     settings: {
+      language: 'zh-CN',
       timing: 'manual',
       contentFocus: '分析销售话术',
       tone: '正式、专业',

@@ -11,8 +11,9 @@
  */
 
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import {
   colors,
   fontFamilies,
@@ -23,10 +24,7 @@ import {
 } from '@/shared/theme/tokens';
 
 import type { UploadRecord } from '../model';
-
-function showComingSoon(feature: string) {
-  Alert.alert('功能建设中', `${feature}将在后续版本开放。`);
-}
+import { showComingSoon } from './DataSourceFixedActions';
 
 export function UploadRecordRow({
   onReupload,
@@ -35,14 +33,16 @@ export function UploadRecordRow({
   onReupload: () => void;
   record: UploadRecord;
 }) {
+  const { t } = useAppLanguage();
   const failed = record.kind !== 'upload-success';
   const title =
     record.kind === 'upload-success'
-      ? '上传成功'
+      ? t('sourceDetail.uploadSuccess')
       : record.kind === 'upload-failed'
-        ? '上传失败'
-        : '转写失败';
-  const actionLabel = record.kind === 'upload-failed' ? '重新上传' : '重新转写';
+        ? t('sourceDetail.statusUploadFailed')
+        : t('sourceDetail.statusTranscriptionFailed');
+  const actionLabel =
+    record.kind === 'upload-failed' ? t('uploadRecord.reupload') : t('uploadRecord.retranscribe');
   return (
     <View style={styles.recordRow}>
       <Text style={styles.recordTime}>{record.time}</Text>
@@ -72,10 +72,10 @@ export function UploadRecordRow({
         </Pressable>
       ) : (
         <Pressable
-          accessibilityLabel={`${record.time}上传记录更多操作`}
+          accessibilityLabel={t('uploadRecord.more', { time: record.time })}
           accessibilityRole="button"
           hitSlop={8}
-          onPress={() => showComingSoon('上传记录更多操作')}
+          onPress={() => showComingSoon(t('uploadRecord.moreAction'))}
           style={({ pressed }) => [styles.recordMoreButton, pressed && styles.pressed]}
         >
           <Ionicons color={colors.secondary} name="ellipsis-horizontal" size={24} />

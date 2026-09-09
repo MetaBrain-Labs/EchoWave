@@ -19,6 +19,7 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 export function DataSourcesContent({
   error,
   emptyMessage,
@@ -36,8 +37,11 @@ export function DataSourcesContent({
   onRetry: () => void;
   sources: DataSourceSummary[];
 }) {
+  const { formatDateTime, formatNumber, t } = useAppLanguage();
   if (loading) {
-    return <ActivityIndicator accessibilityLabel="正在加载分组数据源" color={colors.ink} />;
+    return (
+      <ActivityIndicator accessibilityLabel={t('groupContent.loadingSources')} color={colors.ink} />
+    );
   }
   if (error) {
     return (
@@ -46,7 +50,7 @@ export function DataSourcesContent({
           {error}
         </Text>
         <Pressable accessibilityRole="button" onPress={onRetry}>
-          <Text style={styles.metaText}>重新加载</Text>
+          <Text style={styles.metaText}>{t('groupSettings.reload')}</Text>
         </Pressable>
       </View>
     );
@@ -54,14 +58,16 @@ export function DataSourcesContent({
   return (
     <>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>共连接 {sources.length} 个数据源</Text>
+        <Text style={styles.sectionTitle}>
+          {t('groupContent.totalSources', { count: formatNumber(sources.length) })}
+        </Text>
         <Pressable
-          accessibilityLabel="数据源排序筛选"
+          accessibilityLabel={t('groupContent.sortSources')}
           accessibilityRole="button"
           onPress={onOpenFilter}
           style={({ pressed }) => [styles.filterButton, pressed && styles.pressed]}
         >
-          <Text style={styles.filterText}>排序筛选</Text>
+          <Text style={styles.filterText}>{t('groupContent.sort')}</Text>
           <Ionicons
             color={colors.secondary}
             name="filter-outline"
@@ -72,7 +78,7 @@ export function DataSourcesContent({
       {sources.length ? (
         sources.map((source) => (
           <Pressable
-            accessibilityLabel={`打开数据源：${source.name}`}
+            accessibilityLabel={t('sources.open', { name: source.name })}
             accessibilityRole="button"
             key={source.id}
             onPress={() => onOpenSource(source.id)}
@@ -89,7 +95,7 @@ export function DataSourcesContent({
               </View>
               <View style={styles.cardActions}>
                 <View style={styles.connectedBadge}>
-                  <Text style={styles.connectedText}>已连接</Text>
+                  <Text style={styles.connectedText}>{t('sources.connected')}</Text>
                 </View>
                 <Ionicons color={colors.secondary} name="chevron-forward" size={20} />
               </View>
@@ -99,8 +105,11 @@ export function DataSourcesContent({
             </Text>
             <Text style={styles.metaText}>{source.connectionLabel}</Text>
             <Text style={styles.metaText}>
-              最近上传{' '}
-              {source.lastUploadedAt ? new Date(source.lastUploadedAt).toLocaleString() : '暂无'}
+              {t('sources.lastUpload', {
+                date: source.lastUploadedAt
+                  ? formatDateTime(source.lastUploadedAt)
+                  : t('sources.none'),
+              })}
             </Text>
           </Pressable>
         ))

@@ -15,6 +15,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import type { DocumentFormat, KnowledgeDocument } from '@echowave/contracts';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import {
   colors,
   fontFamilies,
@@ -54,6 +55,7 @@ export function DocumentFormatIcon({
   format: DocumentFormat;
   size?: number;
 }) {
+  const { t } = useAppLanguage();
   const config: Record<DocumentFormat, { color: string; icon: keyof typeof Ionicons.glyphMap }> = {
     markdown: { color: '#526071', icon: 'document-text-outline' },
     word: { color: '#1768c4', icon: 'document-outline' },
@@ -61,7 +63,7 @@ export function DocumentFormatIcon({
   };
   return (
     <Ionicons
-      accessibilityLabel={`${format} 文件`}
+      accessibilityLabel={t('documentUi.file', { format })}
       color={config[format].color}
       name={config[format].icon}
       size={size}
@@ -71,20 +73,29 @@ export function DocumentFormatIcon({
 
 /** 将服务器文档处理状态映射为稳定、可理解的中文展示。 */
 export function DocumentStatusView({ document }: { document: KnowledgeDocument }) {
+  const { formatNumber, t } = useAppLanguage();
   switch (document.status.kind) {
     case 'ready':
-      return <Text style={styles.statusText}>{document.vectorCount} 个文本块</Text>;
+      return (
+        <Text style={styles.statusText}>
+          {t('documentUi.blocks', { count: formatNumber(document.vectorCount) })}
+        </Text>
+      );
     case 'queued':
-      return <InlineStatus icon="hourglass-outline" label="待解析" />;
+      return <InlineStatus icon="hourglass-outline" label={t('knowledgeDetail.queued')} />;
     case 'validating':
-      return <InlineStatus icon="sync-outline" label="上传中" />;
+      return <InlineStatus icon="sync-outline" label={t('documentUi.uploading')} />;
     case 'parsing':
     case 'chunking':
-      return <Text style={styles.statusText}>解析中</Text>;
+      return <Text style={styles.statusText}>{t('documentUi.parsing')}</Text>;
     case 'embedding':
-      return <Text style={styles.statusText}>向量化中 ({document.status.progress}%)</Text>;
+      return (
+        <Text style={styles.statusText}>
+          {t('documentUi.embedding', { progress: formatNumber(document.status.progress) })}
+        </Text>
+      );
     case 'deleting':
-      return <Text style={styles.statusText}>正在删除</Text>;
+      return <Text style={styles.statusText}>{t('documentUi.deleting')}</Text>;
     case 'failed':
       return (
         <View style={styles.failedStatus}>
@@ -93,7 +104,7 @@ export function DocumentStatusView({ document }: { document: KnowledgeDocument }
             name="alert-circle-outline"
             size={typography.label.lineHeight}
           />
-          <Text style={styles.statusText}>解析失败</Text>
+          <Text style={styles.statusText}>{t('knowledgeDetail.failed')}</Text>
         </View>
       );
   }

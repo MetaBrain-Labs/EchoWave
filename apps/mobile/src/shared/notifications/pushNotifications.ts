@@ -12,6 +12,7 @@ import {
   PushDeviceRegisterRequestSchema,
   PushDeviceSchema,
   type PushDeviceRegisterRequest,
+  type SupportedLanguage,
 } from '@echowave/contracts';
 import { isRunningInExpoGo } from 'expo';
 import Constants from 'expo-constants';
@@ -82,6 +83,8 @@ export function setupNotificationHandler(): void {
 export async function registerPushDevice(
   onProgress?: (progress: PushRegistrationProgress) => void,
   dependencies: { notificationsModule?: NotificationsModule } = {},
+  locale: SupportedLanguage = 'zh-CN',
+  channelName = '分析任务通知',
 ): Promise<PushRegistrationResult> {
   if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
     return { status: 'unsupported', reason: 'runtime' };
@@ -91,7 +94,7 @@ export async function registerPushDevice(
   try {
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('analysis-alerts', {
-        name: '分析任务通知',
+        name: channelName,
         importance: Notifications.AndroidImportance.HIGH,
       });
     }
@@ -136,6 +139,7 @@ export async function registerPushDevice(
   const input: PushDeviceRegisterRequest = {
     token: token.data,
     platform: Platform.OS,
+    locale,
   };
   onProgress?.('api');
   try {

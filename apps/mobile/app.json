@@ -7,6 +7,10 @@
     "orientation": "portrait",
     "scheme": "echowave",
     "userInterfaceStyle": "light",
+    "locales": {
+      "en": "./locales/en.json",
+      "zh-CN": "./locales/zh-CN.json"
+    },
     "ios": {
       "icon": "./assets/img/icon.png",
       "supportsTablet": true,
@@ -34,6 +38,15 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-localization",
+        {
+          "supportedLocales": {
+            "ios": ["en", "zh-CN"],
+            "android": ["en", "zh-CN"]
+          }
+        }
+      ],
       [
         "expo-notifications",
         {

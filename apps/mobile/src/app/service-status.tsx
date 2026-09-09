@@ -24,12 +24,14 @@ import {
   type PushNotificationStatusCardHandle,
 } from '@/features/system-status/PushNotificationStatusCard';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { colors, spacing } from '@/shared/theme/tokens';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 
 /** 渲染 API 服务状态、当前端点、重试和服务器切换操作。 */
 export default function ServiceStatusRoute() {
+  const { t } = useAppLanguage();
   const router = useRouter();
   const cardRef = useRef<ServiceStatusCardHandle>(null);
   const pushCardRef = useRef<PushNotificationStatusCardHandle>(null);
@@ -41,7 +43,11 @@ export default function ServiceStatusRoute() {
   });
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-      <PageHeader onBack={() => router.back()} onMore={() => undefined} title="服务状态" />
+      <PageHeader
+        onBack={() => router.back()}
+        onMore={() => undefined}
+        title={t('more.service.title')}
+      />
       <ScrollView
         alwaysBounceVertical
         contentContainerStyle={styles.content}

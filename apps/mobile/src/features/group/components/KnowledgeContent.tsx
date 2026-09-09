@@ -19,6 +19,7 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 export function KnowledgeContent({
   error,
@@ -37,8 +38,14 @@ export function KnowledgeContent({
   onOpenFilter: () => void;
   onRetry: () => void;
 }) {
+  const { formatDateTime, formatNumber, t } = useAppLanguage();
   if (loading) {
-    return <ActivityIndicator accessibilityLabel="正在加载关联知识库" color={colors.ink} />;
+    return (
+      <ActivityIndicator
+        accessibilityLabel={t('groupContent.loadingKnowledge')}
+        color={colors.ink}
+      />
+    );
   }
   if (error) {
     return (
@@ -47,7 +54,7 @@ export function KnowledgeContent({
           {error}
         </Text>
         <Pressable accessibilityRole="button" onPress={onRetry}>
-          <Text style={styles.filterText}>重新加载</Text>
+          <Text style={styles.filterText}>{t('groupSettings.reload')}</Text>
         </Pressable>
       </View>
     );
@@ -55,14 +62,16 @@ export function KnowledgeContent({
   return (
     <>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>共关联 {knowledgeBases.length} 个知识库</Text>
+        <Text style={styles.sectionTitle}>
+          {t('groupContent.totalKnowledge', { count: formatNumber(knowledgeBases.length) })}
+        </Text>
         <Pressable
-          accessibilityLabel="知识库排序筛选"
+          accessibilityLabel={t('groupContent.sortKnowledge')}
           accessibilityRole="button"
           onPress={onOpenFilter}
           style={({ pressed }) => [styles.filterButton, pressed && styles.pressed]}
         >
-          <Text style={styles.filterText}>排序筛选</Text>
+          <Text style={styles.filterText}>{t('groupContent.sort')}</Text>
           <Ionicons
             color={colors.secondary}
             name="filter-outline"
@@ -73,7 +82,7 @@ export function KnowledgeContent({
       {knowledgeBases.length ? (
         knowledgeBases.map((knowledgeBase) => (
           <Pressable
-            accessibilityLabel={`打开知识库：${knowledgeBase.name}`}
+            accessibilityLabel={t('knowledge.open', { name: knowledgeBase.name })}
             accessibilityRole="button"
             key={knowledgeBase.id}
             onPress={() => onOpenKnowledge(knowledgeBase.id)}
@@ -91,9 +100,13 @@ export function KnowledgeContent({
             <Text numberOfLines={2} style={styles.description}>
               {knowledgeBase.description}
             </Text>
-            <Text style={styles.metaText}>共 {knowledgeBase.documentCount} 份文档</Text>
             <Text style={styles.metaText}>
-              更新于 {new Date(knowledgeBase.updatedAt).toLocaleDateString()}
+              {t('groupContent.documentCount', {
+                count: formatNumber(knowledgeBase.documentCount),
+              })}
+            </Text>
+            <Text style={styles.metaText}>
+              {t('knowledge.updated', { date: formatDateTime(knowledgeBase.updatedAt) })}
             </Text>
           </Pressable>
         ))

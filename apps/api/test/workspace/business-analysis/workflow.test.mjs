@@ -39,6 +39,7 @@ function makeJob(overrides = {}) {
     knowledgeBaseIds: [knowledgeBaseId],
     knowledgeBases: [{ id: knowledgeBaseId, name: '销售知识库' }],
     settings: {
+      language: 'zh-CN',
       timing: 'manual',
       contentFocus: '分析销售话术',
       tone: '正式、专业',

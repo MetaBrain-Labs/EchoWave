@@ -9,6 +9,7 @@
  * Notes:
  * - 一个说话人在整段录音中只能拥有一个角色。
  */
+import type { SupportedLanguage } from '@echowave/contracts';
 
 type RoleContextSegment = {
   id: string;
@@ -24,13 +25,15 @@ export function roleRecognitionContext(
   allowedRoles: string[],
   previous: string,
   structureAttempt: number,
+  language: SupportedLanguage,
 ): string {
+  const unknownRole = language === 'zh-CN' ? '未知' : 'Unknown';
   return [
-    'Classify the business role of every speaker in this Chinese call transcript.',
-    `Allowed role labels: ${JSON.stringify(allowedRoles)}. Use 未知 when evidence is insufficient.`,
+    `Classify the business role of every speaker in this ${language === 'zh-CN' ? 'Chinese' : 'English'} call transcript.`,
+    `Allowed role labels: ${JSON.stringify(allowedRoles)}. Use ${unknownRole} when evidence is insufficient.`,
     'A speaker must have exactly one role for the whole recording.',
     'Return at most three evidence segment IDs, and only IDs spoken by that speaker.',
-    'Return only JSON: {"speakers":[{"speakerKey":"Speaker 0","role":"客户","confidence":0.5,"evidenceSegmentIds":["uuid"]}]}',
+    `Return only JSON: {"speakers":[{"speakerKey":"Speaker 0","role":"${language === 'zh-CN' ? '客户' : 'Customer'}","confidence":0.5,"evidenceSegmentIds":["uuid"]}]}`,
     `Transcript: ${JSON.stringify(segments.map(({ id, speakerKey, startMs, endMs, text }) => ({ id, speakerKey, startMs, endMs, text })))}`,
     structureAttempt === 1
       ? ''

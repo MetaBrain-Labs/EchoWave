@@ -22,6 +22,7 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 function Metric({
   divider = false,
@@ -49,13 +50,14 @@ export function GroupCard({
   onSwitch: () => void;
   onUnlink: () => void;
 }) {
+  const { formatNumber, t } = useAppLanguage();
   return (
     <View style={styles.groupCard}>
       <View style={styles.groupTitleRow}>
         <Text style={styles.groupTitle}>{group.name}</Text>
         <View style={styles.groupActions}>
           <Pressable
-            accessibilityLabel={`切换到分组：${group.name}`}
+            accessibilityLabel={t('sourceGroupCard.switch', { name: group.name })}
             accessibilityRole="button"
             onPress={onSwitch}
             style={styles.groupIconButton}
@@ -67,7 +69,7 @@ export function GroupCard({
             />
           </Pressable>
           <Pressable
-            accessibilityLabel={`解除关联分组：${group.name}`}
+            accessibilityLabel={t('sourceGroupCard.unlink', { name: group.name })}
             accessibilityRole="button"
             onPress={onUnlink}
             style={styles.groupIconButton}
@@ -81,10 +83,18 @@ export function GroupCard({
         </View>
       </View>
       <View style={styles.groupMetrics}>
-        <Metric label="分析数" value={`${group.analysisCount}`} />
-        <Metric divider label="音频数" value={`${group.audioCount}`} />
-        <Metric divider label="知识库" value={`${group.knowledgeCount}`} />
-        <Metric divider label="数据源" value={`${group.sourceCount}`} />
+        <Metric label={t('sourceGroupCard.analysis')} value={formatNumber(group.analysisCount)} />
+        <Metric divider label={t('sourceGroupCard.audio')} value={formatNumber(group.audioCount)} />
+        <Metric
+          divider
+          label={t('sourceGroupCard.knowledge')}
+          value={formatNumber(group.knowledgeCount)}
+        />
+        <Metric
+          divider
+          label={t('sourceGroupCard.sources')}
+          value={formatNumber(group.sourceCount)}
+        />
       </View>
     </View>
   );

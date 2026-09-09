@@ -12,6 +12,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useState } from 'react';
 import { AccessibilityInfo, Animated, Easing, StyleSheet, Text, View } from 'react-native';
 
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import {
   colors,
   fontFamilies,
@@ -21,7 +22,6 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 
-const stages = ['唤醒 AI', '连接知识库', '检索知识库', '生成结果中'] as const;
 const stageDelays = [350, 900, 1_600] as const;
 
 /** 渲染一轮等待中或已验证的 Assistant 进度。 */
@@ -32,6 +32,13 @@ export function AnswerProgressCard({
   onProgressChange?: () => void;
   sourceCount?: number;
 }) {
+  const { formatNumber, t } = useAppLanguage();
+  const stages = [
+    t('answerProgress.wake'),
+    t('answerProgress.connect'),
+    t('answerProgress.retrieve'),
+    t('answerProgress.generate'),
+  ];
   const [activeStage, setActiveStage] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [pulse] = useState(() => new Animated.Value(0));
@@ -88,7 +95,10 @@ export function AnswerProgressCard({
     return () => animation.stop();
   }, [pulse, reduceMotion]);
 
-  const finalLabel = sourceCount === 0 ? '未找到可引用依据' : `已确认 ${sourceCount} 条引用来源`;
+  const finalLabel =
+    sourceCount === 0
+      ? t('answerProgress.noEvidence')
+      : t('answerProgress.sources', { count: formatNumber(sourceCount ?? 0) });
   const displayedStage = verified ? stages.length : activeStage;
 
   return (
@@ -114,7 +124,7 @@ export function AnswerProgressCard({
         >
           <Ionicons color={colors.success} name="sparkles" size={22} />
         </Animated.View>
-        <Text style={styles.heading}>Assistant 正在处理</Text>
+        <Text style={styles.heading}>{t('answerProgress.processing')}</Text>
       </View>
       <View style={styles.steps}>
         {stages.map((stage, index) => {

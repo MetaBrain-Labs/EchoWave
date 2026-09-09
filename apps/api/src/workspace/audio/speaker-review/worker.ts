@@ -106,7 +106,7 @@ export class SpeakerReviewWorker {
     const startedAt = Date.now();
     try {
       const runtime = await this.options.resolveRuntime(job);
-      const findings = await runtime.reviewer.review(job.segments, report);
+      const findings = await runtime.reviewer.review(job.segments, report, job.language);
       await this.options.repository.publish(job, findings);
       await report.finish({
         status: 'completed',

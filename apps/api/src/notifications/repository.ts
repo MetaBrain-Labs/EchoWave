@@ -23,6 +23,9 @@ export type ClaimedNotificationDelivery = {
   eventType: string;
   batchId: string;
   taskId: string | null;
+  locale: 'zh-CN' | 'en';
+  templateKey: string | null;
+  templateParams: Record<string, unknown>;
 };
 
 /** 管理固定租户下的设备和逐设备投递。 */
@@ -45,18 +48,19 @@ export class PushNotificationRepository {
   async register(input: PushDeviceRegisterRequest) {
     const result = await this.pool.query(
       `INSERT INTO ${this.table('push_devices')}
-         (tenant_id, expo_push_token, platform)
-       VALUES ($1, $2, $3)
+         (tenant_id, expo_push_token, platform, locale)
+       VALUES ($1, $2, $3, $4)
        ON CONFLICT (tenant_id, expo_push_token) DO UPDATE
-       SET platform = excluded.platform, enabled = true,
+       SET platform = excluded.platform, locale = excluded.locale, enabled = true,
            last_seen_at = now(), updated_at = now()
-       RETURNING id, platform, enabled, updated_at`,
-      [this.tenantId, input.token, input.platform],
+       RETURNING id, platform, locale, enabled, updated_at`,
+      [this.tenantId, input.token, input.platform, input.locale],
     );
     const row = result.rows[0];
     return PushDeviceSchema.parse({
       id: row.id,
       platform: row.platform,
+      locale: row.locale,
       enabled: row.enabled,
       updatedAt: new Date(row.updated_at).toISOString(),
     });
@@ -96,7 +100,8 @@ export class PushNotificationRepository {
          AND device.tenant_id = delivery.tenant_id AND device.id = delivery.device_id
        RETURNING delivery.id, delivery.device_id, delivery.attempt_count,
                  delivery.expo_ticket_id, device.expo_push_token,
-                 event.title, event.body, event.event_type, event.batch_id, event.task_id`,
+                 device.locale, event.title, event.body, event.event_type, event.batch_id,
+                 event.task_id, event.template_key, event.template_params`,
       [this.tenantId],
     );
     const row = result.rows[0];
@@ -112,6 +117,10 @@ export class PushNotificationRepository {
       eventType: row.event_type,
       batchId: row.batch_id,
       taskId: row.task_id ?? null,
+      locale: row.locale ?? 'zh-CN',
+      templateKey: row.template_key ?? null,
+      templateParams:
+        row.template_params && typeof row.template_params === 'object' ? row.template_params : {},
     };
   }
 

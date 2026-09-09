@@ -11,6 +11,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import {
   colors,
   fontFamilies,
@@ -36,6 +37,7 @@ function Waveform({
   onSeek?: (progress: number) => void;
   progress: number;
 }) {
+  const { t } = useAppLanguage();
   const [waveformWidth, setWaveformWidth] = useState(0);
   const waveform = (
     <>
@@ -61,7 +63,7 @@ function Waveform({
   if (onSeek) {
     return (
       <Pressable
-        accessibilityLabel="播放进度，点击跳转"
+        accessibilityLabel={t('player.seek')}
         accessibilityRole="button"
         onLayout={(event) => setWaveformWidth(event.nativeEvent.layout.width)}
         onPress={(event) => {
@@ -107,12 +109,13 @@ export function CompactPlayer({
   onRetry: () => void;
   positionSeconds: number;
 }) {
+  const { t } = useAppLanguage();
   return (
     <View style={styles.compactHeader}>
-      <IconButton icon="chevron-back" label="返回" onPress={onBack} />
+      <IconButton icon="chevron-back" label={t('common.back')} onPress={onBack} />
       <View style={styles.compactPlayer}>
         <Pressable
-          accessibilityLabel={isPlaying ? '暂停音频' : '播放音频'}
+          accessibilityLabel={isPlaying ? t('player.pauseAudio') : t('player.playAudio')}
           accessibilityRole="button"
           disabled={!isLoaded || Boolean(error)}
           onPress={onPlayPause}
@@ -129,7 +132,7 @@ export function CompactPlayer({
           )}
         </Pressable>
         <Pressable
-          accessibilityLabel="展开播放器"
+          accessibilityLabel={t('player.expand')}
           accessibilityRole="button"
           onPress={onExpand}
           style={({ pressed }) => [styles.compactWaveformButton, pressed && styles.pressed]}
@@ -139,7 +142,7 @@ export function CompactPlayer({
         {error ? (
           <Pressable accessibilityRole="button" onPress={onRetry}>
             <Text numberOfLines={1} style={styles.playerError}>
-              加载失败，点击重试
+              {t('player.loadRetry')}
             </Text>
           </Pressable>
         ) : (
@@ -150,8 +153,8 @@ export function CompactPlayer({
       </View>
       <IconButton
         icon="ellipsis-horizontal"
-        label="更多操作"
-        onPress={() => showComingSoon('更多操作')}
+        label={t('common.moreActions')}
+        onPress={() => showComingSoon(t('common.moreActions'))}
       />
     </View>
   );
@@ -188,14 +191,15 @@ export function ExpandedPlayer({
   playbackRate: number;
   positionSeconds: number;
 }) {
+  const { t } = useAppLanguage();
   return (
     <View style={styles.expandedPlayerContainer}>
       <View style={styles.expandedTopBar}>
-        <IconButton icon="chevron-back" label="返回" onPress={onBack} />
+        <IconButton icon="chevron-back" label={t('common.back')} onPress={onBack} />
         <IconButton
           icon="ellipsis-horizontal"
-          label="更多操作"
-          onPress={() => showComingSoon('更多操作')}
+          label={t('common.moreActions')}
+          onPress={() => showComingSoon(t('common.moreActions'))}
         />
       </View>
       <View style={styles.largeWaveformArea}>
@@ -211,16 +215,16 @@ export function ExpandedPlayer({
       </View>
       <View style={styles.playerControls}>
         <Pressable
-          accessibilityLabel={`当前倍速 ${playbackRate.toFixed(1)} 倍，点击切换`}
+          accessibilityLabel={t('player.rate', { rate: playbackRate.toFixed(1) })}
           accessibilityRole="button"
           onPress={onRateChange}
           style={({ pressed }) => [styles.controlButton, pressed && styles.pressed]}
         >
           <Text style={styles.controlText}>x{playbackRate.toFixed(1)}</Text>
         </Pressable>
-        <IconButton icon="play-back" label="后退 15 秒" onPress={() => onJump(-15)} />
+        <IconButton icon="play-back" label={t('player.rewind')} onPress={() => onJump(-15)} />
         <Pressable
-          accessibilityLabel={isPlaying ? '暂停音频' : '播放音频'}
+          accessibilityLabel={isPlaying ? t('player.pauseAudio') : t('player.playAudio')}
           accessibilityRole="button"
           onPress={onPlayPause}
           disabled={!isLoaded || Boolean(error)}
@@ -236,12 +240,12 @@ export function ExpandedPlayer({
             <Ionicons color={colors.ink} name={isPlaying ? 'pause' : 'play'} size={36} />
           )}
         </Pressable>
-        <IconButton icon="play-forward" label="前进 15 秒" onPress={() => onJump(15)} />
-        <IconButton icon="contract-outline" label="收起播放器" onPress={onCollapse} />
+        <IconButton icon="play-forward" label={t('player.forward')} onPress={() => onJump(15)} />
+        <IconButton icon="contract-outline" label={t('player.collapse')} onPress={onCollapse} />
       </View>
       {error ? (
         <Pressable accessibilityRole="button" onPress={onRetry} style={styles.expandedError}>
-          <Text style={styles.playerError}>{error} 点击重试。</Text>
+          <Text style={styles.playerError}>{t('player.errorRetry', { error })}</Text>
         </Pressable>
       ) : null}
     </View>

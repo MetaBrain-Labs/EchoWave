@@ -29,6 +29,8 @@ import {
 } from 'react-native';
 
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { localizeRequestError } from '@/shared/i18n/errorLocalization';
 
 import {
   colors,
@@ -66,24 +68,61 @@ const stepLabels: Record<string, string> = {
   'retrieval-planning': '规划知识检索',
   'analysis-generation': '生成业务分析',
 };
+const englishKindLabels: Record<AudioAiExecutionRun['kind'], string> = {
+  'audio-transcription': 'ASR transcription',
+  'audio-emotion-analysis': 'Emotion analysis',
+  'audio-role-recognition': 'Role recognition',
+  'audio-speaker-review': 'Speaker review',
+  'audio-business-analysis': 'Business analysis',
+};
+const englishStatusLabels: Record<AudioAiExecutionRun['status'], string> = {
+  running: 'Running',
+  completed: 'Completed',
+  failed: 'Failed',
+  interrupted: 'Interrupted',
+};
+const englishStepLabels: Record<string, string> = {
+  'preprocess-whole-file': 'Prepare full audio',
+  'oss-staging-upload': 'Stage audio file',
+  'dashscope-submit': 'Submit transcription',
+  'dashscope-terminal-result': 'Read provider result',
+  publish: 'Validate and publish result',
+  'oss-staging-cleanup': 'Clean temporary audio',
+  'persist-failure': 'Persist failure state',
+  'cleanup-failure': 'Clean failure artifacts',
+  'retrieval-planning': 'Plan knowledge retrieval',
+  'analysis-generation': 'Generate business analysis',
+};
 const reasoningBottomThreshold = 24;
 
-function duration(value: number | null): string {
+function duration(value: number | null, t: ReturnType<typeof useAppLanguage>['t']): string {
   if (value === null) return '—';
   if (value < 1) return '<1 ms';
   if (value < 1_000) return `${value} ms`;
-  return `${(value / 1_000).toFixed(value < 10_000 ? 1 : 0)} 秒`;
+  return t('execution.seconds', { value: (value / 1_000).toFixed(value < 10_000 ? 1 : 0) });
 }
 
-function locatorLabel(locator: SourceLocator): string {
+function locatorLabel(locator: SourceLocator, t: ReturnType<typeof useAppLanguage>['t']): string {
   if (locator.kind === 'spreadsheet') {
-    return `${locator.sheet} · 第 ${locator.rowStart}-${locator.rowEnd} 行`;
+    return t('analysis.locatorRows', {
+      sheet: locator.sheet,
+      start: locator.rowStart,
+      end: locator.rowEnd,
+    });
   }
   const heading = locator.headingPath.join(' / ');
   if (locator.kind === 'markdown') {
-    return `${heading ? `${heading} · ` : ''}第 ${locator.lineStart}-${locator.lineEnd} 行`;
+    return t('analysis.locatorLines', {
+      heading,
+      start: locator.lineStart,
+      end: locator.lineEnd,
+    });
   }
-  return `${heading ? `${heading} · ` : ''}第 ${locator.paragraphStart}-${locator.paragraphEnd} 段`;
+  return t('analysis.locatorParagraphs', {
+    heading,
+    start: locator.paragraphStart,
+    end: locator.paragraphEnd,
+  });
 }
 
 function statusColor(status: AudioAiExecutionRun['status']): string {
@@ -94,6 +133,7 @@ function statusColor(status: AudioAiExecutionRun['status']): string {
 
 /** 在有限高度内展示推理流，并在用户未查看历史内容时持续追踪最新 Token。 */
 function ReasoningViewport({ call }: { call: AudioAiExecutionRun['modelCalls'][number] }) {
+  const { t } = useAppLanguage();
   const scrollRef = useRef<ScrollView>(null);
   const followingLatestRef = useRef(true);
   const userScrollingRef = useRef(false);
@@ -159,7 +199,7 @@ function ReasoningViewport({ call }: { call: AudioAiExecutionRun['modelCalls'][n
   return (
     <View>
       <ScrollView
-        accessibilityLabel="原始推理内容"
+        accessibilityLabel={t('execution.reasoning')}
         nestedScrollEnabled
         onContentSizeChange={handleContentSizeChange}
         onMomentumScrollBegin={handleMomentumScrollBegin}
@@ -174,7 +214,9 @@ function ReasoningViewport({ call }: { call: AudioAiExecutionRun['modelCalls'][n
       >
         <Text selectable style={styles.reasoningText}>
           {call.reasoningContent ||
-            (call.status === 'running' ? '等待模型返回推理内容…' : '该调用未提供推理流。')}
+            (call.status === 'running'
+              ? t('execution.waitingReasoning')
+              : t('execution.noReasoning'))}
         </Text>
       </ScrollView>
       {!followingLatest ? (
@@ -185,7 +227,7 @@ function ReasoningViewport({ call }: { call: AudioAiExecutionRun['modelCalls'][n
             style={({ pressed }) => [styles.followLatestButton, pressed && styles.pressed]}
           >
             <Ionicons color={colors.secondary} name="arrow-down" size={14} />
-            <Text style={styles.followLatestText}>回到最新</Text>
+            <Text style={styles.followLatestText}>{t('execution.followLatest')}</Text>
           </Pressable>
         </View>
       ) : null}
@@ -194,6 +236,7 @@ function ReasoningViewport({ call }: { call: AudioAiExecutionRun['modelCalls'][n
 }
 
 function ModelCallCard({ call }: { call: AudioAiExecutionRun['modelCalls'][number] }) {
+  const { t } = useAppLanguage();
   const [expanded, setExpanded] = useState(false);
   const [reasoningExpanded, setReasoningExpanded] = useState(false);
   const [now, setNow] = useState(Date.now);
@@ -206,7 +249,11 @@ function ModelCallCard({ call }: { call: AudioAiExecutionRun['modelCalls'][numbe
     call.durationMs ??
     (call.status === 'running' ? Math.max(0, now - new Date(call.startedAt).getTime()) : null);
   const callStatus =
-    call.status === 'running' ? '运行中' : call.status === 'completed' ? '成功' : '失败';
+    call.status === 'running'
+      ? t('execution.running')
+      : call.status === 'completed'
+        ? t('execution.success')
+        : t('execution.failed');
   return (
     <View style={styles.modelCallCard}>
       <Pressable
@@ -221,7 +268,11 @@ function ModelCallCard({ call }: { call: AudioAiExecutionRun['modelCalls'][numbe
             {call.provider} · {call.model}
           </Text>
           <Text style={styles.meta}>
-            第 {call.attempt} 次 · {callStatus} · {duration(visibleDuration)}
+            {t('execution.attempt', {
+              attempt: call.attempt,
+              status: callStatus,
+              duration: duration(visibleDuration, t),
+            })}
           </Text>
         </View>
         <Ionicons
@@ -232,9 +283,12 @@ function ModelCallCard({ call }: { call: AudioAiExecutionRun['modelCalls'][numbe
       </Pressable>
       {expanded ? (
         <View style={styles.modelCallBody}>
-          <Text style={styles.bodyText}>当前关注事项：{call.name}</Text>
+          <Text style={styles.bodyText}>{t('execution.focus', { name: call.name })}</Text>
           <Text style={styles.meta}>
-            Token：输入 {call.inputTokens ?? '—'} / 输出 {call.outputTokens ?? '—'}
+            {t('execution.tokens', {
+              input: call.inputTokens ?? '—',
+              output: call.outputTokens ?? '—',
+            })}
             {call.estimatedCost
               ? ` · ${call.estimatedCost.amount} ${call.estimatedCost.currency}`
               : ''}
@@ -247,19 +301,21 @@ function ModelCallCard({ call }: { call: AudioAiExecutionRun['modelCalls'][numbe
                 onPress={() => setReasoningExpanded((current) => !current)}
                 style={({ pressed }) => [styles.reasoningHeader, pressed && styles.pressed]}
               >
-                <Text style={styles.detailTitle}>原始推理</Text>
-                <Text style={styles.meta}>{reasoningExpanded ? '收起' : '展开'}</Text>
+                <Text style={styles.detailTitle}>{t('execution.rawReasoning')}</Text>
+                <Text style={styles.meta}>
+                  {reasoningExpanded ? t('execution.collapse') : t('execution.expand')}
+                </Text>
               </Pressable>
               {reasoningExpanded ? <ReasoningViewport call={call} /> : null}
               {call.reasoningTruncated ? (
-                <Text style={styles.truncatedText}>已达到 120,000 字保存上限。</Text>
+                <Text style={styles.truncatedText}>{t('execution.reasoningTruncated')}</Text>
               ) : null}
             </View>
           ) : (
             <Text style={styles.emptyText}>
               {call.reasoningMode === 'disabled'
-                ? '该调用未开启思考模式。'
-                : '该调用未提供推理流。'}
+                ? t('execution.thinkingDisabled')
+                : t('execution.noReasoning')}
             </Text>
           )}
         </View>
@@ -277,6 +333,10 @@ function RunCard({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const { language, formatDateTime, t } = useAppLanguage();
+  const visibleKindLabels = language === 'zh-CN' ? kindLabels : englishKindLabels;
+  const visibleStatusLabels = language === 'zh-CN' ? statusLabels : englishStatusLabels;
+  const visibleStepLabels = language === 'zh-CN' ? stepLabels : englishStepLabels;
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     if (run.status !== 'running') return undefined;
@@ -297,16 +357,16 @@ function RunCard({
       >
         <View style={styles.cardTitleArea}>
           <View style={styles.cardTitleRow}>
-            <Text style={styles.cardTitle}>{kindLabels[run.kind]}</Text>
+            <Text style={styles.cardTitle}>{visibleKindLabels[run.kind]}</Text>
             <Text style={[styles.status, { color: statusColor(run.status) }]}>
-              {statusLabels[run.status]}
+              {visibleStatusLabels[run.status]}
             </Text>
           </View>
           <Text style={styles.meta}>
-            {new Date(run.startedAt).toLocaleString()} · {duration(visibleRunDuration)}
+            {formatDateTime(run.startedAt)} · {duration(visibleRunDuration, t)}
           </Text>
           <Text numberOfLines={2} style={styles.meta}>
-            {models.length > 0 ? models.join('、') : '尚无模型调用记录'}
+            {models.length > 0 ? models.join('、') : t('execution.noModelCalls')}
           </Text>
         </View>
         <Ionicons
@@ -320,20 +380,22 @@ function RunCard({
           {run.error ? (
             <View accessibilityRole="alert" style={styles.errorBox}>
               <Text style={styles.errorTitle}>{run.error.code}</Text>
-              <Text style={styles.bodyText}>{run.error.message}</Text>
+              <Text style={styles.bodyText}>
+                {localizeRequestError(run.error.code, run.error.message)}
+              </Text>
             </View>
           ) : null}
 
-          <Text style={styles.sectionTitle}>模型调用</Text>
+          <Text style={styles.sectionTitle}>{t('execution.modelCalls')}</Text>
           {run.modelCalls.length === 0 ? (
-            <Text style={styles.emptyText}>此阶段没有独立模型调用记录。</Text>
+            <Text style={styles.emptyText}>{t('execution.noIndependentCalls')}</Text>
           ) : (
             run.modelCalls.map((call) => <ModelCallCard call={call} key={call.id} />)
           )}
 
-          <Text style={styles.sectionTitle}>分析过程</Text>
+          <Text style={styles.sectionTitle}>{t('execution.process')}</Text>
           {run.steps.length === 0 ? (
-            <Text style={styles.emptyText}>暂无可审计步骤。</Text>
+            <Text style={styles.emptyText}>{t('execution.noSteps')}</Text>
           ) : (
             run.steps.map((step) => {
               const visibleStepDuration =
@@ -345,14 +407,16 @@ function RunCard({
                 <View key={step.id} style={styles.timelineRow}>
                   <View style={styles.timelineDot} />
                   <View style={styles.timelineContent}>
-                    <Text style={styles.detailTitle}>{stepLabels[step.name] ?? step.name}</Text>
+                    <Text style={styles.detailTitle}>
+                      {visibleStepLabels[step.name] ?? step.name}
+                    </Text>
                     <Text style={styles.meta}>
                       {step.status === 'started'
-                        ? '运行中'
+                        ? t('execution.running')
                         : step.status === 'completed'
-                          ? '完成'
-                          : '失败'}
-                      {visibleStepDuration === null ? '' : ` · ${duration(visibleStepDuration)}`}
+                          ? t('execution.completed')
+                          : t('execution.failed')}
+                      {visibleStepDuration === null ? '' : ` · ${duration(visibleStepDuration, t)}`}
                     </Text>
                     {Object.keys(step.summary).length > 0 ? (
                       <Text style={styles.summaryText}>
@@ -367,32 +431,39 @@ function RunCard({
             })
           )}
 
-          <Text style={styles.sectionTitle}>工具与知识检索</Text>
+          <Text style={styles.sectionTitle}>{t('execution.tools')}</Text>
           {run.toolCalls.length === 0 ? (
-            <Text style={styles.emptyText}>本次运行未调用知识检索工具。</Text>
+            <Text style={styles.emptyText}>{t('execution.noTools')}</Text>
           ) : (
             run.toolCalls.map((tool) => (
               <View key={tool.id} style={styles.toolBox}>
                 <Text style={styles.detailTitle}>{tool.name}</Text>
                 <Text style={styles.meta}>
-                  {tool.status === 'running'
-                    ? '运行中'
-                    : tool.status === 'completed'
-                      ? '成功'
-                      : '失败'}{' '}
-                  · 命中 {tool.hitCount} 个知识块
+                  {t('execution.toolResult', {
+                    status:
+                      tool.status === 'running'
+                        ? t('execution.running')
+                        : tool.status === 'completed'
+                          ? t('execution.success')
+                          : t('execution.failed'),
+                    count: tool.hitCount,
+                  })}
                 </Text>
-                {tool.query ? <Text style={styles.query}>查询：{tool.query}</Text> : null}
+                {tool.query ? (
+                  <Text style={styles.query}>{t('execution.query', { query: tool.query })}</Text>
+                ) : null}
                 <Text style={styles.meta}>
-                  知识库：
-                  {tool.knowledgeBases.length > 0
-                    ? tool.knowledgeBases.map((item) => item.name).join('、')
-                    : '无'}
+                  {t('execution.knowledgeBases', {
+                    names:
+                      tool.knowledgeBases.length > 0
+                        ? tool.knowledgeBases.map((item) => item.name).join('、')
+                        : t('execution.none'),
+                  })}
                 </Text>
                 {tool.hits.map((hit) => (
                   <View key={hit.chunkId} style={styles.hitRow}>
                     <Text style={styles.hitTitle}>{hit.documentTitle}</Text>
-                    <Text style={styles.meta}>{locatorLabel(hit.locator)}</Text>
+                    <Text style={styles.meta}>{locatorLabel(hit.locator, t)}</Text>
                   </View>
                 ))}
               </View>
@@ -420,6 +491,7 @@ export function ModelExecutionContent({
   refreshing?: boolean;
   trace?: AudioAiExecutionTraceResponse;
 }) {
+  const { t } = useAppLanguage();
   const [expandedId, setExpandedId] = useState<string>();
 
   return (
@@ -431,26 +503,24 @@ export function ModelExecutionContent({
     >
       <View style={styles.notice}>
         <Ionicons color={colors.secondary} name="shield-checkmark-outline" size={20} />
-        <Text style={styles.noticeText}>
-          原始推理属于模型未验证的中间过程，不代表最终结论；完整提示词和原始最终输出仍不展示。
-        </Text>
+        <Text style={styles.noticeText}>{t('execution.notice')}</Text>
       </View>
       {loading ? (
-        <ActivityIndicator accessibilityLabel="正在加载模型执行详情" color={colors.ink} />
+        <ActivityIndicator accessibilityLabel={t('execution.loading')} color={colors.ink} />
       ) : null}
       {!loading && error ? (
         <View accessibilityRole="alert" style={styles.centered}>
-          <Text style={styles.errorTitle}>模型详情加载失败</Text>
+          <Text style={styles.errorTitle}>{t('execution.loadFailed')}</Text>
           <Text style={styles.bodyText}>{error}</Text>
           <Pressable accessibilityRole="button" onPress={onRetry} style={styles.retryButton}>
-            <Text style={styles.retryText}>重新加载</Text>
+            <Text style={styles.retryText}>{t('execution.reload')}</Text>
           </Pressable>
         </View>
       ) : null}
       {!loading && !error && trace?.runs.length === 0 ? (
         <View style={styles.centered}>
-          <Text style={styles.errorTitle}>暂无执行轨迹</Text>
-          <Text style={styles.bodyText}>该分析可能生成于执行轨迹功能启用前。</Text>
+          <Text style={styles.errorTitle}>{t('execution.empty')}</Text>
+          <Text style={styles.bodyText}>{t('execution.legacy')}</Text>
         </View>
       ) : null}
       {!loading && !error

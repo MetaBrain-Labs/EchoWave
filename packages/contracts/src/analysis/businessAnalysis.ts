@@ -9,7 +9,7 @@
  */
 import { z } from 'zod';
 
-import { EntityIdSchema } from '../common.ts';
+import { EntityIdSchema, SupportedLanguageSchema } from '../common.ts';
 import { SourceLocatorSchema } from '../document.ts';
 
 export const BusinessAnalysisTagCategorySchema = z.enum([
@@ -101,6 +101,7 @@ export const AudioBusinessAnalysisStateSchema = z.object({
   model: z.string().nullable(),
   progress: z.number().int().min(0).max(100),
   confirmationVersion: z.number().int().positive().nullable(),
+  language: SupportedLanguageSchema.default('zh-CN'),
   settingsCurrent: z.boolean(),
   knowledgeCurrent: z.boolean(),
   error: z
@@ -116,6 +117,7 @@ export const AudioBusinessAnalysisStateSchema = z.object({
 export const AudioBusinessAnalysisStartRequestSchema = z.object({
   groupId: EntityIdSchema,
   force: z.boolean().default(false),
+  language: SupportedLanguageSchema.default('zh-CN'),
 });
 export const AudioBusinessAnalysisStartResponseSchema = z.object({
   audioFileId: EntityIdSchema,

@@ -10,6 +10,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { colors, fontFamilies, spacing, textColors, typography } from '@/shared/theme/tokens';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import type { AnalysisDetailView } from '../model';
@@ -23,13 +24,16 @@ export function SummaryContent({
   onRefresh?: () => void;
   refreshing?: boolean;
 }) {
+  const { t } = useAppLanguage();
   const businessResult = detail.businessAnalysis.result;
   const knowledgeStatusLabel = businessResult
     ? businessResult.knowledgeStatus === 'used'
-      ? `已使用 ${businessResult.knowledgeBaseIds.length} 个关联知识库`
+      ? t('analysis.knowledgeUsed', { count: businessResult.knowledgeBaseIds.length })
       : businessResult.knowledgeStatus === 'linked_not_used'
-        ? `已限定 ${businessResult.knowledgeBaseIds.length} 个关联知识库，本次未引用知识块`
-        : '当前分组未关联知识库，仅使用确认转写证据'
+        ? t('analysis.knowledgeLinkedNotUsed', {
+            count: businessResult.knowledgeBaseIds.length,
+          })
+        : t('analysis.knowledgeNotLinked')
     : null;
   return (
     <ScrollView
@@ -39,15 +43,20 @@ export function SummaryContent({
       showsVerticalScrollIndicator={false}
       style={styles.pageScroll}
     >
-      <Text style={styles.summaryDescription}>AI 智能分析，内容仅供参考</Text>
+      <Text style={styles.summaryDescription}>{t('analysis.aiDisclaimer')}</Text>
       <View style={styles.summaryTitleRow}>
         <Ionicons color={colors.success} name="sparkles" size={34} />
         <Text style={styles.summaryTitle}>{detail.title}</Text>
       </View>
-      <Text style={styles.generatedAt}>生成时间：{detail.generatedAt}</Text>
+      <Text style={styles.generatedAt}>
+        {t('analysis.generatedAt', { date: detail.generatedAt })}
+      </Text>
       {businessResult ? (
         <Text style={styles.generatedAt}>
-          {businessResult.model} · 确认转写 v{businessResult.confirmationVersion}
+          {t('analysis.confirmedVersion', {
+            model: businessResult.model,
+            version: businessResult.confirmationVersion,
+          })}
         </Text>
       ) : null}
       {knowledgeStatusLabel ? (
@@ -56,7 +65,7 @@ export function SummaryContent({
       <View style={styles.summaryDivider} />
       {detail.businessAnalysis.result?.limitations.length ? (
         <View accessibilityRole="alert" style={styles.limitations}>
-          <Text style={styles.limitationsTitle}>本次分析限制</Text>
+          <Text style={styles.limitationsTitle}>{t('analysis.limitations')}</Text>
           {detail.businessAnalysis.result.limitations.map((limitation) => (
             <Text key={limitation} style={styles.limitationsBody}>
               • {limitation}

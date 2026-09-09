@@ -113,6 +113,7 @@ describe('toAnalysisDetailView invalid audio timeline', () => {
         model: 'deepseek-v4-flash',
         progress: 100,
         confirmationVersion: 1,
+        language: 'zh-CN',
         settingsCurrent: true,
         knowledgeCurrent: true,
         error: null,

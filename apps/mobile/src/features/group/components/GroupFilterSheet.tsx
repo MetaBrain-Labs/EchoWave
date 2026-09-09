@@ -22,10 +22,8 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import {
-  audioStatusLabels,
-  connectionStatusLabels,
-  dataSourceLocationLabels,
   type AudioSortOrder,
   type AudioStatusKind,
   type DataSourceLocationKind,
@@ -50,16 +48,6 @@ export type GroupFilterValue =
       locations: Set<DataSourceLocationKind>;
       statuses: Set<DataSourceStatusKind>;
     };
-
-const audioStatusOptions = Object.entries(audioStatusLabels) as [AudioStatusKind, string][];
-const locationOptions = Object.entries(dataSourceLocationLabels) as [
-  DataSourceLocationKind,
-  string,
-][];
-const connectionOptions = Object.entries(connectionStatusLabels) as [
-  DataSourceStatusKind,
-  string,
-][];
 
 function toggleSetValue<Value>(
   setValue: React.Dispatch<React.SetStateAction<Set<Value>>>,
@@ -135,6 +123,7 @@ export function GroupFilterSheet({
   sourceStatuses: ReadonlySet<DataSourceStatusKind>;
   visible: boolean;
 }) {
+  const { t } = useAppLanguage();
   const [draftAudioSort, setDraftAudioSort] = useState(audioSortOrder);
   const [draftAudioStatuses, setDraftAudioStatuses] = useState(() => new Set(audioStatuses));
   const [draftKnowledgeSort, setDraftKnowledgeSort] = useState(knowledgeSortOrder);
@@ -142,13 +131,31 @@ export function GroupFilterSheet({
   const [draftSourceSort, setDraftSourceSort] = useState(sourceSortOrder);
   const [draftLocations, setDraftLocations] = useState(() => new Set(sourceLocations));
   const [draftSourceStatuses, setDraftSourceStatuses] = useState(() => new Set(sourceStatuses));
+  const audioStatusOptions: [AudioStatusKind, string][] = [
+    ['uploading', t('groupStatus.uploading')],
+    ['waiting', t('groupStatus.waiting')],
+    ['transcribing', t('groupStatus.transcribing')],
+    ['analyzing', t('groupStatus.analyzing')],
+    ['ready', t('groupStatus.ready')],
+    ['failed', t('groupStatus.failed')],
+  ];
+  const locationOptions: [DataSourceLocationKind, string][] = [
+    ['local', t('sources.local')],
+    ['cloud', t('sources.cloud')],
+  ];
+  const connectionOptions: [DataSourceStatusKind, string][] = [
+    ['connected', t('sources.connected')],
+    ['disconnected', t('sources.disconnected')],
+    ['error', t('sources.connectionError')],
+    ['disabled', t('sources.disabled')],
+  ];
 
   const sortLabels =
     activeTab === 'audio'
-      ? (['最新创建优先', '最早创建优先'] as const)
+      ? ([t('groupFilter.newestCreated'), t('groupFilter.oldestCreated')] as const)
       : activeTab === 'knowledge'
-        ? (['最近更新优先', '最早更新优先'] as const)
-        : (['最近上传优先', '最早上传优先'] as const);
+        ? ([t('groupFilter.newestUpdated'), t('groupFilter.oldestUpdated')] as const)
+        : ([t('groupFilter.newestUploaded'), t('groupFilter.oldestUploaded')] as const);
   const currentSort =
     activeTab === 'audio'
       ? draftAudioSort
@@ -199,7 +206,7 @@ export function GroupFilterSheet({
     <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
       <View style={styles.overlay}>
         <Pressable
-          accessibilityLabel="关闭排序筛选抽屉遮罩"
+          accessibilityLabel={t('groupFilter.closeOverlay')}
           accessibilityRole="button"
           onPress={onClose}
           style={StyleSheet.absoluteFill}
@@ -208,16 +215,16 @@ export function GroupFilterSheet({
           <View style={styles.header}>
             <View>
               <Text accessibilityRole="header" style={styles.title}>
-                排序筛选
+                {t('groupFilter.title')}
               </Text>
               <Text style={styles.subtitle}>
                 {activeTab === 'sources'
-                  ? '从未上传的数据源始终显示在最后'
-                  : '未选择筛选项时显示全部'}
+                  ? t('groupFilter.neverUploadedLast')
+                  : t('groupFilter.showAll')}
               </Text>
             </View>
             <Pressable
-              accessibilityLabel="关闭排序筛选抽屉"
+              accessibilityLabel={t('groupFilter.close')}
               accessibilityRole="button"
               hitSlop={8}
               onPress={onClose}
@@ -227,7 +234,7 @@ export function GroupFilterSheet({
             </Pressable>
           </View>
           <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-            <Text style={styles.sectionTitle}>时间排序</Text>
+            <Text style={styles.sectionTitle}>{t('groupFilter.timeSort')}</Text>
             {(['newest', 'oldest'] as const).map((value, index) => (
               <SelectionRow
                 key={value}
@@ -240,7 +247,7 @@ export function GroupFilterSheet({
 
             {activeTab === 'audio' ? (
               <>
-                <Text style={styles.sectionTitle}>处理状态（多选）</Text>
+                <Text style={styles.sectionTitle}>{t('groupFilter.processingStatus')}</Text>
                 {audioStatusOptions.map(([value, label]) => (
                   <SelectionRow
                     key={value}
@@ -255,12 +262,12 @@ export function GroupFilterSheet({
 
             {activeTab === 'knowledge' ? (
               <>
-                <Text style={styles.sectionTitle}>文档状态</Text>
+                <Text style={styles.sectionTitle}>{t('groupFilter.documentStatus')}</Text>
                 {(
                   [
-                    ['all', '全部知识库'],
-                    ['with-documents', '有文档'],
-                    ['empty', '空知识库'],
+                    ['all', t('groupFilter.allKnowledge')],
+                    ['with-documents', t('groupFilter.withDocuments')],
+                    ['empty', t('groupFilter.emptyKnowledge')],
                   ] as const
                 ).map(([value, label]) => (
                   <SelectionRow
@@ -276,7 +283,7 @@ export function GroupFilterSheet({
 
             {activeTab === 'sources' ? (
               <>
-                <Text style={styles.sectionTitle}>存储位置（多选）</Text>
+                <Text style={styles.sectionTitle}>{t('groupFilter.storage')}</Text>
                 {locationOptions.map(([value, label]) => (
                   <SelectionRow
                     key={value}
@@ -286,7 +293,7 @@ export function GroupFilterSheet({
                     role="checkbox"
                   />
                 ))}
-                <Text style={styles.sectionTitle}>连接状态（多选）</Text>
+                <Text style={styles.sectionTitle}>{t('groupFilter.connection')}</Text>
                 {connectionOptions.map(([value, label]) => (
                   <SelectionRow
                     key={value}
@@ -305,15 +312,15 @@ export function GroupFilterSheet({
               onPress={reset}
               style={({ pressed }) => [styles.resetButton, pressed && styles.pressed]}
             >
-              <Text style={styles.resetText}>重置</Text>
+              <Text style={styles.resetText}>{t('groupFilter.reset')}</Text>
             </Pressable>
             <Pressable
-              accessibilityLabel="确认排序筛选"
+              accessibilityLabel={t('groupFilter.confirmAccessibility')}
               accessibilityRole="button"
               onPress={apply}
               style={({ pressed }) => [styles.confirmButton, pressed && styles.primaryPressed]}
             >
-              <Text style={styles.confirmText}>确认</Text>
+              <Text style={styles.confirmText}>{t('common.confirm')}</Text>
             </Pressable>
           </View>
         </View>

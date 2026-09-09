@@ -24,6 +24,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { KnowledgeBaseSummary } from '@echowave/contracts';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { SearchSheet } from '@/shared/ui/SearchSheet';
@@ -42,9 +43,10 @@ import { createKnowledgeBase, listKnowledgeBases } from '../apiClient';
 
 /** 展示创建知识库时由服务端默认值锁定的配置项。 */
 function ReadonlySetting({ label, value }: { label: string; value: string }) {
+  const { t } = useAppLanguage();
   return (
     <View
-      accessibilityLabel={`${label}：${value}，不可修改`}
+      accessibilityLabel={t('knowledge.readonly', { label, value })}
       accessibilityState={{ disabled: true }}
       accessible
       style={styles.readonlySetting}
@@ -63,6 +65,7 @@ export function KnowledgeListScreen({
 }: {
   onOpenKnowledge: (id: string) => void;
 }) {
+  const { formatDateTime, t } = useAppLanguage();
   const { activeStep } = useStarterTour();
   const headerTourRef = useStarterTourTarget('knowledge-header');
   const createTourRef = useStarterTourTarget('knowledge-create');
@@ -77,17 +80,20 @@ export function KnowledgeListScreen({
   const [createDescription, setCreateDescription] = useState('');
   const [creating, setCreating] = useState(false);
   const runInitialRequest = useInitialRequestLoading();
-  const load = useCallback(async (showLoading = true) => {
-    if (showLoading) setLoading(true);
-    setError('');
-    try {
-      setKnowledgeBases((await listKnowledgeBases()).items);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '知识库加载失败。');
-    } finally {
-      if (showLoading) setLoading(false);
-    }
-  }, []);
+  const load = useCallback(
+    async (showLoading = true) => {
+      if (showLoading) setLoading(true);
+      setError('');
+      try {
+        setKnowledgeBases((await listKnowledgeBases()).items);
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : t('knowledge.loadFailed'));
+      } finally {
+        if (showLoading) setLoading(false);
+      }
+    },
+    [t],
+  );
   const screenRefresh = useScreenRefresh(() => load(false));
   const create = async () => {
     const name = createName.trim();
@@ -102,7 +108,7 @@ export function KnowledgeListScreen({
       setCreateDescription('');
       onOpenKnowledge(knowledgeBase.id);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '知识库创建失败。');
+      setError(reason instanceof Error ? reason.message : t('knowledge.createFailed'));
     } finally {
       setCreating(false);
     }
@@ -130,14 +136,14 @@ export function KnowledgeListScreen({
       {searchVisible ? (
         <SearchSheet
           appliedQuery={searchQuery}
-          inputLabel="输入知识库搜索关键词"
+          inputLabel={t('knowledge.searchInput')}
           onApply={(query) => {
             setSearchQuery(query);
             setSearchVisible(false);
           }}
           onClose={() => setSearchVisible(false)}
-          placeholder="搜索知识库名称或描述"
-          title="搜索知识库"
+          placeholder={t('knowledge.searchPlaceholder')}
+          title={t('knowledge.searchTitle')}
           visible
         />
       ) : null}
@@ -145,21 +151,21 @@ export function KnowledgeListScreen({
         <TopLevelPageHeader
           actions={[
             {
-              accessibilityLabel: '搜索知识库',
+              accessibilityLabel: t('knowledge.searchTitle'),
               icon: 'search-outline',
               onPress: () => setSearchVisible(true),
             },
             {
-              accessibilityLabel: '新建知识库',
+              accessibilityLabel: t('knowledge.create'),
               disabled: loading || creating,
               icon: 'add',
-              label: '新建',
+              label: t('knowledge.createShort'),
               onPress: () => setShowCreate((current) => !current),
               targetRef: createTourRef,
               testID: 'e2e-new-knowledge-base',
             },
           ]}
-          title="知识库"
+          title={t('knowledge.title')}
         />
       </View>
 
@@ -172,45 +178,54 @@ export function KnowledgeListScreen({
       >
         {showCreate ? (
           <View
-            accessibilityLabel="新建知识库表单"
+            accessibilityLabel={t('knowledge.createForm')}
             collapsable={false}
             ref={formTourRef}
             style={styles.createPanel}
           >
             <TextInput
-              accessibilityLabel="知识库名称"
+              accessibilityLabel={t('knowledge.name')}
               maxLength={120}
               onChangeText={setCreateName}
-              placeholder="知识库名称"
+              placeholder={t('knowledge.name')}
               style={styles.input}
               value={createName}
             />
             <TextInput
-              accessibilityLabel="知识库描述"
+              accessibilityLabel={t('knowledge.description')}
               maxLength={1000}
               multiline
               onChangeText={setCreateDescription}
-              placeholder="描述（可选）"
+              placeholder={t('knowledge.descriptionOptional')}
               style={[styles.input, styles.descriptionInput]}
               value={createDescription}
             />
             <View style={styles.settingsSection}>
-              <Text style={styles.settingsTitle}>内容存储</Text>
-              <ReadonlySetting label="存储位置" value="本地" />
+              <Text style={styles.settingsTitle}>{t('knowledge.contentStorage')}</Text>
+              <ReadonlySetting
+                label={t('knowledge.storageLocation')}
+                value={t('knowledge.local')}
+              />
             </View>
             <View style={styles.settingsSection}>
-              <Text style={styles.settingsTitle}>知识解析</Text>
-              <ReadonlySetting label="索引方式" value="检索增强（RAG）" />
-              <ReadonlySetting label="嵌入模型" value="qwen3.7-text-embedding" />
-              <ReadonlySetting label="重排序模型" value="未启用" />
+              <Text style={styles.settingsTitle}>{t('knowledge.parsing')}</Text>
+              <ReadonlySetting label={t('knowledge.indexMethod')} value={t('knowledge.rag')} />
+              <ReadonlySetting
+                label={t('knowledge.embeddingModel')}
+                value="qwen3.7-text-embedding"
+              />
+              <ReadonlySetting label={t('knowledge.rerankModel')} value={t('knowledge.disabled')} />
             </View>
             <View style={styles.settingsSection}>
-              <Text style={styles.settingsTitle}>解析处理</Text>
-              <ReadonlySetting label="解析方式" value="自动解析" />
+              <Text style={styles.settingsTitle}>{t('knowledge.processing')}</Text>
+              <ReadonlySetting
+                label={t('knowledge.parsingMethod')}
+                value={t('knowledge.autoParse')}
+              />
             </View>
             <View style={styles.createActions}>
               <Pressable accessibilityRole="button" onPress={() => setShowCreate(false)}>
-                <Text style={styles.retry}>取消</Text>
+                <Text style={styles.retry}>{t('common.cancel')}</Text>
               </Pressable>
               <Pressable
                 accessibilityRole="button"
@@ -218,30 +233,32 @@ export function KnowledgeListScreen({
                 onPress={() => void create()}
                 style={[styles.submitButton, (!createName.trim() || creating) && styles.disabled]}
               >
-                <Text style={styles.createText}>{creating ? '正在创建…' : '创建并打开'}</Text>
+                <Text style={styles.createText}>
+                  {creating ? t('knowledge.creating') : t('knowledge.createOpen')}
+                </Text>
               </Pressable>
             </View>
           </View>
         ) : null}
         {loading ? (
-          <ActivityIndicator accessibilityLabel="正在加载知识库" color={colors.ink} />
+          <ActivityIndicator accessibilityLabel={t('knowledge.loading')} color={colors.ink} />
         ) : null}
         {error ? (
           <Pressable accessibilityRole="button" onPress={() => void load()} style={styles.feedback}>
             <Text style={styles.description}>{error}</Text>
-            <Text style={styles.retry}>点击重试</Text>
+            <Text style={styles.retry}>{t('knowledge.tapRetry')}</Text>
           </Pressable>
         ) : null}
         {!loading && !error && knowledgeBases.length === 0 ? (
-          <Text style={styles.description}>暂无知识库。</Text>
+          <Text style={styles.description}>{t('knowledge.empty')}</Text>
         ) : null}
         {!loading && !error && knowledgeBases.length > 0 && visibleKnowledgeBases.length === 0 ? (
-          <Text style={styles.description}>没有匹配“{searchQuery}”的知识库。</Text>
+          <Text style={styles.description}>{t('knowledge.noMatch', { query: searchQuery })}</Text>
         ) : null}
         {visibleKnowledgeBases.map((knowledge) => (
           <Pressable
             key={knowledge.id}
-            accessibilityLabel={`打开知识库：${knowledge.name}`}
+            accessibilityLabel={t('knowledge.open', { name: knowledge.name })}
             accessibilityRole="button"
             onPress={() => onOpenKnowledge(knowledge.id)}
             style={({ pressed }) => [styles.card, pressed && styles.pressed]}
@@ -255,13 +272,16 @@ export function KnowledgeListScreen({
               <Text style={styles.cardTitle}>{knowledge.name}</Text>
             </View>
             <Text numberOfLines={2} style={styles.description}>
-              {knowledge.description || '暂无描述'}
+              {knowledge.description || t('knowledge.noDescription')}
             </Text>
             <Text style={styles.meta}>
-              {knowledge.documentCount} 份文档 · 关联 {knowledge.linkedGroupCount} 个分组
+              {t('knowledge.counts', {
+                documents: knowledge.documentCount,
+                groups: knowledge.linkedGroupCount,
+              })}
             </Text>
             <Text style={styles.updated}>
-              更新于 {new Date(knowledge.updatedAt).toLocaleDateString()}
+              {t('knowledge.updated', { date: formatDateTime(knowledge.updatedAt) })}
             </Text>
           </Pressable>
         ))}

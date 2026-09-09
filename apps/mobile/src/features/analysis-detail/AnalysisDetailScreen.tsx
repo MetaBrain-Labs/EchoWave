@@ -16,6 +16,7 @@ import type {
   AudioAnalysisStatusStreamEvent,
   AudioPostAnalysisType,
   AudioTranscriptionRunListResponse,
+  SupportedLanguage,
 } from '@echowave/contracts';
 import { DEFAULT_AUDIO_TRANSCRIPTION_MODEL } from '@echowave/contracts';
 import * as DocumentPicker from 'expo-document-picker';
@@ -55,6 +56,8 @@ import {
 import { getGroupSettings } from '@/shared/api/groupsApi';
 import { WorkspaceRequestError } from '@/shared/api/request';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { localizeRequestError } from '@/shared/i18n/errorLocalization';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { applyExecutionTraceEvent, hasRunningExecution } from './executionTraceState';
 import {
@@ -229,6 +232,7 @@ export function AnalysisDetailScreen({
   onBack,
   onOpenCitation,
 }: AnalysisDetailScreenProps) {
+  const { language: appLanguage, t } = useAppLanguage();
   const [detail, setDetail] = useState<AnalysisDetailView>();
   const [transcriptionRuns, setTranscriptionRuns] = useState<AudioTranscriptionRunListResponse>();
   const [selectingTranscription, setSelectingTranscription] = useState(false);
@@ -249,6 +253,7 @@ export function AnalysisDetailScreen({
   const [selectedTag, setSelectedTag] = useState<AiTagAnalysis>();
   const [emotionSegment, setEmotionSegment] = useState<TranscriptSegment>();
   const [confirmAnalysisType, setConfirmAnalysisType] = useState<AudioPostAnalysisType>();
+  const [analysisLanguage, setAnalysisLanguage] = useState<SupportedLanguage>(appLanguage);
   const [startingAnalysis, setStartingAnalysis] = useState(false);
   const [editingTranscript, setEditingTranscript] = useState(false);
   const [confirmingTranscript, setConfirmingTranscript] = useState(false);
@@ -308,7 +313,7 @@ export function AnalysisDetailScreen({
           getAudioAnalysis(detailId, groupId),
           listAudioTranscriptions(detailId).catch(() => undefined),
         ]);
-        const nextDetail = toAnalysisDetailView(analysis);
+        const nextDetail = toAnalysisDetailView(analysis, appLanguage);
         if (requestSequence !== detailRequestSequenceRef.current) return undefined;
         setDetail(nextDetail);
         if (runs) setTranscriptionRuns(runs);
@@ -317,14 +322,14 @@ export function AnalysisDetailScreen({
       } catch (reason) {
         if (requestSequence === detailRequestSequenceRef.current && showLoading) {
           setDetail(undefined);
-          setError(reason instanceof Error ? reason.message : '分析详情加载失败。');
+          setError(reason instanceof Error ? reason.message : t('analysisDetail.loadFailed'));
         }
         return undefined;
       } finally {
         if (requestSequence === detailRequestSequenceRef.current && showLoading) setLoading(false);
       }
     },
-    [detailId, groupId],
+    [appLanguage, detailId, groupId, t],
   );
   useEffect(() => {
     const task = setTimeout(() => void runInitialRequest(load), 0);
@@ -354,7 +359,9 @@ export function AnalysisDetailScreen({
         setExecutionTrace(nextTrace);
       } catch (reason) {
         if (executionScopeRef.current === currentExecutionScope) {
-          setExecutionTraceError(reason instanceof Error ? reason.message : '模型详情加载失败。');
+          setExecutionTraceError(
+            reason instanceof Error ? reason.message : t('analysisDetail.traceLoadFailed'),
+          );
         }
       } finally {
         if (executionScopeRef.current === currentExecutionScope) {
@@ -363,7 +370,7 @@ export function AnalysisDetailScreen({
         if (showLoading) setExecutionTraceLoading(false);
       }
     },
-    [currentExecutionScope, detailId, groupId],
+    [currentExecutionScope, detailId, groupId, t],
   );
   const refreshPage = useCallback(async () => {
     await Promise.all([
@@ -525,7 +532,7 @@ export function AnalysisDetailScreen({
           signal: controller.signal,
           onEvent: (event) => {
             if (event.type === 'error') {
-              setExecutionTraceError(event.error.message);
+              setExecutionTraceError(localizeRequestError(event.error.code, event.error.message));
               return;
             }
             failures = 0;
@@ -553,7 +560,7 @@ export function AnalysisDetailScreen({
         if (disposed || controller.signal.aborted) return;
         failures += 1;
         if (failures >= 5) {
-          setExecutionTraceError('实时连接暂时不可用，已切换为定时刷新。');
+          setExecutionTraceError(t('analysisDetail.liveFallback'));
           startFallback();
         }
         retryTimer = setTimeout(
@@ -570,7 +577,7 @@ export function AnalysisDetailScreen({
       if (retryTimer) clearTimeout(retryTimer);
       stopFallback();
     };
-  }, [activeTab, appActive, currentExecutionScope, detailId, groupId, loadExecutionTrace]);
+  }, [activeTab, appActive, currentExecutionScope, detailId, groupId, loadExecutionTrace, t]);
 
   useEffect(() => {
     if (
@@ -585,22 +592,24 @@ export function AnalysisDetailScreen({
     const task = setTimeout(() => {
       setPreflightPrompted(true);
       setBusinessForce(false);
+      setAnalysisLanguage(appLanguage);
       setBusinessPreflightVisible(true);
     }, 0);
     return () => clearTimeout(task);
-  }, [detail, groupId, preflightPrompted]);
+  }, [appLanguage, detail, groupId, preflightPrompted]);
 
   const requestBusinessAnalysis = (force: boolean) => {
     if (!groupId || !detail) {
-      Alert.alert('无法开始分析', '缺少当前分组，请从分组或数据源中重新进入。');
+      Alert.alert(t('analysisDetail.cannotStart'), t('analysisDetail.missingGroup'));
       return;
     }
     if (detail.transcriptConfirmation.status !== 'confirmed') {
-      Alert.alert('请先确认转写', 'ASR 结果分析始终使用用户确认后的正文。');
+      Alert.alert(t('analysisDetail.confirmFirst'), t('analysisDetail.businessConfirmedOnly'));
       setActiveTab('transcript');
       return;
     }
     setBusinessForce(force);
+    setAnalysisLanguage(appLanguage);
     setBusinessPreflightVisible(true);
   };
 
@@ -608,11 +617,18 @@ export function AnalysisDetailScreen({
     if (!groupId || startingBusiness) return;
     setStartingBusiness(true);
     try {
-      await startAudioBusinessAnalysis(detailId, { groupId, force: businessForce });
+      await startAudioBusinessAnalysis(detailId, {
+        groupId,
+        force: businessForce,
+        language: analysisLanguage,
+      });
       setBusinessPreflightVisible(false);
       await load(false);
     } catch (reason) {
-      Alert.alert('无法开始分析', reason instanceof Error ? reason.message : '请稍后重试。');
+      Alert.alert(
+        t('analysisDetail.cannotStart'),
+        reason instanceof Error ? reason.message : t('analysisBatch.tryAgain'),
+      );
     } finally {
       setStartingBusiness(false);
     }
@@ -631,24 +647,27 @@ export function AnalysisDetailScreen({
         emotion.state === 'failed' ||
         ('confirmationVersion' in emotion && emotion.confirmationVersion !== version)
       ) {
-        tasks.push(startAudioEmotionAnalysis(detailId));
+        tasks.push(startAudioEmotionAnalysis(detailId, { language: analysisLanguage }));
       }
       if (
         role.state === 'idle' ||
         role.state === 'failed' ||
         ('confirmationVersion' in role && role.confirmationVersion !== version)
       ) {
-        tasks.push(startAudioRoleRecognition(detailId));
+        tasks.push(startAudioRoleRecognition(detailId, { language: analysisLanguage }));
       }
       await Promise.all(tasks);
       setBusinessPreflightVisible(false);
       await load(false);
       Alert.alert(
-        tasks.length > 0 ? '识别任务已启动' : '识别任务进行中',
-        '完成后可再次点击“开始分析”。',
+        tasks.length > 0 ? t('analysisDetail.tasksStarted') : t('analysisDetail.tasksRunning'),
+        t('analysisDetail.tasksHint'),
       );
     } catch (reason) {
-      Alert.alert('无法补充识别', reason instanceof Error ? reason.message : '请稍后重试。');
+      Alert.alert(
+        t('analysisDetail.supplementFailed'),
+        reason instanceof Error ? reason.message : t('analysisBatch.tryAgain'),
+      );
     } finally {
       setSupplementingBusiness(false);
     }
@@ -657,13 +676,14 @@ export function AnalysisDetailScreen({
   const confirmPostAnalysis = async () => {
     if (!confirmAnalysisType || startingAnalysis) return;
     if (detail?.transcriptConfirmation.status !== 'confirmed') {
-      Alert.alert('请先确认转写', '情绪分析和角色识别始终使用用户确认后的正文。');
+      Alert.alert(t('analysisDetail.confirmFirst'), t('analysisDetail.postConfirmedOnly'));
       return;
     }
     setStartingAnalysis(true);
     try {
-      if (confirmAnalysisType === 'emotion') await startAudioEmotionAnalysis(detailId);
-      else await startAudioRoleRecognition(detailId);
+      if (confirmAnalysisType === 'emotion')
+        await startAudioEmotionAnalysis(detailId, { language: analysisLanguage });
+      else await startAudioRoleRecognition(detailId, { language: analysisLanguage });
       setConfirmAnalysisType(undefined);
       await load(false);
       if (analysisTiming === 'automatic' && groupId) {
@@ -671,7 +691,10 @@ export function AnalysisDetailScreen({
         setBusinessPreflightVisible(true);
       }
     } catch (reason) {
-      Alert.alert('无法开始分析', reason instanceof Error ? reason.message : '请稍后重试。');
+      Alert.alert(
+        t('analysisDetail.cannotStart'),
+        reason instanceof Error ? reason.message : t('analysisBatch.tryAgain'),
+      );
     } finally {
       setStartingAnalysis(false);
     }
@@ -698,13 +721,17 @@ export function AnalysisDetailScreen({
         preprocessing: 'silero_vad',
         segmentationMode: 'speaker_turn',
         includeAcousticEmotion: true,
+        language: appLanguage,
       });
-      Alert.alert('已创建新转写', '源文件指纹校验通过，新的 ASR 与声学情绪任务已排队。');
+      Alert.alert(
+        t('analysisDetail.transcriptionCreated'),
+        t('analysisDetail.transcriptionQueued'),
+      );
       await load(false);
     } catch (reason) {
       Alert.alert(
-        '无法重新挂载源文件',
-        reason instanceof Error ? reason.message : '请选择最初上传的同一份原音频。',
+        t('analysisDetail.remountFailed'),
+        reason instanceof Error ? reason.message : t('analysisDetail.selectOriginal'),
       );
     }
   };
@@ -718,7 +745,10 @@ export function AnalysisDetailScreen({
       setTranscriptionRuns(await selectAudioTranscription(detailId, input));
       await load(false);
     } catch (reason) {
-      Alert.alert('无法切换 ASR 版本', reason instanceof Error ? reason.message : '请稍后重试。');
+      Alert.alert(
+        t('analysisDetail.switchRunFailed'),
+        reason instanceof Error ? reason.message : t('analysisBatch.tryAgain'),
+      );
     } finally {
       setSelectingTranscription(false);
     }
@@ -738,16 +768,16 @@ export function AnalysisDetailScreen({
       finishTranscriptEditing();
       return;
     }
-    Alert.alert('放弃未确认的修改？', '离开编辑后，本次修改不会被保存。', [
-      { text: '继续编辑', style: 'cancel' },
-      { text: '放弃修改', style: 'destructive', onPress: finishTranscriptEditing },
+    Alert.alert(t('analysisDetail.discardTitle'), t('analysisDetail.discardEditBody'), [
+      { text: t('analysisDetail.keepEditing'), style: 'cancel' },
+      { text: t('analysisDetail.discard'), style: 'destructive', onPress: finishTranscriptEditing },
     ]);
   };
 
   const confirmTranscript = async () => {
     if (!detail || confirmingTranscript) return;
     if (transcriptDraftSegments.some((segment) => segment.text.trim().length === 0)) {
-      Alert.alert('无法确认转写', '每个转写片段都必须保留非空正文。');
+      Alert.alert(t('analysisDetail.confirmFailed'), t('analysisDetail.emptySegment'));
       return;
     }
     const segments = detail.rawScenes
@@ -775,10 +805,10 @@ export function AnalysisDetailScreen({
       await load(false);
     } catch (reason) {
       if (reason instanceof WorkspaceRequestError && reason.code === 'CONFLICT') {
-        Alert.alert('确认版本已更新', reason.message, [
-          { text: '保留草稿', style: 'cancel' },
+        Alert.alert(t('analysisDetail.versionChanged'), reason.message, [
+          { text: t('analysisDetail.keepDraft'), style: 'cancel' },
           {
-            text: '重新加载并放弃草稿',
+            text: t('analysisDetail.reloadDiscard'),
             style: 'destructive',
             onPress: () => {
               finishTranscriptEditing();
@@ -787,7 +817,10 @@ export function AnalysisDetailScreen({
           },
         ]);
       } else {
-        Alert.alert('无法确认转写', reason instanceof Error ? reason.message : '请稍后重试。');
+        Alert.alert(
+          t('analysisDetail.confirmFailed'),
+          reason instanceof Error ? reason.message : t('analysisBatch.tryAgain'),
+        );
       }
     } finally {
       setConfirmingTranscript(false);
@@ -810,7 +843,10 @@ export function AnalysisDetailScreen({
         })),
       );
     } catch (reason) {
-      Alert.alert('无法审核说话人疑点', reason instanceof Error ? reason.message : '请稍后重试。');
+      Alert.alert(
+        t('analysisDetail.reviewFailed'),
+        reason instanceof Error ? reason.message : t('analysisBatch.tryAgain'),
+      );
     } finally {
       setResolvingSpeakerReview(undefined);
     }
@@ -827,8 +863,8 @@ export function AnalysisDetailScreen({
       );
     } catch (reason) {
       Alert.alert(
-        '无法审核全部说话人疑点',
-        reason instanceof Error ? reason.message : '请稍后重试。',
+        t('analysisDetail.reviewAllFailed'),
+        reason instanceof Error ? reason.message : t('analysisBatch.tryAgain'),
       );
     } finally {
       setResolvingSpeakerReview(undefined);
@@ -840,11 +876,11 @@ export function AnalysisDetailScreen({
       onBack();
       return;
     }
-    Alert.alert('放弃未确认的修改？', '返回后，本次修改不会被保存。', [
-      { text: '继续编辑', style: 'cancel' },
-      { text: '放弃并返回', style: 'destructive', onPress: onBack },
+    Alert.alert(t('analysisDetail.discardTitle'), t('analysisDetail.discardBackBody'), [
+      { text: t('analysisDetail.keepEditing'), style: 'cancel' },
+      { text: t('analysisDetail.discardBack'), style: 'destructive', onPress: onBack },
     ]);
-  }, [onBack, transcriptDirty]);
+  }, [onBack, t, transcriptDirty]);
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -866,10 +902,10 @@ export function AnalysisDetailScreen({
     return (
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
         <View style={styles.unknownTopBar}>
-          <IconButton icon="chevron-back" label="返回" onPress={requestBack} />
+          <IconButton icon="chevron-back" label={t('common.back')} onPress={requestBack} />
         </View>
         <ActivityIndicator
-          accessibilityLabel="正在加载分析详情"
+          accessibilityLabel={t('analysisDetail.loading')}
           color={colors.ink}
           style={styles.loading}
         />
@@ -881,7 +917,7 @@ export function AnalysisDetailScreen({
     return (
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
         <View style={styles.unknownTopBar}>
-          <IconButton icon="chevron-back" label="返回" onPress={requestBack} />
+          <IconButton icon="chevron-back" label={t('common.back')} onPress={requestBack} />
         </View>
         <ScrollView
           alwaysBounceVertical
@@ -889,23 +925,23 @@ export function AnalysisDetailScreen({
           refreshControl={<ScreenRefreshControl {...screenRefresh} />}
         >
           <Ionicons color={colors.secondary} name="document-outline" size={36} />
-          <Text style={styles.emptyTitle}>未找到分析详情</Text>
+          <Text style={styles.emptyTitle}>{t('analysisDetail.notFound')}</Text>
           <Text accessibilityRole="alert" style={styles.emptyDescription}>
-            {error || '该音频可能尚未完成分析，请返回后重试。'}
+            {error || t('analysisDetail.notFoundHint')}
           </Text>
           <Pressable
             accessibilityRole="button"
             onPress={() => void load()}
             style={({ pressed }) => [styles.returnButton, pressed && styles.pressed]}
           >
-            <Text style={styles.returnButtonText}>重新加载</Text>
+            <Text style={styles.returnButtonText}>{t('analysisDetail.reload')}</Text>
           </Pressable>
           <Pressable
             accessibilityRole="button"
             onPress={requestBack}
             style={({ pressed }) => [styles.returnButton, pressed && styles.pressed]}
           >
-            <Text style={styles.returnButtonText}>返回分组</Text>
+            <Text style={styles.returnButtonText}>{t('analysisDetail.backGroups')}</Text>
           </Pressable>
         </ScrollView>
       </SafeAreaView>
@@ -963,25 +999,25 @@ export function AnalysisDetailScreen({
           style={styles.sourceUnavailableCard}
           testID="analysis-source-unavailable"
         >
-          <IconButton icon="chevron-back" label="返回" onPress={requestBack} />
+          <IconButton icon="chevron-back" label={t('common.back')} onPress={requestBack} />
           <Ionicons color={colors.secondary} name="volume-mute-outline" size={24} />
           <View style={styles.sourceUnavailableCopy}>
             <Text style={styles.sourceUnavailableTitle}>
               {detail.runtimeMode === 'lightweight_local'
-                ? '轻量本地模式：仅保留分析结果'
-                : '源音频未保留'}
+                ? t('analysisDetail.lightweightNoAudio')
+                : t('analysisDetail.sourceUnavailable')}
             </Text>
             <Text style={styles.sourceUnavailableDescription}>
               {detail.runtimeMode === 'lightweight_local'
-                ? '声学情绪、转写和后续分析已保存，原音频已清理，当前不可播放。'
-                : '当前源音频不可用，已保存的转写和分析结果仍可查看。'}
+                ? t('analysisDetail.lightweightDescription')
+                : t('analysisDetail.sourceDescription')}
             </Text>
           </View>
         </View>
       )}
       <DetailTabs activeTab={activeTab} onChange={selectTab} showSummary={hasSummary} />
       <ScrollView
-        accessibilityLabel="分析详情分页"
+        accessibilityLabel={t('analysisDetail.pager')}
         directionalLockEnabled
         horizontal
         nestedScrollEnabled
@@ -1111,7 +1147,10 @@ export function AnalysisDetailScreen({
             confirmed={detail.transcriptConfirmation.status === 'confirmed'}
             emotion={detail.postAnalysis.emotion}
             onRemountSource={() => void reselectSourceAndTranscribe()}
-            onStart={setConfirmAnalysisType}
+            onStart={(type) => {
+              setAnalysisLanguage(appLanguage);
+              setConfirmAnalysisType(type);
+            }}
             role={detail.postAnalysis.role}
             runtimeMode={detail.runtimeMode}
           />
@@ -1160,6 +1199,8 @@ export function AnalysisDetailScreen({
         onConfirm={() => void confirmPostAnalysis()}
         pending={startingAnalysis}
         type={confirmAnalysisType}
+        language={analysisLanguage}
+        onLanguageChange={setAnalysisLanguage}
       />
       {detail.transcriptConfirmation.status === 'confirmed' ? (
         <BusinessAnalysisPreflightDialog
@@ -1173,6 +1214,8 @@ export function AnalysisDetailScreen({
           pending={startingBusiness || supplementingBusiness}
           role={detail.postAnalysis.role}
           visible={businessPreflightVisible}
+          language={analysisLanguage}
+          onLanguageChange={setAnalysisLanguage}
         />
       ) : null}
     </SafeAreaView>

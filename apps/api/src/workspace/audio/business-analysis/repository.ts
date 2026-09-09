@@ -19,7 +19,9 @@ import {
   AudioBusinessAnalysisStateSchema,
   DEFAULT_GROUP_ANALYSIS_FOCUS,
   DEFAULT_GROUP_ANALYSIS_TONE,
+  SupportedLanguageSchema,
   type BusinessAnalysisTagCategory,
+  type SupportedLanguage,
 } from '@echowave/contracts';
 import type { PoolClient } from 'pg';
 
@@ -54,6 +56,7 @@ export type BusinessAnalysisSegment = {
 };
 
 export type BusinessAnalysisSettingsSnapshot = {
+  language: SupportedLanguage;
   timing: 'automatic' | 'manual';
   contentFocus: string;
   tone: string;
@@ -128,6 +131,11 @@ function safeArray(value: unknown): string[] {
     : [];
 }
 
+function supportedLanguage(value: unknown): SupportedLanguage {
+  const parsed = SupportedLanguageSchema.safeParse(value);
+  return parsed.success ? parsed.data : 'zh-CN';
+}
+
 function comparableSettings(settings: BusinessAnalysisSettingsSnapshot) {
   return {
     timing: settings.timing,
@@ -164,6 +172,7 @@ export class BusinessAnalysisRepository {
     audioFileId: string,
     groupId: string,
     client: DatabasePool | PoolClient = this.pool,
+    language: SupportedLanguage = 'zh-CN',
   ): Promise<SourceSnapshot> {
     const source = await client.query(
       `SELECT af.id AS audio_file_id, ar.id AS revision_id,
@@ -175,8 +184,10 @@ export class BusinessAnalysisRepository {
               coalesce(s.tone, $4) AS tone,
               coalesce(s.custom_tags, '[]'::jsonb) AS custom_tags,
               CASE WHEN ej.transcript_confirmation_id = tc.id AND ej.status = 'ready'
+                         AND CASE WHEN ej.input_snapshot->>'language' = 'en' THEN 'en' ELSE 'zh-CN' END = $6
                 THEN ar.active_emotion_job_id END AS emotion_job_id,
               CASE WHEN rj.transcript_confirmation_id = tc.id AND rj.status = 'ready'
+                         AND CASE WHEN rj.input_snapshot->>'language' = 'en' THEN 'en' ELSE 'zh-CN' END = $6
                 THEN ar.active_role_job_id END AS role_job_id
        FROM ${this.table('audio_files')} af
        JOIN ${this.table('audio_analysis_revisions')} ar
@@ -213,6 +224,7 @@ export class BusinessAnalysisRepository {
         DEFAULT_GROUP_ANALYSIS_FOCUS,
         DEFAULT_GROUP_ANALYSIS_TONE,
         audioFileId,
+        language,
       ],
     );
     const row = source.rows[0];
@@ -234,6 +246,7 @@ export class BusinessAnalysisRepository {
     );
     const knowledgeBaseIds = links.rows.map((item) => String(item.knowledge_base_id));
     const settings: BusinessAnalysisSettingsSnapshot = {
+      language,
       timing: row.analysis_timing,
       contentFocus: row.content_focus,
       tone: row.tone,
@@ -246,6 +259,7 @@ export class BusinessAnalysisRepository {
           confirmationId: row.confirmation_id,
           emotionJobId: row.emotion_job_id ?? null,
           knowledgeBaseIds,
+          language,
           roleJobId: row.role_job_id ?? null,
           settings: comparableSettings(settings),
         }),
@@ -280,14 +294,16 @@ export class BusinessAnalysisRepository {
       customTags: string[];
       knowledgeBaseIds: string[];
     },
+    language: SupportedLanguage = 'zh-CN',
   ) {
     const client = await this.pool.connect();
     let snapshot: SourceSnapshot | undefined;
     try {
       await client.query('BEGIN');
-      snapshot = await this.sourceSnapshot(audioFileId, groupId, client);
+      snapshot = await this.sourceSnapshot(audioFileId, groupId, client, language);
       if (frozenInput) {
         const settings: BusinessAnalysisSettingsSnapshot = {
+          language,
           timing: frozenInput.analysisTiming,
           contentFocus: frozenInput.contentFocus,
           tone: frozenInput.tone,
@@ -300,6 +316,7 @@ export class BusinessAnalysisRepository {
               confirmationId: snapshot.confirmationId,
               emotionJobId: snapshot.emotionJobId,
               knowledgeBaseIds: frozenInput.knowledgeBaseIds,
+              language,
               roleJobId: snapshot.roleJobId,
               settings: comparableSettings(settings),
             }),
@@ -459,7 +476,10 @@ export class BusinessAnalysisRepository {
              ORDER BY id`,
             [this.tenantId, knowledgeBaseIds],
           );
-    const settings = row.settings_snapshot as BusinessAnalysisSettingsSnapshot;
+    const settings = {
+      ...(row.settings_snapshot as Omit<BusinessAnalysisSettingsSnapshot, 'language'>),
+      language: supportedLanguage(row.settings_snapshot?.language),
+    };
     const windowPlan = buildBusinessAnalysisWindows(
       segments.rows.map((segment) => ({
         id: String(segment.id),
@@ -803,7 +823,7 @@ export class BusinessAnalysisRepository {
     const current = await this.sourceSnapshot(audioFileId, groupId);
     const latest = await this.pool.query(
       `SELECT id, model, status, progress, transcript_confirmation_id, confirmation_version,
-              input_fingerprint,
+              input_fingerprint, settings_snapshot,
               error_code, error_message, error_retryable
        FROM ${this.table('audio_business_analysis_jobs')}
        WHERE tenant_id = $1 AND group_id = $2 AND audio_file_id = $3
@@ -908,6 +928,9 @@ export class BusinessAnalysisRepository {
       confirmationVersion: job
         ? Number(job.confirmation_version)
         : (result?.confirmationVersion ?? current.confirmationVersion),
+      language: supportedLanguage(
+        job?.settings_snapshot?.language ?? published?.settings_snapshot?.language,
+      ),
       settingsCurrent:
         !published ||
         JSON.stringify(comparableSettings(published.settings_snapshot)) ===

@@ -16,6 +16,7 @@ import {
   AudioBusinessAnalysisStartRequestSchema,
   AudioBusinessAnalysisStartResponseSchema,
   AudioPostAnalysisStartResponseSchema,
+  AudioPostAnalysisStartRequestSchema,
   SpeakerReviewResolutionResponseSchema,
   AudioTranscriptConfirmationRequestSchema,
   AudioTranscriptConfirmationResponseSchema,
@@ -26,6 +27,7 @@ import {
   AudioTranscriptSelectionRequestSchema,
   AudioSourceRemountResponseSchema,
   type AudioBusinessAnalysisStartRequest,
+  type AudioPostAnalysisStartRequest,
   type AudioTranscriptConfirmationRequest,
   type AudioTranscriptionStartRequest,
   type AudioTranscriptSelectionRequest,
@@ -33,6 +35,7 @@ import {
 
 import { request } from './request';
 import { getApiUrl } from './apiUrl';
+import { localizeRequestError } from '@/shared/i18n/errorLocalization';
 import { File, UploadType } from 'expo-file-system';
 import type { DocumentPickerAsset } from 'expo-document-picker';
 
@@ -84,12 +87,14 @@ export const resolveAllSpeakerReviewFindings = (id: string) =>
   request(`/api/audio-files/${id}/speaker-review-findings`, SpeakerReviewResolutionResponseSchema, {
     method: 'DELETE',
   });
-export const startAudioEmotionAnalysis = (id: string) =>
+export const startAudioEmotionAnalysis = (id: string, input: AudioPostAnalysisStartRequest) =>
   request(`/api/audio-files/${id}/analysis/emotion`, AudioPostAnalysisStartResponseSchema, {
+    body: AudioPostAnalysisStartRequestSchema.parse(input),
     method: 'POST',
   });
-export const startAudioRoleRecognition = (id: string) =>
+export const startAudioRoleRecognition = (id: string, input: AudioPostAnalysisStartRequest) =>
   request(`/api/audio-files/${id}/analysis/role`, AudioPostAnalysisStartResponseSchema, {
+    body: AudioPostAnalysisStartRequestSchema.parse(input),
     method: 'POST',
   });
 
@@ -105,7 +110,10 @@ export async function remountAudioSource(id: string, asset: DocumentPickerAsset)
       },
       body: asset.file,
     });
-    if (!response.ok) throw new Error(`源文件重新挂载失败（HTTP ${response.status}）。`);
+    if (!response.ok)
+      throw new Error(
+        localizeRequestError('HTTP_ERROR', `源文件重新挂载失败（HTTP ${response.status}）。`),
+      );
     return AudioSourceRemountResponseSchema.parse(await response.json());
   }
   const result = await new File(asset.uri).upload(url, {
@@ -119,9 +127,12 @@ export async function remountAudioSource(id: string, asset: DocumentPickerAsset)
     uploadType: UploadType.BINARY_CONTENT,
   });
   if (result.status < 200 || result.status >= 300) {
-    throw new Error(`源文件重新挂载失败（HTTP ${result.status}）。`);
+    throw new Error(
+      localizeRequestError('HTTP_ERROR', `源文件重新挂载失败（HTTP ${result.status}）。`),
+    );
   }
   const parsed = AudioSourceRemountResponseSchema.safeParse(JSON.parse(result.body));
-  if (!parsed.success) throw new Error('服务返回了无法识别的重新挂载结果。');
+  if (!parsed.success)
+    throw new Error(localizeRequestError('INVALID_RESPONSE', '服务返回了无法识别的重新挂载结果。'));
   return parsed.data;
 }

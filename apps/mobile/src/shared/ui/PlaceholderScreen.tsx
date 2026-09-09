@@ -23,6 +23,7 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 type PlaceholderScreenProps = {
   title: string;
@@ -32,6 +33,7 @@ type PlaceholderScreenProps = {
 
 /** 渲染未进入当前里程碑产品区域的一致占位反馈。 */
 export function PlaceholderScreen({ title, description, icon }: PlaceholderScreenProps) {
+  const { t } = useAppLanguage();
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <TopLevelPageHeader title={title} />
@@ -41,7 +43,7 @@ export function PlaceholderScreen({ title, description, icon }: PlaceholderScree
         </View>
         <Text style={styles.description}>{description}</Text>
         <View style={styles.badge}>
-          <Text style={styles.badgeText}>功能建设中</Text>
+          <Text style={styles.badgeText}>{t('common.inProgress')}</Text>
         </View>
       </View>
     </SafeAreaView>

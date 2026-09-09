@@ -36,6 +36,7 @@ function claimedJob() {
     knowledgeBaseIds: [],
     knowledgeBases: [],
     settings: {
+      language: 'zh-CN',
       timing: 'manual',
       contentFocus: '关注异议处理',
       tone: '正式、专业',

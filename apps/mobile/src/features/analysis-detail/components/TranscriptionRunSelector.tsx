@@ -10,6 +10,7 @@
 import type { AudioTranscriptionRunListResponse } from '@echowave/contracts';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import {
   colors,
   fontFamilies,
@@ -31,19 +32,22 @@ export function TranscriptionRunSelector({
   pending: boolean;
   runs?: AudioTranscriptionRunListResponse;
 }) {
+  const { t } = useAppLanguage();
   if (!runs) return null;
   return (
     <View style={styles.container}>
       <View style={styles.headingRow}>
         <View style={styles.copy}>
-          <Text style={styles.title}>ASR 版本</Text>
+          <Text style={styles.title}>{t('transcriptionRuns.title')}</Text>
           <Text style={styles.description}>
-            {runs.selectionMode === 'auto' ? '自动使用最新成功版本' : '已手动固定版本'}
+            {runs.selectionMode === 'auto'
+              ? t('transcriptionRuns.auto')
+              : t('transcriptionRuns.manual')}
           </Text>
         </View>
         {runs.selectionMode === 'manual' ? (
           <Pressable disabled={pending} onPress={onAuto} style={styles.autoAction}>
-            <Text style={styles.actionText}>恢复自动</Text>
+            <Text style={styles.actionText}>{t('transcriptionRuns.restoreAuto')}</Text>
           </Pressable>
         ) : null}
       </View>
@@ -61,10 +65,19 @@ export function TranscriptionRunSelector({
               v{run.revision} · {run.model}
             </Text>
             <Text style={styles.description}>
-              {run.status} · 声学情绪{run.includeAcousticEmotion ? '已启用' : '未启用'}
+              {t('transcriptionRuns.details', {
+                status: run.status,
+                emotion: run.includeAcousticEmotion
+                  ? t('transcriptionRuns.enabled')
+                  : t('transcriptionRuns.disabled'),
+                language:
+                  run.language === 'zh-CN' ? t('analysisLanguage.zhCN') : t('analysisLanguage.en'),
+              })}
             </Text>
           </View>
-          <Text style={styles.marker}>{run.active ? '当前' : '选择'}</Text>
+          <Text style={styles.marker}>
+            {run.active ? t('transcriptionRuns.current') : t('transcriptionRuns.select')}
+          </Text>
         </Pressable>
       ))}
     </View>

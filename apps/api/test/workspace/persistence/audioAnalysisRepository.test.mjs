@@ -113,7 +113,8 @@ describe('AudioAnalysisRepository', () => {
     assert.equal(insert.values[5], 'word');
     assert.equal(insert.values[6], 'best_effort');
     assert.match(insert.sql, /'preprocessingMode', \$4::text/);
-    assert.match(insert.sql, /'language', 'zh'/);
+    assert.match(insert.sql, /'language', \$19::text/);
+    assert.equal(insert.values[18], 'zh-CN');
     assert.match(insert.sql, /'diarizationRequested', \$5::boolean/);
     assert.match(insert.sql, /'businessRole', false/);
     assert.match(insert.sql, /'emotionAnalysis', false/);

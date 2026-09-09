@@ -243,7 +243,7 @@ export const analysisFixture: AudioAnalysisDetail = {
   transcription: {
     expectedSpeakerCount: null,
     model: 'qwen-audio-3.0-asr-flash-filetrans',
-    language: 'zh',
+    language: 'zh-CN',
     diarizationStatus: 'observed',
     responseGranularity: 'word',
     segmentationMode: 'speaker_turn',
@@ -269,6 +269,7 @@ export const analysisFixture: AudioAnalysisDetail = {
   },
   businessAnalysis: {
     state: 'idle',
+    language: 'zh-CN',
     groupId: null,
     jobId: null,
     model: null,

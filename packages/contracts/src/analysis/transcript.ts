@@ -15,7 +15,7 @@ import {
   AudioTranscriptionSegmentationModeSchema,
   AudioTranscriptionSpeakerIdentityScopeSchema,
 } from '../audio.ts';
-import { EntityIdSchema } from '../common.ts';
+import { EntityIdSchema, SupportedLanguageSchema } from '../common.ts';
 import {
   AudioRuntimeModeSchema,
   AudioSourceRecoveryStateSchema,
@@ -35,7 +35,7 @@ export const AudioTranscriptionDiarizationStatusSchema = z.enum([
 ]);
 export const AudioTranscriptionMetadataSchema = z.object({
   model: z.string().min(1),
-  language: z.string().min(1),
+  language: SupportedLanguageSchema.default('zh-CN'),
   diarizationStatus: AudioTranscriptionDiarizationStatusSchema,
   responseGranularity: AudioTranscriptionResponseGranularitySchema.nullable(),
   segmentationMode: AudioTranscriptionSegmentationModeSchema.default('readable'),
@@ -212,6 +212,7 @@ export const AudioAnalysisDetailSchema = z.object({
     model: null,
     progress: 0,
     confirmationVersion: null,
+    language: 'zh-CN',
     settingsCurrent: true,
     knowledgeCurrent: true,
     error: null,

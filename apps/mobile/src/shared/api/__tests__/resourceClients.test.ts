@@ -263,6 +263,7 @@ describe('resource API clients', () => {
     expect(fetch.mock.calls[0][1]?.method).toBe('POST');
     expect(JSON.parse(String(fetch.mock.calls[0][1]?.body))).toEqual({
       model: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+      language: 'zh-CN',
       preprocessing: 'whole_file',
       segmentationMode: 'speaker_turn',
       includeAcousticEmotion: true,

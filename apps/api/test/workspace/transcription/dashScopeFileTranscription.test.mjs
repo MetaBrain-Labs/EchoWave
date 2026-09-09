@@ -152,6 +152,7 @@ describe('DashScopeFileTranscription', () => {
     );
     const submittedBody = JSON.parse(requests[0].init.body);
     assert.equal(submittedBody.parameters.diarization_enabled, true);
+    assert.deepEqual(submittedBody.parameters.language_hints, ['zh']);
     assert.equal('speaker_count' in submittedBody.parameters, false);
     assert.deepEqual(submittedBody.input.file_urls, ['https://oss.example/audio.mp3']);
     assert.deepEqual(delays, []);
@@ -180,6 +181,23 @@ describe('DashScopeFileTranscription', () => {
     await adapter.submit('https://oss.example/audio.mp3', undefined, 3);
     const submittedBody = JSON.parse(requests[0].init.body);
     assert.equal(submittedBody.parameters.speaker_count, 3);
+  });
+
+  it('maps the frozen English analysis language to the provider hint', async () => {
+    const requests = [];
+    const adapter = new DashScopeFileTranscription(
+      'secret',
+      'https://workspace.example.com/api/v1',
+      async (url, init) => {
+        requests.push({ url, init });
+        return new Response(JSON.stringify({ output: { task_id: 'task-en' } }), { status: 200 });
+      },
+      async () => undefined,
+    );
+
+    await adapter.submit('https://oss.example/audio.mp3', undefined, undefined, 'en');
+
+    assert.deepEqual(JSON.parse(requests[0].init.body).parameters.language_hints, ['en']);
   });
 
   it('enables DashScope resolution for temporary oss URLs', async () => {

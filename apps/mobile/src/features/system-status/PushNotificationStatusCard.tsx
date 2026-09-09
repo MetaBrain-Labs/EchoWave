@@ -16,6 +16,7 @@ import {
   usePushNotificationRegistration,
   type PushRegistrationState,
 } from '@/shared/notifications/PushNotificationProvider';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import {
   colors,
   fontFamilies,
@@ -33,18 +34,19 @@ export type PushNotificationStatusCardHandle = {
 /** 渲染当前设备的远程推送登记状态和重试操作。 */
 export const PushNotificationStatusCard = forwardRef<PushNotificationStatusCardHandle>(
   function PushNotificationStatusCard(_props, ref) {
+    const { formatDateTime, t } = useAppLanguage();
     const { state, refresh } = usePushNotificationRegistration();
     useImperativeHandle(ref, () => ({ refresh }), [refresh]);
     const loading = ['checking', 'fetching_token', 'registering'].includes(state.phase);
     const registered = state.phase === 'registered';
-    const label = statusLabel(state);
+    const label = statusLabel(state, t);
 
     return (
       <View style={styles.card} testID="push-notification-status-card">
         <View style={styles.headingRow}>
           <View>
             <Text style={styles.eyebrow}>REMOTE PUSH</Text>
-            <Text style={styles.title}>推送通知</Text>
+            <Text style={styles.title}>{t('pushCard.title')}</Text>
           </View>
           <View
             accessibilityLabel={label}
@@ -66,32 +68,37 @@ export const PushNotificationStatusCard = forwardRef<PushNotificationStatusCardH
         </View>
 
         <View style={styles.messageBox}>
-          <StatusLine label="服务端能力" value={serverCapabilityLabel(state)} />
-          <StatusLine label="系统权限" value={systemPermissionLabel(state)} />
-          <StatusLine label="设备登记" value={deviceRegistrationLabel(state)} />
+          <StatusLine
+            label={t('pushCard.serverCapability')}
+            value={serverCapabilityLabel(state, t)}
+          />
+          <StatusLine
+            label={t('pushCard.systemPermission')}
+            value={systemPermissionLabel(state, t)}
+          />
+          <StatusLine
+            label={t('pushCard.deviceRegistration')}
+            value={deviceRegistrationLabel(state, t)}
+          />
           <Text style={styles.message}>{state.message}</Text>
-          {state.errorCode ? <Text style={styles.diagnostic}>代码：{state.errorCode}</Text> : null}
+          {state.errorCode ? (
+            <Text style={styles.diagnostic}>{t('pushCard.code', { code: state.errorCode })}</Text>
+          ) : null}
           {state.lastAttemptAt ? (
             <Text style={styles.diagnostic}>
-              最近尝试：{new Date(state.lastAttemptAt).toLocaleString('zh-CN')}
+              {t('pushCard.lastAttempt', { date: formatDateTime(state.lastAttemptAt) })}
             </Text>
           ) : null}
         </View>
 
         <View style={styles.permissionNotice}>
-          <Text style={styles.permissionTitle}>权限说明</Text>
-          <Text style={styles.permissionText}>
-            服务端能力需要服务端开启远程推送；系统权限需要允许 EchoWave
-            发送通知；设备登记需要获取推送设备令牌。
-          </Text>
-          <Text style={styles.permissionText}>
-            Android 设备还需要能访问 Google 推送服务（Google Play services /
-            FCM），否则可能无法获取令牌并完成登记。
-          </Text>
+          <Text style={styles.permissionTitle}>{t('pushCard.permissionTitle')}</Text>
+          <Text style={styles.permissionText}>{t('pushCard.permissionDescription')}</Text>
+          <Text style={styles.permissionText}>{t('pushCard.androidDescription')}</Text>
         </View>
 
         <Pressable
-          accessibilityLabel="重新登记推送设备"
+          accessibilityLabel={t('pushCard.reregister')}
           accessibilityRole="button"
           disabled={loading}
           onPress={() => void refresh()}
@@ -102,7 +109,9 @@ export const PushNotificationStatusCard = forwardRef<PushNotificationStatusCardH
           ]}
         >
           <Ionicons color={colors.ink} name="refresh" size={typography.body.lineHeight} />
-          <Text style={styles.retryText}>{registered ? '刷新登记' : '重新登记'}</Text>
+          <Text style={styles.retryText}>
+            {registered ? t('pushCard.refresh') : t('pushCard.registerAgain')}
+          </Text>
         </Pressable>
       </View>
     );
@@ -118,34 +127,48 @@ function StatusLine({ label, value }: { label: string; value: string }) {
   );
 }
 
-function serverCapabilityLabel(state: PushRegistrationState): string {
-  if (state.serverCapability === 'enabled') return '已启用';
-  if (state.serverCapability === 'disabled') return '未启用';
-  if (state.serverCapability === 'unavailable') return '不可用';
-  return '检查中';
+function serverCapabilityLabel(
+  state: PushRegistrationState,
+  t: ReturnType<typeof useAppLanguage>['t'],
+): string {
+  if (state.serverCapability === 'enabled') return t('pushCard.enabled');
+  if (state.serverCapability === 'disabled') return t('pushCard.disabled');
+  if (state.serverCapability === 'unavailable') return t('pushCard.unavailable');
+  return t('service.checking');
 }
 
-function systemPermissionLabel(state: PushRegistrationState): string {
-  if (state.systemPermission === 'granted') return '已允许';
-  if (state.systemPermission === 'denied') return '未允许';
-  if (state.systemPermission === 'checking') return '检查中';
-  return '未知';
+function systemPermissionLabel(
+  state: PushRegistrationState,
+  t: ReturnType<typeof useAppLanguage>['t'],
+): string {
+  if (state.systemPermission === 'granted') return t('pushCard.granted');
+  if (state.systemPermission === 'denied') return t('pushCard.denied');
+  if (state.systemPermission === 'checking') return t('service.checking');
+  return t('pushCard.unknown');
 }
 
-function deviceRegistrationLabel(state: PushRegistrationState): string {
-  if (state.deviceRegistration === 'registered') return '已登记';
-  if (state.deviceRegistration === 'registering') return '登记中';
-  if (state.deviceRegistration === 'failed') return '登记失败';
-  return '未登记';
+function deviceRegistrationLabel(
+  state: PushRegistrationState,
+  t: ReturnType<typeof useAppLanguage>['t'],
+): string {
+  if (state.deviceRegistration === 'registered') return t('pushCard.registered');
+  if (state.deviceRegistration === 'registering') return t('pushCard.registering');
+  if (state.deviceRegistration === 'failed') return t('pushCard.registrationFailed');
+  return t('pushCard.notRegistered');
 }
 
-function statusLabel(state: PushRegistrationState): string {
-  if (state.phase === 'registered') return '已登记';
-  if (['checking', 'fetching_token', 'registering'].includes(state.phase)) return '检测中';
-  if (state.phase === 'server_disabled') return '未启用';
-  if (state.phase === 'unsupported') return '不支持';
-  if (state.phase === 'permission_denied') return '未授权';
-  return state.retryable ? '可重试' : '失败';
+function statusLabel(
+  state: PushRegistrationState,
+  t: ReturnType<typeof useAppLanguage>['t'],
+): string {
+  if (state.phase === 'registered') return t('pushCard.registered');
+  if (['checking', 'fetching_token', 'registering'].includes(state.phase)) {
+    return t('service.checking');
+  }
+  if (state.phase === 'server_disabled') return t('pushCard.disabled');
+  if (state.phase === 'unsupported') return t('pushCard.unsupported');
+  if (state.phase === 'permission_denied') return t('pushCard.unauthorized');
+  return state.retryable ? t('pushCard.retryable') : t('pushCard.failed');
 }
 
 const styles = StyleSheet.create({

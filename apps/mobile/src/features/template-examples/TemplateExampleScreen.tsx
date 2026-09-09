@@ -17,6 +17,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getGroupTemplateExample } from '@/shared/api/groupsApi';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import {
   colors,
@@ -41,6 +42,7 @@ export function TemplateExampleScreen({
   groupId: string;
   onBack: () => void;
 }) {
+  const { formatNumber, language, t } = useAppLanguage();
   const scrollRef = useRef<ScrollView>(null);
   const prepareTranscript = useCallback(
     () => scrollRef.current?.scrollTo({ animated: true, y: 180 }),
@@ -61,13 +63,13 @@ export function TemplateExampleScreen({
     setLoading(true);
     setError('');
     try {
-      setExample(await getGroupTemplateExample(groupId));
+      setExample(await getGroupTemplateExample(groupId, language));
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '模板示例加载失败。');
+      setError(reason instanceof Error ? reason.message : t('templateExample.loadFailed'));
     } finally {
       setLoading(false);
     }
-  }, [groupId]);
+  }, [groupId, language, t]);
 
   useEffect(() => {
     const task = setTimeout(() => void load(), 0);
@@ -78,12 +80,12 @@ export function TemplateExampleScreen({
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <TopLevelPageHeader
         onBack={onBack}
-        subtitle="产品内置内容，不会写入你的分析数据。"
-        title="模板分析示例"
+        subtitle={t('templateExample.subtitle')}
+        title={t('templateExample.title')}
       />
       {loading ? (
         <ActivityIndicator
-          accessibilityLabel="正在加载模板分析示例"
+          accessibilityLabel={t('templateExample.loading')}
           color={colors.ink}
           style={styles.loader}
         />
@@ -98,7 +100,7 @@ export function TemplateExampleScreen({
             onPress={() => void load()}
             style={styles.retryButton}
           >
-            <Text style={styles.retryText}>重新加载</Text>
+            <Text style={styles.retryText}>{t('common.reload')}</Text>
           </Pressable>
         </View>
       ) : null}
@@ -110,8 +112,12 @@ export function TemplateExampleScreen({
         >
           <View collapsable={false} ref={overviewRef} style={styles.card}>
             <View style={styles.badgeRow}>
-              <Text style={styles.badge}>只读示例</Text>
-              <Text style={styles.version}>示例版本 {example.exampleVersion}</Text>
+              <Text style={styles.badge}>{t('templateExample.readonly')}</Text>
+              <Text style={styles.version}>
+                {t('templateExample.version', {
+                  version: formatNumber(example.exampleVersion),
+                })}
+              </Text>
             </View>
             <Text accessibilityRole="header" style={styles.title}>
               {example.title}
@@ -119,15 +125,19 @@ export function TemplateExampleScreen({
             <Text style={styles.secondary}>{example.scenario}</Text>
             <View style={styles.noAudio}>
               <Ionicons color={textColors.secondary} name="volume-mute-outline" size={22} />
-              <Text style={styles.noAudioText}>示例不包含原始音频，无法播放</Text>
+              <Text style={styles.noAudioText}>{t('templateExample.noAudio')}</Text>
             </View>
             <Text style={styles.roles}>
-              角色：{example.roles.map((role) => role.label).join('、')}
+              {t('templateExample.roles', {
+                roles: example.roles
+                  .map((role) => role.label)
+                  .join(language === 'zh-CN' ? '、' : ', '),
+              })}
             </Text>
           </View>
 
           <View collapsable={false} ref={transcriptRef} style={styles.section}>
-            <Text style={styles.sectionTitle}>示例转写</Text>
+            <Text style={styles.sectionTitle}>{t('templateExample.transcript')}</Text>
             {example.transcript.map((segment) => (
               <View key={segment.id} style={styles.segment}>
                 <View style={styles.segmentHeader}>
@@ -142,28 +152,32 @@ export function TemplateExampleScreen({
           </View>
 
           <View collapsable={false} ref={reportRef} style={styles.section}>
-            <Text style={styles.sectionTitle}>分析报告</Text>
+            <Text style={styles.sectionTitle}>{t('templateExample.report')}</Text>
             {example.summarySections.map((section) => (
               <View key={section.title} style={styles.reportBlock}>
                 <Text style={styles.reportTitle}>{section.title}</Text>
                 <Text style={styles.body}>{section.body}</Text>
               </View>
             ))}
-            <Text style={styles.subheading}>分析标签与证据</Text>
+            <Text style={styles.subheading}>{t('templateExample.tags')}</Text>
             {example.analysisTags.map((tag) => (
               <View key={tag.title} style={styles.tagCard}>
                 <Text style={styles.reportTitle}>{tag.title}</Text>
                 <Text style={styles.body}>{tag.detail}</Text>
-                <Text style={styles.evidence}>证据：{tag.evidenceSegmentIds.join('、')}</Text>
+                <Text style={styles.evidence}>
+                  {t('templateExample.evidence', {
+                    ids: tag.evidenceSegmentIds.join(language === 'zh-CN' ? '、' : ', '),
+                  })}
+                </Text>
               </View>
             ))}
-            <Text style={styles.subheading}>改进建议</Text>
+            <Text style={styles.subheading}>{t('templateExample.improvements')}</Text>
             {example.recommendations.map((item) => (
               <Text key={item} style={styles.listItem}>
                 • {item}
               </Text>
             ))}
-            <Text style={styles.subheading}>限制说明</Text>
+            <Text style={styles.subheading}>{t('templateExample.limitations')}</Text>
             {example.limitations.map((item) => (
               <Text key={item} style={styles.secondary}>
                 • {item}

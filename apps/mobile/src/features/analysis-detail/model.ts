@@ -16,6 +16,7 @@ import type {
   AudioPostAnalysisState,
   AudioSourceRecoveryState,
   AudioSourceState,
+  SupportedLanguage,
   AudioBusinessAnalysisState,
   BusinessAnalysisCitation,
   BusinessAnalysisTagCategory,
@@ -170,7 +171,10 @@ function attachTimelineItems(
 }
 
 /** 将服务端当前分析修订版转换为页面展示模型。 */
-export function toAnalysisDetailView(detail: AudioAnalysisDetail): AnalysisDetailView {
+export function toAnalysisDetailView(
+  detail: AudioAnalysisDetail,
+  language: SupportedLanguage = 'zh-CN',
+): AnalysisDetailView {
   const businessTags: AiTagAnalysis[] = (detail.businessAnalysis.result?.tags ?? []).map((tag) => ({
     id: tag.id,
     category: tag.category,
@@ -246,7 +250,7 @@ export function toAnalysisDetailView(detail: AudioAnalysisDetail): AnalysisDetai
     durationSeconds: detail.durationMs / 1_000,
     generatedAt: new Date(
       detail.businessAnalysis.result?.generatedAt ?? detail.generatedAt,
-    ).toLocaleString(),
+    ).toLocaleString(language),
     transcription: detail.transcription,
     speakerReview: detail.speakerReview,
     transcriptConfirmation: detail.transcriptConfirmation,

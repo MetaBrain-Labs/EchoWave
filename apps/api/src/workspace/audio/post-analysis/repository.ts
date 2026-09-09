@@ -14,7 +14,9 @@
  */
 import {
   AudioPostAnalysisStartResponseSchema,
+  SupportedLanguageSchema,
   type AudioPostAnalysisType,
+  type SupportedLanguage,
   type SegmentEmotionAnalysis,
   type SegmentRoleAnalysis,
 } from '@echowave/contracts';
@@ -52,6 +54,7 @@ export type ClaimedPostAnalysisJob = {
   storageKey: string;
   durationMs: number;
   customBusinessRoles: string[];
+  language: SupportedLanguage;
   confirmationId: string;
   confirmationVersion: number;
   capabilityBindingRevisionId: string | null;
@@ -98,6 +101,7 @@ export class PostAnalysisRepository {
     model: string,
     capabilityBindingRevisionId: string | null = null,
     stagingBindingRevisionId: string | null = null,
+    language: SupportedLanguage = 'zh-CN',
   ) {
     const client = await this.pool.connect();
     try {
@@ -134,7 +138,8 @@ export class PostAnalysisRepository {
             analysis_type, model, input_snapshot, status, progress,
             capability_binding_revision_id, staging_binding_revision_id)
          VALUES ($1, $2, $3, $4, $5, $6,
-                 jsonb_build_object('customBusinessRoles', $7::jsonb), 'queued', 0, $8, $9)
+                 jsonb_build_object('customBusinessRoles', $7::jsonb, 'language', $10::text),
+                 'queued', 0, $8, $9)
          RETURNING id`,
         [
           this.tenantId,
@@ -146,6 +151,7 @@ export class PostAnalysisRepository {
           JSON.stringify(customBusinessRoles),
           capabilityBindingRevisionId,
           stagingBindingRevisionId,
+          language,
         ],
       );
       const response = AudioPostAnalysisStartResponseSchema.parse({
@@ -306,6 +312,7 @@ export class PostAnalysisRepository {
       customBusinessRoles: Array.isArray(snapshot.customBusinessRoles)
         ? snapshot.customBusinessRoles.filter((value): value is string => typeof value === 'string')
         : [],
+      language: SupportedLanguageSchema.parse(snapshot.language === 'en' ? 'en' : 'zh-CN'),
       segments: segments.rows.map((segment) => ({
         id: segment.id,
         speakerKey: String(segment.speaker_key),

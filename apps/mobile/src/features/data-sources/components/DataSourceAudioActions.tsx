@@ -23,6 +23,7 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 import type { SourceAudioItem } from '../model';
 
@@ -71,10 +72,15 @@ export function DataSourceAudioActions({
   onClose: () => void;
   onTranscribe: () => void;
 }) {
+  const { t } = useAppLanguage();
   const processing = audio?.status.kind === 'uploading' || audio?.status.kind === 'transcribing';
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent visible={Boolean(audio)}>
-      <Pressable accessibilityLabel="关闭音频操作" onPress={onClose} style={styles.backdrop} />
+      <Pressable
+        accessibilityLabel={t('sourceActions.close')}
+        onPress={onClose}
+        style={styles.backdrop}
+      />
       <SafeAreaView edges={['bottom']} style={styles.sheet}>
         <Text accessibilityRole="header" numberOfLines={1} style={styles.title}>
           {audio?.title ?? ''}
@@ -83,23 +89,23 @@ export function DataSourceAudioActions({
           destructive
           disabled={processing}
           icon="archive-outline"
-          label="归档"
+          label={t('sourceActions.archive')}
           onPress={onArchive}
         />
         <ActionItem
           disabled={processing}
           icon="document-text-outline"
-          label="ASR转写"
+          label={t('sourceActions.transcribe')}
           onPress={onTranscribe}
         />
         <ActionItem
           disabled={!audio?.hasTranscript}
           icon="analytics-outline"
-          label="ASR结果分析"
+          label={t('sourceActions.analyze')}
           onPress={onAnalysis}
         />
         <Pressable accessibilityRole="button" onPress={onClose} style={styles.cancel}>
-          <Text style={styles.cancelText}>取消</Text>
+          <Text style={styles.cancelText}>{t('common.cancel')}</Text>
         </Pressable>
       </SafeAreaView>
     </Modal>

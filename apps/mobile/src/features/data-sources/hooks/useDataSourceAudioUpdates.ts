@@ -10,9 +10,12 @@
  * Notes:
  * - REST 快照仍由 Screen 注入的 load 函数保持权威。
  */
+import type { SupportedLanguage } from '@echowave/contracts';
 import { useEffect, type Dispatch, type SetStateAction } from 'react';
 
 import { streamDataSourceAudio } from '@/shared/api/liveUpdateStreams';
+import { translateTextForLanguage } from '@/shared/i18n/LanguageProvider';
+import { localizeRequestError } from '@/shared/i18n/errorLocalization';
 
 import { toSourceAudioItem, type DataSourceDetailView } from '../model';
 
@@ -20,6 +23,7 @@ type DataSourceAudioUpdatesOptions = {
   active: boolean;
   dataSourceId: string;
   hasActiveTranscription: boolean;
+  language: SupportedLanguage;
   load: (showLoading?: boolean) => Promise<void>;
   setProgressRefreshError: Dispatch<SetStateAction<string>>;
   setSource: Dispatch<SetStateAction<DataSourceDetailView | undefined>>;
@@ -30,6 +34,7 @@ export function useDataSourceAudioUpdates({
   active,
   dataSourceId,
   hasActiveTranscription,
+  language,
   load,
   setProgressRefreshError,
   setSource,
@@ -59,7 +64,11 @@ export function useDataSourceAudioUpdates({
           signal: controller.signal,
           onEvent: (event) => {
             if (event.type === 'error') {
-              setProgressRefreshError(`进度刷新失败：${event.error.message}`);
+              setProgressRefreshError(
+                translateTextForLanguage(language, 'sourceDetail.progressRefreshFailed', {
+                  message: localizeRequestError(event.error.code, event.error.message),
+                }),
+              );
               return;
             }
             failures = 0;
@@ -67,7 +76,12 @@ export function useDataSourceAudioUpdates({
             setProgressRefreshError('');
             if (event.type === 'snapshot') {
               setSource((current) =>
-                current ? { ...current, audioItems: event.items.map(toSourceAudioItem) } : current,
+                current
+                  ? {
+                      ...current,
+                      audioItems: event.items.map((item) => toSourceAudioItem(item, language)),
+                    }
+                  : current,
               );
               return;
             }
@@ -80,7 +94,7 @@ export function useDataSourceAudioUpdates({
                     audioItems: current.audioItems.filter((item) => item.id !== event.audioFileId),
                   };
                 }
-                const next = toSourceAudioItem(event.item);
+                const next = toSourceAudioItem(event.item, language);
                 const exists = current.audioItems.some((item) => item.id === next.id);
                 return {
                   ...current,
@@ -100,7 +114,7 @@ export function useDataSourceAudioUpdates({
         if (disposed || controller.signal.aborted) return;
         failures += 1;
         if (failures >= 5) {
-          setProgressRefreshError('实时连接暂时不可用，已切换为定时刷新。');
+          setProgressRefreshError(translateTextForLanguage(language, 'sourceDetail.liveFallback'));
           startFallback();
         }
         retryTimer = setTimeout(
@@ -116,5 +130,13 @@ export function useDataSourceAudioUpdates({
       if (retryTimer) clearTimeout(retryTimer);
       stopFallback();
     };
-  }, [active, dataSourceId, hasActiveTranscription, load, setProgressRefreshError, setSource]);
+  }, [
+    active,
+    dataSourceId,
+    hasActiveTranscription,
+    language,
+    load,
+    setProgressRefreshError,
+    setSource,
+  ]);
 }

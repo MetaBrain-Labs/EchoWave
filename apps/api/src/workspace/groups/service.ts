@@ -21,6 +21,7 @@ import type {
   KnowledgeBaseGroupLinkRequest,
   KnowledgeBaseSummary,
   TemplateExample,
+  SupportedLanguage,
 } from '@echowave/contracts';
 
 import type { GroupRepository } from './repository.ts';
@@ -31,7 +32,7 @@ import { getStarterTemplateExample } from '../starter-templates/catalog.ts';
 export interface GroupService {
   listGroups(): Promise<{ items: GroupSummary[] }>;
   getGroup(id: string): Promise<GroupSummary>;
-  getTemplateExample(id: string): Promise<TemplateExample>;
+  getTemplateExample(id: string, language?: SupportedLanguage): Promise<TemplateExample>;
   getGroupSettings(id: string): Promise<GroupSettings>;
   updateGroupSettings(id: string, input: GroupSettingsUpdateRequest): Promise<GroupSettings>;
   createGroup(input: GroupCreateRequest): Promise<GroupSummary>;
@@ -65,12 +66,12 @@ export class DefaultGroupService implements GroupService {
     return this.repository.getGroup(id);
   }
   /** 仅为活动起步模板分组返回代码维护的只读示例。 */
-  async getTemplateExample(id: string) {
+  async getTemplateExample(id: string, language: SupportedLanguage = 'zh-CN') {
     const group = await this.repository.getGroup(id);
     if (!group.starterTemplateKey) {
       throw new WorkspaceRepositoryError('NOT_FOUND', '模板示例不存在。');
     }
-    return getStarterTemplateExample(group.starterTemplateKey);
+    return getStarterTemplateExample(group.starterTemplateKey, language);
   }
   getGroupSettings(id: string) {
     return this.repository.getGroupSettings(id);

@@ -8,6 +8,7 @@
  * - 将模型输出限制在真实词边界内。
  */
 import { z } from 'zod';
+import type { SupportedLanguage } from '@echowave/contracts';
 
 import {
   beginAiModelCall,
@@ -55,6 +56,7 @@ export class DeepSeekSpeakerReviewer {
   async review(
     segments: SpeakerReviewSegment[],
     recorder: AiExecutionRecorder = noOpAiExecutionRecorder,
+    language: SupportedLanguage = 'zh-CN',
   ): Promise<ModelSpeakerReviewFinding[]> {
     const eligible = segments.filter(
       (segment) => segment.words.length > 1 && segment.candidateBoundaries.length > 0,
@@ -74,6 +76,7 @@ export class DeepSeekSpeakerReviewer {
             .map(({ index, text, punctuation }) => ({ index, text, punctuation })),
         })),
       ),
+      language,
     );
     const content = await this.request(prompt, recorder);
     const parsed = OutputSchema.safeParse(parseStructuredJson(content));

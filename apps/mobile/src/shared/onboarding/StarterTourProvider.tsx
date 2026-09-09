@@ -28,10 +28,11 @@ import {
 } from 'react-native';
 
 import { colors, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import {
   GUIDE_IDS,
-  GUIDE_REGISTRY,
   clampSpotlight,
+  localizeGuideRegistry,
   placeTourCard,
   type GuideId,
   type GuideStatus,
@@ -85,6 +86,8 @@ export function StarterTourProvider({
   children,
   serverUrl,
 }: PropsWithChildren<{ serverUrl: string }>) {
+  const { t } = useAppLanguage();
+  const guideRegistry = useMemo(() => localizeGuideRegistry(t), [t]);
   const router = useRouter();
   const targets = useRef(new Map<StarterTourTargetKey, TargetRegistration>());
   const [targetRevision, setTargetRevision] = useState(0);
@@ -151,9 +154,9 @@ export function StarterTourProvider({
       setRect(null);
       setStepIndex(0);
       setActiveGuide(id);
-      navigateToStep(GUIDE_REGISTRY[id].steps[0]);
+      navigateToStep(guideRegistry[id].steps[0]);
     },
-    [navigateToStep],
+    [guideRegistry, navigateToStep],
   );
 
   const offerStarterTemplates = useCallback((groups: readonly GroupSummary[]) => {
@@ -193,7 +196,7 @@ export function StarterTourProvider({
     [],
   );
 
-  const definition = activeGuide ? GUIDE_REGISTRY[activeGuide] : null;
+  const definition = activeGuide ? guideRegistry[activeGuide] : null;
   const step = definition?.steps[stepIndex];
 
   useEffect(() => {
@@ -324,6 +327,7 @@ function StarterTourOverlay({
   stepCount: number;
   visible: boolean;
 }) {
+  const { formatNumber, t } = useAppLanguage();
   const { height, width } = useWindowDimensions();
   const cardRef = useRef<View>(null);
   const [cardHeight, setCardHeight] = useState(220);
@@ -381,7 +385,11 @@ function StarterTourOverlay({
           <View style={[styles.mask, StyleSheet.absoluteFill]} />
         )}
         <View
-          accessibilityLabel={`${step.title}，第 ${current + 1} 步，共 ${stepCount} 步`}
+          accessibilityLabel={t('tour.stepAccessibility', {
+            title: step.title,
+            current: formatNumber(current + 1),
+            total: formatNumber(stepCount),
+          })}
           accessibilityViewIsModal
           onLayout={(event) => setCardHeight(event.nativeEvent.layout.height)}
           ref={cardRef}
@@ -400,7 +408,7 @@ function StarterTourOverlay({
               {step.title}
             </Text>
             <Pressable
-              accessibilityLabel="跳过当前引导"
+              accessibilityLabel={t('tour.skip')}
               hitSlop={8}
               onPress={onClose}
               testID="starter-tour-skip"
@@ -410,7 +418,13 @@ function StarterTourOverlay({
           </View>
           <Text style={styles.body}>{step.body}</Text>
           <View style={styles.footer}>
-            <View accessibilityLabel={`引导进度 ${current + 1}/${stepCount}`} style={styles.dots}>
+            <View
+              accessibilityLabel={t('tour.progress', {
+                current: formatNumber(current + 1),
+                total: formatNumber(stepCount),
+              })}
+              style={styles.dots}
+            >
               {Array.from({ length: stepCount }, (_, index) => (
                 <View key={index} style={[styles.dot, index === current && styles.dotActive]} />
               ))}
@@ -422,7 +436,7 @@ function StarterTourOverlay({
                   onPress={onPrevious}
                   style={styles.backButton}
                 >
-                  <Text style={styles.backText}>上一步</Text>
+                  <Text style={styles.backText}>{t('tour.previous')}</Text>
                 </Pressable>
               ) : null}
               <Pressable
@@ -432,7 +446,7 @@ function StarterTourOverlay({
                 testID={current === stepCount - 1 ? 'starter-tour-finish' : 'starter-tour-next'}
               >
                 <Text style={styles.nextText}>
-                  {current === stepCount - 1 ? '完成引导' : '下一步'}
+                  {current === stepCount - 1 ? t('tour.complete') : t('tour.next')}
                 </Text>
               </Pressable>
             </View>

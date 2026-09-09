@@ -16,9 +16,11 @@ import type { ComponentProps } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { colors, radii } from '@/shared/theme/tokens';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 /** 渲染五个固定产品区域的底部标签布局。 */
 export default function TabsLayout() {
+  const { t } = useAppLanguage();
   return (
     <Tabs
       screenOptions={{
@@ -42,8 +44,8 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: '分组',
-          tabBarAccessibilityLabel: '分组',
+          title: t('tabs.groups'),
+          tabBarAccessibilityLabel: t('tabs.groups'),
           tabBarButtonTestID: 'e2e-tab-groups',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons color={color} name={focused ? 'albums' : 'albums-outline'} size={27} />
@@ -53,8 +55,8 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="knowledge"
         options={{
-          title: '知识库',
-          tabBarAccessibilityLabel: '知识库',
+          title: t('tabs.knowledge'),
+          tabBarAccessibilityLabel: t('tabs.knowledge'),
           tabBarButtonTestID: 'e2e-tab-knowledge',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons color={color} name={focused ? 'book' : 'book-outline'} size={27} />
@@ -64,8 +66,8 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="create"
         options={{
-          title: '新建',
-          tabBarAccessibilityLabel: '新建',
+          title: t('tabs.create'),
+          tabBarAccessibilityLabel: t('tabs.create'),
           tabBarButtonTestID: 'e2e-tab-create',
           tabBarIcon: () => (
             <View style={styles.createButton}>
@@ -77,8 +79,8 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="sources"
         options={{
-          title: '数据源',
-          tabBarAccessibilityLabel: '数据源',
+          title: t('tabs.analysis'),
+          tabBarAccessibilityLabel: t('tabs.analysis'),
           tabBarButtonTestID: 'e2e-tab-sources',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
@@ -92,8 +94,8 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="more"
         options={{
-          title: '更多',
-          tabBarAccessibilityLabel: '更多',
+          title: t('tabs.more'),
+          tabBarAccessibilityLabel: t('tabs.more'),
           tabBarButtonTestID: 'e2e-tab-more',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons color={color} name={focused ? 'grid' : 'grid-outline'} size={27} />

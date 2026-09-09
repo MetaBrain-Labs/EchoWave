@@ -21,6 +21,7 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 import { audioTranscriptionStageLabel } from './AudioTranscriptionProgressDialog';
 import type { SourceAudioItem, SourceAudioStatus } from '../model';
@@ -34,6 +35,7 @@ function AudioStatusView({
   onShowProgress: () => void;
   status: SourceAudioStatus;
 }) {
+  const { formatNumber, t } = useAppLanguage();
   switch (status.kind) {
     case 'complete':
       return null;
@@ -41,13 +43,13 @@ function AudioStatusView({
       return (
         <View style={styles.inlineStatus}>
           <ActivityIndicator color={colors.ink} size={typography.body.lineHeight} />
-          <Text style={styles.statusText}>上传中</Text>
+          <Text style={styles.statusText}>{t('sourceDetail.statusUploading')}</Text>
         </View>
       );
     case 'transcribing':
       return (
         <Pressable
-          accessibilityLabel="查看转写进度"
+          accessibilityLabel={t('audioRow.viewProgress')}
           accessibilityRole="button"
           onPress={onShowProgress}
           style={({ pressed }) => [styles.processingStatus, pressed && styles.pressed]}
@@ -55,8 +57,8 @@ function AudioStatusView({
           <View style={styles.processingTitleRow}>
             <Text numberOfLines={1} style={styles.processingTitle}>
               {status.activity
-                ? `${audioTranscriptionStageLabel(status.activity.stage)}${['transcribing', 'validating', 'splitting'].includes(status.activity.stage) && status.activity.chunkIndex !== null ? ` · Chunk ${status.activity.chunkIndex}/${status.activity.chunkCount}` : ''}`
-                : '正在转写'}
+                ? `${audioTranscriptionStageLabel(status.activity.stage, t)}${['transcribing', 'validating', 'splitting'].includes(status.activity.stage) && status.activity.chunkIndex !== null ? ` · Chunk ${formatNumber(status.activity.chunkIndex)}/${formatNumber(status.activity.chunkCount ?? 0)}` : ''}`
+                : t('audioRow.transcribing')}
             </Text>
             <Text style={styles.processingPercent}>{status.progress}%</Text>
           </View>
@@ -71,8 +73,10 @@ function AudioStatusView({
           <Text numberOfLines={1} style={styles.processingAttempts}>
             {status.activity?.networkAttempt !== null &&
             status.activity?.networkAttempt !== undefined
-              ? `网络尝试 ${status.activity.networkAttempt}/3`
-              : '点击查看详细执行阶段'}
+              ? t('audioRow.networkAttempt', {
+                  attempt: formatNumber(status.activity.networkAttempt),
+                })
+              : t('audioRow.viewStages')}
           </Text>
         </Pressable>
       );
@@ -80,7 +84,7 @@ function AudioStatusView({
       return (
         <View style={styles.inlineStatus}>
           <Ionicons color={colors.ink} name="hourglass-outline" size={typography.body.lineHeight} />
-          <Text style={styles.statusText}>待转写</Text>
+          <Text style={styles.statusText}>{t('sourceDetail.statusWaiting')}</Text>
         </View>
       );
     case 'upload-failed':
@@ -91,13 +95,13 @@ function AudioStatusView({
             name="alert-circle-outline"
             size={typography.body.lineHeight}
           />
-          <Text style={styles.failureStatusText}>上传失败</Text>
+          <Text style={styles.failureStatusText}>{t('sourceDetail.statusUploadFailed')}</Text>
         </View>
       );
     case 'transcription-failed':
       return (
         <Pressable
-          accessibilityLabel="查看转写失败详情"
+          accessibilityLabel={t('audioRow.viewFailure')}
           accessibilityRole="button"
           onPress={onShowError}
           style={({ pressed }) => [styles.inlineStatus, pressed && styles.pressed]}
@@ -107,7 +111,9 @@ function AudioStatusView({
             name="alert-circle-outline"
             size={typography.body.lineHeight}
           />
-          <Text style={styles.failureStatusText}>转写失败</Text>
+          <Text style={styles.failureStatusText}>
+            {t('sourceDetail.statusTranscriptionFailed')}
+          </Text>
         </Pressable>
       );
   }
@@ -132,6 +138,7 @@ export function AudioRow({
   onShowProgress: () => void;
   playing: boolean;
 }) {
+  const { formatDateTime, t } = useAppLanguage();
   const playbackDisabled =
     item.status.kind === 'uploading' ||
     item.status.kind === 'upload-failed' ||
@@ -140,7 +147,10 @@ export function AudioRow({
   return (
     <View style={styles.audioRow}>
       <Pressable
-        accessibilityLabel={`${active && playing ? '暂停' : '播放'}音频：${item.title}`}
+        accessibilityLabel={t('audioRow.playAccessibility', {
+          action: active && playing ? t('audioRow.pause') : t('audioRow.play'),
+          title: item.title,
+        })}
         accessibilityRole="button"
         accessibilityState={{ disabled: playbackDisabled }}
         disabled={playbackDisabled}
@@ -169,12 +179,12 @@ export function AudioRow({
           {item.duration} · {item.createdAt}
         </Text>
         {item.sourceRecoveryState === 'required' ? (
-          <Text style={styles.sourceWarning}>重新运行前需要重新选择原音频</Text>
+          <Text style={styles.sourceWarning}>{t('audioRow.reselect')}</Text>
         ) : item.sourceState && item.sourceState !== 'available' ? (
-          <Text style={styles.sourceWarning}>源音频未保留</Text>
+          <Text style={styles.sourceWarning}>{t('audioRow.notRetained')}</Text>
         ) : item.runtimeMode === 'object_storage' && item.sourceDeleteAfter ? (
           <Text style={styles.sourceWarning}>
-            原音频保留至 {new Date(item.sourceDeleteAfter).toLocaleDateString()}
+            {t('audioRow.retainedUntil', { date: formatDateTime(item.sourceDeleteAfter) })}
           </Text>
         ) : null}
         <AudioStatusView
@@ -184,7 +194,7 @@ export function AudioRow({
         />
       </View>
       <Pressable
-        accessibilityLabel={`${item.title}更多操作`}
+        accessibilityLabel={t('audioRow.more', { title: item.title })}
         accessibilityRole="button"
         hitSlop={8}
         onPress={onMore}

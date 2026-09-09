@@ -22,6 +22,7 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 /** 描述一级页头中的单个图标或文字操作。 */
 export type TopLevelPageAction = {
@@ -49,12 +50,13 @@ export function TopLevelPageHeader({
   subtitle,
   title,
 }: TopLevelPageHeaderProps) {
+  const { t } = useAppLanguage();
   return (
     <View style={styles.header} testID="top-level-page-header">
       <View style={styles.titleRow}>
         {onBack ? (
           <Pressable
-            accessibilityLabel="返回"
+            accessibilityLabel={t('common.back')}
             accessibilityRole="button"
             hitSlop={8}
             onPress={onBack}

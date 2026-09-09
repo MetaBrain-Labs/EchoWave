@@ -26,13 +26,16 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { fetchServerHealth } from '@/shared/api/serverHealth';
+import { fetchServerHealth, ServerHealthError } from '@/shared/api/serverHealth';
 import { useServerConnection } from '@/shared/api/ServerConnectionProvider';
 import {
   getDevelopmentServerUrl,
   normalizeServerUrl,
   ServerUrlError,
+  type ServerUrlErrorCode,
 } from '@/shared/api/serverUrl';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import type { TranslationKey } from '@/shared/i18n/translations';
 import {
   colors,
   fontFamilies,
@@ -53,8 +56,26 @@ type ServerConnectionScreenProps = {
   onSaved?: () => void;
 };
 
+const serverUrlErrorKeys: Record<ServerUrlErrorCode, TranslationKey> = {
+  EMPTY: 'server.empty',
+  INVALID_URL: 'server.fullUrl',
+  INVALID_PROTOCOL: 'server.protocol',
+  CREDENTIALS_NOT_ALLOWED: 'server.credentials',
+  PATH_NOT_ALLOWED: 'server.rootOnly',
+  PUBLIC_HTTP_NOT_ALLOWED: 'server.publicHttps',
+  UNCONFIGURED: 'server.invalid',
+};
+
+const serverHealthErrorKeys: Record<ServerHealthError['code'], TranslationKey> = {
+  HTTP_ERROR: 'server.verifyFailed',
+  INVALID_RESPONSE: 'server.incompatible',
+  NETWORK: 'server.network',
+  TIMEOUT: 'server.timeout',
+};
+
 /** 渲染首次连接或修改服务器地址的完整表单。 */
 export function ServerConnectionScreen({ onCancel, onSaved }: ServerConnectionScreenProps) {
+  const { t } = useAppLanguage();
   const { saveServerUrl, serverUrl } = useServerConnection();
   const [input, setInput] = useState(serverUrl ?? getDevelopmentServerUrl() ?? '');
   const [probe, setProbe] = useState<ProbeState>({ phase: 'idle' });
@@ -76,7 +97,8 @@ export function ServerConnectionScreen({ onCancel, onSaved }: ServerConnectionSc
     } catch (error) {
       setProbe({
         phase: 'error',
-        message: error instanceof ServerUrlError ? error.message : '服务器地址无效。',
+        message:
+          error instanceof ServerUrlError ? t(serverUrlErrorKeys[error.code]) : t('server.invalid'),
       });
       return;
     }
@@ -88,7 +110,10 @@ export function ServerConnectionScreen({ onCancel, onSaved }: ServerConnectionSc
     } catch (error) {
       setProbe({
         phase: 'error',
-        message: error instanceof Error ? error.message : '无法验证服务器。',
+        message:
+          error instanceof ServerHealthError
+            ? t(serverHealthErrorKeys[error.code])
+            : t('server.verifyFailed'),
       });
     }
   };
@@ -100,7 +125,7 @@ export function ServerConnectionScreen({ onCancel, onSaved }: ServerConnectionSc
       await saveServerUrl(probe.normalizedUrl);
       onSaved?.();
     } catch {
-      setProbe({ phase: 'error', message: '无法保存服务器设置，请检查设备存储后重试。' });
+      setProbe({ phase: 'error', message: t('server.saveFailed') });
     } finally {
       setSaving(false);
     }
@@ -120,16 +145,14 @@ export function ServerConnectionScreen({ onCancel, onSaved }: ServerConnectionSc
           <View style={styles.logo}>
             <Ionicons color={colors.white} name="radio-outline" size={30} />
           </View>
-          <Text style={styles.title}>连接到 EchoWave Server</Text>
+          <Text style={styles.title}>{t('server.title')}</Text>
           <Text style={styles.tagline}>EchoWave — From Voice to Insight.</Text>
-          <Text style={styles.description}>
-            输入运行 EchoWave API 的电脑、NAS 或服务器地址。连接成功后会保存在当前设备。
-          </Text>
+          <Text style={styles.description}>{t('server.description')}</Text>
 
           <View style={styles.card}>
-            <Text style={styles.label}>服务器地址</Text>
+            <Text style={styles.label}>{t('server.address')}</Text>
             <TextInput
-              accessibilityLabel="服务器地址"
+              accessibilityLabel={t('server.address')}
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="url"
@@ -146,9 +169,7 @@ export function ServerConnectionScreen({ onCancel, onSaved }: ServerConnectionSc
             {usesLocalHttp ? (
               <View accessibilityRole="alert" style={styles.warning}>
                 <Ionicons color={colors.danger} name="warning-outline" size={18} />
-                <Text style={styles.warningText}>
-                  HTTP 仅适合可信局域网；公网服务器必须使用 HTTPS。
-                </Text>
+                <Text style={styles.warningText}>{t('server.httpWarning')}</Text>
               </View>
             ) : null}
             {probe.phase === 'success' ? (
@@ -158,7 +179,9 @@ export function ServerConnectionScreen({ onCancel, onSaved }: ServerConnectionSc
                 testID="server-connection-success"
               >
                 <Ionicons color={colors.success} name="checkmark-circle" size={18} />
-                <Text style={styles.successText}>连接成功 · EchoWave {probe.version}</Text>
+                <Text style={styles.successText}>
+                  {t('server.connected', { version: probe.version })}
+                </Text>
               </View>
             ) : null}
             {probe.phase === 'error' ? (
@@ -168,7 +191,7 @@ export function ServerConnectionScreen({ onCancel, onSaved }: ServerConnectionSc
             ) : null}
 
             <Pressable
-              accessibilityLabel="测试连接"
+              accessibilityLabel={t('server.test')}
               accessibilityRole="button"
               disabled={probe.phase === 'loading' || saving}
               onPress={() => void testConnection()}
@@ -180,10 +203,10 @@ export function ServerConnectionScreen({ onCancel, onSaved }: ServerConnectionSc
               ) : (
                 <Ionicons color={colors.ink} name="pulse-outline" size={20} />
               )}
-              <Text style={styles.secondaryButtonText}>测试连接</Text>
+              <Text style={styles.secondaryButtonText}>{t('server.test')}</Text>
             </Pressable>
             <Pressable
-              accessibilityLabel="保存并继续"
+              accessibilityLabel={t('server.saveContinue')}
               accessibilityRole="button"
               disabled={!canSave}
               onPress={() => void save()}
@@ -195,17 +218,17 @@ export function ServerConnectionScreen({ onCancel, onSaved }: ServerConnectionSc
               testID="保存并继续"
             >
               {saving ? <ActivityIndicator color={colors.white} /> : null}
-              <Text style={styles.primaryButtonText}>保存并继续</Text>
+              <Text style={styles.primaryButtonText}>{t('server.saveContinue')}</Text>
             </Pressable>
             {onCancel ? (
               <Pressable
-                accessibilityLabel="取消修改服务器"
+                accessibilityLabel={t('server.cancelChange')}
                 accessibilityRole="button"
                 onPress={onCancel}
                 style={styles.cancelButton}
                 testID="取消修改服务器"
               >
-                <Text style={styles.cancelText}>取消</Text>
+                <Text style={styles.cancelText}>{t('common.cancel')}</Text>
               </Pressable>
             ) : null}
           </View>

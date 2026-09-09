@@ -32,30 +32,33 @@ import {
 } from '@/shared/api/audioAutomationApi';
 import { remountAudioSource } from '@/shared/api/audioAnalysisApi';
 import { streamAudioAnalysisBatch } from '@/shared/api/liveUpdateStreams';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { localizeRequestError } from '@/shared/i18n/errorLocalization';
+import type { TranslationKey } from '@/shared/i18n/translations';
 import { backOrReplace } from '@/shared/navigation/routeBack';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { colors, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 
-const statusLabels: Record<AudioAnalysisTask['status'], string> = {
-  awaiting_upload: '等待上传',
-  scheduled: '等待计划时间',
-  queued: '已入队',
-  running: '执行中',
-  hard_blocked: '需要处理',
-  completed: '已完成',
-  completed_with_warnings: '警告',
-  failed: '失败',
-  canceled: '已取消',
+const statusLabelKeys: Record<AudioAnalysisTask['status'], TranslationKey> = {
+  awaiting_upload: 'batchDetail.status.awaiting_upload',
+  scheduled: 'batchDetail.status.scheduled',
+  queued: 'batchDetail.status.queued',
+  running: 'batchDetail.status.running',
+  hard_blocked: 'batchDetail.status.hard_blocked',
+  completed: 'batchDetail.status.completed',
+  completed_with_warnings: 'batchDetail.status.completed_with_warnings',
+  failed: 'batchDetail.status.failed',
+  canceled: 'batchDetail.status.canceled',
 };
 
-const phaseLabels: Record<AudioAnalysisTask['phase'], string> = {
-  upload: '上传校验',
-  transcription: 'ASR 转写',
-  post_analysis: '情绪与角色',
-  business_analysis: '业务分析',
-  done: '结束',
+const phaseLabelKeys: Record<AudioAnalysisTask['phase'], TranslationKey> = {
+  upload: 'batchDetail.phase.upload',
+  transcription: 'batchDetail.phase.transcription',
+  post_analysis: 'batchDetail.phase.post_analysis',
+  business_analysis: 'batchDetail.phase.business_analysis',
+  done: 'batchDetail.phase.done',
 };
 
 type DetailRouter = Parameters<typeof backOrReplace>[0];
@@ -68,6 +71,7 @@ export function AnalysisBatchDetailScreen({
   batchId: string;
   router: DetailRouter;
 }) {
+  const { formatDateTime, t } = useAppLanguage();
   const [batch, setBatch] = useState<AudioAnalysisBatch>();
   const [error, setError] = useState('');
   const [restFallback, setRestFallback] = useState(false);
@@ -78,7 +82,7 @@ export function AnalysisBatchDetailScreen({
       setBatch(await getAudioAnalysisBatch(batchId));
       setError('');
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '加载失败。');
+      setError(reason instanceof Error ? reason.message : t('analysisBatch.loadFailed'));
       throw reason;
     }
   }
@@ -94,7 +98,9 @@ export function AnalysisBatchDetailScreen({
         setBatch(nextBatch);
         setError('');
       })
-      .catch((reason) => setError(reason instanceof Error ? reason.message : '加载失败。'));
+      .catch((reason) =>
+        setError(reason instanceof Error ? reason.message : t('analysisBatch.loadFailed')),
+      );
     void streamAudioAnalysisBatch({
       batchId,
       signal: controller.signal,
@@ -116,7 +122,7 @@ export function AnalysisBatchDetailScreen({
       controller.abort();
       if (fallbackTimer) clearInterval(fallbackTimer);
     };
-  }, [batchId]);
+  }, [batchId, t]);
 
   async function command(action: () => Promise<unknown>, success: string) {
     setBusy(true);
@@ -125,7 +131,10 @@ export function AnalysisBatchDetailScreen({
       await refresh();
       Alert.alert(success);
     } catch (reason) {
-      Alert.alert('操作失败', reason instanceof Error ? reason.message : '请稍后重试。');
+      Alert.alert(
+        t('batchDetail.operationFailed'),
+        reason instanceof Error ? reason.message : t('analysisBatch.tryAgain'),
+      );
     } finally {
       setBusy(false);
     }
@@ -136,7 +145,7 @@ export function AnalysisBatchDetailScreen({
       <PageHeader
         onBack={() => backOrReplace(router, '/(tabs)/create')}
         onMore={() => undefined}
-        title="分析批次"
+        title={t('batchDetail.title')}
       />
       {!batch && !error ? (
         <View style={styles.center}>
@@ -150,7 +159,7 @@ export function AnalysisBatchDetailScreen({
           refreshControl={<ScreenRefreshControl {...screenRefresh} />}
         >
           <Text style={styles.danger}>{error}</Text>
-          <Action label="重试" onPress={() => void refresh()} />
+          <Action label={t('common.retry')} onPress={() => void refresh()} />
         </ScrollView>
       ) : null}
       {batch ? (
@@ -165,45 +174,63 @@ export function AnalysisBatchDetailScreen({
             </Text>
           ) : null}
           <View style={styles.summary}>
-            <Text style={styles.title}>共 {batch.counts.total} 项</Text>
-            <Text style={styles.summaryText}>
-              进行中 {batch.counts.active} · 阻塞 {batch.counts.blocked} · 完成{' '}
-              {batch.counts.completed} · 警告 {batch.counts.partial} · 失败 {batch.counts.failed} ·
-              已取消 {batch.counts.canceled}
+            <Text style={styles.title}>
+              {t('batchDetail.total', { count: batch.counts.total })}
             </Text>
+            <Text style={styles.summaryText}>{t('batchDetail.counts', batch.counts)}</Text>
             <Text style={styles.hint}>
               {batch.scheduledFor
-                ? `计划时间：${new Date(batch.scheduledFor).toLocaleString()}`
-                : '立即执行'}
+                ? t('batchDetail.scheduled', { date: formatDateTime(batch.scheduledFor) })
+                : t('analysisBatch.now')}
             </Text>
             {restFallback ? (
-              <Text style={styles.warning}>实时连接已断开，当前每 15 秒刷新一次。</Text>
+              <Text style={styles.warning}>{t('batchDetail.liveFallback')}</Text>
             ) : null}
           </View>
           <View style={styles.actions}>
             {batch.counts.blocked > 0 ? (
               <Action
                 disabled={busy}
-                label="恢复全部阻塞项"
-                onPress={() => void command(() => resumeAudioAnalysisBatch(batch.id), '已恢复批次')}
+                label={t('batchDetail.resumeAll')}
+                onPress={() =>
+                  void command(
+                    () => resumeAudioAnalysisBatch(batch.id),
+                    t('batchDetail.resumedBatch'),
+                  )
+                }
               />
             ) : null}
             {batch.counts.active > 0 || batch.counts.blocked > 0 ? (
               <Action
                 danger
                 disabled={busy}
-                label="取消批次"
-                onPress={() => void command(() => cancelAudioAnalysisBatch(batch.id), '已提交取消')}
+                label={t('batchDetail.cancelBatch')}
+                onPress={() =>
+                  void command(
+                    () => cancelAudioAnalysisBatch(batch.id),
+                    t('batchDetail.cancelSubmitted'),
+                  )
+                }
               />
             ) : null}
           </View>
           <View style={styles.snapshot}>
-            <Text style={styles.sectionTitle}>冻结配置</Text>
+            <Text style={styles.sectionTitle}>{t('batchDetail.snapshot')}</Text>
             <Text style={styles.hint}>{batch.configurationSnapshot.groupName}</Text>
+            <Text style={styles.hint}>
+              {t('batchDetail.language', {
+                language:
+                  batch.configurationSnapshot.language === 'zh-CN'
+                    ? t('analysisLanguage.zhCN')
+                    : t('analysisLanguage.en'),
+              })}
+            </Text>
             <Text style={styles.body}>{batch.configurationSnapshot.contentFocus}</Text>
             <Text style={styles.hint}>
-              知识库 {batch.configurationSnapshot.knowledgeBaseIds.length} 个 · 标签{' '}
-              {batch.configurationSnapshot.customTags.join('、') || '无'}
+              {t('batchDetail.resources', {
+                knowledge: batch.configurationSnapshot.knowledgeBaseIds.length,
+                tags: batch.configurationSnapshot.customTags.join('、') || t('analysisBatch.none'),
+              })}
             </Text>
           </View>
           {batch.tasks.map((task) => (
@@ -211,10 +238,12 @@ export function AnalysisBatchDetailScreen({
               busy={busy}
               groupId={batch.groupId}
               key={task.id}
-              onCancel={() => command(() => cancelAudioAnalysisTask(task.id), '已提交取消')}
+              onCancel={() =>
+                command(() => cancelAudioAnalysisTask(task.id), t('batchDetail.cancelSubmitted'))
+              }
               onRemount={() =>
                 command(async () => {
-                  if (!task.audioFileId) throw new Error('任务尚未绑定音频。');
+                  if (!task.audioFileId) throw new Error(t('batchDetail.taskUnbound'));
                   const selection = await DocumentPicker.getDocumentAsync({
                     type: 'audio/*',
                     multiple: false,
@@ -222,9 +251,11 @@ export function AnalysisBatchDetailScreen({
                   });
                   if (selection.canceled) return;
                   await remountAudioSource(task.audioFileId, selection.assets[0]!);
-                }, '源文件已重新挂载，任务将从中断点继续')
+                }, t('batchDetail.remounted'))
               }
-              onResume={() => command(() => resumeAudioAnalysisTask(task.id), '已恢复任务')}
+              onResume={() =>
+                command(() => resumeAudioAnalysisTask(task.id), t('batchDetail.taskResumed'))
+              }
               task={task}
             />
           ))}
@@ -249,6 +280,7 @@ function TaskCard({
   onResume: () => Promise<void>;
   task: AudioAnalysisTask;
 }) {
+  const { formatDateTime, t } = useAppLanguage();
   const router = useRouter();
   const active = ['awaiting_upload', 'scheduled', 'queued', 'running'].includes(task.status);
   const canViewReport =
@@ -257,10 +289,14 @@ function TaskCard({
     Boolean(task.report);
   const phaseText =
     task.status === 'failed'
-      ? '失败于业务分析'
+      ? t('batchDetail.failedBusiness')
       : task.status === 'canceled'
-        ? '已取消'
-        : `${phaseLabels[task.phase]} · ${task.progress}% · ${task.runtimeMode ?? '等待上传'}`;
+        ? t('batchDetail.status.canceled')
+        : t('batchDetail.taskPhase', {
+            phase: t(phaseLabelKeys[task.phase]),
+            progress: task.progress,
+            mode: task.runtimeMode ?? t('batchDetail.status.awaiting_upload'),
+          });
   return (
     <View style={styles.card}>
       <View style={styles.cardTitleRow}>
@@ -274,7 +310,7 @@ function TaskCard({
             task.status === 'completed_with_warnings' && styles.warningBadge,
           ]}
         >
-          {statusLabels[task.status]}
+          {t(statusLabelKeys[task.status])}
         </Text>
       </View>
       <Text style={styles.hint}>{phaseText}</Text>
@@ -282,28 +318,33 @@ function TaskCard({
         <View style={[styles.progressValue, { width: `${task.progress}%` }]} />
       </View>
       {task.warningCodes.length ? (
-        <Text style={styles.warning}>限制：{task.warningCodes.join('、')}</Text>
+        <Text style={styles.warning}>
+          {t('batchDetail.limits', { codes: task.warningCodes.join('、') })}
+        </Text>
       ) : null}
       {task.blocker ? (
         <View accessibilityRole="alert" style={styles.blocker}>
-          <Text style={styles.danger}>{task.blocker.message}</Text>
+          <Text style={styles.danger}>
+            {localizeRequestError(task.blocker.reason, task.blocker.message)}
+          </Text>
           {task.blocker.sourceExpiresAt ? (
             <Text style={styles.hint}>
-              源文件保留至 {new Date(task.blocker.sourceExpiresAt).toLocaleString()}
-              ；过期后需重新选择同一文件。
+              {t('batchDetail.sourceExpires', {
+                date: formatDateTime(task.blocker.sourceExpiresAt),
+              })}
             </Text>
           ) : null}
         </View>
       ) : null}
       {task.error ? (
         <Text accessibilityRole="alert" style={styles.danger}>
-          {task.error.message}
+          {localizeRequestError(task.error.code, task.error.message)}
         </Text>
       ) : null}
       {canViewReport ? (
         <Action
           disabled={busy}
-          label="查看分析报告"
+          label={t('batchDetail.viewReport')}
           onPress={() =>
             router.push({
               pathname: '/analysis/[id]',
@@ -314,13 +355,22 @@ function TaskCard({
       ) : null}
       <View style={styles.actions}>
         {task.status === 'hard_blocked' && task.blocker?.reason !== 'SOURCE_REMOUNT_REQUIRED' ? (
-          <Action disabled={busy} label="从中断点继续" onPress={() => void onResume()} />
+          <Action disabled={busy} label={t('batchDetail.resume')} onPress={() => void onResume()} />
         ) : null}
         {task.blocker?.reason === 'SOURCE_REMOUNT_REQUIRED' ? (
-          <Action disabled={busy} label="重新选择原文件" onPress={() => void onRemount()} />
+          <Action
+            disabled={busy}
+            label={t('batchDetail.remount')}
+            onPress={() => void onRemount()}
+          />
         ) : null}
         {active || task.status === 'hard_blocked' ? (
-          <Action danger disabled={busy} label="取消" onPress={() => void onCancel()} />
+          <Action
+            danger
+            disabled={busy}
+            label={t('common.cancel')}
+            onPress={() => void onCancel()}
+          />
         ) : null}
       </View>
     </View>

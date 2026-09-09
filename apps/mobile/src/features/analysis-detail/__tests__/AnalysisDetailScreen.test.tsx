@@ -156,7 +156,7 @@ describe('AnalysisDetailScreen', () => {
     await waitFor(() =>
       expect(workspaceApi.startAudioBusinessAnalysis).toHaveBeenCalledWith(
         analysisFixture.audioFileId,
-        { groupId, force: false },
+        { groupId, force: false, language: 'zh-CN' },
       ),
     );
   });
@@ -173,6 +173,9 @@ describe('AnalysisDetailScreen', () => {
     await waitFor(() =>
       expect(workspaceApi.startAudioEmotionAnalysis).toHaveBeenCalledWith(
         analysisFixture.audioFileId,
+        {
+          language: 'zh-CN',
+        },
       ),
     );
 
@@ -182,6 +185,9 @@ describe('AnalysisDetailScreen', () => {
     await waitFor(() =>
       expect(workspaceApi.startAudioRoleRecognition).toHaveBeenCalledWith(
         analysisFixture.audioFileId,
+        {
+          language: 'zh-CN',
+        },
       ),
     );
   });
@@ -196,6 +202,7 @@ describe('AnalysisDetailScreen', () => {
           model: 'qwen3.5-omni-flash',
           progress: 45,
           confirmationVersion: 1,
+          language: 'zh-CN' as const,
         },
         role: {
           state: 'failed',
@@ -205,6 +212,7 @@ describe('AnalysisDetailScreen', () => {
           message: '模型返回格式无效，请重试。',
           retryable: true,
           confirmationVersion: 1,
+          language: 'zh-CN' as const,
         },
       },
     });
@@ -213,8 +221,10 @@ describe('AnalysisDetailScreen', () => {
     openAnalysisTasks(screen);
     fireEvent.press(screen.getByRole('button', { name: '展开情绪分析与角色识别' }));
 
-    expect(screen.getByText('分析中 45% · 基于确认版 v1')).toBeTruthy();
-    expect(screen.getByText('模型返回格式无效，请重试。 · 基于确认版 v1')).toBeTruthy();
+    expect(screen.getByText('分析中 45% · 基于确认版 v1 · 分析语言：中文')).toBeTruthy();
+    expect(
+      screen.getByText('模型返回格式无效，请重试。 · 基于确认版 v1 · 分析语言：中文'),
+    ).toBeTruthy();
     expect(screen.getByRole('button', { name: '重新识别' })).toBeTruthy();
   });
 
@@ -229,6 +239,7 @@ describe('AnalysisDetailScreen', () => {
           model: 'qwen3.5-omni-flash',
           progress: 1,
           confirmationVersion: 1,
+          language: 'zh-CN' as const,
         },
         role: { state: 'idle' as const },
       },
@@ -242,6 +253,7 @@ describe('AnalysisDetailScreen', () => {
           model: 'qwen3.5-omni-flash',
           completedAt: '2026-08-29T01:00:03.000Z',
           confirmationVersion: 1,
+          language: 'zh-CN' as const,
         },
         role: { state: 'idle' as const },
       },
@@ -277,6 +289,7 @@ describe('AnalysisDetailScreen', () => {
             model: null,
             progress: 0,
             confirmationVersion: null,
+            language: 'zh-CN',
             settingsCurrent: true,
             knowledgeCurrent: true,
             error: null,
@@ -689,6 +702,7 @@ describe('AnalysisDetailScreen', () => {
           model: 'qwen3.5-omni-flash',
           completedAt: '2026-09-03T03:30:00.000Z',
           confirmationVersion: 1,
+          language: 'zh-CN',
         },
         role: { state: 'idle' },
       },
@@ -1033,6 +1047,7 @@ describe('AnalysisDetailScreen', () => {
         model: 'deepseek-v4-flash',
         progress: 100,
         confirmationVersion: 1,
+        language: 'zh-CN',
         settingsCurrent: true,
         knowledgeCurrent: true,
         error: null,

@@ -23,6 +23,10 @@ const stageSources = await readFile(
   new URL('../../migrations/032_audio_automation_stage_sources.sql', import.meta.url),
   'utf8',
 );
+const bilingualLanguageSupport = await readFile(
+  new URL('../../migrations/034_bilingual_language_support.sql', import.meta.url),
+  'utf8',
+);
 
 describe('audio analysis automation migrations', () => {
   it('defines the authoritative batch and task state machine', () => {
@@ -65,5 +69,17 @@ describe('audio analysis automation migrations', () => {
     for (const source of ['created', 'reused', 'skipped', 'unavailable']) {
       assert.match(stageSources, new RegExp(`@ != "${source}"`));
     }
+  });
+
+  it('persists device locale and stable notification templates idempotently', () => {
+    assert.match(bilingualLanguageSupport, /ADD COLUMN locale text NOT NULL DEFAULT 'zh-CN'/);
+    assert.match(bilingualLanguageSupport, /locale IN \('zh-CN', 'en'\)/);
+    assert.match(bilingualLanguageSupport, /ADD COLUMN template_key text/);
+    assert.match(bilingualLanguageSupport, /ADD COLUMN template_params jsonb/);
+    assert.match(bilingualLanguageSupport, /audio_speaker_review_jobs.*settings_snapshot/s);
+    assert.match(bilingualLanguageSupport, /UPDATE audio_analysis_revisions/);
+    assert.match(bilingualLanguageSupport, /UPDATE audio_business_analysis_jobs/);
+    assert.doesNotMatch(bilingualLanguageSupport, /\bgroup_business_analysis_jobs\b/);
+    assert.match(bilingualLanguageSupport, /UPDATE audio_analysis_batches/);
   });
 });

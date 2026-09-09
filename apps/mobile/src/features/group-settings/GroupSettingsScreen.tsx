@@ -45,6 +45,7 @@ import {
 import { listDataSources } from '@/shared/api/dataSourcesApi';
 import { listKnowledgeBases } from '@/shared/api/knowledgeBasesApi';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import {
@@ -57,12 +58,6 @@ import {
 } from '@/shared/theme/tokens';
 
 type SettingsTab = 'basic' | 'knowledge' | 'sources';
-const tabs: { key: SettingsTab; label: string }[] = [
-  { key: 'basic', label: '基本设置' },
-  { key: 'knowledge', label: '知识库设置' },
-  { key: 'sources', label: '数据源设置' },
-];
-const toneShortcuts = ['简单直接', '正式、专业', '结构清晰', '亲和温暖'];
 
 function ToggleRow({
   checked,
@@ -107,6 +102,18 @@ export function GroupSettingsScreen({
   onArchived: () => void;
   onBack: () => void;
 }) {
+  const { formatNumber, t } = useAppLanguage();
+  const tabs: { key: SettingsTab; label: string }[] = [
+    { key: 'basic', label: t('groupSettings.tabBasic') },
+    { key: 'knowledge', label: t('groupSettings.tabKnowledge') },
+    { key: 'sources', label: t('groupSettings.tabSources') },
+  ];
+  const toneShortcuts = [
+    t('groupSettings.toneDirect'),
+    t('groupSettings.toneFormal'),
+    t('groupSettings.toneStructured'),
+    t('groupSettings.toneWarm'),
+  ];
   const [activeTab, setActiveTab] = useState<SettingsTab>('basic');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -159,12 +166,12 @@ export function GroupSettingsScreen({
           );
         }
       } catch (reason) {
-        setError(reason instanceof Error ? reason.message : '分组设置加载失败。');
+        setError(reason instanceof Error ? reason.message : t('groupSettings.loadFailed'));
       } finally {
         if (!preserveDraft) setLoading(false);
       }
     },
-    [groupId],
+    [groupId, t],
   );
   const screenRefresh = useScreenRefresh(() => load(true));
 
@@ -191,8 +198,8 @@ export function GroupSettingsScreen({
     }
     if (value.length > 24 || customTags.length >= 12) {
       Alert.alert(
-        '无法新增标签',
-        value.length > 24 ? '标签最多 24 个字。' : '最多设置 12 个标签。',
+        t('groupSettings.tagUnavailable'),
+        value.length > 24 ? t('groupSettings.tagLength') : t('groupSettings.tagLimit'),
       );
       return;
     }
@@ -203,7 +210,7 @@ export function GroupSettingsScreen({
 
   const saveBasic = async () => {
     if (!name.trim() || !contentFocus.trim() || !tone.trim()) {
-      Alert.alert('无法保存', '分组名称、内容侧重和语气风格不能为空。');
+      Alert.alert(t('groupSettings.cannotSave'), t('groupSettings.required'));
       return;
     }
     setSaving(true);
@@ -213,9 +220,9 @@ export function GroupSettingsScreen({
         name,
         analysis: { timing, contentFocus, tone, customTags },
       });
-      Alert.alert('保存成功', '分组分析设置已更新。');
+      Alert.alert(t('groupSettings.saved'), t('groupSettings.settingsUpdated'));
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '设置保存失败。');
+      setError(reason instanceof Error ? reason.message : t('groupSettings.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -231,28 +238,30 @@ export function GroupSettingsScreen({
         await replaceGroupDataSources(groupId, { ids: [...selectedSourceIds] });
       }
       Alert.alert(
-        '保存成功',
-        activeTab === 'knowledge' ? '知识库关联已更新。' : '数据源关联已更新。',
+        t('groupSettings.saved'),
+        activeTab === 'knowledge'
+          ? t('groupSettings.knowledgeUpdated')
+          : t('groupSettings.sourcesUpdated'),
       );
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '关联保存失败。');
+      setError(reason instanceof Error ? reason.message : t('groupSettings.linksFailed'));
     } finally {
       setSaving(false);
     }
   };
 
   const confirmArchive = () => {
-    Alert.alert('归档分组？', '归档后分组将从主界面隐藏，已有音频和分析结果仍会保留。', [
-      { text: '取消', style: 'cancel' },
+    Alert.alert(t('groupSettings.archiveTitle'), t('groupSettings.archiveBody'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: '归档分组',
+        text: t('groupSettings.archive'),
         style: 'destructive',
         onPress: () => {
           setSaving(true);
           void archiveGroup(groupId)
             .then(onArchived)
             .catch((reason) =>
-              setError(reason instanceof Error ? reason.message : '分组归档失败。'),
+              setError(reason instanceof Error ? reason.message : t('groupSettings.archiveFailed')),
             )
             .finally(() => setSaving(false));
         },
@@ -263,11 +272,15 @@ export function GroupSettingsScreen({
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
       <View style={styles.header}>
-        <Pressable accessibilityLabel="返回" onPress={onBack} style={styles.headerButton}>
+        <Pressable
+          accessibilityLabel={t('common.back')}
+          onPress={onBack}
+          style={styles.headerButton}
+        >
           <Ionicons color={colors.ink} name="chevron-back" size={32} />
         </Pressable>
         <Text accessibilityRole="header" style={styles.headerTitle}>
-          分组设置
+          {t('groupSettings.title')}
         </Text>
         <View style={styles.headerButton} />
       </View>
@@ -289,7 +302,7 @@ export function GroupSettingsScreen({
       </View>
       {loading ? (
         <ActivityIndicator
-          accessibilityLabel="正在加载分组设置"
+          accessibilityLabel={t('groupSettings.loading')}
           color={colors.ink}
           style={styles.loading}
         />
@@ -303,7 +316,7 @@ export function GroupSettingsScreen({
             {error}
           </Text>
           <Pressable onPress={() => void load()} style={styles.secondaryButton}>
-            <Text style={styles.secondaryButtonText}>重新加载</Text>
+            <Text style={styles.secondaryButtonText}>{t('groupSettings.reload')}</Text>
           </Pressable>
         </ScrollView>
       ) : (
@@ -318,21 +331,21 @@ export function GroupSettingsScreen({
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
           {activeTab === 'basic' ? (
             <>
-              <Text style={styles.sectionTitle}>分组信息</Text>
-              <Text style={styles.label}>分组名称</Text>
+              <Text style={styles.sectionTitle}>{t('groupSettings.groupInfo')}</Text>
+              <Text style={styles.label}>{t('groupSettings.groupName')}</Text>
               <TextInput
-                accessibilityLabel="分组名称"
+                accessibilityLabel={t('groupSettings.groupName')}
                 maxLength={120}
                 onChangeText={(value) => {
                   setName(value);
                   dirtyRef.current = true;
                 }}
-                placeholder="分组名称"
+                placeholder={t('groupSettings.groupName')}
                 style={styles.input}
                 value={name}
               />
-              <Text style={styles.sectionTitle}>分析配置</Text>
-              <Text style={styles.label}>分析时间</Text>
+              <Text style={styles.sectionTitle}>{t('groupSettings.analysisConfig')}</Text>
+              <Text style={styles.label}>{t('groupSettings.analysisTiming')}</Text>
               <View style={styles.optionRow}>
                 {(['automatic', 'manual'] as const).map((value) => (
                   <Pressable
@@ -346,15 +359,17 @@ export function GroupSettingsScreen({
                     style={[styles.option, timing === value && styles.optionActive]}
                   >
                     <Text style={styles.optionText}>
-                      {value === 'automatic' ? '确认后自动' : '手动分析'}
+                      {value === 'automatic'
+                        ? t('groupSettings.automatic')
+                        : t('groupSettings.manual')}
                     </Text>
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.label}>内容侧重</Text>
-              <Text style={styles.hint}>在基础分析上，增强有关内容的分析侧重点</Text>
+              <Text style={styles.label}>{t('groupSettings.contentFocus')}</Text>
+              <Text style={styles.hint}>{t('groupSettings.contentFocusHint')}</Text>
               <TextInput
-                accessibilityLabel="内容侧重"
+                accessibilityLabel={t('groupSettings.contentFocus')}
                 maxLength={4_000}
                 multiline
                 onChangeText={(value) => {
@@ -365,10 +380,10 @@ export function GroupSettingsScreen({
                 textAlignVertical="top"
                 value={contentFocus}
               />
-              <Text style={styles.label}>语气风格</Text>
-              <Text style={styles.hint}>期望生成的报告措辞风格</Text>
+              <Text style={styles.label}>{t('groupSettings.tone')}</Text>
+              <Text style={styles.hint}>{t('groupSettings.toneHint')}</Text>
               <TextInput
-                accessibilityLabel="语气风格"
+                accessibilityLabel={t('groupSettings.tone')}
                 maxLength={1_000}
                 multiline
                 onChangeText={(value) => {
@@ -393,12 +408,12 @@ export function GroupSettingsScreen({
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.label}>分析标签</Text>
-              <Text style={styles.hint}>在基础分析中，增加自定义分析维度</Text>
+              <Text style={styles.label}>{t('groupSettings.analysisTags')}</Text>
+              <Text style={styles.hint}>{t('groupSettings.analysisTagsHint')}</Text>
               <View style={styles.chips}>
                 {customTags.map((tag) => (
                   <Pressable
-                    accessibilityLabel={`删除分析标签：${tag}`}
+                    accessibilityLabel={t('groupSettings.removeTag', { tag })}
                     key={tag}
                     onPress={() => {
                       setCustomTags((current) => current.filter((item) => item !== tag));
@@ -412,16 +427,16 @@ export function GroupSettingsScreen({
               </View>
               <View style={styles.addTagRow}>
                 <TextInput
-                  accessibilityLabel="新分析标签"
+                  accessibilityLabel={t('groupSettings.newTag')}
                   maxLength={24}
                   onChangeText={setTagDraft}
                   onSubmitEditing={addTag}
-                  placeholder="输入新标签"
+                  placeholder={t('groupSettings.newTagPlaceholder')}
                   style={[styles.input, styles.addTagInput]}
                   value={tagDraft}
                 />
                 <Pressable onPress={addTag} style={styles.addTagButton}>
-                  <Text style={styles.addTagText}>＋ 新增</Text>
+                  <Text style={styles.addTagText}>{t('groupSettings.add')}</Text>
                 </Pressable>
               </View>
               <Pressable
@@ -429,31 +444,38 @@ export function GroupSettingsScreen({
                 onPress={() => void saveBasic()}
                 style={styles.primaryButton}
               >
-                <Text style={styles.primaryButtonText}>{saving ? '正在保存…' : '保存设置'}</Text>
+                <Text style={styles.primaryButtonText}>
+                  {saving ? t('sourceForm.saving') : t('groupSettings.saveSettings')}
+                </Text>
               </Pressable>
-              <Text style={styles.sectionTitle}>分组操作</Text>
+              <Text style={styles.sectionTitle}>{t('groupSettings.groupActions')}</Text>
               <Pressable disabled={saving} onPress={confirmArchive} style={styles.archiveButton}>
                 <Ionicons color={colors.white} name="archive-outline" size={22} />
-                <Text style={styles.archiveText}>归档分组</Text>
+                <Text style={styles.archiveText}>{t('groupSettings.archive')}</Text>
               </Pressable>
             </>
           ) : (
             <>
               <Text style={styles.sectionTitle}>
-                {activeTab === 'knowledge' ? '关联知识库' : '关联数据源'}
+                {activeTab === 'knowledge'
+                  ? t('groupSettings.linkKnowledge')
+                  : t('groupSettings.linkSources')}
               </Text>
               <Text style={styles.hint}>
                 {activeTab === 'knowledge'
-                  ? '业务分析只能检索此处保存的知识库。'
-                  : '解除关联不会删除数据源或其中的音频。'}
+                  ? t('groupSettings.knowledgeHint')
+                  : t('groupSettings.sourceHint')}
               </Text>
               {(activeTab === 'knowledge' ? knowledgeBases : dataSources).length === 0 ? (
-                <Text style={styles.emptyText}>暂无可关联内容。</Text>
+                <Text style={styles.emptyText}>{t('groupSettings.empty')}</Text>
               ) : activeTab === 'knowledge' ? (
                 knowledgeBases.map((item) => (
                   <ToggleRow
                     checked={selectedKnowledgeIds.has(item.id)}
-                    description={`${item.documentCount} 个文档 · ${item.description || '暂无说明'}`}
+                    description={t('groupSettings.documentCount', {
+                      count: formatNumber(item.documentCount),
+                      description: item.description || t('groupSettings.noDescription'),
+                    })}
                     key={item.id}
                     label={item.name}
                     onPress={() => toggle(setSelectedKnowledgeIds, item.id)}
@@ -475,7 +497,9 @@ export function GroupSettingsScreen({
                 onPress={() => void saveLinks()}
                 style={styles.primaryButton}
               >
-                <Text style={styles.primaryButtonText}>{saving ? '正在保存…' : '保存关联'}</Text>
+                <Text style={styles.primaryButtonText}>
+                  {saving ? t('sourceForm.saving') : t('groupSettings.saveLinks')}
+                </Text>
               </Pressable>
             </>
           )}

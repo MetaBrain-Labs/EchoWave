@@ -28,22 +28,26 @@ import { PushNotificationProvider } from '@/shared/notifications/PushNotificatio
 import { colors, fontFamilies, spacing, textColors, typography } from '@/shared/theme/tokens';
 import { StatusBarBackdrop } from '@/shared/ui/StatusBarBackdrop';
 import { StarterTourProvider } from '@/shared/onboarding/StarterTourProvider';
+import { LanguageProvider, useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 /** 装载应用级 provider、字体门禁与根路由栈。 */
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <ServerConnectionProvider>
-        <PushNotificationProvider>
-          <RootContent />
-        </PushNotificationProvider>
-      </ServerConnectionProvider>
+      <LanguageProvider>
+        <ServerConnectionProvider>
+          <PushNotificationProvider>
+            <RootContent />
+          </PushNotificationProvider>
+        </ServerConnectionProvider>
+      </LanguageProvider>
     </SafeAreaProvider>
   );
 }
 
 /** 在服务器地址完成水合后挂载应用路由与远程推送。 */
 function RootContent() {
+  const { t } = useAppLanguage();
   const router = useRouter();
   const connection = useServerConnection();
   const [fontsLoaded, fontError] = useFonts({
@@ -67,24 +71,24 @@ function RootContent() {
   }, [connection.phase, connection.revision, connection.serverUrl, router]);
 
   if (fontError) {
-    return <FontGateState description="请重新启动应用后重试。" title="字体加载失败" />;
+    return <FontGateState description={t('startup.fontRetry')} title={t('startup.fontFailed')} />;
   }
 
   if (!fontsLoaded) {
-    return <FontGateState loading title="正在加载字体" />;
+    return <FontGateState loading title={t('startup.fontLoading')} />;
   }
 
   if (connection.phase === 'loading') {
-    return <FontGateState loading title="正在读取服务器设置" />;
+    return <FontGateState loading title={t('startup.serverLoading')} />;
   }
 
   if (connection.phase === 'error') {
     return (
       <FontGateState
-        actionLabel="重试"
-        description={connection.error ?? '无法读取服务器设置。'}
+        actionLabel={t('common.retry')}
+        description={connection.error ?? t('startup.serverUnavailable')}
         onAction={connection.retryHydration}
-        title="服务器设置读取失败"
+        title={t('startup.serverFailed')}
       />
     );
   }
@@ -92,7 +96,12 @@ function RootContent() {
   if (connection.phase === 'unconfigured') return <ServerConnectionScreen />;
 
   if (!connection.serverUrl) {
-    return <FontGateState description="请重新选择 EchoWave Server。" title="服务器地址不可用" />;
+    return (
+      <FontGateState
+        description={t('startup.selectServerAgain')}
+        title={t('startup.serverAddressUnavailable')}
+      />
+    );
   }
 
   return (

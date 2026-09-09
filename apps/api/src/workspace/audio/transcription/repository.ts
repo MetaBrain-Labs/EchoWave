@@ -20,6 +20,7 @@ import {
   AudioTranscriptionStartResponseSchema,
   AudioTranscriptionRunListResponseSchema,
   AudioTranscriptSelectionRequestSchema,
+  SupportedLanguageSchema,
   type AudioFailureDetails,
   type AudioTranscriptionPreprocessing,
   type AudioTranscriptionModel,
@@ -28,6 +29,7 @@ import {
   type AudioTranscriptionSegmentationMode,
   type AudioTranscriptionSpeakerIdentityScope,
   type AudioTranscriptionStage,
+  type SupportedLanguage,
 } from '@echowave/contracts';
 
 import { quoteIdentifier, type DatabasePool } from '../../../infrastructure/postgres.ts';
@@ -78,6 +80,7 @@ export type ClaimedAudioTranscription = {
   speakerReviewBindingRevisionId: string | null;
   speakerReviewModel: string | null;
   includeAcousticEmotion: boolean;
+  language: SupportedLanguage;
   bundledEmotionBindingRevisionId: string | null;
   bundledEmotionModel: string | null;
   runtimeMode: 'hybrid' | 'object_storage' | 'lightweight_local';
@@ -127,7 +130,7 @@ export type TranscriptWordDraft = {
 export type TranscriptionPublicationMetadata = {
   diarizationObserved: boolean;
   diarizationRequested: boolean;
-  language: 'zh';
+  language: SupportedLanguage;
   responseGranularity: AudioTranscriptionResponseGranularity;
   segmentationMode: AudioTranscriptionSegmentationMode;
   speakerIdentityScope: AudioTranscriptionSpeakerIdentityScope;
@@ -203,6 +206,7 @@ export class AudioAnalysisRepository {
     includeAcousticEmotion = true,
     bundledEmotionBindingRevisionId: string | null = null,
     bundledEmotionModel: string | null = null,
+    language: SupportedLanguage = 'zh-CN',
   ) {
     const client = await this.pool.connect();
     try {
@@ -233,7 +237,7 @@ export class AudioAnalysisRepository {
          SELECT $1, $2, coalesce(max(revision_no), 0) + 1, $3, $3,
                 jsonb_build_object('speakerDiarization', $5::boolean, 'businessRole', false,
                                    'emotionAnalysis', false, 'timestamps', $6::text,
-                                   'preprocessingMode', $4::text, 'language', 'zh',
+                                   'preprocessingMode', $4::text, 'language', $19::text,
                                    'diarizationRequested', $5::boolean,
                                    'diarizationAvailability', $7::text,
                                    'segmentationMode', $8::text,
@@ -263,6 +267,7 @@ export class AudioAnalysisRepository {
           includeAcousticEmotion,
           bundledEmotionBindingRevisionId,
           bundledEmotionModel,
+          language,
         ],
       );
       const response = AudioTranscriptionStartResponseSchema.parse({
@@ -350,6 +355,7 @@ export class AudioAnalysisRepository {
                  ar.settings_snapshot->>'preprocessingMode' AS preprocessing_mode,
                  ar.settings_snapshot->'preprocessingManifest' AS preprocessing_manifest,
                  ar.settings_snapshot->>'segmentationMode' AS segmentation_mode,
+                 coalesce(ar.settings_snapshot->>'language', 'zh-CN') AS language,
                  ar.transcription_provider, ar.provider_task_id, ar.provider_artifact_key,
                  ar.provider_submitted_at, ar.provider_terminal_source,
                  ar.provider_terminal_event_id, ar.provider_terminal_status,
@@ -397,6 +403,7 @@ export class AudioAnalysisRepository {
                  ar.settings_snapshot->>'preprocessingMode' AS preprocessing_mode,
                  ar.settings_snapshot->'preprocessingManifest' AS preprocessing_manifest,
                  ar.settings_snapshot->>'segmentationMode' AS segmentation_mode,
+                 coalesce(ar.settings_snapshot->>'language', 'zh-CN') AS language,
                  ar.transcription_provider, ar.provider_task_id, ar.provider_artifact_key,
                  ar.provider_submitted_at, ar.provider_terminal_source,
                  ar.provider_terminal_event_id, ar.provider_terminal_status,
@@ -447,6 +454,7 @@ export class AudioAnalysisRepository {
                  ar.settings_snapshot->>'preprocessingMode' AS preprocessing_mode,
                  ar.settings_snapshot->'preprocessingManifest' AS preprocessing_manifest,
                  ar.settings_snapshot->>'segmentationMode' AS segmentation_mode,
+                 coalesce(ar.settings_snapshot->>'language', 'zh-CN') AS language,
                  ar.transcription_provider, ar.provider_task_id, ar.provider_artifact_key,
                  ar.provider_submitted_at, ar.provider_terminal_source,
                  ar.provider_terminal_event_id, ar.provider_terminal_status,
@@ -494,6 +502,7 @@ export class AudioAnalysisRepository {
                  ar.settings_snapshot->>'preprocessingMode' AS preprocessing_mode,
                  ar.settings_snapshot->'preprocessingManifest' AS preprocessing_manifest,
                  ar.settings_snapshot->>'segmentationMode' AS segmentation_mode,
+                 coalesce(ar.settings_snapshot->>'language', 'zh-CN') AS language,
                  ar.transcription_provider, ar.provider_task_id, ar.provider_artifact_key,
                  ar.provider_submitted_at, ar.provider_terminal_source,
                  ar.provider_terminal_event_id, ar.provider_terminal_status,
@@ -603,6 +612,7 @@ export class AudioAnalysisRepository {
       speakerReviewBindingRevisionId: row.speaker_review_binding_revision_id ?? null,
       speakerReviewModel: row.speaker_review_model ?? null,
       includeAcousticEmotion: Boolean(row.include_acoustic_emotion),
+      language: SupportedLanguageSchema.parse(row.language === 'en' ? 'en' : 'zh-CN'),
       bundledEmotionBindingRevisionId: row.bundled_emotion_binding_revision_id ?? null,
       bundledEmotionModel: row.bundled_emotion_model ?? null,
       runtimeMode: row.runtime_mode,
@@ -847,14 +857,15 @@ export class AudioAnalysisRepository {
         await client.query(
           `INSERT INTO ${this.table('audio_speaker_review_jobs')}
              (tenant_id, audio_file_id, analysis_revision_id,
-              capability_binding_revision_id, model, status)
-           VALUES ($1, $2, $3, $4, $5, 'queued')`,
+              capability_binding_revision_id, model, settings_snapshot, status)
+           VALUES ($1, $2, $3, $4, $5, jsonb_build_object('language', $6::text), 'queued')`,
           [
             this.tenantId,
             job.audioFileId,
             job.revisionId,
             job.speakerReviewBindingRevisionId,
             job.speakerReviewModel,
+            job.language,
           ],
         );
       }
@@ -937,7 +948,8 @@ export class AudioAnalysisRepository {
                (tenant_id, audio_file_id, analysis_revision_id, transcript_confirmation_id,
                 analysis_type, model, input_snapshot, status, progress,
                 capability_binding_revision_id, staging_binding_revision_id)
-             VALUES ($1, $2, $3, $4, 'emotion', $5, '{}'::jsonb, 'queued', 0, $6, NULL)
+             VALUES ($1, $2, $3, $4, 'emotion', $5,
+                     jsonb_build_object('language', $7::text), 'queued', 0, $6, NULL)
              RETURNING id`,
             [
               this.tenantId,
@@ -946,6 +958,7 @@ export class AudioAnalysisRepository {
               lightweightConfirmationId,
               job.bundledEmotionModel,
               job.bundledEmotionBindingRevisionId,
+              job.language,
             ],
           );
           await client.query(
@@ -1044,6 +1057,7 @@ export class AudioAnalysisRepository {
         preprocessing:
           row.settings_snapshot.preprocessingMode === 'silero_vad' ? 'silero_vad' : 'whole_file',
         includeAcousticEmotion: row.include_acoustic_emotion,
+        language: row.settings_snapshot.language ?? 'zh-CN',
         active: row.id === source.active_analysis_revision_id,
         createdAt: row.created_at.toISOString(),
         completedAt: row.completed_at?.toISOString() ?? null,

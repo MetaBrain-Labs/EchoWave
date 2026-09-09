@@ -13,6 +13,7 @@ import {
   AudioAnalysisDetailSchema,
   AudioBusinessAnalysisStartRequestSchema,
   AudioBusinessAnalysisStateSchema,
+  AudioPostAnalysisStartRequestSchema,
   AudioFileSummarySchema,
   AudioTranscriptionCapabilitiesResponseSchema,
   AudioTranscriptionStartRequestSchema,
@@ -28,6 +29,7 @@ import {
   GroupResourceLinksUpdateRequestSchema,
   GroupSummarySchema,
   GroupSettingsUpdateRequestSchema,
+  SupportedLanguageSchema,
   StarterTemplateKeySchema,
   TemplateExampleSchema,
   AudioPostAnalysisStartResponseSchema,
@@ -183,6 +185,7 @@ describe('workspace contracts', () => {
     assert.deepEqual(AudioBusinessAnalysisStartRequestSchema.parse({ groupId: secondId }), {
       groupId: secondId,
       force: false,
+      language: 'zh-CN',
     });
     assert.throws(() =>
       AudioBusinessAnalysisStateSchema.parse({
@@ -347,6 +350,7 @@ describe('workspace contracts', () => {
       includeAcousticEmotion: true,
       preprocessing: 'whole_file',
       segmentationMode: 'speaker_turn',
+      language: 'zh-CN',
     });
     assert.throws(() =>
       AudioTranscriptionStartRequestSchema.parse({
@@ -372,8 +376,13 @@ describe('workspace contracts', () => {
         preprocessing: 'whole_file',
         segmentationMode: 'speaker_turn',
         expectedSpeakerCount: 2,
+        language: 'zh-CN',
       },
     );
+    assert.equal(SupportedLanguageSchema.parse('en'), 'en');
+    assert.equal(AudioPostAnalysisStartRequestSchema.parse({}).language, 'zh-CN');
+    assert.equal(AudioPostAnalysisStartRequestSchema.parse({ language: 'en' }).language, 'en');
+    assert.throws(() => AudioPostAnalysisStartRequestSchema.parse({ language: 'fr' }));
     assert.throws(() => AudioTranscriptionStartRequestSchema.parse({ expectedSpeakerCount: 1 }));
     assert.throws(() => AudioTranscriptionStartRequestSchema.parse({ expectedSpeakerCount: 101 }));
     assert.throws(() =>
@@ -580,7 +589,7 @@ describe('workspace contracts', () => {
       generatedAt: '2026-08-21T10:00:00.000Z',
       transcription: {
         model: 'qwen-audio-3.0-asr-flash-filetrans',
-        language: 'zh',
+        language: 'zh-CN',
         diarizationStatus: 'not_returned',
         responseGranularity: 'chunk',
       },
@@ -652,7 +661,7 @@ describe('workspace contracts', () => {
       generatedAt: '2026-08-27T10:00:00.000Z',
       transcription: {
         model: 'qwen-audio-3.0-asr-flash-filetrans',
-        language: 'zh',
+        language: 'zh-CN',
         diarizationStatus: 'observed',
         responseGranularity: 'segment',
         segmentationMode: 'speaker_turn',

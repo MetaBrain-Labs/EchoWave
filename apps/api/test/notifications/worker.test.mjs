@@ -64,6 +64,31 @@ describe('PushNotificationWorker', () => {
     assert.deepEqual(calls, [['markTicketed', delivery.id, 'ticket-1']]);
   });
 
+  it('renders the same event in the registered device language', async () => {
+    const sent = [];
+    const englishDelivery = {
+      ...delivery,
+      locale: 'en',
+      templateKey: 'COMPLETED',
+      templateParams: { total: 3, completed: 2, failed: 1 },
+    };
+    const { repository } = repositoryFor(englishDelivery);
+    const worker = new PushNotificationWorker({
+      repository,
+      expo: {
+        sendPushNotificationsAsync: async (messages) => {
+          sent.push(...messages);
+          return [{ status: 'ok', id: 'ticket-en' }];
+        },
+      },
+    });
+
+    await worker.runOne();
+
+    assert.equal(sent[0].title, 'Analysis batch completed');
+    assert.equal(sent[0].body, '3 items: 2 completed, 1 failed.');
+  });
+
   it('persists a successful receipt', async () => {
     const ticketed = { ...delivery, ticketId: 'ticket-1' };
     const { calls, repository } = repositoryFor(ticketed);

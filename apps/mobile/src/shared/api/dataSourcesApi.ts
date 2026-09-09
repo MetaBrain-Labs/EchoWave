@@ -35,6 +35,7 @@ import {
 
 import { getApiUrl } from './apiUrl';
 import { request } from './request';
+import { localizeRequestError } from '@/shared/i18n/errorLocalization';
 
 export const listDataSources = () => request('/api/data-sources', DataSourceListResponseSchema);
 export const createDataSource = (input: DataSourceCreateRequest) =>
@@ -109,7 +110,9 @@ export async function uploadSessionAudioFiles(
       },
     );
     if (session.mode !== mode) {
-      throw new Error('运行模式已在上传期间变化，请重新选择文件。');
+      throw new Error(
+        localizeRequestError('CONFLICT', '运行模式已在上传期间变化，请重新选择文件。'),
+      );
     }
     const uploadUrl = session.upload.url.startsWith('/')
       ? `${getApiUrl()}${session.upload.url}`
@@ -120,7 +123,10 @@ export async function uploadSessionAudioFiles(
         headers: session.upload.headers,
         body: asset.file,
       });
-      if (!response.ok) throw new Error(`音频上传失败（HTTP ${response.status}）。`);
+      if (!response.ok)
+        throw new Error(
+          localizeRequestError('HTTP_ERROR', `音频上传失败（HTTP ${response.status}）。`),
+        );
     } else {
       const result = await new File(asset.uri).upload(uploadUrl, {
         headers: session.upload.headers,
@@ -130,7 +136,9 @@ export async function uploadSessionAudioFiles(
         uploadType: UploadType.BINARY_CONTENT,
       });
       if (result.status < 200 || result.status >= 300) {
-        throw new Error(`音频上传失败（HTTP ${result.status}）。`);
+        throw new Error(
+          localizeRequestError('HTTP_ERROR', `音频上传失败（HTTP ${result.status}）。`),
+        );
       }
     }
     await request(

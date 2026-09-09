@@ -24,6 +24,7 @@ import {
   type GroupCreateRequest,
   type GroupResourceLinksUpdateRequest,
   type GroupSettingsUpdateRequest,
+  type SupportedLanguage,
 } from '@echowave/contracts';
 
 import { request } from './request';
@@ -37,8 +38,11 @@ export const createGroup = (input: GroupCreateRequest) =>
 export const archiveGroup = (id: string) =>
   request(`/api/groups/${id}`, null, { method: 'DELETE' });
 export const getGroup = (id: string) => request(`/api/groups/${id}`, GroupDetailSchema);
-export const getGroupTemplateExample = (id: string) =>
-  request(`/api/groups/${id}/template-example`, TemplateExampleSchema);
+export const getGroupTemplateExample = (id: string, language: SupportedLanguage = 'zh-CN') =>
+  request(
+    `/api/groups/${id}/template-example?language=${encodeURIComponent(language)}`,
+    TemplateExampleSchema,
+  );
 export const getGroupSettings = (id: string) =>
   request(`/api/groups/${id}/settings`, GroupSettingsSchema);
 export const updateGroupSettings = (id: string, input: GroupSettingsUpdateRequest) =>

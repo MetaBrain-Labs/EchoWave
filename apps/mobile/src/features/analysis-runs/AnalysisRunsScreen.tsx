@@ -19,31 +19,34 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { listAudioAnalysisRuns } from '@/shared/api/audioAnalysisRunsApi';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import type { TranslationKey } from '@/shared/i18n/translations';
 import { colors, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 
 const filters = [
-  ['all', '全部'],
-  ['active', '进行中'],
-  ['completed', '已完成'],
-  ['warning', '警告'],
-  ['failed', '失败'],
-  ['canceled', '已取消'],
+  ['all', 'analysisRuns.filter.all'],
+  ['active', 'analysisRuns.filter.active'],
+  ['completed', 'analysisRuns.filter.completed'],
+  ['warning', 'analysisRuns.filter.warning'],
+  ['failed', 'analysisRuns.filter.failed'],
+  ['canceled', 'analysisRuns.filter.canceled'],
 ] as const;
 
-function statusLabel(status: AudioAnalysisRun['status']): string {
-  return {
-    awaiting_upload: '等待上传',
-    scheduled: '已定时',
-    queued: '排队中',
-    running: '运行中',
-    hard_blocked: '已阻塞',
-    completed: '已完成',
-    completed_with_warnings: '警告',
-    failed: '失败',
-    canceled: '已取消',
-  }[status];
+function statusLabelKey(status: AudioAnalysisRun['status']): TranslationKey {
+  const keys: Record<AudioAnalysisRun['status'], TranslationKey> = {
+    awaiting_upload: 'batchDetail.status.awaiting_upload',
+    scheduled: 'analysisRuns.status.scheduled',
+    queued: 'analysisRuns.status.queued',
+    running: 'analysisRuns.status.running',
+    hard_blocked: 'analysisRuns.status.hardBlocked',
+    completed: 'batchDetail.status.completed',
+    completed_with_warnings: 'batchDetail.status.completed_with_warnings',
+    failed: 'batchDetail.status.failed',
+    canceled: 'batchDetail.status.canceled',
+  };
+  return keys[status];
 }
 
 function isActive(run: AudioAnalysisRun): boolean {
@@ -52,6 +55,7 @@ function isActive(run: AudioAnalysisRun): boolean {
 
 /** 渲染统一分析运行记录。 */
 export function AnalysisRunsScreen({ onBack }: { onBack?: () => void } = {}) {
+  const { t } = useAppLanguage();
   const router = useRouter();
   const [filter, setFilter] = useState<(typeof filters)[number][0]>('all');
   const [items, setItems] = useState<AudioAnalysisRun[]>([]);
@@ -66,12 +70,12 @@ export function AnalysisRunsScreen({ onBack }: { onBack?: () => void } = {}) {
         setItems(response.items);
         setError(null);
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : '分析记录加载失败。');
+        setError(cause instanceof Error ? cause.message : t('analysisRuns.loadFailed'));
       } finally {
         setLoading(false);
       }
     },
-    [filter],
+    [filter, t],
   );
 
   const screenRefresh = useScreenRefresh(() => load(false));
@@ -101,7 +105,11 @@ export function AnalysisRunsScreen({ onBack }: { onBack?: () => void } = {}) {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea} testID="analysis-runs-screen">
-      <TopLevelPageHeader onBack={onBack} subtitle="查看所有音频分析流程与报告" title="分析" />
+      <TopLevelPageHeader
+        onBack={onBack}
+        subtitle={t('analysisRuns.subtitle')}
+        title={t('tabs.analysis')}
+      />
       <View style={styles.filters}>
         {filters.map(([value, label]) => (
           <Pressable
@@ -111,7 +119,7 @@ export function AnalysisRunsScreen({ onBack }: { onBack?: () => void } = {}) {
             style={[styles.filter, filter === value && styles.filterActive]}
           >
             <Text style={[styles.filterText, filter === value && styles.filterTextActive]}>
-              {label}
+              {t(label)}
             </Text>
           </Pressable>
         ))}
@@ -128,7 +136,7 @@ export function AnalysisRunsScreen({ onBack }: { onBack?: () => void } = {}) {
         >
           <Text style={styles.error}>{error}</Text>
           <Pressable onPress={() => void load()} style={styles.retry}>
-            <Text style={styles.retryText}>重试</Text>
+            <Text style={styles.retryText}>{t('common.retry')}</Text>
           </Pressable>
         </ScrollView>
       ) : (
@@ -139,7 +147,7 @@ export function AnalysisRunsScreen({ onBack }: { onBack?: () => void } = {}) {
         >
           {error ? (
             <Text accessibilityRole="alert" style={styles.error}>
-              刷新失败：{error}
+              {t('analysisRuns.refreshFailed', { message: error })}
             </Text>
           ) : null}
           {items.length ? (
@@ -161,22 +169,21 @@ export function AnalysisRunsScreen({ onBack }: { onBack?: () => void } = {}) {
                     {run.title}
                   </Text>
                   <Text style={styles.meta}>
-                    {statusLabel(run.status)} · {run.progress}%
+                    {t(statusLabelKey(run.status))} · {run.progress}%
                   </Text>
                   {run.kind === 'batch' ? (
-                    <Text style={styles.meta}>
-                      共 {run.counts.total} 项，完成 {run.counts.completed} · 警告{' '}
-                      {run.counts.partial} · 失败 {run.counts.failed}
-                    </Text>
+                    <Text style={styles.meta}>{t('analysisRuns.batchCounts', run.counts)}</Text>
                   ) : run.warningCodes.length ? (
-                    <Text style={styles.warning}>有限制：{run.warningCodes.join('、')}</Text>
+                    <Text style={styles.warning}>
+                      {t('analysisRuns.limited', { codes: run.warningCodes.join('、') })}
+                    </Text>
                   ) : null}
                 </View>
                 <Ionicons color={textColors.tertiary} name="chevron-forward" size={20} />
               </Pressable>
             ))
           ) : (
-            <Text style={styles.empty}>暂无分析记录</Text>
+            <Text style={styles.empty}>{t('analysisRuns.empty')}</Text>
           )}
         </ScrollView>
       )}

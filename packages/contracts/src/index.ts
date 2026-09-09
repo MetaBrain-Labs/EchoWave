@@ -20,8 +20,10 @@ export {
   ApiErrorCodeSchema,
   ApiErrorResponseSchema,
   EntityIdSchema,
+  SupportedLanguageSchema,
   type ApiErrorCode,
   type ApiErrorResponse,
+  type SupportedLanguage,
 } from './common.ts';
 export {
   DocumentChunkListResponseSchema,
@@ -221,6 +223,7 @@ export {
   AudioEmotionPitchVariationSchema,
   AudioEmotionVolumeTrendSchema,
   AudioPostAnalysisStartResponseSchema,
+  AudioPostAnalysisStartRequestSchema,
   AudioPostAnalysisStateSchema,
   AudioPostAnalysisTypeSchema,
   AudioTranscriptConfirmationRequestSchema,
@@ -255,6 +258,7 @@ export {
   type AudioBusinessAnalysisState,
   type AudioEmotionLabel,
   type AudioPostAnalysisStartResponse,
+  type AudioPostAnalysisStartRequest,
   type AudioPostAnalysisState,
   type AudioPostAnalysisType,
   type AudioTranscriptConfirmationRequest,

@@ -13,6 +13,7 @@
 import { ApiErrorResponseSchema } from '@echowave/contracts';
 
 import { getApiUrl } from './apiUrl';
+import { localizeRequestError } from '@/shared/i18n/errorLocalization';
 
 /** 工作区读写请求的稳定客户端错误。 */
 export class WorkspaceRequestError extends Error {
@@ -70,39 +71,58 @@ export async function request<T>(
     if (!response.ok) {
       const body: unknown = await response.json().catch(() => null);
       const parsedError = ApiErrorResponseSchema.safeParse(body);
+      const code = parsedError.success
+        ? parsedError.data.error.code
+        : response.status === 404
+          ? 'NOT_FOUND'
+          : 'HTTP_ERROR';
+      const message = parsedError.success
+        ? parsedError.data.error.message
+        : response.status === 404
+          ? '请求的数据不存在。'
+          : `请求失败（HTTP ${response.status}）。`;
       throw new WorkspaceRequestError(
-        parsedError.success
-          ? parsedError.data.error.code
-          : response.status === 404
-            ? 'NOT_FOUND'
-            : 'HTTP_ERROR',
-        parsedError.success
-          ? parsedError.data.error.message
-          : response.status === 404
-            ? '请求的数据不存在。'
-            : `请求失败（HTTP ${response.status}）。`,
+        code,
+        localizeRequestError(code, message),
         parsedError.success ? parsedError.data.error.retryable : response.status >= 500,
       );
     }
     if (response.status === 204) {
       if (schema === null) return;
-      throw new WorkspaceRequestError('INVALID_RESPONSE', '服务返回了无法识别的数据。');
+      throw new WorkspaceRequestError(
+        'INVALID_RESPONSE',
+        localizeRequestError('INVALID_RESPONSE', '服务返回了无法识别的数据。'),
+      );
     }
     const body: unknown = await response.json();
     if (schema === null) {
-      throw new WorkspaceRequestError('INVALID_RESPONSE', '服务返回了无法识别的数据。');
+      throw new WorkspaceRequestError(
+        'INVALID_RESPONSE',
+        localizeRequestError('INVALID_RESPONSE', '服务返回了无法识别的数据。'),
+      );
     }
     const parsed = schema.safeParse(body);
     if (!parsed.success) {
-      throw new WorkspaceRequestError('INVALID_RESPONSE', '服务返回了无法识别的数据。');
+      throw new WorkspaceRequestError(
+        'INVALID_RESPONSE',
+        localizeRequestError('INVALID_RESPONSE', '服务返回了无法识别的数据。'),
+      );
     }
     return parsed.data;
   } catch (error) {
     if (error instanceof WorkspaceRequestError) throw error;
     if (controller.signal.aborted) {
-      throw new WorkspaceRequestError('TIMEOUT', '请求超时，请重试。', true);
+      throw new WorkspaceRequestError(
+        'TIMEOUT',
+        localizeRequestError('TIMEOUT', '请求超时，请重试。'),
+        true,
+      );
     }
-    throw new WorkspaceRequestError('NETWORK', '无法连接服务，请检查网络。', true);
+    throw new WorkspaceRequestError(
+      'NETWORK',
+      localizeRequestError('NETWORK', '无法连接服务，请检查网络。'),
+      true,
+    );
   } finally {
     clearTimeout(timeout);
   }

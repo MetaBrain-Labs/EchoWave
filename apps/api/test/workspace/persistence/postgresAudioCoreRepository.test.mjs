@@ -181,7 +181,7 @@ describe('PostgresAudioCoreRepository audio analysis metadata', () => {
 
     assert.deepEqual(response.transcription, {
       model: 'openai/gpt-4o-mini-transcribe',
-      language: 'zh',
+      language: 'zh-CN',
       diarizationStatus: 'not_returned',
       expectedSpeakerCount: null,
       preprocessingMode: 'whole_file',
@@ -320,6 +320,7 @@ describe('PostgresAudioCoreRepository audio analysis metadata', () => {
       model: 'qwen3.5-omni-flash',
       completedAt: '2026-09-03T01:02:30.000Z',
       confirmationVersion: 2,
+      language: 'zh-CN',
     });
     assert.deepEqual(response.scenes[0].segments[0].emotionAnalysis, {
       label: 'happy',

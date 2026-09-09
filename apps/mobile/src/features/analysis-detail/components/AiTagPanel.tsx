@@ -10,6 +10,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import {
   colors,
   fontFamilies,
@@ -22,14 +23,29 @@ import type { AiTagAnalysis, TranscriptSegment } from '../model';
 import { Checkbox } from './AnalysisControls';
 import { formatTime } from './utils';
 
-function locatorLabel(locator: AiTagAnalysis['citations'][number]['locator']): string {
+function locatorLabel(
+  locator: AiTagAnalysis['citations'][number]['locator'],
+  t: ReturnType<typeof useAppLanguage>['t'],
+): string {
   if (locator.kind === 'spreadsheet') {
-    return `${locator.sheet} · 第 ${locator.rowStart}-${locator.rowEnd} 行`;
+    return t('analysis.locatorRows', {
+      sheet: locator.sheet,
+      start: locator.rowStart,
+      end: locator.rowEnd,
+    });
   }
   if (locator.kind === 'word') {
-    return `${locator.headingPath.join(' / ') || '正文'} · 第 ${locator.paragraphStart}-${locator.paragraphEnd} 段`;
+    return t('analysis.locatorParagraphs', {
+      heading: locator.headingPath.join(' / ') || t('analysis.body'),
+      start: locator.paragraphStart,
+      end: locator.paragraphEnd,
+    });
   }
-  return `${locator.headingPath.join(' / ') || '正文'} · 第 ${locator.lineStart}-${locator.lineEnd} 行`;
+  return t('analysis.locatorLines', {
+    heading: locator.headingPath.join(' / ') || t('analysis.body'),
+    start: locator.lineStart,
+    end: locator.lineEnd,
+  });
 }
 
 export function AiTagPanel({
@@ -49,13 +65,14 @@ export function AiTagPanel({
   onOpenCitation?: (knowledgeBaseId: string, documentId: string, chunkId: string) => void;
   segments: readonly TranscriptSegment[];
 }) {
+  const { t } = useAppLanguage();
   if (!analysis) {
     return null;
   }
 
   return (
     <View
-      accessibilityLabel="AI 标签分析窗口"
+      accessibilityLabel={t('analysis.tagWindow')}
       style={[
         styles.sheet,
         audioExpanded ? styles.sheetWithExpandedAudio : styles.sheetWithCompactAudio,
@@ -63,7 +80,7 @@ export function AiTagPanel({
       testID="ai-tag-sheet"
     >
       <Pressable
-        accessibilityLabel="收起 AI 标签面板"
+        accessibilityLabel={t('analysis.collapseTagPanel')}
         accessibilityRole="button"
         onPress={onClose}
         style={({ pressed }) => [styles.sheetHandle, pressed && styles.pressed]}
@@ -71,7 +88,9 @@ export function AiTagPanel({
         <Ionicons color={colors.secondary} name="chevron-down" size={26} />
       </Pressable>
       <View style={styles.sheetFixedHeader} testID="ai-tag-fixed-header">
-        <Text style={styles.sheetMeta}>AI标签 · 涉及 {segments.length} 个片段</Text>
+        <Text style={styles.sheetMeta}>
+          {t('analysis.tagSegments', { count: segments.length })}
+        </Text>
         <Text style={styles.sheetRanges}>
           {segments
             .map(
@@ -82,7 +101,7 @@ export function AiTagPanel({
         <View style={styles.sheetCheckbox}>
           <Checkbox
             checked={hideIrrelevant}
-            label="隐藏无关片段"
+            label={t('analysis.hideIrrelevant')}
             onPress={() => onHideIrrelevantChange(!hideIrrelevant)}
           />
         </View>
@@ -97,10 +116,12 @@ export function AiTagPanel({
           <Ionicons color={colors.success} name="sparkles" size={34} />
           <Text style={styles.sheetTitle}>{analysis.title}</Text>
         </View>
-        <Text style={styles.sheetDescription}>AI 智能分析，内容仅供参考</Text>
-        <Text style={styles.analysisParagraphTitle}>分析结论</Text>
+        <Text style={styles.sheetDescription}>{t('analysis.aiDisclaimer')}</Text>
+        <Text style={styles.analysisParagraphTitle}>{t('analysis.conclusion')}</Text>
         <Text style={styles.analysisParagraph}>{analysis.summary}</Text>
-        <Text style={styles.confidence}>置信度 {analysis.confidence}%</Text>
+        <Text style={styles.confidence}>
+          {t('analysis.confidence', { value: analysis.confidence })}
+        </Text>
         {analysis.details.map((detail) => (
           <View key={detail} style={styles.analysisDetailRow}>
             <View style={styles.analysisBullet} />
@@ -109,11 +130,11 @@ export function AiTagPanel({
         ))}
         {analysis.citations.length ? (
           <>
-            <Text style={styles.analysisParagraphTitle}>知识依据</Text>
+            <Text style={styles.analysisParagraphTitle}>{t('analysis.knowledgeEvidence')}</Text>
             {analysis.citations.map((citation) => (
               <Pressable
                 key={citation.chunkId}
-                accessibilityLabel={`查看知识依据：${citation.documentTitle}`}
+                accessibilityLabel={t('analysis.openEvidence', { title: citation.documentTitle })}
                 accessibilityRole="link"
                 disabled={!onOpenCitation}
                 onPress={() =>
@@ -124,7 +145,7 @@ export function AiTagPanel({
                 <Text style={styles.citationExcerpt}>{citation.excerpt}</Text>
                 <View style={styles.citationMetaRow}>
                   <Text style={styles.citationMeta}>
-                    {citation.documentTitle} · {locatorLabel(citation.locator)}
+                    {citation.documentTitle} · {locatorLabel(citation.locator, t)}
                   </Text>
                   {onOpenCitation ? (
                     <Ionicons color={colors.secondary} name="chevron-forward" size={18} />

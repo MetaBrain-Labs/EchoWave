@@ -17,7 +17,10 @@ import type {
   DataSourceDetail as DataSourceContract,
   DataSourceIngestionRecord,
   LinkedDataSourceGroup,
+  SupportedLanguage,
 } from '@echowave/contracts';
+
+import { translateTextForLanguage } from '@/shared/i18n/LanguageProvider';
 
 export type SourceAudioStatus =
   | { kind: 'complete' }
@@ -128,12 +131,15 @@ function sourceAudioStatus(audio: AudioFileSummary): SourceAudioStatus {
 }
 
 /** 将单条服务端音频摘要转换为可原位更新的页面卡片。 */
-export function toSourceAudioItem(audio: AudioFileSummary): SourceAudioItem {
+export function toSourceAudioItem(
+  audio: AudioFileSummary,
+  language: SupportedLanguage = 'zh-CN',
+): SourceAudioItem {
   return {
     id: audio.id,
     title: audio.title,
     duration: audio.durationMs === null ? '--:--' : formatDuration(audio.durationMs),
-    createdAt: new Date(audio.createdAt).toLocaleDateString(),
+    createdAt: new Intl.DateTimeFormat(language).format(new Date(audio.createdAt)),
     hasTranscript: audio.hasTranscript,
     status: sourceAudioStatus(audio),
     runtimeMode: audio.runtimeMode,
@@ -149,7 +155,23 @@ export function toDataSourceDetailView(
   audioItems: AudioFileSummary[],
   records: DataSourceIngestionRecord[],
   groups: LinkedDataSourceGroup[],
+  language: SupportedLanguage = 'zh-CN',
 ): DataSourceDetailView {
+  const t = (
+    key: Parameters<typeof translateTextForLanguage>[1],
+    options?: Record<string, unknown>,
+  ) => translateTextForLanguage(language, key, options);
+  const dateFormatter = new Intl.DateTimeFormat(language);
+  const dateTimeFormatter = new Intl.DateTimeFormat(language, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+  const timeFormatter = new Intl.DateTimeFormat(language, {
+    hour: '2-digit',
+    hour12: false,
+    minute: '2-digit',
+  });
+  const numberFormatter = new Intl.NumberFormat(language);
   return {
     id: detail.id,
     name: detail.name,
@@ -157,7 +179,9 @@ export function toDataSourceDetailView(
     connection: detail.connectionLabel,
     location: detail.location,
     linkedGroupCount: detail.linkedGroupCount,
-    uploadedAt: detail.lastUploadedAt ? new Date(detail.lastUploadedAt).toLocaleString() : '暂无',
+    uploadedAt: detail.lastUploadedAt
+      ? dateTimeFormatter.format(new Date(detail.lastUploadedAt))
+      : t('sourceDetail.noUpload'),
     analysisModel: detail.settings.transcriptionModel,
     autoTranscribe: detail.settings.autoTranscribe,
     emotionAnalysis: detail.settings.emotionAnalysis,
@@ -166,23 +190,26 @@ export function toDataSourceDetailView(
     skipInvalidAudio: detail.settings.skipInvalidAudio,
     customBusinessRoles: detail.settings.customBusinessRoles,
     totalDuration: formatDuration(detail.metrics.totalDurationMs),
-    audioItems: audioItems.map(toSourceAudioItem),
+    audioItems: audioItems.map((audio) => toSourceAudioItem(audio, language)),
     uploadRecords: records.map((record) => {
       const occurredAt = new Date(record.occurredAt);
       const failed = record.kind !== 'upload-success';
       return {
         id: record.id,
-        date: occurredAt.toLocaleDateString(),
-        time: occurredAt.toLocaleTimeString([], { hour12: false }),
+        date: dateFormatter.format(occurredAt),
+        time: timeFormatter.format(occurredAt),
         kind: record.kind,
         description: failed
-          ? (record.errorMessage ?? '处理失败')
-          : `收到 ${record.audioCount} 条音频，共 ${formatDuration(record.totalDurationMs)}`,
+          ? (record.errorMessage ?? t('sourceDetail.processingFailed'))
+          : t('sourceDetail.receivedAudio', {
+              count: numberFormatter.format(record.audioCount),
+              duration: formatDuration(record.totalDurationMs),
+            }),
         detail: failed
           ? record.retryable
-            ? '可以重试'
-            : '请检查音频或来源配置'
-          : '已按数据源设置继续处理',
+            ? t('sourceDetail.retryAvailable')
+            : t('sourceDetail.inspectSource')
+          : t('sourceDetail.continuing'),
       };
     }),
     linkedGroups: groups,

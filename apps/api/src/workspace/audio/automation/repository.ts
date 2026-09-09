@@ -152,6 +152,7 @@ export class AudioAutomationRepository {
       }
       const configuration: ConfigurationSnapshot = {
         groupName: row.group_name,
+        language: input.language,
         analysisTiming: row.analysis_timing,
         contentFocus: row.content_focus,
         tone: row.tone,
@@ -466,7 +467,10 @@ export class AudioAutomationRepository {
       runtimeMode: row.runtime_mode,
       phase: row.phase,
       pipeline: row.pipeline_snapshot,
-      configuration: row.configuration_snapshot,
+      configuration: {
+        ...row.configuration_snapshot,
+        language: row.configuration_snapshot?.language === 'en' ? 'en' : 'zh-CN',
+      },
       analysisRevisionId: row.analysis_revision_id ?? null,
       emotionJobId: row.emotion_job_id ?? null,
       roleJobId: row.role_job_id ?? null,
@@ -477,16 +481,20 @@ export class AudioAutomationRepository {
     };
   }
 
-  async reusableRevision(audioFileId: string): Promise<string | null> {
+  async reusableRevision(
+    audioFileId: string,
+    language: ConfigurationSnapshot['language'],
+  ): Promise<string | null> {
     const result = await this.pool.query(
       `SELECT ar.id FROM ${this.table('audio_files')} af
        JOIN ${this.table('audio_analysis_revisions')} ar
          ON ar.tenant_id = af.tenant_id AND ar.audio_file_id = af.id
        WHERE af.tenant_id = $1 AND af.id = $2 AND af.deleted_at IS NULL
          AND ar.status IN ('queued', 'transcribing', 'analyzing', 'ready')
+         AND CASE WHEN ar.settings_snapshot->>'language' = 'en' THEN 'en' ELSE 'zh-CN' END = $3
        ORDER BY (ar.id = af.active_analysis_revision_id) DESC, ar.created_at DESC
        LIMIT 1`,
-      [this.tenantId, audioFileId],
+      [this.tenantId, audioFileId, language],
     );
     return result.rows[0]?.id ?? null;
   }
@@ -570,33 +578,33 @@ export class AudioAutomationRepository {
   }
 
   /** 查找当前修订已经发布或随轻量 ASR 创建的后置任务，避免重复调用供应商。 */
-  async postAnalysisReferences(revisionId: string): Promise<{
+  async postAnalysisReferences(
+    revisionId: string,
+    language: ConfigurationSnapshot['language'],
+  ): Promise<{
     emotionJobId: string | null;
     roleJobId: string | null;
   }> {
     const result = await this.pool.query(
-      `SELECT coalesce(
-                revision.active_emotion_job_id,
-                revision.bundled_emotion_job_id,
-                (SELECT job.id FROM ${this.table('audio_post_analysis_jobs')} job
+      `SELECT (SELECT job.id FROM ${this.table('audio_post_analysis_jobs')} job
                  WHERE job.tenant_id = revision.tenant_id
                    AND job.analysis_revision_id = revision.id
                    AND job.analysis_type = 'emotion'
                    AND job.status IN ('queued', 'running', 'ready')
+                   AND CASE WHEN job.input_snapshot->>'language' = 'en' THEN 'en' ELSE 'zh-CN' END = $3
                  ORDER BY job.created_at DESC LIMIT 1)
-              ) AS emotion_job_id,
-              coalesce(
-                revision.active_role_job_id,
-                (SELECT job.id FROM ${this.table('audio_post_analysis_jobs')} job
+              AS emotion_job_id,
+              (SELECT job.id FROM ${this.table('audio_post_analysis_jobs')} job
                  WHERE job.tenant_id = revision.tenant_id
                    AND job.analysis_revision_id = revision.id
                    AND job.analysis_type = 'role'
                    AND job.status IN ('queued', 'running', 'ready')
+                   AND CASE WHEN job.input_snapshot->>'language' = 'en' THEN 'en' ELSE 'zh-CN' END = $3
                  ORDER BY job.created_at DESC LIMIT 1)
-              ) AS role_job_id
+              AS role_job_id
        FROM ${this.table('audio_analysis_revisions')} revision
        WHERE revision.tenant_id = $1 AND revision.id = $2`,
-      [this.tenantId, revisionId],
+      [this.tenantId, revisionId, language],
     );
     const row = result.rows[0];
     if (!row) throw new WorkspaceRepositoryError('NOT_FOUND', '自动分析修订不存在。');
@@ -792,6 +800,7 @@ export class AudioAutomationRepository {
         `blocked:${task.batchId}:${capability}:${reason}`,
         '分析任务需要处理',
         message,
+        {},
       );
       await client.query('COMMIT');
     } catch (error) {
@@ -1089,6 +1098,11 @@ export class AudioAutomationRepository {
         `terminal:${batchId}:${eventType}`,
         title,
         body,
+        {
+          total: Number(row.total),
+          completed: Number(row.completed),
+          failed: Number(row.failed),
+        },
       );
       return created ? eventType : null;
     }
@@ -1103,13 +1117,24 @@ export class AudioAutomationRepository {
     dedupeKey: string,
     title: string,
     body: string,
+    templateParams: Record<string, unknown>,
   ): Promise<boolean> {
     const created = await client.query(
       `INSERT INTO ${this.table('notification_events')}
-         (tenant_id, batch_id, task_id, event_type, dedupe_key, title, body)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+         (tenant_id, batch_id, task_id, event_type, dedupe_key, title, body,
+          template_key, template_params)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $4, $8::jsonb)
        ON CONFLICT (tenant_id, dedupe_key) DO NOTHING RETURNING id`,
-      [this.tenantId, batchId, taskId, eventType, dedupeKey, title, body],
+      [
+        this.tenantId,
+        batchId,
+        taskId,
+        eventType,
+        dedupeKey,
+        title,
+        body,
+        JSON.stringify(templateParams),
+      ],
     );
     if (!created.rows[0]) return false;
     await client.query(

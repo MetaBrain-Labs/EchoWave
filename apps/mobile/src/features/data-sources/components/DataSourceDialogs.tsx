@@ -17,6 +17,7 @@ import {
   type AudioTranscriptionPreprocessing,
   type AudioTranscriptionCapabilitiesResponse,
   type GroupSummary,
+  type SupportedLanguage,
 } from '@echowave/contracts';
 import { useState } from 'react';
 import {
@@ -39,6 +40,8 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import { AnalysisLanguagePicker } from '@/shared/i18n/AnalysisLanguagePicker';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 export type DataSourceFormValue = {
   name: string;
@@ -56,29 +59,35 @@ type DataSourceFormSheetProps = {
   visible: boolean;
 };
 
-const priceUnitLabels = {
-  million_tokens: '百万 tokens',
-  minute: '分钟',
-  second: '秒',
-  included: '已包含',
-} as const;
+type TranslationFunction = ReturnType<typeof useAppLanguage>['t'];
 
-function formatModelPrice(price: AudioTranscriptionModelCapability['pricing']['input']): string {
-  if (price.unit === 'included') return '已包含';
+function formatModelPrice(
+  price: AudioTranscriptionModelCapability['pricing']['input'],
+  t: TranslationFunction,
+): string {
+  if (price.unit === 'included') return t('modelPrice.included');
   const symbol = price.currency === 'CNY' ? '¥' : '$';
-  return `${symbol}${price.amount}/${priceUnitLabels[price.unit]}`;
+  const unit = {
+    million_tokens: t('modelPrice.millionTokens'),
+    minute: t('modelPrice.minute'),
+    second: t('modelPrice.second'),
+  }[price.unit];
+  return `${symbol}${price.amount}/${unit}`;
 }
 
-function timestampCapability(model: AudioTranscriptionModelCapability): string {
+function timestampCapability(
+  model: AudioTranscriptionModelCapability,
+  t: TranslationFunction,
+): string {
   const granularity =
     model.timestampGranularity === 'word'
-      ? '词级'
+      ? t('modelPrice.word')
       : model.timestampGranularity === 'segment'
-        ? '段级'
-        : 'Chunk 范围';
+        ? t('modelPrice.segment')
+        : t('modelPrice.chunk');
   return model.timestampAvailability === 'best_effort'
-    ? `${granularity}（尽力返回）`
-    : `${granularity}（回退）`;
+    ? t('modelPrice.bestEffort', { value: granularity })
+    : t('modelPrice.fallback', { value: granularity });
 }
 
 function ReadonlyItem({ label, value }: { label: string; value: string }) {
@@ -100,6 +109,7 @@ function DataSourceFormSheetContent({
   transcriptionModel,
   visible,
 }: DataSourceFormSheetProps) {
+  const { t } = useAppLanguage();
   const [name, setName] = useState(initialValue.name);
   const [description, setDescription] = useState(initialValue.description);
   const [customBusinessRoles, setCustomBusinessRoles] = useState(
@@ -121,15 +131,15 @@ function DataSourceFormSheetContent({
     const role = roleDraft.trim();
     if (!role) return;
     if (CORE_BUSINESS_ROLES.includes(role as (typeof CORE_BUSINESS_ROLES)[number])) {
-      setRoleError('核心角色已默认包含，无需重复添加。');
+      setRoleError(t('sourceForm.coreRoleDuplicate'));
       return;
     }
     if (customBusinessRoles.includes(role)) {
-      setRoleError('该自定义角色已存在。');
+      setRoleError(t('sourceForm.customRoleDuplicate'));
       return;
     }
     if (customBusinessRoles.length >= 16) {
-      setRoleError('每个数据源最多添加 16 个自定义角色。');
+      setRoleError(t('sourceForm.roleLimit'));
       return;
     }
     setCustomBusinessRoles((roles) => [...roles, role]);
@@ -141,17 +151,17 @@ function DataSourceFormSheetContent({
     <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
       <View style={styles.modalRoot}>
         <Pressable
-          accessibilityLabel="关闭数据源表单"
+          accessibilityLabel={t('sourceForm.close')}
           onPress={onClose}
           style={[StyleSheet.absoluteFill, styles.backdrop]}
         />
         <SafeAreaView edges={['bottom']} style={styles.sheet}>
           <View style={styles.sheetHeader}>
             <Text accessibilityRole="header" style={styles.sheetTitle}>
-              {mode === 'create' ? '新增数据源' : '编辑数据源'}
+              {mode === 'create' ? t('sourceForm.create') : t('sourceForm.edit')}
             </Text>
             <Pressable
-              accessibilityLabel="关闭"
+              accessibilityLabel={t('common.close')}
               accessibilityRole="button"
               disabled={pending}
               onPress={onClose}
@@ -164,50 +174,59 @@ function DataSourceFormSheetContent({
             contentContainerStyle={styles.sheetContent}
             keyboardShouldPersistTaps="handled"
           >
-            <Text style={styles.fieldLabel}>数据源名称</Text>
+            <Text style={styles.fieldLabel}>{t('sourceForm.name')}</Text>
             <TextInput
-              accessibilityLabel="数据源名称"
+              accessibilityLabel={t('sourceForm.name')}
               autoFocus
               maxLength={120}
               onChangeText={setName}
               onSubmitEditing={submit}
-              placeholder="请输入数据源名称"
+              placeholder={t('sourceForm.namePlaceholder')}
               placeholderTextColor={textColors.tertiary}
               returnKeyType="done"
               style={styles.nameInput}
               textAlignVertical="center"
               value={name}
             />
-            <Text style={styles.fieldLabel}>描述</Text>
+            <Text style={styles.fieldLabel}>{t('sourceForm.description')}</Text>
             <TextInput
-              accessibilityLabel="数据源描述"
+              accessibilityLabel={t('sourceForm.descriptionAccessibility')}
               maxLength={1_000}
               multiline
               onChangeText={setDescription}
-              placeholder="请输入数据源描述（可选）"
+              placeholder={t('sourceForm.descriptionPlaceholder')}
               placeholderTextColor={textColors.tertiary}
               style={styles.descriptionInput}
               textAlignVertical="top"
               value={description}
             />
 
-            <Text style={styles.sectionTitle}>音频接入</Text>
-            <ReadonlyItem label="接入方式" value="手动上传" />
-            <ReadonlyItem label="存储位置" value="本地" />
-            <Text style={styles.sectionTitle}>音频分析</Text>
-            <ReadonlyItem label="转写模型" value={transcriptionModel ?? '由服务端配置'} />
-            <ReadonlyItem label="分析设置" value="默认开启" />
+            <Text style={styles.sectionTitle}>{t('sourceForm.audioAccess')}</Text>
+            <ReadonlyItem
+              label={t('sourceForm.accessMethod')}
+              value={t('sourceForm.manualUpload')}
+            />
+            <ReadonlyItem label={t('sourceForm.storageLocation')} value={t('sourceForm.local')} />
+            <Text style={styles.sectionTitle}>{t('sourceForm.audioAnalysis')}</Text>
+            <ReadonlyItem
+              label={t('sourceForm.transcriptionModel')}
+              value={transcriptionModel ?? t('sourceForm.serverConfigured')}
+            />
+            <ReadonlyItem
+              label={t('sourceForm.analysisSettings')}
+              value={t('sourceForm.enabledByDefault')}
+            />
             {mode === 'edit' ? (
               <View>
-                <Text style={styles.fieldLabel}>业务角色字典</Text>
-                <Text style={styles.roleHint}>核心角色：{CORE_BUSINESS_ROLES.join('、')}</Text>
+                <Text style={styles.fieldLabel}>{t('sourceForm.roleDictionary')}</Text>
+                <Text style={styles.roleHint}>{t('sourceForm.coreRoles')}</Text>
                 <View style={styles.roleInputRow}>
                   <TextInput
-                    accessibilityLabel="新增自定义业务角色"
+                    accessibilityLabel={t('sourceForm.addRoleAccessibility')}
                     maxLength={24}
                     onChangeText={setRoleDraft}
                     onSubmitEditing={addRole}
-                    placeholder="例如：售后、技术顾问"
+                    placeholder={t('sourceForm.rolePlaceholder')}
                     placeholderTextColor={textColors.tertiary}
                     style={[styles.nameInput, styles.roleInput]}
                     value={roleDraft}
@@ -217,13 +236,13 @@ function DataSourceFormSheetContent({
                     onPress={addRole}
                     style={({ pressed }) => [styles.roleAddButton, pressed && styles.pressed]}
                   >
-                    <Text style={styles.roleAddText}>添加</Text>
+                    <Text style={styles.roleAddText}>{t('sourceForm.add')}</Text>
                   </Pressable>
                 </View>
                 <View style={styles.roleChips}>
                   {customBusinessRoles.map((role) => (
                     <Pressable
-                      accessibilityLabel={`删除自定义角色：${role}`}
+                      accessibilityLabel={t('sourceForm.removeRole', { role })}
                       accessibilityRole="button"
                       key={role}
                       onPress={() =>
@@ -263,7 +282,9 @@ function DataSourceFormSheetContent({
             ]}
           >
             {pending ? <ActivityIndicator color={colors.white} /> : null}
-            <Text style={styles.primaryButtonText}>{pending ? '正在保存…' : '确认'}</Text>
+            <Text style={styles.primaryButtonText}>
+              {pending ? t('sourceForm.saving') : t('common.confirm')}
+            </Text>
           </Pressable>
         </SafeAreaView>
       </View>
@@ -303,26 +324,31 @@ export function DataSourceGroupPicker({
   selectedGroupIds: Set<string>;
   visible: boolean;
 }) {
+  const { formatNumber, t } = useAppLanguage();
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
       <View style={styles.modalRoot}>
         <Pressable
-          accessibilityLabel="关闭分组选择"
+          accessibilityLabel={t('sourceGroup.close')}
           onPress={onClose}
           style={[StyleSheet.absoluteFill, styles.backdrop]}
         />
         <SafeAreaView edges={['bottom']} style={styles.sheet}>
           <View style={styles.sheetHeader}>
             <Text accessibilityRole="header" style={styles.sheetTitle}>
-              关联新分组
+              {t('sourceGroup.link')}
             </Text>
-            <Pressable accessibilityLabel="关闭" onPress={onClose} style={styles.iconButton}>
+            <Pressable
+              accessibilityLabel={t('common.close')}
+              onPress={onClose}
+              style={styles.iconButton}
+            >
               <Ionicons color={colors.ink} name="close" size={24} />
             </Pressable>
           </View>
           <ScrollView contentContainerStyle={styles.groupOptions}>
             {loading ? (
-              <ActivityIndicator accessibilityLabel="正在加载可关联分组" color={colors.ink} />
+              <ActivityIndicator accessibilityLabel={t('sourceGroup.loading')} color={colors.ink} />
             ) : null}
             {error ? (
               <View style={styles.feedbackBox}>
@@ -330,19 +356,26 @@ export function DataSourceGroupPicker({
                   {error}
                 </Text>
                 <Pressable accessibilityRole="button" onPress={onRetry}>
-                  <Text style={styles.retryText}>重新加载</Text>
+                  <Text style={styles.retryText}>{t('sources.reload')}</Text>
                 </Pressable>
               </View>
             ) : null}
             {!loading && !error && allGroups.length === 0 ? (
-              <Text style={styles.secondaryText}>暂无可用分组。</Text>
+              <Text style={styles.secondaryText}>{t('sourceGroup.empty')}</Text>
             ) : null}
             {allGroups.map((group) => {
               const linked = linkedGroupIds.has(group.id);
               const selected = selectedGroupIds.has(group.id);
               return (
                 <Pressable
-                  accessibilityLabel={`${linked ? '已关联' : selected ? '取消选择' : '选择'}分组：${group.name}`}
+                  accessibilityLabel={t('sourceGroup.accessibility', {
+                    action: linked
+                      ? t('sourceGroup.linked')
+                      : selected
+                        ? t('sourceGroup.unselect')
+                        : t('sourceGroup.select'),
+                    name: group.name,
+                  })}
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: linked || selected, disabled: linked }}
                   disabled={linked || pending}
@@ -357,7 +390,10 @@ export function DataSourceGroupPicker({
                   <View style={styles.groupOptionMain}>
                     <Text style={styles.groupOptionTitle}>{group.name}</Text>
                     <Text style={styles.secondaryText}>
-                      {group.metrics.audioCount} 条音频 · {group.metrics.sourceCount} 个数据源
+                      {t('sourceGroup.counts', {
+                        audio: formatNumber(group.metrics.audioCount),
+                        sources: formatNumber(group.metrics.sourceCount),
+                      })}
                     </Text>
                   </View>
                   <Ionicons
@@ -381,7 +417,9 @@ export function DataSourceGroupPicker({
             ]}
           >
             {pending ? <ActivityIndicator color={colors.white} /> : null}
-            <Text style={styles.primaryButtonText}>{pending ? '正在关联…' : '确认关联'}</Text>
+            <Text style={styles.primaryButtonText}>
+              {pending ? t('sourceGroup.linking') : t('sourceGroup.confirm')}
+            </Text>
           </Pressable>
         </SafeAreaView>
       </View>
@@ -407,6 +445,7 @@ export function DataSourceConfirmDialog({
   title: string;
   visible: boolean;
 }) {
+  const { t } = useAppLanguage();
   return (
     <Modal animationType="fade" onRequestClose={onCancel} transparent visible={visible}>
       <View style={styles.dialogRoot}>
@@ -417,7 +456,7 @@ export function DataSourceConfirmDialog({
           <Text style={styles.dialogBody}>{body}</Text>
           <View style={styles.dialogActions}>
             <Pressable disabled={pending} onPress={onCancel} style={styles.dialogButton}>
-              <Text style={styles.dialogButtonText}>取消</Text>
+              <Text style={styles.dialogButtonText}>{t('common.cancel')}</Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
@@ -425,7 +464,9 @@ export function DataSourceConfirmDialog({
               onPress={onConfirm}
               style={[styles.dialogButton, styles.dialogConfirmButton]}
             >
-              <Text style={styles.dialogConfirmText}>{pending ? '处理中…' : confirmLabel}</Text>
+              <Text style={styles.dialogConfirmText}>
+                {pending ? t('sourceDialog.processing') : confirmLabel}
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -450,18 +491,17 @@ export function LightweightUploadConfirmDialog({
   pending: boolean;
   visible: boolean;
 }) {
+  const { t } = useAppLanguage();
   return (
     <Modal animationType="fade" onRequestClose={onCancel} transparent visible={visible}>
       <View style={styles.dialogRoot}>
         <View accessibilityViewIsModal style={styles.dialogCard}>
           <Text accessibilityRole="header" style={styles.sheetTitle}>
-            轻量本地处理选项
+            {t('lightweight.title')}
           </Text>
-          <Text style={styles.dialogBody}>
-            上传后将自动执行 VAD 和 ASR。任务完成后临时音频会被删除。
-          </Text>
+          <Text style={styles.dialogBody}>{t('lightweight.description')}</Text>
           <Pressable
-            accessibilityLabel="同时进行声学情绪分析"
+            accessibilityLabel={t('asr.includeEmotion')}
             accessibilityRole="checkbox"
             accessibilityState={{ checked: includeAcousticEmotion, disabled: pending }}
             disabled={pending}
@@ -477,18 +517,16 @@ export function LightweightUploadConfirmDialog({
               size={22}
             />
             <View style={styles.transcriptionOptionCopy}>
-              <Text style={styles.transcriptionOptionTitle}>同时进行声学情绪分析</Text>
-              <Text style={styles.secondaryText}>默认开启，内部按 ASR → 声学情绪 → 清理执行。</Text>
+              <Text style={styles.transcriptionOptionTitle}>{t('asr.includeEmotion')}</Text>
+              <Text style={styles.secondaryText}>{t('lightweight.pipeline')}</Text>
               {!includeAcousticEmotion ? (
-                <Text style={styles.directWarning}>
-                  关闭后不会提供情绪分析；以后需要时必须重新选择原文件并新建 ASR Run。
-                </Text>
+                <Text style={styles.directWarning}>{t('lightweight.warning')}</Text>
               ) : null}
             </View>
           </Pressable>
           <View style={styles.dialogActions}>
             <Pressable disabled={pending} onPress={onCancel} style={styles.dialogButton}>
-              <Text style={styles.dialogButtonText}>取消</Text>
+              <Text style={styles.dialogButtonText}>{t('common.cancel')}</Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
@@ -496,7 +534,9 @@ export function LightweightUploadConfirmDialog({
               onPress={onConfirm}
               style={[styles.dialogButton, styles.dialogConfirmButton]}
             >
-              <Text style={styles.dialogConfirmText}>{pending ? '上传中…' : '确认并上传'}</Text>
+              <Text style={styles.dialogConfirmText}>
+                {pending ? t('lightweight.uploading') : t('lightweight.confirmUpload')}
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -521,6 +561,8 @@ export function AudioTranscriptionConfirmDialog({
   sileroVad,
   showAcousticEmotionOption = false,
   visible,
+  language = 'zh-CN',
+  onLanguageChange,
 }: {
   audioTitle: string;
   expectedSpeakerCount: string;
@@ -536,7 +578,10 @@ export function AudioTranscriptionConfirmDialog({
   sileroVad?: AudioTranscriptionCapabilitiesResponse['sileroVad'];
   showAcousticEmotionOption?: boolean;
   visible: boolean;
+  language?: SupportedLanguage;
+  onLanguageChange?: (language: SupportedLanguage) => void;
 }) {
+  const { t } = useAppLanguage();
   const selectedCapability = models[0];
   const parsedSpeakerCount = Number(expectedSpeakerCount);
   const speakerCountValid =
@@ -558,15 +603,19 @@ export function AudioTranscriptionConfirmDialog({
             style={styles.transcriptionDialogScroll}
           >
             <Text accessibilityRole="header" style={styles.sheetTitle}>
-              开始 ASR 转写？
+              {t('asr.confirmTitle')}
             </Text>
             <Text style={styles.dialogBody}>
-              将通过 DashScope 官方接口整文件转写“{audioTitle}”。
-              结果按说话人变化或明显停顿分段，业务角色和情绪暂标记为未知。
+              {t('asr.confirmDescription', { title: audioTitle })}
             </Text>
-            <Text style={styles.transcriptionSectionTitle}>音频预处理</Text>
+            <Text style={styles.transcriptionSectionTitle}>{t('analysisLanguage.title')}</Text>
+            <AnalysisLanguagePicker
+              value={language}
+              onChange={onLanguageChange ?? (() => undefined)}
+            />
+            <Text style={styles.transcriptionSectionTitle}>{t('asr.preprocessing')}</Text>
             <Pressable
-              accessibilityLabel={`空闲音频过滤（Silero VAD）${sileroVad?.available ? '' : '，当前不可用'}`}
+              accessibilityLabel={t('asr.vadTitle')}
               accessibilityRole="radio"
               accessibilityState={{
                 checked: preprocessing === 'silero_vad',
@@ -586,17 +635,17 @@ export function AudioTranscriptionConfirmDialog({
                 size={22}
               />
               <View style={styles.transcriptionOptionCopy}>
-                <Text style={styles.transcriptionOptionTitle}>空闲音频过滤（Silero VAD）</Text>
-                <Text style={styles.secondaryText}>仅压缩连续超过 30 秒的非人声区间</Text>
+                <Text style={styles.transcriptionOptionTitle}>{t('asr.vadTitle')}</Text>
+                <Text style={styles.secondaryText}>{t('asr.vadDescription')}</Text>
                 {!sileroVad?.available ? (
                   <Text accessibilityRole="alert" style={styles.directWarning}>
-                    {sileroVad?.unavailableReason ?? 'Silero VAD 能力尚未加载。'}
+                    {sileroVad?.available ? null : t('asr.vadUnavailable')}
                   </Text>
                 ) : null}
               </View>
             </Pressable>
             <Pressable
-              accessibilityLabel="保留完整音频"
+              accessibilityLabel={t('asr.wholeFile')}
               accessibilityRole="radio"
               accessibilityState={{ checked: preprocessing === 'whole_file', disabled: pending }}
               disabled={pending}
@@ -612,44 +661,42 @@ export function AudioTranscriptionConfirmDialog({
                 size={22}
               />
               <View style={styles.transcriptionOptionCopy}>
-                <Text style={styles.transcriptionOptionTitle}>保留完整音频</Text>
-                <Text style={styles.secondaryText}>不执行人声检测，完整音频进入 ASR</Text>
+                <Text style={styles.transcriptionOptionTitle}>{t('asr.wholeFile')}</Text>
+                <Text style={styles.secondaryText}>{t('asr.wholeFileDescription')}</Text>
               </View>
             </Pressable>
-            <Text style={styles.transcriptionSectionTitle}>正文分段方式</Text>
+            <Text style={styles.transcriptionSectionTitle}>{t('asr.segmentation')}</Text>
             <View style={[styles.segmentationOption, styles.selectedModelOption]}>
               <Ionicons color={colors.ink} name="people-outline" size={22} />
               <View style={styles.transcriptionOptionCopy}>
-                <Text style={styles.transcriptionOptionTitle}>按说话轮次</Text>
-                <Text style={styles.secondaryText}>说话人变化或明显停顿时开始新段</Text>
+                <Text style={styles.transcriptionOptionTitle}>{t('asr.speakerTurns')}</Text>
+                <Text style={styles.secondaryText}>{t('asr.speakerTurnsDescription')}</Text>
               </View>
             </View>
-            <Text style={styles.transcriptionSectionTitle}>预计说话人数（可选）</Text>
+            <Text style={styles.transcriptionSectionTitle}>{t('asr.speakerCount')}</Text>
             <TextInput
-              accessibilityLabel="预计说话人数"
+              accessibilityLabel={t('asr.speakerCountInput')}
               editable={!pending}
               inputMode="numeric"
               keyboardType="number-pad"
               maxLength={3}
               onChangeText={(value) => onExpectedSpeakerCountChange(value.replace(/\D/g, ''))}
-              placeholder="留空则自动判断"
+              placeholder={t('asr.speakerCountPlaceholder')}
               placeholderTextColor={textColors.tertiary}
               style={[styles.speakerCountInput, !speakerCountValid && styles.invalidInput]}
               value={expectedSpeakerCount}
             />
-            <Text style={styles.secondaryText}>
-              可填写 2–100。该值仅作为 Speaker 数量软提示，不保证严格输出指定人数。
-            </Text>
+            <Text style={styles.secondaryText}>{t('asr.speakerCountHint')}</Text>
             {!speakerCountValid ? (
               <Text accessibilityRole="alert" style={styles.directWarning}>
-                预计说话人数必须是 2–100 的整数。
+                {t('asr.speakerCountInvalid')}
               </Text>
             ) : null}
             {showAcousticEmotionOption ? (
               <>
-                <Text style={styles.transcriptionSectionTitle}>声学分析</Text>
+                <Text style={styles.transcriptionSectionTitle}>{t('asr.acoustic')}</Text>
                 <Pressable
-                  accessibilityLabel="同时进行声学情绪分析"
+                  accessibilityLabel={t('asr.includeEmotion')}
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: includeAcousticEmotion, disabled: pending }}
                   disabled={pending}
@@ -665,27 +712,28 @@ export function AudioTranscriptionConfirmDialog({
                     size={22}
                   />
                   <View style={styles.transcriptionOptionCopy}>
-                    <Text style={styles.transcriptionOptionTitle}>同时进行声学情绪分析</Text>
-                    <Text style={styles.secondaryText}>
-                      默认开启。内部按 ASR → 声学情绪 → 临时文件清理执行。
-                    </Text>
+                    <Text style={styles.transcriptionOptionTitle}>{t('asr.includeEmotion')}</Text>
+                    <Text style={styles.secondaryText}>{t('asr.includeEmotionDescription')}</Text>
                     {!includeAcousticEmotion ? (
-                      <Text style={styles.directWarning}>
-                        关闭后本次转写不会提供情绪分析，也不能稍后单独补跑。
-                      </Text>
+                      <Text style={styles.directWarning}>{t('asr.emotionDisabledWarning')}</Text>
                     ) : null}
                   </View>
                 </Pressable>
               </>
             ) : null}
-            <Text style={styles.transcriptionSectionTitle}>转写模型</Text>
+            <Text style={styles.transcriptionSectionTitle}>{t('asr.model')}</Text>
             {!selectedCapability ? (
               <Text accessibilityRole="alert" style={styles.directWarning}>
-                转写模型目录加载失败，请关闭后重试。
+                {t('asr.modelUnavailable')}
               </Text>
             ) : (
               <View
-                accessibilityLabel={`${selectedCapability.displayName}，${selectedCapability.description}，输入${formatModelPrice(selectedCapability.pricing.input)}，输出${formatModelPrice(selectedCapability.pricing.output)}`}
+                accessibilityLabel={t('modelPrice.accessibility', {
+                  name: selectedCapability.displayName,
+                  description: selectedCapability.description,
+                  input: formatModelPrice(selectedCapability.pricing.input, t),
+                  output: formatModelPrice(selectedCapability.pricing.output, t),
+                })}
                 style={[
                   styles.transcriptionModelOption,
                   styles.selectedModelOption,
@@ -699,19 +747,25 @@ export function AudioTranscriptionConfirmDialog({
                   </Text>
                   <Text style={styles.secondaryText}>{selectedCapability.description}</Text>
                   <Text style={styles.transcriptionModelMeta}>
-                    价格（截至 {selectedCapability.pricing.asOf}）：输入{' '}
-                    {formatModelPrice(selectedCapability.pricing.input)} · 输出{' '}
-                    {formatModelPrice(selectedCapability.pricing.output)}
+                    {t('modelPrice.price', {
+                      date: selectedCapability.pricing.asOf,
+                      input: formatModelPrice(selectedCapability.pricing.input, t),
+                      output: formatModelPrice(selectedCapability.pricing.output, t),
+                    })}
                   </Text>
                   <Text style={styles.transcriptionModelMeta}>
-                    时间戳：{timestampCapability(selectedCapability)} · Speaker：尽力分离
+                    {t('modelPrice.capabilities', {
+                      timestamp: timestampCapability(selectedCapability, t),
+                    })}
                   </Text>
                   <Text style={styles.transcriptionModelCapabilities}>
                     {selectedCapability.notableCapabilities.join(' · ')}
                   </Text>
                   {!selectedCapability.available ? (
                     <Text accessibilityRole="alert" style={styles.directWarning}>
-                      {selectedCapability.unavailableReason} 当前模式不会静默降级。
+                      {t('modelPrice.noFallback', {
+                        reason: selectedCapability.unavailableReason ?? '',
+                      })}
                     </Text>
                   ) : null}
                 </View>
@@ -720,7 +774,7 @@ export function AudioTranscriptionConfirmDialog({
           </ScrollView>
           <View style={styles.dialogActions}>
             <Pressable disabled={pending} onPress={onCancel} style={styles.dialogButton}>
-              <Text style={styles.dialogButtonText}>取消</Text>
+              <Text style={styles.dialogButtonText}>{t('common.cancel')}</Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
@@ -731,7 +785,9 @@ export function AudioTranscriptionConfirmDialog({
               onPress={onConfirm}
               style={[styles.dialogButton, styles.dialogConfirmButton]}
             >
-              <Text style={styles.dialogConfirmText}>{pending ? '处理中…' : '确认转写'}</Text>
+              <Text style={styles.dialogConfirmText}>
+                {pending ? t('asr.processing') : t('asr.confirm')}
+              </Text>
             </Pressable>
           </View>
         </View>

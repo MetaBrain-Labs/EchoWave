@@ -527,7 +527,7 @@ export class SalesAnalysisAgent {
         }),
       ],
       permissions: [{ operations: ['read', 'write'], paths: ['/**'], mode: 'deny' }],
-      systemPrompt: salesAnalysisContext(MAX_ANALYSIS_TAGS),
+      systemPrompt: salesAnalysisContext(MAX_ANALYSIS_TAGS, input.job.settings.language),
     });
     let result: { messages?: unknown[] } = {};
     let modelAttempt = 0;
@@ -755,7 +755,7 @@ export class SalesAnalysisAgent {
           [
             {
               role: 'system' as const,
-              content: `${salesAnalysisContext(MAX_ANALYSIS_TAGS)}\nAnalyze only this transcript window; keep every field especially concise.`,
+              content: `${salesAnalysisContext(MAX_ANALYSIS_TAGS, windowJob.settings.language)}\nAnalyze only this transcript window; keep every field especially concise.`,
             },
             {
               role: 'user' as const,
@@ -844,7 +844,7 @@ export class SalesAnalysisAgent {
     const messages = [
       {
         role: 'system' as const,
-        content: `${salesAnalysisContext(MAX_ANALYSIS_TAGS)}\nSynthesize only the supplied window summaries. Do not invent evidence or cite IDs outside the supplied allow-list.`,
+        content: `${salesAnalysisContext(MAX_ANALYSIS_TAGS, job.settings.language)}\nSynthesize only the supplied window summaries. Do not invent evidence or cite IDs outside the supplied allow-list.`,
       },
       {
         role: 'user' as const,
@@ -913,7 +913,11 @@ export class SalesAnalysisAgent {
       limitations: [...new Set(windows.flatMap((window) => window.result.limitations))].slice(0, 4),
       summarySections: titles.map((title) => ({
         title,
-        body: byTitle.get(title) ?? '窗口结果不足，无法生成该章节。',
+        body:
+          byTitle.get(title) ??
+          (job.settings.language === 'zh-CN'
+            ? '窗口结果不足，无法生成该章节。'
+            : 'The available window results are insufficient for this section.'),
       })),
       tags: windows.flatMap((window) => window.result.tags).slice(0, MAX_ANALYSIS_TAGS),
     };
@@ -929,7 +933,7 @@ export class SalesAnalysisAgent {
     const messages = [
       {
         role: 'system' as const,
-        content: salesAnalysisRepairContext(MAX_ANALYSIS_TAGS),
+        content: salesAnalysisRepairContext(MAX_ANALYSIS_TAGS, input.job.settings.language),
       },
       {
         role: 'user' as const,

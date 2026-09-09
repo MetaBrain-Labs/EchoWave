@@ -34,6 +34,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { settingsApi } from '@/shared/api/settingsApi';
 import { WorkspaceRequestError } from '@/shared/api/request';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import {
   colors,
   fontFamilies,
@@ -46,26 +47,42 @@ import { PageHeader } from '@/shared/ui/PageHeader';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 
-const INSECURE_MESSAGE =
-  '当前连接不是 HTTPS，不能通过此页面提交 Credential。请在服务器本地配置 credentials.yaml，然后选择对应的 Local Credential alias。';
-
-const providerLabels: Record<ProviderType, string> = {
-  dashscope: 'DashScope',
-  deepseek: 'DeepSeek',
-  aliyun_oss: '阿里云 OSS',
-};
-
-const capabilities: readonly { id: AiCapability; label: string; provider: ProviderType }[] = [
-  { id: 'knowledge_embedding', label: '知识嵌入', provider: 'dashscope' },
-  { id: 'knowledge_chat', label: '知识问答', provider: 'deepseek' },
-  { id: 'audio_transcription', label: '音频转写', provider: 'dashscope' },
-  { id: 'audio_emotion', label: '情绪分析', provider: 'dashscope' },
-  { id: 'audio_role', label: '角色识别', provider: 'deepseek' },
-  { id: 'audio_speaker_review', label: '说话人复核', provider: 'deepseek' },
-  { id: 'business_analysis', label: '业务分析', provider: 'deepseek' },
-  { id: 'audio_staging', label: '临时 OSS', provider: 'aliyun_oss' },
-  { id: 'audio_primary_storage', label: '权威音频对象存储', provider: 'aliyun_oss' },
+const capabilities: readonly { id: AiCapability; provider: ProviderType }[] = [
+  { id: 'knowledge_embedding', provider: 'dashscope' },
+  { id: 'knowledge_chat', provider: 'deepseek' },
+  { id: 'audio_transcription', provider: 'dashscope' },
+  { id: 'audio_emotion', provider: 'dashscope' },
+  { id: 'audio_role', provider: 'deepseek' },
+  { id: 'audio_speaker_review', provider: 'deepseek' },
+  { id: 'business_analysis', provider: 'deepseek' },
+  { id: 'audio_staging', provider: 'aliyun_oss' },
+  { id: 'audio_primary_storage', provider: 'aliyun_oss' },
 ];
+
+type TranslationFunction = ReturnType<typeof useAppLanguage>['t'];
+
+function providerLabel(type: ProviderType, t: TranslationFunction): string {
+  return type === 'dashscope'
+    ? 'DashScope'
+    : type === 'deepseek'
+      ? 'DeepSeek'
+      : t('aiSettings.alibabaOss');
+}
+
+function capabilityLabel(capability: AiCapability, t: TranslationFunction): string {
+  const keys = {
+    knowledge_embedding: 'aiSettings.capEmbedding',
+    knowledge_chat: 'aiSettings.capChat',
+    audio_transcription: 'aiSettings.capTranscription',
+    audio_emotion: 'aiSettings.capEmotion',
+    audio_role: 'aiSettings.capRole',
+    audio_speaker_review: 'aiSettings.capSpeakerReview',
+    business_analysis: 'aiSettings.capBusiness',
+    audio_staging: 'aiSettings.capStaging',
+    audio_primary_storage: 'aiSettings.capPrimaryStorage',
+  } as const;
+  return t(keys[capability]);
+}
 
 type ProviderDraft = {
   editingId: string | null;
@@ -104,14 +121,14 @@ const emptyDraft = (): ProviderDraft => ({
   accessKeySecret: '',
 });
 
-function errorMessage(error: unknown): string {
+function errorMessage(error: unknown, t: TranslationFunction): string {
   if (error instanceof WorkspaceRequestError) {
-    if (error.code === 'CONFLICT') return `${error.message} 请刷新后重试。`;
-    if (error.code === 'UNAUTHORIZED') return '管理员口令无效或已变更。';
-    if (error.code === 'INSECURE_CREDENTIAL_TRANSPORT') return INSECURE_MESSAGE;
+    if (error.code === 'CONFLICT') return t('aiSettings.conflict', { message: error.message });
+    if (error.code === 'UNAUTHORIZED') return t('aiSettings.unauthorized');
+    if (error.code === 'INSECURE_CREDENTIAL_TRANSPORT') return t('aiSettings.insecure');
     return error.message;
   }
-  return '配置操作失败，请重试。';
+  return t('aiSettings.operationFailed');
 }
 
 function draftFromProvider(provider: ProviderConnection): ProviderDraft {
@@ -179,6 +196,7 @@ function providerInput(draft: ProviderDraft): ProviderConnectionWrite {
 
 /** 渲染配置中心并将返回行为交给路由层。 */
 export function SettingsScreen({ onBack }: { onBack: () => void }) {
+  const { formatDateTime, formatNumber, t } = useAppLanguage();
   const securityTourRef = useStarterTourTarget('ai-security');
   const configurationTourRef = useStarterTourTarget('ai-configuration');
   const [tokenInput, setTokenInput] = useState('');
@@ -201,8 +219,8 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
         setTransportMode(value.mode);
         setSecretAllowed(value.secretSubmissionAllowed);
       })
-      .catch((reason) => setError(errorMessage(reason)));
-  }, []);
+      .catch((reason) => setError(errorMessage(reason, t)));
+  }, [t]);
 
   const refresh = async (activeToken = token) => {
     if (!activeToken) return;
@@ -214,7 +232,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
       setTransportMode(value.transport.mode);
       setSecretAllowed(value.transport.secretSubmissionAllowed);
     } catch (reason) {
-      setError(errorMessage(reason));
+      setError(errorMessage(reason, t));
       if (reason instanceof WorkspaceRequestError && reason.code === 'UNAUTHORIZED') {
         setToken(null);
         setOverview(null);
@@ -231,7 +249,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
       if (token) await refresh(token);
       else setError(null);
     } catch (reason) {
-      setError(errorMessage(reason));
+      setError(errorMessage(reason, t));
     }
   };
   const screenRefresh = useScreenRefresh(refreshPage);
@@ -247,7 +265,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
       setTokenInput('');
       await refresh(candidate);
     } catch (reason) {
-      setError(errorMessage(reason));
+      setError(errorMessage(reason, t));
     } finally {
       setBusy(false);
     }
@@ -264,7 +282,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
       setDraft(emptyDraft());
       await refresh(token);
     } catch (reason) {
-      setError(errorMessage(reason));
+      setError(errorMessage(reason, t));
     } finally {
       setBusy(false);
     }
@@ -297,7 +315,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
       setBindingCapability(null);
       await refresh(token);
     } catch (reason) {
-      setError(errorMessage(reason));
+      setError(errorMessage(reason, t));
     } finally {
       setBusy(false);
     }
@@ -310,7 +328,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-      <PageHeader onBack={onBack} onMore={() => undefined} title="AI 配置" />
+      <PageHeader onBack={onBack} onMore={() => undefined} title={t('aiSettings.title')} />
       <ScrollView
         alwaysBounceVertical
         contentContainerStyle={styles.content}
@@ -323,13 +341,15 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
         {error ? (
           <View accessibilityRole="alert" style={styles.errorCard}>
             <Text style={styles.errorText}>{error}</Text>
-            {token ? <ActionButton label="刷新配置" onPress={() => void refresh()} /> : null}
+            {token ? (
+              <ActionButton label={t('aiSettings.refresh')} onPress={() => void refresh()} />
+            ) : null}
           </View>
         ) : null}
         <View collapsable={false} ref={configurationTourRef}>
           {!token ? (
-            <Section title="管理员验证">
-              <Text style={styles.help}>口令只保存在当前页面内存，离开页面后会清除。</Text>
+            <Section title={t('aiSettings.adminVerification')}>
+              <Text style={styles.help}>{t('aiSettings.tokenMemory')}</Text>
               <Field
                 label="CONFIGURATION_ADMIN_TOKEN"
                 onChangeText={setTokenInput}
@@ -338,14 +358,14 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
               />
               <ActionButton
                 disabled={busy || !tokenInput.trim()}
-                label="进入配置中心"
+                label={t('aiSettings.enter')}
                 onPress={login}
               />
             </Section>
           ) : overview ? (
             <>
               <LocalProviderCard overview={overview} />
-              <Section title="供应商连接">
+              <Section title={t('aiSettings.connections')}>
                 {overview.providers.map((provider) => (
                   <Pressable
                     accessibilityRole="button"
@@ -356,13 +376,13 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
                     <View style={styles.flex}>
                       <Text style={styles.rowTitle}>{provider.name}</Text>
                       <Text style={styles.help}>
-                        {providerLabels[provider.type]} ·{' '}
+                        {providerLabel(provider.type, t)} ·{' '}
                         {provider.credential.source === 'local_file'
                           ? `Local · ${provider.credential.alias}`
-                          : `Database · ${provider.credential.maskedValue ?? '已配置'}`}
+                          : `Database · ${provider.credential.maskedValue ?? t('aiSettings.configured')}`}
                       </Text>
                     </View>
-                    <Text style={styles.link}>修改</Text>
+                    <Text style={styles.link}>{t('aiSettings.edit')}</Text>
                   </Pressable>
                 ))}
                 <ProviderEditor
@@ -374,7 +394,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
                   busy={busy}
                 />
               </Section>
-              <Section title="能力绑定">
+              <Section title={t('aiSettings.bindings')}>
                 {capabilities.map((capability) => {
                   const current = overview.bindings.find(
                     (item) => item.capability === capability.id,
@@ -390,20 +410,20 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
                       style={styles.listRow}
                     >
                       <View style={styles.flex}>
-                        <Text style={styles.rowTitle}>{capability.label}</Text>
+                        <Text style={styles.rowTitle}>{capabilityLabel(capability.id, t)}</Text>
                         <Text style={styles.help}>
-                          {provider ? `${provider.name} · ${current?.model}` : '尚未配置'}
+                          {provider
+                            ? `${provider.name} · ${current?.model}`
+                            : t('aiSettings.unconfigured')}
                         </Text>
                       </View>
-                      <Text style={styles.link}>设置</Text>
+                      <Text style={styles.link}>{t('aiSettings.configure')}</Text>
                     </Pressable>
                   );
                 })}
                 {bindingCapability ? (
                   <View style={styles.editor}>
-                    <Text style={styles.rowTitle}>
-                      {capabilities.find(({ id }) => id === bindingCapability)?.label}
-                    </Text>
+                    <Text style={styles.rowTitle}>{capabilityLabel(bindingCapability, t)}</Text>
                     <ChoiceRow
                       options={compatibleProviders.map((item) => ({
                         id: item.id,
@@ -412,13 +432,17 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
                       selected={bindingProviderId}
                       onSelect={setBindingProviderId}
                     />
-                    <Field label="模型" onChangeText={setBindingModel} value={bindingModel} />
+                    <Field
+                      label={t('aiSettings.model')}
+                      onChangeText={setBindingModel}
+                      value={bindingModel}
+                    />
                     {bindingCapability === 'knowledge_chat' ||
                     bindingCapability === 'business_analysis' ? (
                       <ChoiceRow
                         options={[
-                          { id: 'off', label: 'Thinking 关闭' },
-                          { id: 'on', label: 'Thinking 开启' },
+                          { id: 'off', label: t('aiSettings.thinkingOff') },
+                          { id: 'on', label: t('aiSettings.thinkingOn') },
                         ]}
                         selected={bindingThinking ? 'on' : 'off'}
                         onSelect={(value) => setBindingThinking(value === 'on')}
@@ -426,22 +450,27 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
                     ) : null}
                     <ActionButton
                       disabled={busy || !bindingProviderId || !bindingModel.trim()}
-                      label="保存能力绑定"
+                      label={t('aiSettings.saveBinding')}
                       onPress={() => void saveBinding()}
                     />
                   </View>
                 ) : null}
               </Section>
-              <Section title="旧 .env 导入">
+              <Section title={t('aiSettings.legacy')}>
                 <Text style={styles.help}>
                   {overview.legacy.importedAt
-                    ? `已导入：${new Date(overview.legacy.importedAt).toLocaleString()}`
-                    : `检测到 ${overview.legacy.detectedVariables.length} 项，缺少 ${overview.legacy.missingVariables.length} 项。导入不会覆盖数据库配置。`}
+                    ? t('aiSettings.imported', {
+                        date: formatDateTime(overview.legacy.importedAt),
+                      })
+                    : t('aiSettings.legacyStatus', {
+                        detected: formatNumber(overview.legacy.detectedVariables.length),
+                        missing: formatNumber(overview.legacy.missingVariables.length),
+                      })}
                 </Text>
                 {!overview.legacy.importedAt ? (
                   <ActionButton
                     disabled={busy || !overview.legacy.ready}
-                    label="从服务器旧 .env 导入"
+                    label={t('aiSettings.importLegacy')}
                     onPress={async () => {
                       if (!token) return;
                       setBusy(true);
@@ -449,7 +478,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
                       try {
                         setOverview(await settingsApi.importLegacy(token));
                       } catch (reason) {
-                        setError(errorMessage(reason));
+                        setError(errorMessage(reason, t));
                       } finally {
                         setBusy(false);
                       }
@@ -473,47 +502,52 @@ function SecurityBanner({
   mode: TransportSecurityMode | null;
   secretAllowed: boolean;
 }) {
+  const { t } = useAppLanguage();
   const secureLabel =
     mode === 'https'
       ? 'HTTPS'
       : mode === 'localhost'
-        ? '本机连接'
+        ? t('aiSettings.localhost')
         : mode === 'trusted_proxy_https'
-          ? '可信代理 HTTPS'
+          ? t('aiSettings.proxyHttps')
           : mode === null
-            ? '正在检测连接安全性'
-            : '远程 HTTP';
+            ? t('aiSettings.checkingSecurity')
+            : t('aiSettings.remoteHttp');
   return (
     <View style={[styles.banner, !secretAllowed && mode !== null && styles.warningBanner]}>
-      <Text style={styles.rowTitle}>连接安全：{secureLabel}</Text>
+      <Text style={styles.rowTitle}>{t('aiSettings.security', { status: secureLabel })}</Text>
       {!secretAllowed && mode === 'insecure_remote_http' ? (
         <>
-          <Text style={styles.warningText}>{INSECURE_MESSAGE}</Text>
-          <Text style={styles.help}>
-            名称、Base URL、模型、Thinking、能力绑定和 Local Credential alias 仍可修改并保存。
-          </Text>
+          <Text style={styles.warningText}>{t('aiSettings.insecure')}</Text>
+          <Text style={styles.help}>{t('aiSettings.nonSecretAllowed')}</Text>
         </>
       ) : (
-        <Text style={styles.help}>Secret 提交由服务器依据真实 TCP 连接判定。</Text>
+        <Text style={styles.help}>{t('aiSettings.secretPolicy')}</Text>
       )}
     </View>
   );
 }
 
 function LocalProviderCard({ overview }: { overview: SettingsOverview }) {
+  const { formatDateTime, t } = useAppLanguage();
   const local = overview.localCredentials;
   return (
     <Section title="Local Credential Provider">
       <Text style={styles.help}>
         {local.configured
           ? local.healthy
-            ? `文件正常${local.lastLoadedAt ? ` · ${new Date(local.lastLoadedAt).toLocaleString()}` : ''}`
-            : `文件异常：${local.error ?? '无法加载'}`
-          : 'LOCAL_CREDENTIALS_FILE 尚未配置。'}
+            ? t('aiSettings.fileHealthy', {
+                date: local.lastLoadedAt ? ` · ${formatDateTime(local.lastLoadedAt)}` : '',
+              })
+            : t('aiSettings.fileUnhealthy', {
+                error: local.error ?? t('aiSettings.unableToLoad'),
+              })
+          : t('aiSettings.localNotConfigured')}
       </Text>
       {local.credentials.map((item) => (
         <Text key={item.alias} style={styles.aliasText}>
-          {item.alias} · {providerLabels[item.type]} · {item.available ? '可用' : '不可用'}
+          {item.alias} · {providerLabel(item.type, t)} ·{' '}
+          {item.available ? t('aiSettings.available') : t('aiSettings.unavailable')}
         </Text>
       ))}
     </Section>
@@ -535,17 +569,27 @@ function ProviderEditor({
   secretAllowed: boolean;
   busy: boolean;
 }) {
+  const { t } = useAppLanguage();
   const patch = (value: Partial<ProviderDraft>) => onChange({ ...draft, ...value });
   const aliases = localAliases.filter(({ type, available }) => type === draft.type && available);
   return (
     <View style={styles.editor}>
-      <Text style={styles.rowTitle}>{draft.editingId ? '修改连接' : '添加连接'}</Text>
+      <Text style={styles.rowTitle}>
+        {draft.editingId ? t('aiSettings.editConnection') : t('aiSettings.addConnection')}
+      </Text>
       <ChoiceRow
-        options={Object.entries(providerLabels).map(([id, label]) => ({ id, label }))}
+        options={(['dashscope', 'deepseek', 'aliyun_oss'] as const).map((id) => ({
+          id,
+          label: providerLabel(id, t),
+        }))}
         selected={draft.type}
         onSelect={(type) => patch({ type: type as ProviderType, alias: '' })}
       />
-      <Field label="名称" onChangeText={(name) => patch({ name })} value={draft.name} />
+      <Field
+        label={t('aiSettings.name')}
+        onChangeText={(name) => patch({ name })}
+        value={draft.name}
+      />
       {draft.type === 'aliyun_oss' ? (
         <>
           <Field label="Region" onChangeText={(region) => patch({ region })} value={draft.region} />
@@ -554,7 +598,7 @@ function ProviderEditor({
       ) : (
         <>
           <Field
-            label="Base URL（必须为公网 HTTPS）"
+            label={t('aiSettings.publicHttps')}
             onChangeText={(baseUrl) => patch({ baseUrl })}
             value={draft.baseUrl}
           />
@@ -586,7 +630,7 @@ function ProviderEditor({
           ) : null}
         </>
       )}
-      <Text style={styles.fieldLabel}>Credential 来源</Text>
+      <Text style={styles.fieldLabel}>{t('aiSettings.credentialSource')}</Text>
       <ChoiceRow
         options={[
           { id: 'local_file', label: 'Local file' },
@@ -609,7 +653,7 @@ function ProviderEditor({
         />
       ) : (
         <>
-          <Text style={styles.help}>Secret 留空表示保留当前数据库值。</Text>
+          <Text style={styles.help}>{t('aiSettings.secretEmpty')}</Text>
           {draft.type === 'aliyun_oss' ? (
             <>
               <Field
@@ -653,11 +697,15 @@ function ProviderEditor({
         disabled={
           busy || !draft.name.trim() || (draft.credentialSource === 'local_file' && !draft.alias)
         }
-        label={draft.editingId ? '保存修改' : '添加连接'}
+        label={draft.editingId ? t('aiSettings.saveChanges') : t('aiSettings.addConnection')}
         onPress={onSave}
       />
       {draft.editingId ? (
-        <ActionButton label="取消修改" onPress={() => onChange(emptyDraft())} secondary />
+        <ActionButton
+          label={t('aiSettings.cancelChanges')}
+          onPress={() => onChange(emptyDraft())}
+          secondary
+        />
       ) : null}
     </View>
   );
@@ -702,9 +750,10 @@ function ChoiceRow({
   selected: string;
   onSelect: (id: string) => void;
 }) {
+  const { t } = useAppLanguage();
   return (
     <View style={styles.choices}>
-      {options.length === 0 ? <Text style={styles.help}>没有可用选项。</Text> : null}
+      {options.length === 0 ? <Text style={styles.help}>{t('aiSettings.noOptions')}</Text> : null}
       {options.map((option) => (
         <Pressable
           accessibilityRole="radio"

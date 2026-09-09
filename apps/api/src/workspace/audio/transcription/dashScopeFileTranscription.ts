@@ -15,6 +15,7 @@
 import { z } from 'zod';
 
 import type { TranscriptDraft } from './repository.ts';
+import type { SupportedLanguage } from '@echowave/contracts';
 import {
   noOpSttRawResponseReporter,
   type SttRawResponseKind,
@@ -230,6 +231,7 @@ export class DashScopeFileTranscription {
     fileUrl: string,
     context?: DashScopeRawResponseContext,
     expectedSpeakerCount?: number,
+    language: SupportedLanguage = 'zh-CN',
   ): Promise<string> {
     const response = await this.request(`${this.baseUrl}/services/audio/asr/transcription`, {
       method: 'POST',
@@ -244,7 +246,7 @@ export class DashScopeFileTranscription {
         input: { file_urls: [fileUrl] },
         parameters: {
           channel_id: [0],
-          language_hints: ['zh', 'en'],
+          language_hints: [language === 'zh-CN' ? 'zh' : 'en'],
           diarization_enabled: true,
           special_word_filter: { system_reserved_filter: false },
           ...(expectedSpeakerCount === undefined ? {} : { speaker_count: expectedSpeakerCount }),

@@ -15,6 +15,12 @@ import { z } from 'zod';
 /** 所有网络实体共享的 UUID 标识符 schema。 */
 export const EntityIdSchema = z.string().uuid();
 
+/** EchoWave 首期支持的界面与分析语言。 */
+export const SupportedLanguageSchema = z.enum(['zh-CN', 'en']);
+
+/** EchoWave 首期支持的界面与分析语言类型。 */
+export type SupportedLanguage = z.infer<typeof SupportedLanguageSchema>;
+
 /** EchoWave HTTP API 允许使用的稳定错误码 schema。 */
 export const ApiErrorCodeSchema = z.enum([
   'AUDIO_MODE_UNAVAILABLE',

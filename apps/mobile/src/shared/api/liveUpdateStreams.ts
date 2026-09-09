@@ -24,6 +24,7 @@ import { fetch } from 'expo/fetch';
 
 import { getApiUrl } from './apiUrl';
 import { WorkspaceRequestError } from './request';
+import { localizeRequestError } from '@/shared/i18n/errorLocalization';
 
 type Parser<T> = (value: unknown) => T;
 
@@ -37,7 +38,10 @@ function parseFrame<T>(frame: string, parse: Parser<T>): T | undefined {
   try {
     return parse(JSON.parse(data));
   } catch {
-    throw new WorkspaceRequestError('INVALID_RESPONSE', '实时状态返回了无效事件。');
+    throw new WorkspaceRequestError(
+      'INVALID_RESPONSE',
+      localizeRequestError('INVALID_RESPONSE', '实时状态返回了无效事件。'),
+    );
   }
 }
 
@@ -90,12 +94,15 @@ async function streamValidated<T>(options: {
   if (!response.ok) {
     throw new WorkspaceRequestError(
       response.status === 404 ? 'NOT_FOUND' : 'HTTP_ERROR',
-      `实时状态连接失败（HTTP ${response.status}）。`,
+      localizeRequestError('HTTP_ERROR', `实时状态连接失败（HTTP ${response.status}）。`),
       response.status >= 500,
     );
   }
   if (!response.body) {
-    throw new WorkspaceRequestError('INVALID_RESPONSE', '当前环境不支持流式响应。');
+    throw new WorkspaceRequestError(
+      'INVALID_RESPONSE',
+      localizeRequestError('INVALID_RESPONSE', '当前环境不支持流式响应。'),
+    );
   }
   const reader = response.body.getReader();
   const parser = new ValidatedSseParser(options.parse);

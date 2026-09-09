@@ -28,6 +28,7 @@ function analysisJob() {
     model: 'deepseek-v4-flash',
     knowledgeBaseIds: [],
     settings: {
+      language: 'zh-CN',
       timing: 'manual',
       contentFocus: '分析销售话术',
       tone: '正式、专业',

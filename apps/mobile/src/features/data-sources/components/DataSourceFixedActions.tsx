@@ -21,11 +21,15 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import { translateAppText, useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 type DetailTab = 'overview' | 'audio' | 'uploads' | 'groups';
 
 export function showComingSoon(feature: string) {
-  Alert.alert('功能建设中', `${feature}将在后续版本开放。`);
+  Alert.alert(
+    translateAppText('common.inProgress'),
+    translateAppText('sourceFixed.comingSoon', { feature }),
+  );
 }
 
 function ActionButton({
@@ -71,10 +75,16 @@ export function FixedActions({
   onUpload: () => void;
   uploading: boolean;
 }) {
+  const { t } = useAppLanguage();
   if (activeTab === 'groups') {
     return (
       <View style={styles.fixedActions} testID="data-source-fixed-actions">
-        <ActionButton emphasized icon="add" label="关联新分组" onPress={onLinkGroups} />
+        <ActionButton
+          emphasized
+          icon="add"
+          label={t('sourceFixed.linkGroup')}
+          onPress={onLinkGroups}
+        />
       </View>
     );
   }
@@ -84,7 +94,7 @@ export function FixedActions({
         <ActionButton
           emphasized
           icon="cloud-upload-outline"
-          label={uploading ? '正在上传…' : '上传音频'}
+          label={uploading ? t('sourceFixed.uploading') : t('sourceFixed.upload')}
           onPress={onUpload}
           disabled={uploading}
         />
@@ -95,13 +105,13 @@ export function FixedActions({
     <View style={styles.fixedActions} testID="data-source-fixed-actions">
       <ActionButton
         icon="create-outline"
-        label="全部转写"
-        onPress={() => showComingSoon('全部转写')}
+        label={t('sourceFixed.transcribeAll')}
+        onPress={() => showComingSoon(t('sourceFixed.transcribeAll'))}
       />
       <ActionButton
         emphasized
         icon="cloud-upload-outline"
-        label={uploading ? '正在上传…' : '上传音频'}
+        label={uploading ? t('sourceFixed.uploading') : t('sourceFixed.upload')}
         onPress={onUpload}
         disabled={uploading}
       />

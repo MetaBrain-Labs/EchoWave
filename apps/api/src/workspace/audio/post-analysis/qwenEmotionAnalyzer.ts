@@ -12,7 +12,11 @@
  * - 不依赖供应商原生结构化输出；原始正文和响应不会写入错误或日志。
  */
 import { z } from 'zod';
-import { SegmentEmotionAnalysisSchema, type SegmentEmotionAnalysis } from '@echowave/contracts';
+import {
+  SegmentEmotionAnalysisSchema,
+  type SegmentEmotionAnalysis,
+  type SupportedLanguage,
+} from '@echowave/contracts';
 
 import {
   beginAiModelCall,
@@ -21,7 +25,7 @@ import {
 } from '../../../ai-observability/executionReporter.ts';
 import { runWithBoundedRetry } from '../../../ai-runtime/boundedRetry.ts';
 import type { PostAnalysisTranscriptSegment } from './repository.ts';
-import { EMOTION_ANALYSIS_CONTEXT, emotionAnalysisInput } from './emotion/CONTEXT.ts';
+import { emotionAnalysisContext, emotionAnalysisInput } from './emotion/CONTEXT.ts';
 import { chatCompletionText, parseStructuredJson } from './structuredJson.ts';
 
 const OutputSchema = z.object({
@@ -63,11 +67,19 @@ export class QwenEmotionAnalyzer {
     segments: WindowSegment[],
     recorder: AiExecutionRecorder = noOpAiExecutionRecorder,
     reportContext: Record<string, unknown> = {},
+    language: SupportedLanguage = 'zh-CN',
   ): Promise<(SegmentEmotionAnalysis & { segmentId: string })[]> {
     let previous = '';
     for (let structureAttempt = 1; structureAttempt <= 2; structureAttempt += 1) {
-      const prompt = emotionAnalysisInput(segments, previous, structureAttempt);
-      const text = await this.request(audioUrl, prompt, structureAttempt, recorder, reportContext);
+      const prompt = emotionAnalysisInput(segments, previous, structureAttempt, language);
+      const text = await this.request(
+        audioUrl,
+        prompt,
+        structureAttempt,
+        recorder,
+        reportContext,
+        language,
+      );
       previous = text;
       const parsed = OutputSchema.safeParse(parseStructuredJson(text));
       if (!parsed.success) continue;
@@ -90,6 +102,7 @@ export class QwenEmotionAnalyzer {
     structureAttempt: number,
     recorder: AiExecutionRecorder,
     reportContext: Record<string, unknown>,
+    language: SupportedLanguage,
   ): Promise<string> {
     const request = this.options.fetch ?? fetch;
     const sleep =
@@ -120,7 +133,7 @@ export class QwenEmotionAnalyzer {
           reasoningMode: 'unsupported',
         });
         const messages = [
-          { role: 'system', content: EMOTION_ANALYSIS_CONTEXT },
+          { role: 'system', content: emotionAnalysisContext(language) },
           {
             role: 'user',
             content: [
@@ -146,7 +159,7 @@ export class QwenEmotionAnalyzer {
                 modalities: ['text'],
                 temperature: 0,
                 messages: [
-                  { role: 'system', content: EMOTION_ANALYSIS_CONTEXT },
+                  { role: 'system', content: emotionAnalysisContext(language) },
                   {
                     role: 'user',
                     content: [

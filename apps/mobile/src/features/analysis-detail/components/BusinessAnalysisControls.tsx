@@ -12,7 +12,11 @@
  * - 网络请求和弹窗状态由 AnalysisDetailScreen 编排。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { AudioBusinessAnalysisState, AudioPostAnalysisState } from '@echowave/contracts';
+import type {
+  AudioBusinessAnalysisState,
+  AudioPostAnalysisState,
+  SupportedLanguage,
+} from '@echowave/contracts';
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
@@ -23,46 +27,58 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import { AnalysisLanguagePicker } from '@/shared/i18n/AnalysisLanguagePicker';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { localizeRequestError } from '@/shared/i18n/errorLocalization';
+import type { TranslationKey } from '@/shared/i18n/translations';
 
-function enrichmentLabel(state: AudioPostAnalysisState, currentVersion: number): string {
-  if (state.state === 'idle') return '未识别';
-  if (state.state === 'not_requested') return '本次转写未启用';
-  if (state.state === 'source_unavailable') return '源音频已不可用';
+type Translator = (key: TranslationKey, options?: Record<string, unknown>) => string;
+
+function enrichmentLabel(
+  state: AudioPostAnalysisState,
+  currentVersion: number,
+  t: Translator,
+): string {
+  if (state.state === 'idle') return t('business.notRecognized');
+  if (state.state === 'not_requested') return t('business.notEnabled');
+  if (state.state === 'source_unavailable') return t('business.sourceUnavailable');
   if (state.confirmationVersion !== currentVersion)
-    return `已过期（基于 v${state.confirmationVersion}）`;
-  if (state.state === 'queued') return '等待中';
-  if (state.state === 'running') return `识别中 ${state.progress}%`;
-  if (state.state === 'failed') return '识别失败';
-  return '已完成';
+    return t('business.expired', { version: state.confirmationVersion });
+  if (state.state === 'queued') return t('business.waiting');
+  if (state.state === 'running') return t('business.recognizing', { progress: state.progress });
+  if (state.state === 'failed') return t('business.recognitionFailed');
+  return t('business.recognitionReady');
 }
 
-function stateLabel(state: AudioBusinessAnalysisState): string {
-  if (state.state === 'idle') return '尚未分析';
+function stateLabel(state: AudioBusinessAnalysisState, t: Translator): string {
+  if (state.state === 'idle') return t('business.idle');
   if (state.state === 'queued') {
-    return state.result ? '等待重新分析，当前仍展示上一版本' : '等待分析';
+    return state.result ? t('business.queuedWithResult') : t('business.queued');
   }
   if (state.state === 'running') {
     return state.result
-      ? `正在重新分析 ${state.progress}%，当前仍展示上一版本`
-      : `正在分析 ${state.progress}%`;
+      ? t('business.runningWithResult', { progress: state.progress })
+      : t('business.running', { progress: state.progress });
   }
-  if (state.state === 'failed') return state.result ? '重新分析失败，仍展示上一版本' : '分析失败';
+  if (state.state === 'failed')
+    return state.result ? t('business.failedWithResult') : t('business.failed');
   return state.settingsCurrent && state.knowledgeCurrent
-    ? '分析完成'
-    : '已有结果，设置或关联已更新';
+    ? t('business.ready')
+    : t('business.stale');
 }
 
-function errorLabel(state: AudioBusinessAnalysisState): string {
+function errorLabel(state: AudioBusinessAnalysisState, t: Translator): string {
   if (!state.error) return '';
   const prefix =
     state.error.reason === 'timeout'
-      ? '模型响应超时'
+      ? t('business.timeout')
       : state.error.reason === 'output_truncated'
-        ? '模型输出被截断'
+        ? t('business.truncated')
         : state.error.reason === 'invalid_citation'
-          ? '知识引用已校正'
+          ? t('business.citationFixed')
           : '';
-  return prefix ? `${prefix}：${state.error.message}` : state.error.message;
+  const message = localizeRequestError(state.error.code, state.error.message);
+  return prefix ? `${prefix}: ${message}` : message;
 }
 
 /** 展示当前分组业务分析状态与启动或重跑入口。 */
@@ -73,6 +89,7 @@ export function BusinessAnalysisControls({
   onStart: (force: boolean) => void;
   state: AudioBusinessAnalysisState;
 }) {
+  const { t } = useAppLanguage();
   const processing = state.state === 'queued' || state.state === 'running';
   return (
     <View style={styles.card}>
@@ -81,14 +98,24 @@ export function BusinessAnalysisControls({
           <Ionicons color={colors.secondary} name="stats-chart-outline" size={22} />
         </View>
         <View style={styles.cardCopy}>
-          <Text style={styles.cardTitle}>ASR 结果分析</Text>
-          <Text style={styles.cardDescription}>{stateLabel(state)}</Text>
+          <Text style={styles.cardTitle}>{t('business.cardTitle')}</Text>
+          <Text style={styles.cardDescription}>{stateLabel(state, t)}</Text>
+          {state.state !== 'idle' ? (
+            <Text style={styles.cardDescription}>
+              {t('analysisLanguage.current', {
+                language:
+                  state.language === 'zh-CN'
+                    ? t('analysisLanguage.zhCN')
+                    : t('analysisLanguage.en'),
+              })}
+            </Text>
+          ) : null}
         </View>
         {processing ? <ActivityIndicator color={colors.ink} /> : null}
       </View>
       {state.error ? (
         <Text accessibilityRole="alert" style={styles.errorText}>
-          {errorLabel(state)}
+          {errorLabel(state, t)}
         </Text>
       ) : null}
       {!processing ? (
@@ -97,7 +124,9 @@ export function BusinessAnalysisControls({
           onPress={() => onStart(Boolean(state.result))}
           style={styles.action}
         >
-          <Text style={styles.actionText}>{state.result ? '重新分析' : '开始分析'}</Text>
+          <Text style={styles.actionText}>
+            {state.result ? t('business.rerun') : t('business.start')}
+          </Text>
         </Pressable>
       ) : null}
     </View>
@@ -114,6 +143,8 @@ export function BusinessAnalysisPreflightDialog({
   pending,
   role,
   visible,
+  language,
+  onLanguageChange,
 }: {
   confirmationVersion: number;
   emotion: AudioPostAnalysisState;
@@ -123,38 +154,44 @@ export function BusinessAnalysisPreflightDialog({
   pending: boolean;
   role: AudioPostAnalysisState;
   visible: boolean;
+  language: SupportedLanguage;
+  onLanguageChange: (language: SupportedLanguage) => void;
 }) {
+  const { t } = useAppLanguage();
   const emotionReady =
     emotion.state === 'ready' && emotion.confirmationVersion === confirmationVersion;
   const roleReady = role.state === 'ready' && role.confirmationVersion === confirmationVersion;
   return (
     <Modal animationType="fade" onRequestClose={onCancel} transparent visible={visible}>
       <View style={styles.modalRoot}>
-        <Pressable accessibilityLabel="关闭分析前检查" onPress={onCancel} style={styles.backdrop} />
+        <Pressable
+          accessibilityLabel={t('business.closePreflight')}
+          onPress={onCancel}
+          style={styles.backdrop}
+        />
         <View accessibilityRole="alert" style={styles.dialog}>
-          <Text style={styles.dialogTitle}>分析前检查</Text>
-          <Text style={styles.dialogDescription}>
-            未完成情绪识别或角色识别仍可继续，但可能降低销售话术分析质量。
-          </Text>
+          <Text style={styles.dialogTitle}>{t('business.preflightTitle')}</Text>
+          <Text style={styles.dialogDescription}>{t('business.preflightDescription')}</Text>
+          <AnalysisLanguagePicker value={language} onChange={onLanguageChange} />
           <View style={styles.checkRow}>
-            <Text style={styles.checkTitle}>情绪识别</Text>
+            <Text style={styles.checkTitle}>{t('business.emotion')}</Text>
             <Text style={[styles.checkState, emotionReady && styles.ready]}>
-              {enrichmentLabel(emotion, confirmationVersion)}
+              {enrichmentLabel(emotion, confirmationVersion, t)}
             </Text>
           </View>
           <View style={styles.checkRow}>
-            <Text style={styles.checkTitle}>角色识别</Text>
+            <Text style={styles.checkTitle}>{t('business.role')}</Text>
             <Text style={[styles.checkState, roleReady && styles.ready]}>
-              {enrichmentLabel(role, confirmationVersion)}
+              {enrichmentLabel(role, confirmationVersion, t)}
             </Text>
           </View>
           <View style={styles.dialogActions}>
             <Pressable disabled={pending} onPress={onCancel} style={styles.dialogButton}>
-              <Text style={styles.cancelText}>取消</Text>
+              <Text style={styles.cancelText}>{t('common.cancel')}</Text>
             </Pressable>
             {!emotionReady || !roleReady ? (
               <Pressable disabled={pending} onPress={onSupplement} style={styles.dialogButton}>
-                <Text style={styles.supplementText}>去补充识别</Text>
+                <Text style={styles.supplementText}>{t('business.supplement')}</Text>
               </Pressable>
             ) : null}
             <Pressable
@@ -162,7 +199,9 @@ export function BusinessAnalysisPreflightDialog({
               onPress={onContinue}
               style={[styles.dialogButton, styles.continueButton]}
             >
-              <Text style={styles.continueText}>{pending ? '正在启动…' : '仍然分析'}</Text>
+              <Text style={styles.continueText}>
+                {pending ? t('post.starting') : t('business.continue')}
+              </Text>
             </Pressable>
           </View>
         </View>

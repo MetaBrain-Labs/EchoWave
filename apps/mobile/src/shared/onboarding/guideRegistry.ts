@@ -8,6 +8,8 @@
  * - 将屏幕坐标转换为安全的 React Native left/top 布局。
  * - 计算贴近目标且不会被窗口截断的说明卡与箭头位置。
  */
+import type { TranslationKey } from '@/shared/i18n/translations';
+
 export const GUIDE_IDS = [
   'basic',
   'knowledge',
@@ -232,6 +234,40 @@ export const GUIDE_REGISTRY: Record<GuideId, GuideDefinition> = {
     ],
   },
 };
+
+const guideTranslationPrefixes: Record<GuideId, string> = {
+  basic: 'guide.basic',
+  knowledge: 'guide.knowledge',
+  data_sources: 'guide.dataSources',
+  ai_configuration: 'guide.ai',
+  runtime_mode: 'guide.runtime',
+  analysis: 'guide.analysis',
+};
+
+/** 在保留路由与目标结构的前提下，生成当前 App 语言的引导注册表。 */
+export function localizeGuideRegistry(
+  t: (key: TranslationKey, options?: Record<string, unknown>) => string,
+): Record<GuideId, GuideDefinition> {
+  return Object.fromEntries(
+    GUIDE_IDS.map((id) => {
+      const guide = GUIDE_REGISTRY[id];
+      const prefix = guideTranslationPrefixes[id];
+      return [
+        id,
+        {
+          ...guide,
+          title: t(`${prefix}.title` as TranslationKey),
+          description: t(`${prefix}.description` as TranslationKey),
+          steps: guide.steps.map((step, index) => ({
+            ...step,
+            title: t(`${prefix}.${index + 1}.title` as TranslationKey),
+            body: t(`${prefix}.${index + 1}.body` as TranslationKey),
+          })),
+        },
+      ];
+    }),
+  ) as unknown as Record<GuideId, GuideDefinition>;
+}
 
 export type WindowRect = { height: number; width: number; x: number; y: number };
 export type LayoutRect = { height: number; left: number; top: number; width: number };

@@ -15,6 +15,7 @@ import { useCallback, useState } from 'react';
 import type { GroupSummary } from '@echowave/contracts';
 
 import { listGroups } from '@/shared/api/groupsApi';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 type GroupAssociationEditorOptions = {
   linkGroups: (groupIds: string[]) => Promise<void>;
@@ -25,9 +26,12 @@ type GroupAssociationEditorOptions = {
 /** 创建资源关联分组所需的共享交互控制器。 */
 export function useGroupAssociationEditor({
   linkGroups,
-  loadErrorMessage = '分组加载失败。',
-  linkErrorMessage = '关联分组失败。',
+  loadErrorMessage,
+  linkErrorMessage,
 }: GroupAssociationEditorOptions) {
+  const { t } = useAppLanguage();
+  const resolvedLoadErrorMessage = loadErrorMessage ?? t('groups.loadFailed');
+  const resolvedLinkErrorMessage = linkErrorMessage ?? t('groups.linkFailed');
   const [pickerVisible, setPickerVisible] = useState(false);
   const [availableGroups, setAvailableGroups] = useState<GroupSummary[]>([]);
   const [pickerLoading, setPickerLoading] = useState(false);
@@ -42,11 +46,11 @@ export function useGroupAssociationEditor({
     try {
       setAvailableGroups((await listGroups()).items);
     } catch (reason) {
-      setPickerError(reason instanceof Error ? reason.message : loadErrorMessage);
+      setPickerError(reason instanceof Error ? reason.message : resolvedLoadErrorMessage);
     } finally {
       setPickerLoading(false);
     }
-  }, [loadErrorMessage]);
+  }, [resolvedLoadErrorMessage]);
 
   const openGroupPicker = useCallback(() => {
     setSelectedGroupIds(new Set());
@@ -73,11 +77,11 @@ export function useGroupAssociationEditor({
       setSelectedGroupIds(new Set());
       setPickerVisible(false);
     } catch (reason) {
-      setPickerError(reason instanceof Error ? reason.message : linkErrorMessage);
+      setPickerError(reason instanceof Error ? reason.message : resolvedLinkErrorMessage);
     } finally {
       setLinking(false);
     }
-  }, [linkGroups, linkErrorMessage, linking, selectedGroupIds]);
+  }, [linkGroups, linking, resolvedLinkErrorMessage, selectedGroupIds]);
 
   return {
     availableGroups,

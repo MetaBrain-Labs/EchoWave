@@ -27,6 +27,7 @@ import {
   type AudioTranscriptionCapabilitiesResponse,
   type AudioTranscriptionModel,
   type AudioTranscriptionStartRequest,
+  type SupportedLanguage,
   type AudioTranscriptionStartResponse,
 } from '@echowave/contracts';
 import { stat } from 'node:fs/promises';
@@ -114,6 +115,7 @@ export interface AudioService {
     id: string,
     type: AudioPostAnalysisType,
     frozenBindings?: FrozenAudioCapabilityBindings,
+    language?: SupportedLanguage,
   ): Promise<AudioPostAnalysisStartResponse>;
   startAudioBusinessAnalysis(
     id: string,
@@ -360,6 +362,7 @@ export class DefaultAudioService implements AudioService {
       includeAcousticEmotion,
       emotion?.revisionId ?? null,
       emotion?.model ?? null,
+      request.language,
     );
   }
 
@@ -451,6 +454,7 @@ export class DefaultAudioService implements AudioService {
     id: string,
     type: AudioPostAnalysisType,
     frozenBindings?: FrozenAudioCapabilityBindings,
+    language: SupportedLanguage = 'zh-CN',
   ) {
     if (type === 'emotion') {
       const assetRuntime = await this.audioAnalysisRepository.getAssetRuntime(id);
@@ -490,8 +494,9 @@ export class DefaultAudioService implements AudioService {
           resolved.model,
           resolved.revisionId,
           stagingRevisionId,
+          language,
         )
-      : this.postAnalysisRepository.queue(id, type, resolved.model);
+      : this.postAnalysisRepository.queue(id, type, resolved.model, null, null, language);
   }
 
   async startAudioBusinessAnalysis(
@@ -521,6 +526,7 @@ export class DefaultAudioService implements AudioService {
       chat.revisionId,
       embedding.revisionId,
       frozenInput,
+      input.language,
     );
   }
 }

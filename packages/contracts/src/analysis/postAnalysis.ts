@@ -9,9 +9,12 @@
  */
 import { z } from 'zod';
 
-import { EntityIdSchema } from '../common.ts';
+import { EntityIdSchema, SupportedLanguageSchema } from '../common.ts';
 
 export const AudioPostAnalysisTypeSchema = z.enum(['emotion', 'role']);
+export const AudioPostAnalysisStartRequestSchema = z
+  .object({ language: SupportedLanguageSchema.default('zh-CN') })
+  .strict();
 export const AudioPostAnalysisStateSchema = z.discriminatedUnion('state', [
   z.object({ state: z.literal('idle') }),
   z.object({
@@ -28,6 +31,7 @@ export const AudioPostAnalysisStateSchema = z.discriminatedUnion('state', [
     model: z.string().min(1),
     progress: z.number().int().min(0).max(100),
     confirmationVersion: z.number().int().positive(),
+    language: SupportedLanguageSchema.default('zh-CN'),
   }),
   z.object({
     state: z.literal('ready'),
@@ -35,6 +39,7 @@ export const AudioPostAnalysisStateSchema = z.discriminatedUnion('state', [
     model: z.string().min(1),
     completedAt: z.string().datetime(),
     confirmationVersion: z.number().int().positive(),
+    language: SupportedLanguageSchema.default('zh-CN'),
   }),
   z.object({
     state: z.literal('failed'),
@@ -44,6 +49,7 @@ export const AudioPostAnalysisStateSchema = z.discriminatedUnion('state', [
     message: z.string().min(1),
     retryable: z.boolean(),
     confirmationVersion: z.number().int().positive(),
+    language: SupportedLanguageSchema.default('zh-CN'),
     requiresSourceRemount: z.boolean().optional(),
   }),
 ]);
@@ -120,6 +126,7 @@ export const AudioPostAnalysisStartResponseSchema = z.object({
 });
 
 export type AudioPostAnalysisType = z.infer<typeof AudioPostAnalysisTypeSchema>;
+export type AudioPostAnalysisStartRequest = z.infer<typeof AudioPostAnalysisStartRequestSchema>;
 export type AudioPostAnalysisState = z.infer<typeof AudioPostAnalysisStateSchema>;
 export type AudioPostAnalysisStartResponse = z.infer<typeof AudioPostAnalysisStartResponseSchema>;
 export type AudioEmotionLabel = z.infer<typeof AudioEmotionLabelSchema>;

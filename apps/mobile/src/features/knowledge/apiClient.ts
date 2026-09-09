@@ -27,6 +27,7 @@ import {
 } from '@echowave/contracts';
 
 import { getApiUrl } from '@/shared/api/apiUrl';
+import { localizeRequestError } from '@/shared/i18n/errorLocalization';
 
 /** 知识库请求在移动端暴露的稳定错误类型。 */
 export class KnowledgeRequestError extends Error {
@@ -63,19 +64,33 @@ async function request<T>(
       const parsed = ApiErrorResponseSchema.safeParse(body);
       throw new KnowledgeRequestError(
         parsed.success ? parsed.data.error.code : 'NETWORK',
-        parsed.success ? parsed.data.error.message : `请求失败（HTTP ${response.status}）。`,
+        localizeRequestError(
+          parsed.success ? parsed.data.error.code : 'HTTP_ERROR',
+          parsed.success ? parsed.data.error.message : `请求失败（HTTP ${response.status}）。`,
+        ),
         parsed.success && parsed.data.error.retryable,
       );
     }
     const parsed = schema.safeParse(body);
     if (!parsed.success)
-      throw new KnowledgeRequestError('INVALID_RESPONSE', '服务返回了无法识别的数据。');
+      throw new KnowledgeRequestError(
+        'INVALID_RESPONSE',
+        localizeRequestError('INVALID_RESPONSE', '服务返回了无法识别的数据。'),
+      );
     return parsed.data;
   } catch (error) {
     if (error instanceof KnowledgeRequestError) throw error;
     if (controller.signal.aborted)
-      throw new KnowledgeRequestError('TIMEOUT', '请求超时，请重试。', true);
-    throw new KnowledgeRequestError('NETWORK', '无法连接服务，请检查网络。', true);
+      throw new KnowledgeRequestError(
+        'TIMEOUT',
+        localizeRequestError('TIMEOUT', '请求超时，请重试。'),
+        true,
+      );
+    throw new KnowledgeRequestError(
+      'NETWORK',
+      localizeRequestError('NETWORK', '无法连接服务，请检查网络。'),
+      true,
+    );
   } finally {
     clearTimeout(timeout);
   }

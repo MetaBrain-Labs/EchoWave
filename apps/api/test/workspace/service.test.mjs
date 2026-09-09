@@ -348,6 +348,7 @@ describe('DefaultAudioService audio transcription', () => {
       false,
       null,
       null,
+      'zh-CN',
     ]);
     await assert.rejects(
       () =>
@@ -414,7 +415,7 @@ describe('DefaultAudioService audio post-analysis', () => {
       audioFileId: sourceId,
       type: 'role',
     });
-    assert.deepEqual(queued, [[sourceId, 'role', 'deepseek-v4-flash']]);
+    assert.deepEqual(queued, [[sourceId, 'role', 'deepseek-v4-flash', null, null, 'zh-CN']]);
   });
 });
 

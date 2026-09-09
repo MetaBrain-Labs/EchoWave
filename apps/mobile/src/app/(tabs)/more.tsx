@@ -11,7 +11,7 @@
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter, type Href } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -23,57 +23,35 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
-
-const navigationCards: readonly {
-  accessibilityLabel: string;
-  description: string;
-  href: Href;
-  icon: keyof typeof Ionicons.glyphMap;
-  title: string;
-}[] = [
-  {
-    accessibilityLabel: '打开分析',
-    description: '查看音频分析流程、报告和失败任务。',
-    href: '/analysis' as Href,
-    icon: 'pulse-outline',
-    title: '分析',
-  },
-  {
-    accessibilityLabel: '打开服务状态',
-    description: '检查 API 连接、数据库和基础服务可用性。',
-    href: '/service-status' as Href,
-    icon: 'pulse-outline',
-    title: '服务状态',
-  },
-  {
-    accessibilityLabel: '打开 AI 配置',
-    description: '管理模型供应商、能力绑定和安全凭据。',
-    href: '/settings' as Href,
-    icon: 'options-outline',
-    title: 'AI 配置',
-  },
-  {
-    accessibilityLabel: '打开运行模式',
-    description: '查看或切换混合、对象存储与轻量本地模式。',
-    href: '/audio-runtime' as Href,
-    icon: 'layers-outline',
-    title: '运行模式',
-  },
-];
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 /** 将“更多”页面渲染为统一的导航与引导入口。 */
 export default function MoreScreen() {
   const router = useRouter();
+  const { language, setLanguage, t } = useAppLanguage();
+  const navigationCards = [
+    { key: 'analysis', href: '/analysis' as Href, icon: 'pulse-outline' as const },
+    { key: 'service', href: '/service-status' as Href, icon: 'pulse-outline' as const },
+    { key: 'ai', href: '/settings' as Href, icon: 'options-outline' as const },
+    { key: 'runtime', href: '/audio-runtime' as Href, icon: 'layers-outline' as const },
+  ] as const;
+  const changeLanguage = async (next: 'zh-CN' | 'en') => {
+    try {
+      await setLanguage(next);
+    } catch {
+      Alert.alert(t('common.saveFailed'), t('language.saveError'));
+    }
+  };
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
-      <TopLevelPageHeader subtitle="分析、服务诊断、AI 配置与音频运行策略。" title="更多" />
+      <TopLevelPageHeader subtitle={t('more.subtitle')} title={t('more.title')} />
       <ScrollView contentContainerStyle={styles.content} testID="more-scroll">
         {navigationCards.map((card) => (
           <Pressable
-            accessibilityLabel={card.accessibilityLabel}
+            accessibilityLabel={t(`more.${card.key}.accessibility`)}
             accessibilityRole="button"
-            key={card.title}
+            key={card.key}
             onPress={() => router.push(card.href)}
             style={({ pressed }) => [styles.navigationCard, pressed && styles.pressed]}
           >
@@ -81,14 +59,38 @@ export default function MoreScreen() {
               <Ionicons color={colors.ink} name={card.icon} size={22} />
             </View>
             <View style={styles.navigationCopy}>
-              <Text style={styles.navigationTitle}>{card.title}</Text>
-              <Text style={styles.navigationText}>{card.description}</Text>
+              <Text style={styles.navigationTitle}>{t(`more.${card.key}.title`)}</Text>
+              <Text style={styles.navigationText}>{t(`more.${card.key}.description`)}</Text>
             </View>
             <Ionicons color={textColors.tertiary} name="chevron-forward" size={22} />
           </Pressable>
         ))}
+        <View style={styles.languageCard}>
+          <Text style={styles.navigationTitle}>{t('language.section')}</Text>
+          <View accessibilityRole="radiogroup" style={styles.languageOptions}>
+            {(['zh-CN', 'en'] as const).map((option) => (
+              <Pressable
+                accessibilityRole="radio"
+                accessibilityState={{ checked: language === option }}
+                key={option}
+                onPress={() => void changeLanguage(option)}
+                style={[styles.languageOption, language === option && styles.languageSelected]}
+              >
+                <Text
+                  style={[
+                    styles.languageLabel,
+                    language === option && styles.languageSelectedLabel,
+                  ]}
+                >
+                  {t(option === 'zh-CN' ? 'language.zhCN' : 'language.en')}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={styles.navigationText}>{t('language.supported')}</Text>
+        </View>
         <Pressable
-          accessibilityLabel="打开新手引导中心"
+          accessibilityLabel={t('more.guides.accessibility')}
           accessibilityRole="button"
           onPress={() => router.push('/guides' as Href)}
           style={({ pressed }) => [styles.navigationCard, pressed && styles.pressed]}
@@ -97,8 +99,8 @@ export default function MoreScreen() {
             <Ionicons color={colors.ink} name="navigate-outline" size={22} />
           </View>
           <View style={styles.navigationCopy}>
-            <Text style={styles.navigationTitle}>新手引导</Text>
-            <Text style={styles.navigationText}>按主题开始、跳过或重播六项产品引导。</Text>
+            <Text style={styles.navigationTitle}>{t('more.guides.title')}</Text>
+            <Text style={styles.navigationText}>{t('more.guides.description')}</Text>
           </View>
           <Ionicons color={textColors.tertiary} name="chevron-forward" size={22} />
         </Pressable>
@@ -149,4 +151,23 @@ const styles = StyleSheet.create({
     color: textColors.secondary,
     fontFamily: fontFamilies.sans,
   },
+  languageCard: {
+    backgroundColor: colors.card,
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  languageOptions: { flexDirection: 'row', gap: spacing.sm },
+  languageOption: {
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    flex: 1,
+    padding: spacing.base,
+  },
+  languageSelected: { backgroundColor: colors.ink, borderColor: colors.ink },
+  languageLabel: { ...typography.body, color: textColors.primary, textAlign: 'center' },
+  languageSelectedLabel: { color: colors.white },
 });
