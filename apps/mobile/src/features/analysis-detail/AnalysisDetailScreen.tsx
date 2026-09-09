@@ -34,7 +34,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { useSwipePager } from '@/shared/hooks/useSwipePager';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useAudioPlayback } from '@/shared/audio/useAudioPlayback';
 import { streamAudioExecutionTrace } from '@/shared/api/audioExecutionStream';
@@ -78,12 +77,14 @@ import {
   getHideIrrelevantSegmentsPreference,
   setHideIrrelevantSegmentsPreference,
 } from './preferences';
-import { AiTagPanel } from './components/AiTagPanel';
 import { IconButton } from './components/AnalysisControls';
-import { analysisTabKeys, DetailTabs, type AnalysisTab } from './components/AnalysisTabs';
+import { type AnalysisTab } from './components/AnalysisTabs';
+import {
+  AnalysisDetailCanvas,
+  AnalysisSourceUnavailableCard,
+} from './components/AnalysisDetailCanvas';
 import { CompactPlayer, ExpandedPlayer } from './components/Player';
-import { SummaryContent } from './components/SummaryContent';
-import { TranscriptContent, type TranscriptDisplayMode } from './components/TranscriptContent';
+import { type TranscriptDisplayMode } from './components/TranscriptContent';
 import { EmotionAnalysisPanel } from './components/EmotionAnalysisPanel';
 import { ModelExecutionContent } from './components/ModelExecutionContent';
 import { PostAnalysisConfirmDialog, PostAnalysisControls } from './components/PostAnalysisControls';
@@ -297,12 +298,6 @@ export function AnalysisDetailScreen({
       setSelectedTag(undefined);
     }
   };
-  const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } = useSwipePager({
-    activeTab,
-    onTabChange: applyTabChange,
-    tabs: hasSummary ? analysisTabKeys : (['transcript', 'tasks', 'model'] as AnalysisTab[]),
-  });
-
   const load = useCallback(
     async (showLoading = true): Promise<AnalysisDetailView | undefined> => {
       const requestSequence = ++detailRequestSequenceRef.current;
@@ -961,212 +956,12 @@ export function AnalysisDetailScreen({
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-      {sourceAvailable ? (
-        expandedPlayer ? (
-          <ExpandedPlayer
-            durationSeconds={playbackDuration}
-            error={playback.error}
-            isBuffering={playback.isBuffering}
-            isLoaded={playback.isLoaded}
-            isPlaying={playback.isPlaying}
-            onBack={requestBack}
-            onCollapse={() => setExpandedPlayer(false)}
-            onJump={(seconds) => void playback.jumpBy(seconds)}
-            onPlayPause={() => void playback.toggleFullPlayback()}
-            onRateChange={changePlaybackRate}
-            onRetry={() => playback.retry()}
-            onSeek={(seconds) => void playback.seekTo(seconds)}
-            playbackRate={playbackRate}
-            positionSeconds={playback.currentTime}
-          />
-        ) : (
-          <CompactPlayer
-            durationSeconds={playbackDuration}
-            error={playback.error}
-            isBuffering={playback.isBuffering}
-            isLoaded={playback.isLoaded}
-            isPlaying={playback.isPlaying}
-            onBack={requestBack}
-            onExpand={() => setExpandedPlayer(true)}
-            onPlayPause={() => void playback.toggleFullPlayback()}
-            onRetry={() => playback.retry()}
-            positionSeconds={playback.currentTime}
-          />
-        )
-      ) : (
-        <View
-          accessibilityRole="alert"
-          style={styles.sourceUnavailableCard}
-          testID="analysis-source-unavailable"
-        >
-          <IconButton icon="chevron-back" label={t('common.back')} onPress={requestBack} />
-          <Ionicons color={colors.secondary} name="volume-mute-outline" size={24} />
-          <View style={styles.sourceUnavailableCopy}>
-            <Text style={styles.sourceUnavailableTitle}>
-              {detail.runtimeMode === 'lightweight_local'
-                ? t('analysisDetail.lightweightNoAudio')
-                : t('analysisDetail.sourceUnavailable')}
-            </Text>
-            <Text style={styles.sourceUnavailableDescription}>
-              {detail.runtimeMode === 'lightweight_local'
-                ? t('analysisDetail.lightweightDescription')
-                : t('analysisDetail.sourceDescription')}
-            </Text>
-          </View>
-        </View>
-      )}
-      <DetailTabs activeTab={activeTab} onChange={selectTab} showSummary={hasSummary} />
-      <ScrollView
-        accessibilityLabel={t('analysisDetail.pager')}
-        directionalLockEnabled
-        horizontal
-        nestedScrollEnabled
-        onMomentumScrollEnd={handleMomentumScrollEnd}
-        pagingEnabled
-        ref={pagerRef}
-        showsHorizontalScrollIndicator={false}
-        style={styles.pager}
-        testID="analysis-tab-pager"
-      >
-        <View style={[styles.page, { width: pageWidth }]} testID="analysis-transcript-page">
-          <TranscriptContent
-            confirming={confirmingTranscript}
-            detail={detail}
-            displayMode={transcriptDisplayMode}
-            draftSegments={transcriptDraftSegments}
-            editing={editingTranscript}
-            hideIrrelevant={hideIrrelevant}
-            onCancelEditing={cancelTranscriptEditing}
-            onConfirmEditing={() => void confirmTranscript()}
-            onDisplayModeChange={setTranscriptDisplayMode}
-            onDraftChange={(segmentId, text) =>
-              setTranscriptDraftSegments((current) =>
-                current.map((segment) =>
-                  segment.id === segmentId ? { ...segment, text } : segment,
-                ),
-              )
-            }
-            onOpenAiTag={setSelectedTag}
-            onOpenEmotion={setEmotionSegment}
-            onPlaySegment={(segment) =>
-              void playback.playRange({
-                endSeconds: segment.endSeconds,
-                key: segment.id,
-                startSeconds: segment.startSeconds,
-              })
-            }
-            onPlayReviewFinding={(segment, splitAfterWordIndex) => {
-              const boundary = segment.words.find((word) => word.index === splitAfterWordIndex);
-              if (!boundary) return;
-              void playback.playRange({
-                endSeconds: Math.min(segment.endSeconds, boundary.endMs / 1_000 + 2),
-                key: `review:${segment.sourceSegmentId}:${splitAfterWordIndex}`,
-                startSeconds: Math.max(segment.startSeconds, boundary.endMs / 1_000 - 2),
-              });
-            }}
-            onResolveAllReviewFindings={() => void resolveAllSpeakerFindings()}
-            onResolveReviewFinding={(findingId) => void resolveOneSpeakerFinding(findingId)}
-            onSpeakerChange={(segmentId, speakerKey) =>
-              setTranscriptDraftSegments((current) =>
-                current.map((segment) =>
-                  segment.id === segmentId
-                    ? { ...segment, speakerKey, speakerLabel: speakerKey }
-                    : segment,
-                ),
-              )
-            }
-            onSplitSegment={(segment, splitAfterWordIndex) => {
-              const splitWord = segment.words.find((word) => word.index === splitAfterWordIndex);
-              const nextWord = segment.words.find((word) => word.index === splitAfterWordIndex + 1);
-              if (!splitWord || !nextWord) return;
-              setTranscriptDraftSegments((current) => {
-                const newSpeakerKey = nextSpeakerKey(current);
-                const leftEnd = splitAfterWordIndex + 1;
-                const left: TranscriptSegment = {
-                  ...segment,
-                  id: `${segment.sourceSegmentId}:${segment.startWordIndex}-${leftEnd}`,
-                  endSeconds: splitWord.endMs / 1_000,
-                  endWordIndex: leftEnd,
-                  text: wordsToText(segment, segment.startWordIndex, leftEnd),
-                  words: segment.words.filter((word) => word.index < leftEnd),
-                  reviewFindings: segment.reviewFindings.filter(
-                    (finding) =>
-                      finding.splitAfterWordIndex !== null && finding.splitAfterWordIndex < leftEnd,
-                  ),
-                };
-                const right: TranscriptSegment = {
-                  ...segment,
-                  id: `${segment.sourceSegmentId}:${leftEnd}-${segment.endWordIndex}`,
-                  speakerKey: newSpeakerKey,
-                  speakerLabel: newSpeakerKey,
-                  startSeconds: nextWord.startMs / 1_000,
-                  startWordIndex: leftEnd,
-                  text: wordsToText(segment, leftEnd, segment.endWordIndex),
-                  words: segment.words.filter((word) => word.index >= leftEnd),
-                  reviewFindings: segment.reviewFindings.filter(
-                    (finding) =>
-                      finding.splitAfterWordIndex !== null &&
-                      finding.splitAfterWordIndex >= leftEnd,
-                  ),
-                };
-                return current.flatMap((item) => (item.id === segment.id ? [left, right] : [item]));
-              });
-            }}
-            resolvingReviewFinding={resolvingSpeakerReview}
-            onStartEditing={startTranscriptEditing}
-            playingSegmentId={playback.activeRangeKey}
-            segmentPlaybackDisabled={
-              !sourceAvailable || !playback.isLoaded || Boolean(playback.error)
-            }
-            segmentPlaybackLoading={sourceAvailable && playback.isBuffering}
-            segmentPlaybackPlaying={sourceAvailable && playback.isPlaying}
-            reviewPlaybackAvailable={sourceAvailable}
-            selectedSegmentIds={selectedTag?.evidenceSegmentIds ?? []}
-            onRefresh={screenRefresh.onRefresh}
-            refreshing={screenRefresh.refreshing}
-          />
-        </View>
-        <ScrollView
-          alwaysBounceVertical
-          contentContainerStyle={styles.tasksContent}
-          nestedScrollEnabled
-          refreshControl={<ScreenRefreshControl {...screenRefresh} />}
-          showsVerticalScrollIndicator={false}
-          style={[styles.page, { width: pageWidth }]}
-          testID="analysis-tasks-scroll"
-        >
-          <TranscriptionRunSelector
-            onAuto={() => void changeTranscriptionSelection({ mode: 'auto' })}
-            onSelect={(revisionId) =>
-              void changeTranscriptionSelection({ mode: 'manual', revisionId })
-            }
-            pending={selectingTranscription}
-            runs={transcriptionRuns}
-          />
-          <PostAnalysisControls
-            confirmed={detail.transcriptConfirmation.status === 'confirmed'}
-            emotion={detail.postAnalysis.emotion}
-            onRemountSource={() => void reselectSourceAndTranscribe()}
-            onStart={(type) => {
-              setAnalysisLanguage(appLanguage);
-              setConfirmAnalysisType(type);
-            }}
-            role={detail.postAnalysis.role}
-            runtimeMode={detail.runtimeMode}
-          />
-          {groupId ? (
-            <BusinessAnalysisControls
-              onStart={requestBusinessAnalysis}
-              state={detail.businessAnalysis}
-            />
-          ) : null}
-        </ScrollView>
-        {hasSummary ? (
-          <View style={[styles.page, { width: pageWidth }]}>
-            <SummaryContent detail={detail} {...screenRefresh} />
-          </View>
-        ) : null}
-        <View style={[styles.page, { width: pageWidth }]}>
+      <AnalysisDetailCanvas
+        activeTab={activeTab}
+        audioExpanded={expandedPlayer}
+        detail={detail}
+        hideIrrelevant={hideIrrelevant}
+        modelContent={
           <ModelExecutionContent
             error={executionTraceError}
             loading={executionTraceLoading}
@@ -1175,21 +970,190 @@ export function AnalysisDetailScreen({
             refreshing={screenRefresh.refreshing}
             trace={currentExecutionTrace}
           />
-        </View>
-      </ScrollView>
-      <AiTagPanel
-        analysis={selectedTag}
-        audioExpanded={expandedPlayer}
-        hideIrrelevant={hideIrrelevant}
-        onClose={() => setSelectedTag(undefined)}
+        }
+        onChangeTab={applyTabChange}
+        onCloseTag={() => setSelectedTag(undefined)}
         onHideIrrelevantChange={changeHideIrrelevant}
         onOpenCitation={(knowledgeBaseId, documentId, chunkId) => {
           setSelectedTag(undefined);
           onOpenCitation?.(knowledgeBaseId, documentId, chunkId);
         }}
-        segments={transcriptSegments.filter((segment) =>
-          selectedTag?.evidenceSegmentIds.includes(segment.id),
-        )}
+        selectedTag={selectedTag}
+        summary={hasSummary ? screenRefresh : undefined}
+        tasksContent={
+          <ScrollView
+            alwaysBounceVertical
+            contentContainerStyle={styles.tasksContent}
+            nestedScrollEnabled
+            refreshControl={<ScreenRefreshControl {...screenRefresh} />}
+            showsVerticalScrollIndicator={false}
+            testID="analysis-tasks-scroll"
+          >
+            <TranscriptionRunSelector
+              onAuto={() => void changeTranscriptionSelection({ mode: 'auto' })}
+              onSelect={(revisionId) =>
+                void changeTranscriptionSelection({ mode: 'manual', revisionId })
+              }
+              pending={selectingTranscription}
+              runs={transcriptionRuns}
+            />
+            <PostAnalysisControls
+              confirmed={detail.transcriptConfirmation.status === 'confirmed'}
+              emotion={detail.postAnalysis.emotion}
+              onRemountSource={() => void reselectSourceAndTranscribe()}
+              onStart={(type) => {
+                setAnalysisLanguage(appLanguage);
+                setConfirmAnalysisType(type);
+              }}
+              role={detail.postAnalysis.role}
+              runtimeMode={detail.runtimeMode}
+            />
+            {groupId ? (
+              <BusinessAnalysisControls
+                onStart={requestBusinessAnalysis}
+                state={detail.businessAnalysis}
+              />
+            ) : null}
+          </ScrollView>
+        }
+        tagSegments={transcriptSegments}
+        topContent={
+          sourceAvailable ? (
+            expandedPlayer ? (
+              <ExpandedPlayer
+                durationSeconds={playbackDuration}
+                error={playback.error}
+                isBuffering={playback.isBuffering}
+                isLoaded={playback.isLoaded}
+                isPlaying={playback.isPlaying}
+                onBack={requestBack}
+                onCollapse={() => setExpandedPlayer(false)}
+                onJump={(seconds) => void playback.jumpBy(seconds)}
+                onPlayPause={() => void playback.toggleFullPlayback()}
+                onRateChange={changePlaybackRate}
+                onRetry={() => playback.retry()}
+                onSeek={(seconds) => void playback.seekTo(seconds)}
+                playbackRate={playbackRate}
+                positionSeconds={playback.currentTime}
+              />
+            ) : (
+              <CompactPlayer
+                durationSeconds={playbackDuration}
+                error={playback.error}
+                isBuffering={playback.isBuffering}
+                isLoaded={playback.isLoaded}
+                isPlaying={playback.isPlaying}
+                onBack={requestBack}
+                onExpand={() => setExpandedPlayer(true)}
+                onPlayPause={() => void playback.toggleFullPlayback()}
+                onRetry={() => playback.retry()}
+                positionSeconds={playback.currentTime}
+              />
+            )
+          ) : (
+            <AnalysisSourceUnavailableCard
+              description={
+                detail.runtimeMode === 'lightweight_local'
+                  ? t('analysisDetail.lightweightDescription')
+                  : t('analysisDetail.sourceDescription')
+              }
+              onBack={requestBack}
+              title={
+                detail.runtimeMode === 'lightweight_local'
+                  ? t('analysisDetail.lightweightNoAudio')
+                  : t('analysisDetail.sourceUnavailable')
+              }
+            />
+          )
+        }
+        transcript={{
+          confirming: confirmingTranscript,
+          displayMode: transcriptDisplayMode,
+          draftSegments: transcriptDraftSegments,
+          editing: editingTranscript,
+          hideIrrelevant,
+          onCancelEditing: cancelTranscriptEditing,
+          onConfirmEditing: () => void confirmTranscript(),
+          onDisplayModeChange: setTranscriptDisplayMode,
+          onDraftChange: (segmentId, text) =>
+            setTranscriptDraftSegments((current) =>
+              current.map((segment) => (segment.id === segmentId ? { ...segment, text } : segment)),
+            ),
+          onOpenAiTag: setSelectedTag,
+          onOpenEmotion: setEmotionSegment,
+          onPlaySegment: (segment) =>
+            void playback.playRange({
+              endSeconds: segment.endSeconds,
+              key: segment.id,
+              startSeconds: segment.startSeconds,
+            }),
+          onPlayReviewFinding: (segment, splitAfterWordIndex) => {
+            const boundary = segment.words.find((word) => word.index === splitAfterWordIndex);
+            if (!boundary) return;
+            void playback.playRange({
+              endSeconds: Math.min(segment.endSeconds, boundary.endMs / 1_000 + 2),
+              key: `review:${segment.sourceSegmentId}:${splitAfterWordIndex}`,
+              startSeconds: Math.max(segment.startSeconds, boundary.endMs / 1_000 - 2),
+            });
+          },
+          onResolveAllReviewFindings: () => void resolveAllSpeakerFindings(),
+          onResolveReviewFinding: (findingId) => void resolveOneSpeakerFinding(findingId),
+          onSpeakerChange: (segmentId, speakerKey) =>
+            setTranscriptDraftSegments((current) =>
+              current.map((segment) =>
+                segment.id === segmentId
+                  ? { ...segment, speakerKey, speakerLabel: speakerKey }
+                  : segment,
+              ),
+            ),
+          onSplitSegment: (segment, splitAfterWordIndex) => {
+            const splitWord = segment.words.find((word) => word.index === splitAfterWordIndex);
+            const nextWord = segment.words.find((word) => word.index === splitAfterWordIndex + 1);
+            if (!splitWord || !nextWord) return;
+            setTranscriptDraftSegments((current) => {
+              const newSpeakerKey = nextSpeakerKey(current);
+              const leftEnd = splitAfterWordIndex + 1;
+              const left: TranscriptSegment = {
+                ...segment,
+                id: `${segment.sourceSegmentId}:${segment.startWordIndex}-${leftEnd}`,
+                endSeconds: splitWord.endMs / 1_000,
+                endWordIndex: leftEnd,
+                text: wordsToText(segment, segment.startWordIndex, leftEnd),
+                words: segment.words.filter((word) => word.index < leftEnd),
+                reviewFindings: segment.reviewFindings.filter(
+                  (finding) =>
+                    finding.splitAfterWordIndex !== null && finding.splitAfterWordIndex < leftEnd,
+                ),
+              };
+              const right: TranscriptSegment = {
+                ...segment,
+                id: `${segment.sourceSegmentId}:${leftEnd}-${segment.endWordIndex}`,
+                speakerKey: newSpeakerKey,
+                speakerLabel: newSpeakerKey,
+                startSeconds: nextWord.startMs / 1_000,
+                startWordIndex: leftEnd,
+                text: wordsToText(segment, leftEnd, segment.endWordIndex),
+                words: segment.words.filter((word) => word.index >= leftEnd),
+                reviewFindings: segment.reviewFindings.filter(
+                  (finding) =>
+                    finding.splitAfterWordIndex !== null && finding.splitAfterWordIndex >= leftEnd,
+                ),
+              };
+              return current.flatMap((item) => (item.id === segment.id ? [left, right] : [item]));
+            });
+          },
+          resolvingReviewFinding: resolvingSpeakerReview,
+          onStartEditing: startTranscriptEditing,
+          playingSegmentId: playback.activeRangeKey,
+          segmentPlaybackDisabled:
+            !sourceAvailable || !playback.isLoaded || Boolean(playback.error),
+          segmentPlaybackLoading: sourceAvailable && playback.isBuffering,
+          segmentPlaybackPlaying: sourceAvailable && playback.isPlaying,
+          reviewPlaybackAvailable: sourceAvailable,
+          selectedSegmentIds: selectedTag?.evidenceSegmentIds ?? [],
+          onRefresh: screenRefresh.onRefresh,
+          refreshing: screenRefresh.refreshing,
+        }}
       />
       <EmotionAnalysisPanel onClose={() => setEmotionSegment(undefined)} segment={emotionSegment} />
       <PostAnalysisConfirmDialog

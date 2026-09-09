@@ -11,6 +11,7 @@ import type { AudioTranscriptionRunListResponse } from '@echowave/contracts';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import type { TranslationKey } from '@/shared/i18n/translations';
 import {
   colors,
   fontFamilies,
@@ -19,6 +20,16 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+
+type TranscriptionRunStatus = AudioTranscriptionRunListResponse['items'][number]['status'];
+
+const transcriptionRunStatusKeys: Record<TranscriptionRunStatus, TranslationKey> = {
+  queued: 'transcriptionRuns.status.queued',
+  transcribing: 'transcriptionRuns.status.transcribing',
+  analyzing: 'transcriptionRuns.status.analyzing',
+  ready: 'transcriptionRuns.status.ready',
+  failed: 'transcriptionRuns.status.failed',
+};
 
 /** 渲染 ASR 版本列表和自动选择入口。 */
 export function TranscriptionRunSelector({
@@ -66,7 +77,7 @@ export function TranscriptionRunSelector({
             </Text>
             <Text style={styles.description}>
               {t('transcriptionRuns.details', {
-                status: run.status,
+                status: t(transcriptionRunStatusKeys[run.status]),
                 emotion: run.includeAcousticEmotion
                   ? t('transcriptionRuns.enabled')
                   : t('transcriptionRuns.disabled'),

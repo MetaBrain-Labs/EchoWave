@@ -92,6 +92,7 @@ describe('StarterTourProvider', () => {
     );
     expect(screen.getByTestId('starter-tour-state-ready')).toBeTruthy();
     expect(screen.queryByText('上传第一段录音')).toBeNull();
+    expect(mockReplace).toHaveBeenLastCalledWith('/guides');
   });
 
   it('migrates the old completed flag into the basic status without auto-playing', async () => {
@@ -136,6 +137,7 @@ describe('StarterTourProvider', () => {
           expect.stringContaining(`"${id}":"skipped"`),
         ),
       );
+      expect(mockReplace).toHaveBeenLastCalledWith('/guides');
     },
   );
 

@@ -8,6 +8,7 @@
  * - 页面级状态和导航仍由 AnalysisDetailScreen 统一协调。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
+import type { ReactNode } from 'react';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -55,6 +56,41 @@ const emotionLabelKeys: Record<string, TranslationKey> = {
   unknown: 'emotion.unknown',
 };
 
+const reviewFindingKeys: Record<string, TranslationKey> = {
+  single_speaker_recording: 'analysis.reviewFinding.singleSpeaker',
+  question_answer_transition: 'analysis.reviewFinding.questionAnswerTransition',
+  long_single_speaker_segment: 'analysis.reviewFinding.longSingleSpeakerSegment',
+  long_internal_pause: 'analysis.reviewFinding.longInternalPause',
+  dialogue_pattern: 'analysis.reviewFinding.dialoguePattern',
+};
+
+function visibleReviewExplanation(
+  finding: TranscriptSegment['reviewFindings'][number],
+  language: ReturnType<typeof useAppLanguage>['language'],
+  t: ReturnType<typeof useAppLanguage>['t'],
+): string {
+  if (language === 'en' && finding.source === 'rule') {
+    const key = reviewFindingKeys[finding.reasonCode];
+    if (key) return t(key);
+  }
+  return finding.explanation;
+}
+
+function visibleReviewMessage(
+  message: string | null,
+  language: ReturnType<typeof useAppLanguage>['language'],
+  t: ReturnType<typeof useAppLanguage>['t'],
+): string {
+  if (!message) return t('analysis.reviewRulesKept');
+  if (language === 'en' && /智能说话人复核未配置/u.test(message)) {
+    return t('analysis.reviewNotConfigured');
+  }
+  if (language === 'en' && /[\u3400-\u9fff]/u.test(message)) {
+    return t('analysis.reviewRulesKept');
+  }
+  return message;
+}
+
 export type TranscriptDisplayMode = 'current' | 'raw';
 
 function FilterButton({ label }: { label: string }) {
@@ -76,6 +112,7 @@ function SegmentView({
   displayMode,
   draftText,
   editing,
+  readOnly,
   dimmed,
   hideReviewFindings,
   onDraftChange,
@@ -98,6 +135,7 @@ function SegmentView({
   displayMode: TranscriptDisplayMode;
   draftText?: string;
   editing: boolean;
+  readOnly: boolean;
   dimmed: boolean;
   hideReviewFindings: boolean;
   onDraftChange: (segmentId: string, text: string) => void;
@@ -117,7 +155,7 @@ function SegmentView({
   speakerDisplayName: string;
   speakerOptions: readonly string[];
 }) {
-  const { t } = useAppLanguage();
+  const { language, t } = useAppLanguage();
   const [reviewIndex, setReviewIndex] = useState(0);
   const identifiedRole = segment.roleAnalysis;
   const primaryIdentity = identifiedRole?.label ?? speakerDisplayName;
@@ -129,13 +167,14 @@ function SegmentView({
     : segment.businessRole === 'unknown'
       ? t('analysis.roleUnknown')
       : segment.businessRole;
-  const reviewFindings = hideReviewFindings
-    ? []
-    : [...segment.reviewFindings]
-        .filter((finding) => finding.splitAfterWordIndex !== null)
-        .sort((left, right) =>
-          left.severity === right.severity ? 0 : left.severity === 'high' ? -1 : 1,
-        );
+  const reviewFindings =
+    readOnly || hideReviewFindings
+      ? []
+      : [...segment.reviewFindings]
+          .filter((finding) => finding.splitAfterWordIndex !== null)
+          .sort((left, right) =>
+            left.severity === right.severity ? 0 : left.severity === 'high' ? -1 : 1,
+          );
   const activeReviewIndex = Math.min(reviewIndex, Math.max(0, reviewFindings.length - 1));
   const primaryReviewFinding = reviewFindings[activeReviewIndex];
   const additionalReviewFindingCount = Math.max(0, reviewFindings.length - 1);
@@ -202,28 +241,30 @@ function SegmentView({
           ) : null}
         </Pressable>
         <View style={styles.transcriptRow}>
-          <Pressable
-            accessibilityLabel={t('analysis.playSegment', {
-              action: playbackPlaying ? t('analysis.pause') : t('analysis.play'),
-              start: formatTime(segment.startSeconds),
-              end: formatTime(segment.endSeconds),
-            })}
-            accessibilityRole="button"
-            accessibilityState={{ disabled: playbackDisabled }}
-            disabled={playbackDisabled}
-            onPress={() => onPlay(segment)}
-            style={({ pressed }) => [
-              styles.segmentPlayButton,
-              playbackDisabled && styles.disabled,
-              pressed && styles.pressed,
-            ]}
-          >
-            {playbackLoading ? (
-              <ActivityIndicator color={colors.ink} size="small" />
-            ) : (
-              <Ionicons color={colors.ink} name={playbackPlaying ? 'pause' : 'play'} size={18} />
-            )}
-          </Pressable>
+          {!readOnly ? (
+            <Pressable
+              accessibilityLabel={t('analysis.playSegment', {
+                action: playbackPlaying ? t('analysis.pause') : t('analysis.play'),
+                start: formatTime(segment.startSeconds),
+                end: formatTime(segment.endSeconds),
+              })}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: playbackDisabled }}
+              disabled={playbackDisabled}
+              onPress={() => onPlay(segment)}
+              style={({ pressed }) => [
+                styles.segmentPlayButton,
+                playbackDisabled && styles.disabled,
+                pressed && styles.pressed,
+              ]}
+            >
+              {playbackLoading ? (
+                <ActivityIndicator color={colors.ink} size="small" />
+              ) : (
+                <Ionicons color={colors.ink} name={playbackPlaying ? 'pause' : 'play'} size={18} />
+              )}
+            </Pressable>
+          ) : null}
           {editing ? (
             <TextInput
               accessibilityLabel={t('analysis.transcriptForSpeaker', {
@@ -316,7 +357,9 @@ function SegmentView({
                         </Pressable>
                       </View>
                     ) : null}
-                    <Text style={styles.reviewReason}>{finding.explanation}</Text>
+                    <Text style={styles.reviewReason}>
+                      {visibleReviewExplanation(finding, language, t)}
+                    </Text>
                     <View style={styles.reviewActions}>
                       {reviewPlaybackAvailable ? (
                         <Pressable
@@ -402,6 +445,39 @@ function InvalidSegmentView({ invalidSegment }: { invalidSegment: TranscriptInva
   );
 }
 
+export type TranscriptContentProps = {
+  confirming: boolean;
+  detail: AnalysisDetailView;
+  displayMode: TranscriptDisplayMode;
+  draftSegments: readonly TranscriptSegment[];
+  editing: boolean;
+  hideIrrelevant: boolean;
+  onCancelEditing: () => void;
+  onConfirmEditing: () => void;
+  onDisplayModeChange: (mode: TranscriptDisplayMode) => void;
+  onDraftChange: (segmentId: string, text: string) => void;
+  onOpenAiTag: (tag: AiTagAnalysis) => void;
+  onOpenEmotion: (segment: TranscriptSegment) => void;
+  onPlaySegment: (segment: TranscriptSegment) => void;
+  onPlayReviewFinding: (segment: TranscriptSegment, splitAfterWordIndex: number) => void;
+  onResolveAllReviewFindings: () => void;
+  onResolveReviewFinding: (findingId: string) => void;
+  onRefresh?: () => void;
+  onSpeakerChange: (segmentId: string, speakerKey: string) => void;
+  onSplitSegment: (segment: TranscriptSegment, splitAfterWordIndex: number) => void;
+  onStartEditing: () => void;
+  playingSegmentId?: string;
+  readOnly?: boolean;
+  resolvingReviewFinding?: string;
+  refreshing?: boolean;
+  leadingContent?: ReactNode;
+  segmentPlaybackDisabled: boolean;
+  segmentPlaybackLoading: boolean;
+  segmentPlaybackPlaying: boolean;
+  reviewPlaybackAvailable: boolean;
+  selectedSegmentIds: readonly string[];
+};
+
 export function TranscriptContent({
   confirming,
   detail,
@@ -424,44 +500,17 @@ export function TranscriptContent({
   onSplitSegment,
   onStartEditing,
   playingSegmentId,
+  readOnly = false,
   resolvingReviewFinding,
   refreshing = false,
+  leadingContent,
   segmentPlaybackDisabled,
   segmentPlaybackLoading,
   segmentPlaybackPlaying,
   reviewPlaybackAvailable,
   selectedSegmentIds,
-}: {
-  confirming: boolean;
-  detail: AnalysisDetailView;
-  displayMode: TranscriptDisplayMode;
-  draftSegments: readonly TranscriptSegment[];
-  editing: boolean;
-  hideIrrelevant: boolean;
-  onCancelEditing: () => void;
-  onConfirmEditing: () => void;
-  onDisplayModeChange: (mode: TranscriptDisplayMode) => void;
-  onDraftChange: (segmentId: string, text: string) => void;
-  onOpenAiTag: (tag: AiTagAnalysis) => void;
-  onOpenEmotion: (segment: TranscriptSegment) => void;
-  onPlaySegment: (segment: TranscriptSegment) => void;
-  onPlayReviewFinding: (segment: TranscriptSegment, splitAfterWordIndex: number) => void;
-  onResolveAllReviewFindings: () => void;
-  onResolveReviewFinding: (findingId: string) => void;
-  onRefresh?: () => void;
-  onSpeakerChange: (segmentId: string, speakerKey: string) => void;
-  onSplitSegment: (segment: TranscriptSegment, splitAfterWordIndex: number) => void;
-  onStartEditing: () => void;
-  playingSegmentId?: string;
-  resolvingReviewFinding?: string;
-  refreshing?: boolean;
-  segmentPlaybackDisabled: boolean;
-  segmentPlaybackLoading: boolean;
-  segmentPlaybackPlaying: boolean;
-  reviewPlaybackAvailable: boolean;
-  selectedSegmentIds: readonly string[];
-}) {
-  const { formatDateTime, t } = useAppLanguage();
+}: TranscriptContentProps) {
+  const { formatDateTime, language, t } = useAppLanguage();
   const [skipInvalid, setSkipInvalid] = useState(false);
   const [hideSpeakerReview, setHideSpeakerReview] = useState(false);
   const pendingReviewFindingCount = detail.speakerReview.findings.filter(
@@ -532,104 +581,123 @@ export function TranscriptContent({
       showsVerticalScrollIndicator={false}
       style={styles.pageScroll}
     >
+      {leadingContent}
       <View accessibilityRole="summary" style={styles.confirmationCard}>
-        <View style={styles.confirmationCopy}>
-          <Text style={styles.confirmationTitle}>
-            {confirmation.status === 'confirmed'
-              ? systemConfirmed
-                ? t('analysis.autoConfirmedVersion', { version: confirmation.currentVersion })
-                : t('analysis.confirmedTranscriptVersion', {
-                    version: confirmation.currentVersion,
-                  })
-              : t('analysis.transcriptPending')}
-          </Text>
-          <Text style={styles.confirmationDescription}>
-            {confirmation.status === 'confirmed'
-              ? systemConfirmed
-                ? t('analysis.autoConfirmedDescription')
-                : t('analysis.confirmedAt', {
-                    date: formatDateTime(confirmation.confirmedAt),
-                  })
-              : t('analysis.confirmRequired')}
-          </Text>
-        </View>
-        {!editing ? (
-          <Pressable
-            accessibilityRole="button"
-            onPress={onStartEditing}
-            style={({ pressed }) => [styles.confirmationAction, pressed && styles.pressed]}
-          >
-            <Text style={styles.confirmationActionText}>
-              {confirmation.status === 'confirmed'
-                ? t('analysis.continueEditing')
-                : t('analysis.editAndConfirm')}
+        {readOnly ? (
+          <>
+            <Text style={styles.confirmationTitle}>{t('templateExample.readonly')}</Text>
+            <Text style={styles.confirmationDescription}>
+              {t('templateExample.transcriptReadonly')}
             </Text>
-          </Pressable>
-        ) : null}
-        {confirmation.status === 'confirmed' && !editing ? (
-          <View accessibilityRole="tablist" style={styles.versionSwitch}>
-            {(['current', 'raw'] as const).map((mode) => (
+          </>
+        ) : (
+          <>
+            <View style={styles.confirmationCopy}>
+              <Text style={styles.confirmationTitle}>
+                {confirmation.status === 'confirmed'
+                  ? systemConfirmed
+                    ? t('analysis.autoConfirmedVersion', { version: confirmation.currentVersion })
+                    : t('analysis.confirmedTranscriptVersion', {
+                        version: confirmation.currentVersion,
+                      })
+                  : t('analysis.transcriptPending')}
+              </Text>
+              <Text style={styles.confirmationDescription}>
+                {confirmation.status === 'confirmed'
+                  ? systemConfirmed
+                    ? t('analysis.autoConfirmedDescription')
+                    : t('analysis.confirmedAt', {
+                        date: formatDateTime(confirmation.confirmedAt),
+                      })
+                  : t('analysis.confirmRequired')}
+              </Text>
+            </View>
+            {!editing ? (
               <Pressable
-                accessibilityRole="tab"
-                accessibilityState={{ selected: displayMode === mode }}
-                key={mode}
-                onPress={() => onDisplayModeChange(mode)}
-                style={[styles.versionOption, displayMode === mode && styles.versionOptionActive]}
+                accessibilityRole="button"
+                onPress={onStartEditing}
+                style={({ pressed }) => [styles.confirmationAction, pressed && styles.pressed]}
               >
-                <Text
-                  style={[
-                    styles.versionOptionText,
-                    displayMode === mode && styles.versionOptionTextActive,
-                  ]}
-                >
-                  {mode === 'current'
-                    ? t('analysis.currentConfirmed')
-                    : t('analysis.originalTranscript')}
+                <Text style={styles.confirmationActionText}>
+                  {confirmation.status === 'confirmed'
+                    ? t('analysis.continueEditing')
+                    : t('analysis.editAndConfirm')}
                 </Text>
               </Pressable>
-            ))}
-          </View>
-        ) : null}
-        {editing ? (
-          <View style={styles.editActions}>
-            <Pressable disabled={confirming} onPress={onCancelEditing} style={styles.editButton}>
-              <Text style={styles.editCancelText}>{t('common.cancel')}</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              disabled={confirming}
-              onPress={onConfirmEditing}
-              style={[styles.editButton, styles.editConfirmButton]}
-            >
-              <Text style={styles.editConfirmText}>
-                {confirming ? t('analysis.confirming') : t('analysis.confirmWhole')}
-              </Text>
-            </Pressable>
-          </View>
-        ) : null}
+            ) : null}
+            {confirmation.status === 'confirmed' && !editing ? (
+              <View accessibilityRole="tablist" style={styles.versionSwitch}>
+                {(['current', 'raw'] as const).map((mode) => (
+                  <Pressable
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: displayMode === mode }}
+                    key={mode}
+                    onPress={() => onDisplayModeChange(mode)}
+                    style={[
+                      styles.versionOption,
+                      displayMode === mode && styles.versionOptionActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.versionOptionText,
+                        displayMode === mode && styles.versionOptionTextActive,
+                      ]}
+                    >
+                      {mode === 'current'
+                        ? t('analysis.currentConfirmed')
+                        : t('analysis.originalTranscript')}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
+            {editing ? (
+              <View style={styles.editActions}>
+                <Pressable
+                  disabled={confirming}
+                  onPress={onCancelEditing}
+                  style={styles.editButton}
+                >
+                  <Text style={styles.editCancelText}>{t('common.cancel')}</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={confirming}
+                  onPress={onConfirmEditing}
+                  style={[styles.editButton, styles.editConfirmButton]}
+                >
+                  <Text style={styles.editConfirmText}>
+                    {confirming ? t('analysis.confirming') : t('analysis.confirmWhole')}
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
+          </>
+        )}
       </View>
-      {rawSpeakerCount === 1 ? (
+      {!readOnly && rawSpeakerCount === 1 ? (
         <View accessibilityRole="alert" style={styles.diarizationNotice}>
           <Ionicons color={colors.secondary} name="person-outline" size={20} />
           <Text style={styles.diarizationNoticeText}>{t('analysis.singleSpeaker')}</Text>
         </View>
       ) : null}
-      {detail.speakerReview.resolvedAt ? (
+      {!readOnly && detail.speakerReview.resolvedAt ? (
         <View accessibilityRole="alert" style={styles.diarizationNotice}>
           <Ionicons color={colors.success} name="checkmark-circle-outline" size={20} />
           <Text style={styles.diarizationNoticeText}>{t('analysis.reviewComplete')}</Text>
         </View>
-      ) : detail.speakerReview.status === 'partial' ? (
+      ) : !readOnly && detail.speakerReview.status === 'partial' ? (
         <View accessibilityRole="alert" style={styles.diarizationNotice}>
           <Ionicons color={colors.secondary} name="alert-circle-outline" size={20} />
           <Text style={styles.diarizationNoticeText}>
             {t('analysis.reviewPartial', {
-              message: detail.speakerReview.message ?? t('analysis.reviewRulesKept'),
+              message: visibleReviewMessage(detail.speakerReview.message, language, t),
             })}
           </Text>
         </View>
       ) : null}
-      {detail.transcription.diarizationStatus === 'not_returned' ? (
+      {!readOnly && detail.transcription.diarizationStatus === 'not_returned' ? (
         <View
           accessibilityLabel={t('analysis.noDiarization')}
           accessibilityRole="alert"
@@ -640,42 +708,46 @@ export function TranscriptContent({
           <Text style={styles.diarizationNoticeText}>{t('analysis.noDiarization')}</Text>
         </View>
       ) : null}
-      {detail.transcription.speakerIdentityScope === 'chunk' ? (
+      {!readOnly && detail.transcription.speakerIdentityScope === 'chunk' ? (
         <View accessibilityRole="alert" style={styles.diarizationNotice}>
           <Ionicons color={colors.secondary} name="people-outline" size={20} />
           <Text style={styles.diarizationNoticeText}>{t('analysis.chunkDiarization')}</Text>
         </View>
       ) : null}
-      <View style={styles.filters}>
-        <FilterButton label={t('analysis.allScenes')} />
-        <FilterButton label={t('analysis.allText')} />
-        <FilterButton label={t('analysis.allTags')} />
-        <Checkbox
-          checked={skipInvalid}
-          label={t('analysis.skipInvalid')}
-          onPress={() => setSkipInvalid((value) => !value)}
-        />
-        {pendingReviewFindingCount > 0 ? (
+      {!readOnly ? (
+        <View style={styles.filters}>
+          <FilterButton label={t('analysis.allScenes')} />
+          <FilterButton label={t('analysis.allText')} />
+          <FilterButton label={t('analysis.allTags')} />
           <Checkbox
-            checked={hideSpeakerReview}
-            label={t('analysis.hideSpeakerReview')}
-            onPress={() => setHideSpeakerReview((value) => !value)}
+            checked={skipInvalid}
+            label={t('analysis.skipInvalid')}
+            onPress={() => setSkipInvalid((value) => !value)}
           />
-        ) : null}
-        {pendingReviewFindingCount > 0 ? (
-          <Pressable
-            accessibilityRole="button"
-            disabled={Boolean(resolvingReviewFinding)}
-            onPress={onResolveAllReviewFindings}
-            style={[styles.resolveAllButton, resolvingReviewFinding && styles.disabled]}
-          >
-            <Ionicons color={colors.secondary} name="checkmark-done-outline" size={18} />
-            <Text style={styles.resolveAllButtonText}>
-              {resolvingReviewFinding === 'all' ? t('analysis.reviewing') : t('analysis.reviewAll')}
-            </Text>
-          </Pressable>
-        ) : null}
-      </View>
+          {pendingReviewFindingCount > 0 ? (
+            <Checkbox
+              checked={hideSpeakerReview}
+              label={t('analysis.hideSpeakerReview')}
+              onPress={() => setHideSpeakerReview((value) => !value)}
+            />
+          ) : null}
+          {pendingReviewFindingCount > 0 ? (
+            <Pressable
+              accessibilityRole="button"
+              disabled={Boolean(resolvingReviewFinding)}
+              onPress={onResolveAllReviewFindings}
+              style={[styles.resolveAllButton, resolvingReviewFinding && styles.disabled]}
+            >
+              <Ionicons color={colors.secondary} name="checkmark-done-outline" size={18} />
+              <Text style={styles.resolveAllButtonText}>
+                {resolvingReviewFinding === 'all'
+                  ? t('analysis.reviewing')
+                  : t('analysis.reviewAll')}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
       {visibleScenes.every((scene) => scene.segments.length === 0) ? (
         <View style={styles.emptyTranscript}>
           <Text style={styles.emptyTranscriptText}>{t('analysis.noSpeech')}</Text>
@@ -702,7 +774,8 @@ export function TranscriptContent({
             <View style={styles.sceneTitleRow}>
               <View style={styles.sceneTitleLine} />
               <Text style={styles.sceneTitle}>
-                {sceneIndex + 1}. {scene.title}
+                {sceneIndex + 1}.{' '}
+                {scene.title === '完整录音' ? t('analysis.fullRecording') : scene.title}
               </Text>
               <View style={styles.sceneTitleLine} />
             </View>
@@ -734,6 +807,7 @@ export function TranscriptContent({
                     playbackDisabled={segmentPlaybackDisabled}
                     playbackLoading={segmentPlaybackLoading && playingSegmentId === item.segment.id}
                     playbackPlaying={segmentPlaybackPlaying && playingSegmentId === item.segment.id}
+                    readOnly={readOnly}
                     reviewPlaybackAvailable={reviewPlaybackAvailable}
                     resolvingReviewFinding={resolvingReviewFinding}
                     segment={item.segment}
@@ -748,7 +822,7 @@ export function TranscriptContent({
           </View>
         );
       })}
-      {editing ? (
+      {editing && !readOnly ? (
         <View style={styles.bottomEditActions}>
           <Pressable disabled={confirming} onPress={onCancelEditing} style={styles.editButton}>
             <Text style={styles.editCancelText}>{t('common.cancel')}</Text>

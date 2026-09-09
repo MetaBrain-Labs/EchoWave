@@ -244,8 +244,10 @@ export function StarterTourProvider({
       if (activeGuide) persistStatus(activeGuide, status);
       setRect(null);
       setActiveGuide(null);
+      // 完成和跳过都回到引导中心，避免用户回退到已经结束的引导步骤。
+      router.replace('/guides' as Href);
     },
-    [activeGuide, persistStatus],
+    [activeGuide, persistStatus, router],
   );
 
   const move = useCallback(

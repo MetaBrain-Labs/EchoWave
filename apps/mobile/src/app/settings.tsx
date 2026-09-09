@@ -12,9 +12,10 @@
 import { useRouter } from 'expo-router';
 
 import { SettingsScreen } from '@/features/settings/SettingsScreen';
+import { backOrReplace } from '@/shared/navigation/routeBack';
 
 /** 渲染 AI 配置中心。 */
 export default function SettingsRoute() {
   const router = useRouter();
-  return <SettingsScreen onBack={() => router.back()} />;
+  return <SettingsScreen onBack={() => backOrReplace(router, '/')} />;
 }

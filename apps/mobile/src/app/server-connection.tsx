@@ -12,9 +12,11 @@
 import { useRouter } from 'expo-router';
 
 import { ServerConnectionScreen } from '@/features/server-connection/ServerConnectionScreen';
+import { backOrReplace } from '@/shared/navigation/routeBack';
 
 /** 渲染已进入主应用后的服务器切换入口。 */
 export default function ServerConnectionRoute() {
   const router = useRouter();
-  return <ServerConnectionScreen onCancel={() => router.back()} onSaved={() => router.back()} />;
+  const leave = () => backOrReplace(router, '/');
+  return <ServerConnectionScreen onCancel={leave} onSaved={leave} />;
 }

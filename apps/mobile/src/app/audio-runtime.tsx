@@ -6,9 +6,10 @@
 import { useRouter } from 'expo-router';
 
 import { AudioRuntimeScreen } from '@/features/audio-runtime/AudioRuntimeScreen';
+import { backOrReplace } from '@/shared/navigation/routeBack';
 
 /** 渲染音频运行模式页面。 */
 export default function AudioRuntimeRoute() {
   const router = useRouter();
-  return <AudioRuntimeScreen onBack={() => router.back()} />;
+  return <AudioRuntimeScreen onBack={() => backOrReplace(router, '/')} />;
 }

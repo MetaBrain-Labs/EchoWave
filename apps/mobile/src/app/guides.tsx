@@ -10,9 +10,10 @@
 import { useRouter } from 'expo-router';
 
 import { GuideCenterScreen } from '@/features/onboarding/GuideCenterScreen';
+import { backOrReplace } from '@/shared/navigation/routeBack';
 
 /** 连接引导中心与导航。 */
 export default function GuidesRoute() {
   const router = useRouter();
-  return <GuideCenterScreen onBack={() => router.back()} />;
+  return <GuideCenterScreen onBack={() => backOrReplace(router, '/')} />;
 }

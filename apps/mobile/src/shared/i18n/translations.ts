@@ -41,6 +41,9 @@ export const zhCN = {
   'more.service.title': '服务状态',
   'more.service.description': '检查 API 连接、数据库和基础服务可用性。',
   'more.service.accessibility': '打开服务状态',
+  'more.general.title': '通用设置',
+  'more.general.description': '管理语言等应用级偏好设置。',
+  'more.general.accessibility': '打开通用设置',
   'more.ai.title': 'AI 配置',
   'more.ai.description': '管理模型供应商、能力绑定和安全凭据。',
   'more.ai.accessibility': '打开 AI 配置',
@@ -55,6 +58,8 @@ export const zhCN = {
   'language.en': 'English',
   'language.supported': '当前仅支持中文和英文。',
   'language.saveError': '无法保存语言设置，已保留原语言。',
+  'generalSettings.title': '通用设置',
+  'generalSettings.subtitle': '管理应用级偏好设置。',
   'analysisLanguage.title': '分析语言',
   'analysisLanguage.supported':
     '当前仅支持中文和英文。所选语言用于识别音频并生成分析，不会翻译录音。',
@@ -101,6 +106,8 @@ export const zhCN = {
   'analysisBatch.loadFailed': '加载失败',
   'analysisBatch.createFailed': '创建失败',
   'analysisBatch.tryAgain': '请稍后重试。',
+  'analysisBatch.expandChoices': '展开其余 %{count} 项',
+  'analysisBatch.collapseChoices': '收起',
   'batchDetail.title': '分析批次',
   'batchDetail.total': '共 %{count} 项',
   'batchDetail.counts':
@@ -163,6 +170,11 @@ export const zhCN = {
   'transcriptionRuns.details': '%{status} · 声学情绪%{emotion} · %{language}',
   'transcriptionRuns.enabled': '已启用',
   'transcriptionRuns.disabled': '未启用',
+  'transcriptionRuns.status.queued': '排队中',
+  'transcriptionRuns.status.transcribing': '转写中',
+  'transcriptionRuns.status.analyzing': '分析中',
+  'transcriptionRuns.status.ready': '就绪',
+  'transcriptionRuns.status.failed': '失败',
   'transcriptionRuns.current': '当前',
   'transcriptionRuns.select': '选择',
   'analysis.transcriptionTitle': '转写语言',
@@ -179,6 +191,7 @@ export const zhCN = {
   'analysis.generatedAt': '生成时间：%{date}',
   'analysis.confirmedVersion': '%{model} · 确认转写 v%{version}',
   'analysis.limitations': '本次分析限制',
+  'analysis.recommendations': '改进建议',
   'analysis.knowledgeUsed': '已使用 %{count} 个关联知识库',
   'analysis.knowledgeLinkedNotUsed': '已限定 %{count} 个关联知识库，本次未引用知识块',
   'analysis.knowledgeNotLinked': '当前分组未关联知识库，仅使用确认转写证据',
@@ -239,6 +252,16 @@ export const zhCN = {
   'analysis.reviewComplete': '说话人复核已完成，所有疑点均已审核通过。',
   'analysis.reviewPartial': '智能说话人复核未完成。%{message}',
   'analysis.reviewRulesKept': '已保留本地规则检测结果。',
+  'analysis.reviewNotConfigured': '智能说话人复核未配置；当前仅显示本地规则结果。',
+  'analysis.reviewFinding.singleSpeaker': '本录音仅识别到 1 位说话人，请结合原音检查是否存在漏分。',
+  'analysis.reviewFinding.questionAnswerTransition':
+    '同一 Speaker 段内出现连续的提问与回答语义，建议回听边界。',
+  'analysis.reviewFinding.longSingleSpeakerSegment':
+    '同一 Speaker 连续片段较长，建议从中部开始回听是否存在漏分。',
+  'analysis.reviewFinding.longInternalPause':
+    '同一 Speaker 段内存在明显停顿，可能是未识别的说话轮次切换。',
+  'analysis.reviewFinding.dialoguePattern': '相邻分句呈现问答角色切换特征，建议结合原音确认。',
+  'analysis.fullRecording': '完整录音',
   'analysis.noDiarization': '本次模型未返回说话人信息，以下使用匿名发言编号。',
   'analysis.chunkDiarization':
     '本次结果只保证分块内的说话人身份，以下使用匿名发言编号，不代表跨块同一人。',
@@ -307,6 +330,16 @@ export const zhCN = {
   'execution.failed': '失败',
   'execution.attempt': '第 %{attempt} 次 · %{status} · %{duration}',
   'execution.focus': '当前关注事项：%{name}',
+  'execution.modelCall.audioFileTranscription': '识别整段音频并生成带时间戳的说话人转写',
+  'execution.modelCall.audioEmotionAnalysis': '判断当前音频片段的情绪与置信度',
+  'execution.modelCall.audioRoleRecognition': '根据完整对话识别说话人的业务角色',
+  'execution.modelCall.audioSpeakerReview': '复核疑似说话人切换边界',
+  'execution.modelCall.businessAnalysisRetrievalPlanning': '规划业务分析所需的知识检索问题',
+  'execution.modelCall.businessAnalysisQueryEmbedding': '将知识检索问题转换为语义向量',
+  'execution.modelCall.businessAnalysisGeneration': '结合转写与知识证据生成业务分析',
+  'execution.modelCall.businessAnalysisStructureRepair': '修复业务分析的结构与引用',
+  'execution.modelCall.businessAnalysisWindow': '分层分析窗口',
+  'execution.modelCall.businessAnalysisSynthesis': '汇总分层分析结果',
   'execution.tokens': 'Token：输入 %{input} / 输出 %{output}',
   'execution.rawReasoning': '原始推理',
   'execution.collapse': '收起',
@@ -1319,6 +1352,8 @@ export const zhCN = {
   'templateExample.readonly': '只读示例',
   'templateExample.version': '示例版本 %{version}',
   'templateExample.noAudio': '示例不包含原始音频，无法播放',
+  'templateExample.noAudioDescription': '这是只读模板示例，原始音频不会被保存或执行播放。',
+  'templateExample.transcriptReadonly': '模板示例仅用于展示转写分析结果，不代表真实任务状态。',
   'templateExample.roles': '角色：%{roles}',
   'templateExample.transcript': '示例转写',
   'templateExample.report': '分析报告',
@@ -1362,6 +1397,9 @@ export const en = {
   'more.service.title': 'Service status',
   'more.service.description': 'Check the API, database, and core service availability.',
   'more.service.accessibility': 'Open service status',
+  'more.general.title': 'General settings',
+  'more.general.description': 'Manage language and other app-level preferences.',
+  'more.general.accessibility': 'Open general settings',
   'more.ai.title': 'AI configuration',
   'more.ai.description': 'Manage providers, capability bindings, and credentials.',
   'more.ai.accessibility': 'Open AI configuration',
@@ -1376,10 +1414,12 @@ export const en = {
   'language.en': 'English',
   'language.supported': 'Chinese and English are currently supported.',
   'language.saveError': 'Language could not be saved. The previous language is still active.',
+  'generalSettings.title': 'General settings',
+  'generalSettings.subtitle': 'Manage app-level preferences.',
   'analysisLanguage.title': 'Analysis language',
   'analysisLanguage.supported':
     'Chinese and English are currently supported. The selected language is used to recognize the audio and generate analysis; it does not translate recordings.',
-  'analysisLanguage.zhCN': '中文',
+  'analysisLanguage.zhCN': 'Chinese',
   'analysisLanguage.en': 'English',
   'analysisLanguage.current': 'Analysis language: %{language}',
   'analysisBatch.title': 'One-tap analysis',
@@ -1425,6 +1465,8 @@ export const en = {
   'analysisBatch.loadFailed': 'Unable to load',
   'analysisBatch.createFailed': 'Unable to create batch',
   'analysisBatch.tryAgain': 'Please try again later.',
+  'analysisBatch.expandChoices': 'Show %{count} more',
+  'analysisBatch.collapseChoices': 'Collapse',
   'batchDetail.title': 'Analysis batch',
   'batchDetail.total': '%{count} items',
   'batchDetail.counts':
@@ -1488,6 +1530,11 @@ export const en = {
   'transcriptionRuns.details': '%{status} · Acoustic emotion %{emotion} · %{language}',
   'transcriptionRuns.enabled': 'enabled',
   'transcriptionRuns.disabled': 'disabled',
+  'transcriptionRuns.status.queued': 'Queued',
+  'transcriptionRuns.status.transcribing': 'Transcribing',
+  'transcriptionRuns.status.analyzing': 'Analyzing',
+  'transcriptionRuns.status.ready': 'Ready',
+  'transcriptionRuns.status.failed': 'Failed',
   'transcriptionRuns.current': 'Current',
   'transcriptionRuns.select': 'Select',
   'analysis.transcriptionTitle': 'Transcription language',
@@ -1504,6 +1551,7 @@ export const en = {
   'analysis.generatedAt': 'Generated: %{date}',
   'analysis.confirmedVersion': '%{model} · Confirmed transcript v%{version}',
   'analysis.limitations': 'Analysis limitations',
+  'analysis.recommendations': 'Improvement suggestions',
   'analysis.knowledgeUsed': 'Used %{count} linked knowledge bases',
   'analysis.knowledgeLinkedNotUsed':
     'Limited to %{count} linked knowledge bases; no knowledge chunks were cited',
@@ -1567,6 +1615,19 @@ export const en = {
   'analysis.reviewComplete': 'Speaker review is complete. All concerns have been reviewed.',
   'analysis.reviewPartial': 'Automated speaker review did not finish. %{message}',
   'analysis.reviewRulesKept': 'Local rule findings were preserved.',
+  'analysis.reviewNotConfigured':
+    'Speaker review is not configured; only local rule findings are shown.',
+  'analysis.reviewFinding.singleSpeaker':
+    'Only one speaker was detected in this recording. Check the original audio for a missed split.',
+  'analysis.reviewFinding.questionAnswerTransition':
+    'This speaker segment contains a possible question-and-answer transition. Review the boundary.',
+  'analysis.reviewFinding.longSingleSpeakerSegment':
+    'This speaker segment is unusually long. Review from the middle for a missed speaker change.',
+  'analysis.reviewFinding.longInternalPause':
+    'This speaker segment contains a long pause that may indicate an unrecognized speaker change.',
+  'analysis.reviewFinding.dialoguePattern':
+    'Adjacent clauses suggest a possible dialogue-role change. Review the original audio.',
+  'analysis.fullRecording': 'Full recording',
   'analysis.noDiarization':
     'The model did not return speaker information. Anonymous speaker numbers are shown below.',
   'analysis.chunkDiarization':
@@ -1636,6 +1697,22 @@ export const en = {
   'execution.failed': 'Failed',
   'execution.attempt': 'Attempt %{attempt} · %{status} · %{duration}',
   'execution.focus': 'Current focus: %{name}',
+  'execution.modelCall.audioFileTranscription':
+    'Recognize the full audio and produce timestamped speaker transcription',
+  'execution.modelCall.audioEmotionAnalysis':
+    'Assess emotion and confidence for the current audio segment',
+  'execution.modelCall.audioRoleRecognition': 'Identify business roles from the full conversation',
+  'execution.modelCall.audioSpeakerReview': 'Review suspected speaker-change boundaries',
+  'execution.modelCall.businessAnalysisRetrievalPlanning':
+    'Plan knowledge-retrieval questions for business analysis',
+  'execution.modelCall.businessAnalysisQueryEmbedding':
+    'Convert retrieval questions into semantic vectors',
+  'execution.modelCall.businessAnalysisGeneration':
+    'Generate business analysis from transcript and knowledge evidence',
+  'execution.modelCall.businessAnalysisStructureRepair':
+    'Repair business-analysis structure and citations',
+  'execution.modelCall.businessAnalysisWindow': 'Analyze a hierarchical window',
+  'execution.modelCall.businessAnalysisSynthesis': 'Synthesize hierarchical analysis results',
   'execution.tokens': 'Tokens: %{input} input / %{output} output',
   'execution.rawReasoning': 'Raw reasoning',
   'execution.collapse': 'Collapse',
@@ -2720,6 +2797,10 @@ export const en = {
   'templateExample.readonly': 'Read-only example',
   'templateExample.version': 'Example version %{version}',
   'templateExample.noAudio': 'This example has no original audio and cannot be played',
+  'templateExample.noAudioDescription':
+    'This read-only template example has no saved original audio or playback execution.',
+  'templateExample.transcriptReadonly':
+    'This template only demonstrates analysis results and does not represent a live task.',
   'templateExample.roles': 'Roles: %{roles}',
   'templateExample.transcript': 'Example transcript',
   'templateExample.report': 'Analysis report',

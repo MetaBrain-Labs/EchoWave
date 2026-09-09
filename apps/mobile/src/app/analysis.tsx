@@ -13,9 +13,10 @@
 import { useRouter } from 'expo-router';
 
 import { AnalysisRunsScreen } from '@/features/analysis-runs/AnalysisRunsScreen';
+import { backOrReplace } from '@/shared/navigation/routeBack';
 
 /** 渲染独立的分析工作区页面。 */
 export default function AnalysisRoute() {
   const router = useRouter();
-  return <AnalysisRunsScreen onBack={() => router.back()} />;
+  return <AnalysisRunsScreen onBack={() => backOrReplace(router, '/')} />;
 }

@@ -307,6 +307,7 @@ export function AnalysisBatchCreateScreen() {
           <Section title={t('analysisBatch.sourceStep')}>
             <ChoiceRow
               items={sources.map((item) => ({ id: item.id, label: item.name }))}
+              maxVisibleItems={4}
               selected={sourceId}
               onSelect={selectSource}
             />
@@ -317,6 +318,7 @@ export function AnalysisBatchCreateScreen() {
             {groups.length ? (
               <ChoiceRow
                 items={groups.map((item) => ({ id: item.id, label: item.name }))}
+                maxVisibleItems={4}
                 selected={groupId}
                 onSelect={setGroupId}
               />
@@ -507,16 +509,36 @@ function Section({ children, title }: { children: React.ReactNode; title: string
 
 function ChoiceRow({
   items,
+  maxVisibleItems,
   selected,
   onSelect,
 }: {
   items: { id: string; label: string }[];
+  maxVisibleItems?: number;
   selected: string;
   onSelect: (id: string) => void;
 }) {
+  const { t } = useAppLanguage();
+  const itemSignature = JSON.stringify(items.map((item) => [item.id, item.label]));
+  const [expandedState, setExpandedState] = useState({ expanded: false, signature: '' });
+  const expanded = expandedState.signature === itemSignature && expandedState.expanded;
+
+  const visibleItems = useMemo(() => {
+    if (!maxVisibleItems || maxVisibleItems < 1 || items.length <= maxVisibleItems || expanded) {
+      return items;
+    }
+    const firstItems = items.slice(0, maxVisibleItems);
+    const selectedItem = items.find((item) => item.id === selected);
+    if (!selectedItem || firstItems.some((item) => item.id === selected)) return firstItems;
+    return [...firstItems.slice(0, maxVisibleItems - 1), selectedItem];
+  }, [expanded, items, maxVisibleItems, selected]);
+  const canExpand = Boolean(
+    maxVisibleItems && maxVisibleItems > 0 && items.length > maxVisibleItems,
+  );
+
   return (
     <View style={styles.choices}>
-      {items.map((item) => (
+      {visibleItems.map((item) => (
         <Pressable
           accessibilityRole="radio"
           accessibilityState={{ checked: item.id === selected }}
@@ -527,6 +549,30 @@ function ChoiceRow({
           <Text style={styles.choiceText}>{item.label}</Text>
         </Pressable>
       ))}
+      {canExpand ? (
+        <Pressable
+          accessibilityLabel={
+            expanded
+              ? t('analysisBatch.collapseChoices')
+              : t('analysisBatch.expandChoices', {
+                  count: items.length - maxVisibleItems!,
+                })
+          }
+          accessibilityRole="button"
+          accessibilityState={{ expanded }}
+          onPress={() => setExpandedState({ expanded: !expanded, signature: itemSignature })}
+          style={({ pressed }) => [styles.choiceExpander, pressed && styles.choicePressed]}
+        >
+          <Ionicons color={colors.ink} name={expanded ? 'chevron-up' : 'chevron-down'} size={18} />
+          <Text style={styles.choiceExpanderText}>
+            {expanded
+              ? t('analysisBatch.collapseChoices')
+              : t('analysisBatch.expandChoices', {
+                  count: items.length - maxVisibleItems!,
+                })}
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -556,7 +602,19 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   choiceSelected: { backgroundColor: colors.successSurface, borderColor: colors.success },
+  choicePressed: { opacity: 0.65 },
   choiceText: { ...typography.body, color: textColors.primary },
+  choiceExpander: {
+    alignItems: 'center',
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.sm,
+  },
+  choiceExpanderText: { ...typography.body, color: textColors.primary },
   secondaryButton: {
     alignItems: 'center',
     borderColor: colors.divider,
