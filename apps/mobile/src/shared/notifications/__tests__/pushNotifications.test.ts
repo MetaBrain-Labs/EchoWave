@@ -53,14 +53,12 @@ describe('push notification registration', () => {
     mockNotifications.getExpoPushTokenAsync.mockResolvedValue({
       data: 'ExponentPushToken[abcdefghijklmnopqrstuvwxyz]',
     });
-    mockedRequest.mockResolvedValue(
-      {
-        id: '10000000-0000-4000-8000-000000000001',
-        platform: 'android',
-        enabled: true,
-        updatedAt: '2026-09-06T00:00:00.000Z',
-      } as never,
-    );
+    mockedRequest.mockResolvedValue({
+      id: '10000000-0000-4000-8000-000000000001',
+      platform: 'android',
+      enabled: true,
+      updatedAt: '2026-09-06T00:00:00.000Z',
+    } as never);
   });
 
   it('skips the native notification module in Expo Go', async () => {
@@ -101,7 +99,10 @@ describe('push notification registration', () => {
     expect(mockedRequest).toHaveBeenCalledWith(
       '/api/push-devices',
       expect.anything(),
-      expect.objectContaining({ method: 'POST' }),
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.objectContaining({ locale: 'zh-CN' }),
+      }),
     );
   });
 

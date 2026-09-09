@@ -12,7 +12,7 @@
  */
 import { z } from 'zod';
 
-import { EntityIdSchema } from '../common.ts';
+import { EntityIdSchema, SupportedLanguageSchema } from '../common.ts';
 
 export const AudioRuntimeModeSchema = z.enum(['hybrid', 'object_storage', 'lightweight_local']);
 export const AudioSourceStateSchema = z.enum(['available', 'cleaned', 'missing']);
@@ -115,6 +115,7 @@ export const AudioTranscriptionRunSummarySchema = z
     model: z.string().min(1),
     preprocessing: z.enum(['silero_vad', 'whole_file']),
     includeAcousticEmotion: z.boolean(),
+    language: SupportedLanguageSchema.default('zh-CN'),
     active: z.boolean(),
     createdAt: z.string().datetime(),
     completedAt: z.string().datetime().nullable(),

@@ -20,6 +20,8 @@ import {
 } from 'react-native';
 
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import type { TranslationKey } from '@/shared/i18n/translations';
 
 import {
   colors,
@@ -39,28 +41,29 @@ import type {
 import { Checkbox } from './AnalysisControls';
 import { formatTime, showComingSoon } from './utils';
 
-const emotionLabels: Record<string, string> = {
-  neutral: '平静',
-  happy: '愉快',
-  angry: '生气',
-  sad: '悲伤',
-  anxious: '焦虑',
-  excited: '兴奋',
-  impatient: '不耐烦',
-  frustrated: '沮丧',
-  sarcastic: '讽刺',
-  other: '其他',
-  unknown: '未知',
+const emotionLabelKeys: Record<string, TranslationKey> = {
+  neutral: 'emotion.neutral',
+  happy: 'emotion.happy',
+  angry: 'emotion.angry',
+  sad: 'emotion.sad',
+  anxious: 'emotion.anxious',
+  excited: 'emotion.excited',
+  impatient: 'emotion.impatient',
+  frustrated: 'emotion.frustrated',
+  sarcastic: 'emotion.sarcastic',
+  other: 'emotion.other',
+  unknown: 'emotion.unknown',
 };
 
 export type TranscriptDisplayMode = 'current' | 'raw';
 
 function FilterButton({ label }: { label: string }) {
+  const { t } = useAppLanguage();
   return (
     <Pressable
-      accessibilityLabel={`${label}筛选`}
+      accessibilityLabel={t('analysis.filter', { label })}
       accessibilityRole="button"
-      onPress={() => showComingSoon(`${label}筛选`)}
+      onPress={() => showComingSoon(t('analysis.filter', { label }))}
       style={({ pressed }) => [styles.filterButton, pressed && styles.pressed]}
     >
       <Text style={styles.filterText}>{label}</Text>
@@ -114,13 +117,17 @@ function SegmentView({
   speakerDisplayName: string;
   speakerOptions: readonly string[];
 }) {
+  const { t } = useAppLanguage();
   const [reviewIndex, setReviewIndex] = useState(0);
   const identifiedRole = segment.roleAnalysis;
   const primaryIdentity = identifiedRole?.label ?? speakerDisplayName;
   const secondaryIdentity = identifiedRole
-    ? `${speakerDisplayName} · 角色置信度 ${Math.round(identifiedRole.confidence * 100)}%`
+    ? t('analysis.roleConfidence', {
+        speaker: speakerDisplayName,
+        confidence: Math.round(identifiedRole.confidence * 100),
+      })
     : segment.businessRole === 'unknown'
-      ? '角色未知'
+      ? t('analysis.roleUnknown')
       : segment.businessRole;
   const reviewFindings = hideReviewFindings
     ? []
@@ -172,7 +179,9 @@ function SegmentView({
           </ScrollView>
         ) : null}
         <Pressable
-          accessibilityLabel={segment.emotionAnalysis ? '查看情绪分析详情' : '情绪尚未分析'}
+          accessibilityLabel={
+            segment.emotionAnalysis ? t('analysis.viewEmotion') : t('analysis.emotionPending')
+          }
           accessibilityRole={segment.emotionAnalysis ? 'button' : 'text'}
           disabled={!segment.emotionAnalysis}
           onPress={() => onOpenEmotion(segment)}
@@ -184,7 +193,9 @@ function SegmentView({
             size={typography.body.lineHeight}
           />
           <Text style={[styles.emotionText, dimmed && styles.dimmedText]}>
-            {emotionLabels[segment.emotion] ?? segment.emotion}
+            {emotionLabelKeys[segment.emotion]
+              ? t(emotionLabelKeys[segment.emotion])
+              : segment.emotion}
           </Text>
           {segment.emotionAnalysis ? (
             <Ionicons color={colors.secondary} name="chevron-forward" size={16} />
@@ -192,7 +203,11 @@ function SegmentView({
         </Pressable>
         <View style={styles.transcriptRow}>
           <Pressable
-            accessibilityLabel={`${playbackPlaying ? '暂停' : '播放'}片段：${formatTime(segment.startSeconds)} 至 ${formatTime(segment.endSeconds)}`}
+            accessibilityLabel={t('analysis.playSegment', {
+              action: playbackPlaying ? t('analysis.pause') : t('analysis.play'),
+              start: formatTime(segment.startSeconds),
+              end: formatTime(segment.endSeconds),
+            })}
             accessibilityRole="button"
             accessibilityState={{ disabled: playbackDisabled }}
             disabled={playbackDisabled}
@@ -211,7 +226,9 @@ function SegmentView({
           </Pressable>
           {editing ? (
             <TextInput
-              accessibilityLabel={`${speakerDisplayName}的转写正文`}
+              accessibilityLabel={t('analysis.transcriptForSpeaker', {
+                speaker: speakerDisplayName,
+              })}
               multiline
               onChangeText={(text) => onDraftChange(segment.id, text)}
               style={styles.transcriptInput}
@@ -252,13 +269,17 @@ function SegmentView({
                   ) : null}
                   <View style={styles.reviewFinding}>
                     <View style={styles.reviewFindingHeader}>
-                      <Text style={styles.reviewBadge}>说话人待确认</Text>
+                      <Text style={styles.reviewBadge}>{t('analysis.reviewPending')}</Text>
                       <Text style={styles.reviewSeverity}>
-                        {finding.severity === 'high' ? '高疑点' : '中疑点'}
+                        {finding.severity === 'high'
+                          ? t('analysis.highConcern')
+                          : t('analysis.mediumConcern')}
                       </Text>
                       {additionalReviewFindingCount > 0 ? (
                         <Text
-                          accessibilityLabel={`还有 ${additionalReviewFindingCount} 个说话人疑点`}
+                          accessibilityLabel={t('analysis.moreConcerns', {
+                            count: additionalReviewFindingCount,
+                          })}
                           style={styles.reviewCount}
                         >
                           +{additionalReviewFindingCount}
@@ -268,7 +289,7 @@ function SegmentView({
                     {reviewFindings.length > 1 ? (
                       <View style={styles.reviewPagination}>
                         <Pressable
-                          accessibilityLabel="上一个说话人疑点"
+                          accessibilityLabel={t('analysis.previousConcern')}
                           accessibilityRole="button"
                           onPress={() =>
                             setReviewIndex(
@@ -284,7 +305,7 @@ function SegmentView({
                           {activeReviewIndex + 1} / {reviewFindings.length}
                         </Text>
                         <Pressable
-                          accessibilityLabel="下一个说话人疑点"
+                          accessibilityLabel={t('analysis.nextConcern')}
                           accessibilityRole="button"
                           onPress={() =>
                             setReviewIndex((activeReviewIndex + 1) % reviewFindings.length)
@@ -302,7 +323,7 @@ function SegmentView({
                           onPress={() => onPlayFinding(segment, boundary)}
                           style={styles.reviewAction}
                         >
-                          <Text style={styles.reviewActionText}>播放边界前后</Text>
+                          <Text style={styles.reviewActionText}>{t('analysis.playBoundary')}</Text>
                         </Pressable>
                       ) : null}
                       {canSplit ? (
@@ -310,7 +331,7 @@ function SegmentView({
                           onPress={() => onSplit(segment, boundary)}
                           style={styles.reviewAction}
                         >
-                          <Text style={styles.reviewActionText}>在此拆段</Text>
+                          <Text style={styles.reviewActionText}>{t('analysis.splitHere')}</Text>
                         </Pressable>
                       ) : null}
                       <Pressable
@@ -320,7 +341,9 @@ function SegmentView({
                         style={[styles.reviewAction, resolvingReviewFinding && styles.disabled]}
                       >
                         <Text style={styles.reviewActionText}>
-                          {resolvingReviewFinding === finding.id ? '正在审核…' : '确认无误'}
+                          {resolvingReviewFinding === finding.id
+                            ? t('analysis.reviewing')
+                            : t('analysis.markReviewed')}
                         </Text>
                       </Pressable>
                     </View>
@@ -333,7 +356,7 @@ function SegmentView({
       <View style={styles.segmentRail} testID={`timeline-rail-${segment.id}`}>
         {segment.aiTags.map((tag) => (
           <Pressable
-            accessibilityLabel={`查看 AI 标签：${tag.title}`}
+            accessibilityLabel={t('analysis.openTag', { title: tag.title })}
             accessibilityRole="button"
             key={tag.id}
             onPress={() => onOpenAiTag(tag)}
@@ -358,9 +381,13 @@ function SegmentView({
 }
 
 function InvalidSegmentView({ invalidSegment }: { invalidSegment: TranscriptInvalidSegment }) {
+  const { t } = useAppLanguage();
+  const label = t('analysis.skippedInvalidLabel', {
+    seconds: invalidSegment.durationSeconds,
+  });
   return (
     <View
-      accessibilityLabel={`已跳过 ${invalidSegment.durationSeconds} 秒无效片段`}
+      accessibilityLabel={label}
       accessible
       style={styles.invalidSegment}
       testID={`transcript-timeline-item-invalid-${invalidSegment.id}`}
@@ -370,9 +397,7 @@ function InvalidSegmentView({ invalidSegment }: { invalidSegment: TranscriptInva
         name="volume-mute-outline"
         size={typography.description.lineHeight}
       />
-      <Text style={styles.invalidSegmentText}>
-        已跳过 {invalidSegment.durationSeconds} 秒无效片段
-      </Text>
+      <Text style={styles.invalidSegmentText}>{label}</Text>
     </View>
   );
 }
@@ -436,6 +461,7 @@ export function TranscriptContent({
   reviewPlaybackAvailable: boolean;
   selectedSegmentIds: readonly string[];
 }) {
+  const { formatDateTime, t } = useAppLanguage();
   const [skipInvalid, setSkipInvalid] = useState(false);
   const [hideSpeakerReview, setHideSpeakerReview] = useState(false);
   const pendingReviewFindingCount = detail.speakerReview.findings.filter(
@@ -479,7 +505,7 @@ export function TranscriptContent({
           segment.speakerKey,
           detail.transcription.speakerIdentityScope === 'recording'
             ? segment.speakerKey
-            : `发言 ${speakerDisplayNames.size + 1}`,
+            : t('analysis.speechIndex', { index: speakerDisplayNames.size + 1 }),
         );
       }
     }
@@ -511,16 +537,20 @@ export function TranscriptContent({
           <Text style={styles.confirmationTitle}>
             {confirmation.status === 'confirmed'
               ? systemConfirmed
-                ? `轻量本地已自动确认 v${confirmation.currentVersion}`
-                : `已确认转写 v${confirmation.currentVersion}`
-              : '转写待确认'}
+                ? t('analysis.autoConfirmedVersion', { version: confirmation.currentVersion })
+                : t('analysis.confirmedTranscriptVersion', {
+                    version: confirmation.currentVersion,
+                  })
+              : t('analysis.transcriptPending')}
           </Text>
           <Text style={styles.confirmationDescription}>
             {confirmation.status === 'confirmed'
               ? systemConfirmed
-                ? '转写完成后已自动生成确认快照，后续分析可直接使用；如需调整可继续修正。'
-                : `确认于 ${new Date(confirmation.confirmedAt).toLocaleString()}，后续分析使用当前确认版。`
-              : '请检查正文并确认；确认前不能开始情绪分析或角色识别。'}
+                ? t('analysis.autoConfirmedDescription')
+                : t('analysis.confirmedAt', {
+                    date: formatDateTime(confirmation.confirmedAt),
+                  })
+              : t('analysis.confirmRequired')}
           </Text>
         </View>
         {!editing ? (
@@ -530,7 +560,9 @@ export function TranscriptContent({
             style={({ pressed }) => [styles.confirmationAction, pressed && styles.pressed]}
           >
             <Text style={styles.confirmationActionText}>
-              {confirmation.status === 'confirmed' ? '继续修正' : '编辑并确认'}
+              {confirmation.status === 'confirmed'
+                ? t('analysis.continueEditing')
+                : t('analysis.editAndConfirm')}
             </Text>
           </Pressable>
         ) : null}
@@ -550,7 +582,9 @@ export function TranscriptContent({
                     displayMode === mode && styles.versionOptionTextActive,
                   ]}
                 >
-                  {mode === 'current' ? '当前确认版' : '原始转写'}
+                  {mode === 'current'
+                    ? t('analysis.currentConfirmed')
+                    : t('analysis.originalTranscript')}
                 </Text>
               </Pressable>
             ))}
@@ -559,7 +593,7 @@ export function TranscriptContent({
         {editing ? (
           <View style={styles.editActions}>
             <Pressable disabled={confirming} onPress={onCancelEditing} style={styles.editButton}>
-              <Text style={styles.editCancelText}>取消</Text>
+              <Text style={styles.editCancelText}>{t('common.cancel')}</Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
@@ -568,7 +602,7 @@ export function TranscriptContent({
               style={[styles.editButton, styles.editConfirmButton]}
             >
               <Text style={styles.editConfirmText}>
-                {confirming ? '正在确认…' : '确认整份转写'}
+                {confirming ? t('analysis.confirming') : t('analysis.confirmWhole')}
               </Text>
             </Pressable>
           </View>
@@ -577,56 +611,54 @@ export function TranscriptContent({
       {rawSpeakerCount === 1 ? (
         <View accessibilityRole="alert" style={styles.diarizationNotice}>
           <Ionicons color={colors.secondary} name="person-outline" size={20} />
-          <Text style={styles.diarizationNoticeText}>本录音仅识别到 1 位说话人。</Text>
+          <Text style={styles.diarizationNoticeText}>{t('analysis.singleSpeaker')}</Text>
         </View>
       ) : null}
       {detail.speakerReview.resolvedAt ? (
         <View accessibilityRole="alert" style={styles.diarizationNotice}>
           <Ionicons color={colors.success} name="checkmark-circle-outline" size={20} />
-          <Text style={styles.diarizationNoticeText}>说话人复核已完成，所有疑点均已审核通过。</Text>
+          <Text style={styles.diarizationNoticeText}>{t('analysis.reviewComplete')}</Text>
         </View>
       ) : detail.speakerReview.status === 'partial' ? (
         <View accessibilityRole="alert" style={styles.diarizationNotice}>
           <Ionicons color={colors.secondary} name="alert-circle-outline" size={20} />
           <Text style={styles.diarizationNoticeText}>
-            智能说话人复核未完成。{detail.speakerReview.message ?? '已保留本地规则检测结果。'}
+            {t('analysis.reviewPartial', {
+              message: detail.speakerReview.message ?? t('analysis.reviewRulesKept'),
+            })}
           </Text>
         </View>
       ) : null}
       {detail.transcription.diarizationStatus === 'not_returned' ? (
         <View
-          accessibilityLabel="本次模型未返回说话人信息，以下使用匿名发言编号。"
+          accessibilityLabel={t('analysis.noDiarization')}
           accessibilityRole="alert"
           accessible
           style={styles.diarizationNotice}
         >
           <Ionicons color={colors.secondary} name="people-outline" size={20} />
-          <Text style={styles.diarizationNoticeText}>
-            本次模型未返回说话人信息，以下使用匿名发言编号。
-          </Text>
+          <Text style={styles.diarizationNoticeText}>{t('analysis.noDiarization')}</Text>
         </View>
       ) : null}
       {detail.transcription.speakerIdentityScope === 'chunk' ? (
         <View accessibilityRole="alert" style={styles.diarizationNotice}>
           <Ionicons color={colors.secondary} name="people-outline" size={20} />
-          <Text style={styles.diarizationNoticeText}>
-            本次结果只保证分块内的说话人身份，以下使用匿名发言编号，不代表跨块同一人。
-          </Text>
+          <Text style={styles.diarizationNoticeText}>{t('analysis.chunkDiarization')}</Text>
         </View>
       ) : null}
       <View style={styles.filters}>
-        <FilterButton label="全部场景" />
-        <FilterButton label="全部文本" />
-        <FilterButton label="全部标签" />
+        <FilterButton label={t('analysis.allScenes')} />
+        <FilterButton label={t('analysis.allText')} />
+        <FilterButton label={t('analysis.allTags')} />
         <Checkbox
           checked={skipInvalid}
-          label="跳过无效音频"
+          label={t('analysis.skipInvalid')}
           onPress={() => setSkipInvalid((value) => !value)}
         />
         {pendingReviewFindingCount > 0 ? (
           <Checkbox
             checked={hideSpeakerReview}
-            label="屏蔽说话人待确认"
+            label={t('analysis.hideSpeakerReview')}
             onPress={() => setHideSpeakerReview((value) => !value)}
           />
         ) : null}
@@ -639,14 +671,14 @@ export function TranscriptContent({
           >
             <Ionicons color={colors.secondary} name="checkmark-done-outline" size={18} />
             <Text style={styles.resolveAllButtonText}>
-              {resolvingReviewFinding === 'all' ? '正在审核…' : '全部审核通过'}
+              {resolvingReviewFinding === 'all' ? t('analysis.reviewing') : t('analysis.reviewAll')}
             </Text>
           </Pressable>
         ) : null}
       </View>
       {visibleScenes.every((scene) => scene.segments.length === 0) ? (
         <View style={styles.emptyTranscript}>
-          <Text style={styles.emptyTranscriptText}>未识别到可转写的语音内容。</Text>
+          <Text style={styles.emptyTranscriptText}>{t('analysis.noSpeech')}</Text>
         </View>
       ) : null}
       {visibleScenes.length === 0 && !skipInvalid && !hasSelectedTag
@@ -705,7 +737,9 @@ export function TranscriptContent({
                     reviewPlaybackAvailable={reviewPlaybackAvailable}
                     resolvingReviewFinding={resolvingReviewFinding}
                     segment={item.segment}
-                    speakerDisplayName={speakerDisplayNames.get(item.segment.speakerKey) ?? '发言'}
+                    speakerDisplayName={
+                      speakerDisplayNames.get(item.segment.speakerKey) ?? t('analysis.speech')
+                    }
                     speakerOptions={speakerOptions}
                   />
                 ),
@@ -717,7 +751,7 @@ export function TranscriptContent({
       {editing ? (
         <View style={styles.bottomEditActions}>
           <Pressable disabled={confirming} onPress={onCancelEditing} style={styles.editButton}>
-            <Text style={styles.editCancelText}>取消</Text>
+            <Text style={styles.editCancelText}>{t('common.cancel')}</Text>
           </Pressable>
           <Pressable
             accessibilityRole="button"
@@ -725,7 +759,9 @@ export function TranscriptContent({
             onPress={onConfirmEditing}
             style={[styles.editButton, styles.editConfirmButton]}
           >
-            <Text style={styles.editConfirmText}>{confirming ? '正在确认…' : '确认整份转写'}</Text>
+            <Text style={styles.editConfirmText}>
+              {confirming ? t('analysis.confirming') : t('analysis.confirmWhole')}
+            </Text>
           </Pressable>
         </View>
       ) : null}

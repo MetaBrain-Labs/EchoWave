@@ -19,6 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 
 import {
@@ -34,13 +35,25 @@ import { EmptyState } from '../components/EmptyState';
 import { showComingSoon } from '../components/feedback';
 import { toggleImportantBlock, useImportantBlocks } from '../importantBlocks';
 
-function locatorText(chunk: DocumentChunk) {
+function locatorText(chunk: DocumentChunk, t: ReturnType<typeof useAppLanguage>['t']) {
   const locator = chunk.locator;
   if (locator.kind === 'spreadsheet')
-    return `${locator.sheet}，第 ${locator.rowStart}-${locator.rowEnd} 行`;
+    return t('blockDetail.sheetLocation', {
+      sheet: locator.sheet,
+      start: locator.rowStart,
+      end: locator.rowEnd,
+    });
   if (locator.kind === 'word')
-    return `${locator.headingPath.join(' / ') || '正文'}，第 ${locator.paragraphStart}-${locator.paragraphEnd} 段`;
-  return `${locator.headingPath.join(' / ') || '正文'}，第 ${locator.lineStart}-${locator.lineEnd} 行`;
+    return t('blockDetail.paragraphLocation', {
+      heading: locator.headingPath.join(' / ') || t('documentDetail.body'),
+      start: locator.paragraphStart,
+      end: locator.paragraphEnd,
+    });
+  return t('blockDetail.lineLocation', {
+    heading: locator.headingPath.join(' / ') || t('documentDetail.body'),
+    start: locator.lineStart,
+    end: locator.lineEnd,
+  });
 }
 
 /** 加载并展示指定文档块、原文来源及相邻块导航。 */
@@ -59,6 +72,7 @@ export function BlockDetailScreen({
   onLocateOriginal: (blockId: string) => void;
   onNavigateBlock: (blockId: string) => void;
 }) {
+  const { formatNumber, t } = useAppLanguage();
   const [document, setDocument] = useState<KnowledgeDocumentDetail>();
   const [error, setError] = useState('');
   const importantBlocks = useImportantBlocks();
@@ -69,9 +83,9 @@ export function BlockDetailScreen({
       setDocument(await getDocument(knowledgeId, documentId));
       setError('');
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '文本块加载失败。');
+      setError(reason instanceof Error ? reason.message : t('blockDetail.loadFailed'));
     }
-  }, [documentId, knowledgeId]);
+  }, [documentId, knowledgeId, t]);
   const screenRefresh = useScreenRefresh(load);
 
   useEffect(() => {
@@ -89,15 +103,19 @@ export function BlockDetailScreen({
   if (!document || !block) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <PageHeader onBack={onBack} onMore={() => showComingSoon('更多操作')} title="文本块详情" />
+        <PageHeader
+          onBack={onBack}
+          onMore={() => showComingSoon(t('common.moreActions'))}
+          title={t('blockDetail.title')}
+        />
         <ScrollView
           alwaysBounceVertical
           contentContainerStyle={styles.emptyRefreshContent}
           refreshControl={<ScreenRefreshControl {...screenRefresh} />}
         >
           <EmptyState
-            description={error || '正在从服务器读取文本块。'}
-            title={error ? '加载失败' : '正在加载'}
+            description={error || t('blockDetail.loadingDescription')}
+            title={error ? t('common.loadFailed') : t('common.loading')}
           />
         </ScrollView>
       </SafeAreaView>
@@ -109,10 +127,13 @@ export function BlockDetailScreen({
     <SafeAreaView style={styles.safeArea}>
       <PageHeader
         onBack={onBack}
-        onMore={() => showComingSoon('更多操作')}
-        onSearch={() => showComingSoon('文本块搜索')}
-        searchLabel="搜索文本块"
-        title={`块 ${block.index} · ${block.title || '正文'}`}
+        onMore={() => showComingSoon(t('common.moreActions'))}
+        onSearch={() => showComingSoon(t('blockDetail.searchAction'))}
+        searchLabel={t('blockDetail.search')}
+        title={t('documentDetail.chunkTitle', {
+          index: formatNumber(block.index),
+          title: block.title || t('documentDetail.body'),
+        })}
       />
       <ScrollView
         alwaysBounceVertical
@@ -120,26 +141,33 @@ export function BlockDetailScreen({
         refreshControl={<ScreenRefreshControl {...screenRefresh} />}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.sectionTitle}>块详情</Text>
+        <Text style={styles.sectionTitle}>{t('blockDetail.details')}</Text>
         <View style={styles.metrics}>
-          <Metric label="块序号" value={`${block.index}/${document.chunks.length}`} />
-          <Metric divider label="向量 ID" value={block.vectorId.slice(0, 8)} />
-          <Metric divider label="字符数" value={block.charCount.toLocaleString('zh-CN')} />
+          <Metric
+            label={t('blockDetail.sequence')}
+            value={`${formatNumber(block.index)}/${formatNumber(document.chunks.length)}`}
+          />
+          <Metric divider label="Vector ID" value={block.vectorId.slice(0, 8)} />
+          <Metric
+            divider
+            label={t('documentDetail.characters')}
+            value={formatNumber(block.charCount)}
+          />
         </View>
 
-        <Text style={styles.sectionTitle}>块内容</Text>
+        <Text style={styles.sectionTitle}>{t('blockDetail.content')}</Text>
         <ContentCard
           action={
             <Pressable
-              accessibilityLabel="复制块内容"
+              accessibilityLabel={t('blockDetail.copyAccessibility')}
               accessibilityRole="button"
               hitSlop={8}
-              onPress={() => showComingSoon('复制内容')}
+              onPress={() => showComingSoon(t('blockDetail.copy'))}
             >
               <Ionicons color={colors.ink} name="copy-outline" size={typography.body.lineHeight} />
             </Pressable>
           }
-          label="块内容"
+          label={t('blockDetail.content')}
         >
           <Text selectable style={styles.body}>
             {block.content}
@@ -147,13 +175,15 @@ export function BlockDetailScreen({
         </ContentCard>
 
         <View style={styles.sectionHeadingGroup}>
-          <Text style={styles.sectionTitle}>来源预览</Text>
-          <Text style={styles.locator}>来源位置：{locatorText(block)}</Text>
+          <Text style={styles.sectionTitle}>{t('blockDetail.sourcePreview')}</Text>
+          <Text style={styles.locator}>
+            {t('blockDetail.sourceLocation', { location: locatorText(block, t) })}
+          </Text>
         </View>
         <ContentCard
           action={
             <Pressable
-              accessibilityLabel="全屏查看来源原文"
+              accessibilityLabel={t('blockDetail.fullscreenSource')}
               accessibilityRole="button"
               hitSlop={8}
               onPress={() => onLocateOriginal(block.id)}
@@ -165,7 +195,7 @@ export function BlockDetailScreen({
               />
             </Pressable>
           }
-          label="原文"
+          label={t('blockDetail.original')}
         >
           <Text selectable style={styles.body}>
             {block.sourceExcerpt || block.content}
@@ -173,21 +203,29 @@ export function BlockDetailScreen({
         </ContentCard>
 
         <View style={styles.sectionHeadingGroup}>
-          <Text style={styles.sectionTitle}>关联上下文</Text>
-          <Text style={styles.locator}>来源位置：{locatorText(block)}</Text>
+          <Text style={styles.sectionTitle}>{t('blockDetail.context')}</Text>
+          <Text style={styles.locator}>
+            {t('blockDetail.sourceLocation', { location: locatorText(block, t) })}
+          </Text>
         </View>
         <View style={styles.contextList}>
           {previous ? (
             <ContextCard
-              direction="上一块"
+              direction={t('blockDetail.previous')}
               onPress={() => onNavigateBlock(previous.id)}
               chunk={previous}
             />
           ) : null}
           {next ? (
-            <ContextCard direction="下一块" onPress={() => onNavigateBlock(next.id)} chunk={next} />
+            <ContextCard
+              direction={t('blockDetail.next')}
+              onPress={() => onNavigateBlock(next.id)}
+              chunk={next}
+            />
           ) : null}
-          {!previous && !next ? <Text style={styles.emptyText}>当前文档没有其他文本块</Text> : null}
+          {!previous && !next ? (
+            <Text style={styles.emptyText}>{t('blockDetail.noOther')}</Text>
+          ) : null}
         </View>
       </ScrollView>
 
@@ -195,17 +233,17 @@ export function BlockDetailScreen({
         <View style={styles.actionRow}>
           <FooterAction
             icon="copy-outline"
-            label="复制内容"
-            onPress={() => showComingSoon('复制内容')}
+            label={t('blockDetail.copy')}
+            onPress={() => showComingSoon(t('blockDetail.copy'))}
           />
           <FooterAction
             icon="location-outline"
-            label="定位原文"
+            label={t('blockDetail.locate')}
             onPress={() => onLocateOriginal(block.id)}
           />
           <FooterAction
             icon={important ? 'star' : 'star-outline'}
-            label={important ? '取消重点' : '设为重点'}
+            label={important ? t('blockDetail.unmark') : t('blockDetail.mark')}
             onPress={() => toggleImportantBlock(block.id)}
             selected={important}
           />
@@ -214,7 +252,7 @@ export function BlockDetailScreen({
           <PaginationButton
             direction="previous"
             disabled={!previous}
-            label="上一块"
+            label={t('blockDetail.previous')}
             onPress={() => previous && onNavigateBlock(previous.id)}
           />
           <Text style={styles.pageCount}>
@@ -223,7 +261,7 @@ export function BlockDetailScreen({
           <PaginationButton
             direction="next"
             disabled={!next}
-            label="下一块"
+            label={t('blockDetail.next')}
             onPress={() => next && onNavigateBlock(next.id)}
           />
         </View>
@@ -283,15 +321,23 @@ function ContextCard({
   direction: string;
   onPress: () => void;
 }) {
+  const { formatNumber, t } = useAppLanguage();
   return (
     <Pressable
-      accessibilityLabel={`${direction}：${chunk.title}`}
+      accessibilityLabel={t('blockDetail.contextAccessibility', {
+        direction,
+        title: chunk.title,
+      })}
       accessibilityRole="button"
       onPress={onPress}
       style={({ pressed }) => [styles.contextCard, pressed && styles.pressed]}
     >
       <Text style={styles.contextTitle}>
-        {direction}：块 {chunk.index} · {chunk.title || '正文'}
+        {t('blockDetail.contextTitle', {
+          direction,
+          index: formatNumber(chunk.index),
+          title: chunk.title || t('documentDetail.body'),
+        })}
       </Text>
       <View style={styles.contextBodyRow}>
         <Text numberOfLines={2} style={styles.contextBody}>
@@ -304,8 +350,12 @@ function ContextCard({
         />
       </View>
       <View style={styles.contextMetaRow}>
-        <Text style={styles.meta}>向量 ID：{chunk.vectorId.slice(0, 8)}</Text>
-        <Text style={styles.meta}>字符数：{chunk.charCount}</Text>
+        <Text style={styles.meta}>
+          {t('documentDetail.vectorId', { id: chunk.vectorId.slice(0, 8) })}
+        </Text>
+        <Text style={styles.meta}>
+          {t('documentDetail.characterCount', { count: formatNumber(chunk.charCount) })}
+        </Text>
       </View>
     </Pressable>
   );

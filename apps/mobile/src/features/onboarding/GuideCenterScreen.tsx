@@ -15,7 +15,12 @@ import { ScrollView, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useStarterTour } from '@/shared/onboarding/StarterTourContext';
-import { GUIDE_IDS, GUIDE_REGISTRY, type GuideStatus } from '@/shared/onboarding/guideRegistry';
+import {
+  GUIDE_IDS,
+  localizeGuideRegistry,
+  type GuideStatus,
+} from '@/shared/onboarding/guideRegistry';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import {
   colors,
   fontFamilies,
@@ -26,25 +31,26 @@ import {
 } from '@/shared/theme/tokens';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
 
-const statusCopy: Record<GuideStatus, string> = {
-  not_started: '未开始',
-  completed: '已完成',
-  skipped: '已跳过',
-};
-
 /** 渲染六项产品引导目录。 */
 export function GuideCenterScreen({ onBack }: { onBack: () => void }) {
+  const { formatNumber, t } = useAppLanguage();
   const { startGuide, statuses, templates } = useStarterTour();
+  const guides = localizeGuideRegistry(t);
+  const statusCopy: Record<GuideStatus, string> = {
+    not_started: t('guideCenter.notStarted'),
+    completed: t('guideCenter.completed'),
+    skipped: t('guideCenter.skipped'),
+  };
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <TopLevelPageHeader
         onBack={onBack}
-        subtitle="按主题学习，随时可以跳过或重播。"
-        title="新手引导"
+        subtitle={t('guideCenter.subtitle')}
+        title={t('guideCenter.title')}
       />
       <ScrollView contentContainerStyle={styles.content}>
         {GUIDE_IDS.map((id) => {
-          const guide = GUIDE_REGISTRY[id];
+          const guide = guides[id];
           const status = statuses[id];
           const needsSalesTemplate = id === 'basic' || id === 'analysis';
           const disabled = needsSalesTemplate && !templates.sales_call_review;
@@ -57,11 +63,20 @@ export function GuideCenterScreen({ onBack }: { onBack: () => void }) {
                 <View style={styles.copy}>
                   <Text style={styles.title}>{guide.title}</Text>
                   <Text style={styles.meta}>
-                    {guide.steps.length} 步 · {statusCopy[status]}
+                    {t('guideCenter.steps', {
+                      count: formatNumber(guide.steps.length),
+                      status: statusCopy[status],
+                    })}
                   </Text>
                 </View>
                 <Text
-                  accessibilityLabel={`${status === 'not_started' ? '未完成' : '已完成'}${guide.title}`}
+                  accessibilityLabel={t('guideCenter.statusAccessibility', {
+                    status:
+                      status === 'not_started'
+                        ? t('guideCenter.incomplete')
+                        : t('guideCenter.completed'),
+                    title: guide.title,
+                  })}
                   style={[styles.status, status === 'completed' && styles.completed]}
                 >
                   {statusCopy[status]}
@@ -69,10 +84,14 @@ export function GuideCenterScreen({ onBack }: { onBack: () => void }) {
               </View>
               <Text style={styles.description}>{guide.description}</Text>
               {disabled ? (
-                <Text style={styles.warning}>销售通话复盘模板不可用，请先恢复该模板分组。</Text>
+                <Text style={styles.warning}>{t('guideCenter.templateUnavailable')}</Text>
               ) : null}
               <Pressable
-                accessibilityLabel={`${status === 'not_started' ? '开始' : '重播'}${guide.title}`}
+                accessibilityLabel={t('guideCenter.startAccessibility', {
+                  action:
+                    status === 'not_started' ? t('guideCenter.start') : t('guideCenter.replay'),
+                  title: guide.title,
+                })}
                 accessibilityRole="button"
                 accessibilityState={{ disabled }}
                 disabled={disabled}
@@ -84,7 +103,9 @@ export function GuideCenterScreen({ onBack }: { onBack: () => void }) {
                 ]}
               >
                 <Text style={styles.actionText}>
-                  {status === 'not_started' ? '开始引导' : '重新播放'}
+                  {status === 'not_started'
+                    ? t('guideCenter.startGuide')
+                    : t('guideCenter.replayGuide')}
                 </Text>
               </Pressable>
             </View>

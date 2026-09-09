@@ -15,6 +15,7 @@ import {
   CORE_BUSINESS_ROLES,
   type BusinessRoleKind,
   type SegmentRoleAnalysis,
+  type SupportedLanguage,
 } from '@echowave/contracts';
 
 import {
@@ -64,8 +65,11 @@ export class DeepSeekRoleRecognizer {
     segments: PostAnalysisTranscriptSegment[],
     customRoles: string[],
     recorder: AiExecutionRecorder = noOpAiExecutionRecorder,
+    language: SupportedLanguage = 'zh-CN',
   ): Promise<(SegmentRoleAnalysis & { speakerKey: string })[]> {
-    const allowedRoles = [...CORE_BUSINESS_ROLES, ...customRoles];
+    const standardRoles =
+      language === 'zh-CN' ? CORE_BUSINESS_ROLES : ['Sales', 'Customer', 'Other', 'Unknown'];
+    const allowedRoles = [...standardRoles, ...customRoles];
     const speakerSegments = new Map<string, Set<string>>();
     for (const segment of segments) {
       const ids = speakerSegments.get(segment.speakerKey) ?? new Set<string>();
@@ -74,7 +78,13 @@ export class DeepSeekRoleRecognizer {
     }
     let previous = '';
     for (let structureAttempt = 1; structureAttempt <= 2; structureAttempt += 1) {
-      const prompt = roleRecognitionContext(segments, allowedRoles, previous, structureAttempt);
+      const prompt = roleRecognitionContext(
+        segments,
+        allowedRoles,
+        previous,
+        structureAttempt,
+        language,
+      );
       const text = await this.request(prompt, structureAttempt, recorder);
       previous = text;
       const parsed = OutputSchema.safeParse(parseStructuredJson(text));
@@ -97,7 +107,18 @@ export class DeepSeekRoleRecognizer {
       if (invalid) continue;
       return parsed.data.speakers.map((result) => ({
         speakerKey: result.speakerKey,
-        kind: roleKind(result.role, customRoles),
+        kind:
+          language === 'en'
+            ? ((
+                {
+                  Sales: 'sales',
+                  Customer: 'customer',
+                  Other: 'other',
+                  Unknown: 'unknown',
+                } as const
+              )[result.role as 'Sales' | 'Customer' | 'Other' | 'Unknown'] ??
+              roleKind(result.role, customRoles))
+            : roleKind(result.role, customRoles),
         label: result.role,
         confidence: result.confidence,
         evidenceSegmentIds: result.evidenceSegmentIds,

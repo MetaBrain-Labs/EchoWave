@@ -28,6 +28,15 @@ describe('starter template examples', () => {
     }
   });
 
+  it('publishes an English product example without changing the stable structure', () => {
+    const example = TemplateExampleSchema.parse(
+      getStarterTemplateExample('sales_call_review', 'en'),
+    );
+    assert.equal(example.templateKey, 'sales_call_review');
+    assert.equal(example.roles[0].label, 'Sales');
+    assert.match(example.summarySections[0].title, /Outcome/);
+  });
+
   it('returns the catalog example only for an active template group', async () => {
     const service = new DefaultGroupService({
       getGroup: async () => ({ id: groupId, starterTemplateKey: 'sales_call_review' }),

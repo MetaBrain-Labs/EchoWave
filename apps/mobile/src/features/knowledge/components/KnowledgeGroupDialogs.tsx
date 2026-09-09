@@ -32,6 +32,7 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 /** 渲染知识库可关联分组的多选底部抽屉。 */
 export function KnowledgeGroupPicker({
@@ -59,11 +60,12 @@ export function KnowledgeGroupPicker({
   selectedGroupIds: Set<string>;
   visible: boolean;
 }) {
+  const { formatNumber, t } = useAppLanguage();
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
       <View accessibilityViewIsModal style={styles.sheetOverlay}>
         <Pressable
-          accessibilityLabel="关闭关联分组选择"
+          accessibilityLabel={t('knowledgeGroup.close')}
           accessibilityRole="button"
           onPress={onClose}
           style={[StyleSheet.absoluteFill, styles.backdrop]}
@@ -72,14 +74,12 @@ export function KnowledgeGroupPicker({
           <View style={styles.sheetHeader}>
             <View>
               <Text accessibilityRole="header" style={styles.sheetTitle}>
-                关联新分组
+                {t('knowledgeGroup.link')}
               </Text>
-              <Text style={styles.sheetDescription}>
-                可一次选择多个分组，已关联分组不可重复选择。
-              </Text>
+              <Text style={styles.sheetDescription}>{t('knowledgeGroup.description')}</Text>
             </View>
             <Pressable
-              accessibilityLabel="关闭分组选择抽屉"
+              accessibilityLabel={t('knowledgeGroup.closeDrawer')}
               accessibilityRole="button"
               hitSlop={8}
               onPress={onClose}
@@ -93,18 +93,18 @@ export function KnowledgeGroupPicker({
             showsVerticalScrollIndicator={false}
           >
             {loading ? (
-              <ActivityIndicator accessibilityLabel="正在加载可关联分组" color={colors.ink} />
+              <ActivityIndicator accessibilityLabel={t('sourceGroup.loading')} color={colors.ink} />
             ) : null}
             {error ? (
               <Pressable accessibilityRole="button" onPress={onRetry} style={styles.feedback}>
                 <Text accessibilityRole="alert" style={styles.feedbackText}>
                   {error}
                 </Text>
-                <Text style={styles.retryText}>点击重试</Text>
+                <Text style={styles.retryText}>{t('knowledge.tapRetry')}</Text>
               </Pressable>
             ) : null}
             {!loading && !error && allGroups.length === 0 ? (
-              <Text style={styles.emptyText}>暂无可用分组</Text>
+              <Text style={styles.emptyText}>{t('knowledgeGroup.empty')}</Text>
             ) : null}
             {allGroups.map((group) => {
               const linked = linkedGroupIds.has(group.id);
@@ -112,7 +112,14 @@ export function KnowledgeGroupPicker({
               return (
                 <Pressable
                   key={group.id}
-                  accessibilityLabel={`${linked ? '已关联分组' : selected ? '取消选择分组' : '选择分组'}：${group.name}`}
+                  accessibilityLabel={t('knowledgeGroup.accessibility', {
+                    action: linked
+                      ? t('knowledgeGroup.linked')
+                      : selected
+                        ? t('knowledgeGroup.unselect')
+                        : t('knowledgeGroup.select'),
+                    name: group.name,
+                  })}
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: linked || selected, disabled: linked || pending }}
                   disabled={linked || pending}
@@ -132,7 +139,10 @@ export function KnowledgeGroupPicker({
                       {group.name}
                     </Text>
                     <Text style={[styles.groupOptionMeta, linked && styles.disabledText]}>
-                      {group.metrics.audioCount} 音频 · {group.metrics.knowledgeCount} 知识库
+                      {t('knowledgeGroup.counts', {
+                        audio: formatNumber(group.metrics.audioCount),
+                        knowledge: formatNumber(group.metrics.knowledgeCount),
+                      })}
                     </Text>
                   </View>
                   <Ionicons
@@ -151,10 +161,10 @@ export function KnowledgeGroupPicker({
               onPress={onClose}
               style={styles.secondaryButton}
             >
-              <Text style={styles.secondaryButtonText}>取消</Text>
+              <Text style={styles.secondaryButtonText}>{t('common.cancel')}</Text>
             </Pressable>
             <Pressable
-              accessibilityLabel="确认关联所选分组"
+              accessibilityLabel={t('knowledgeGroup.confirmAccessibility')}
               accessibilityRole="button"
               disabled={selectedGroupIds.size === 0 || pending}
               onPress={onConfirm}
@@ -166,7 +176,7 @@ export function KnowledgeGroupPicker({
               {pending ? (
                 <ActivityIndicator color={colors.white} />
               ) : (
-                <Text style={styles.primaryButtonText}>确认关联</Text>
+                <Text style={styles.primaryButtonText}>{t('sourceGroup.confirm')}</Text>
               )}
             </Pressable>
           </View>
@@ -186,25 +196,28 @@ export function KnowledgeGroupSwitchDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const { t } = useAppLanguage();
   return (
     <Modal animationType="fade" onRequestClose={onCancel} transparent visible={Boolean(group)}>
       <View accessibilityViewIsModal style={styles.dialogOverlay}>
         <View style={styles.dialog}>
           <Text accessibilityRole="header" style={styles.dialogTitle}>
-            切换分组
+            {t('knowledgeGroup.switch')}
           </Text>
-          <Text style={styles.dialogDescription}>是否切换至“{group?.name}”分组并返回主页面？</Text>
+          <Text style={styles.dialogDescription}>
+            {t('knowledgeGroup.switchBody', { name: group?.name ?? '' })}
+          </Text>
           <View style={styles.dialogActions}>
             <Pressable accessibilityRole="button" onPress={onCancel} style={styles.dialogButton}>
-              <Text style={styles.secondaryButtonText}>取消</Text>
+              <Text style={styles.secondaryButtonText}>{t('common.cancel')}</Text>
             </Pressable>
             <Pressable
-              accessibilityLabel="确认切换分组"
+              accessibilityLabel={t('knowledgeGroup.confirmSwitchAccessibility')}
               accessibilityRole="button"
               onPress={onConfirm}
               style={[styles.dialogButton, styles.dialogPrimary]}
             >
-              <Text style={styles.primaryButtonText}>确认切换</Text>
+              <Text style={styles.primaryButtonText}>{t('sourceDetail.confirmSwitch')}</Text>
             </Pressable>
           </View>
         </View>

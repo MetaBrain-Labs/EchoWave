@@ -24,6 +24,7 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 function ActionItem({
   disabled = false,
@@ -54,19 +55,22 @@ function ActionItem({
   );
 }
 
-function processingLabel(document: KnowledgeDocument): string {
+function processingLabel(
+  document: KnowledgeDocument,
+  t: ReturnType<typeof useAppLanguage>['t'],
+): string {
   switch (document.status.kind) {
     case 'queued':
-      return '文档正在等待解析，完成前无需重复操作。';
+      return t('documentActions.waiting');
     case 'validating':
-      return '正在校验文件内容。';
+      return t('documentActions.validating');
     case 'parsing':
     case 'chunking':
-      return '正在解析文档内容。';
+      return t('documentActions.parsing');
     case 'embedding':
-      return `正在生成知识向量（${document.status.progress}%）。`;
+      return t('documentActions.embedding', { progress: document.status.progress });
     case 'deleting':
-      return '文档正在移除。';
+      return t('documentActions.deleting');
     default:
       return '';
   }
@@ -90,20 +94,25 @@ export function KnowledgeDocumentActions({
   onShowFailure: () => void;
   pending: boolean;
 }) {
+  const { t } = useAppLanguage();
   const failedStatus = document?.status.kind === 'failed' ? document.status : undefined;
   const failed = Boolean(failedStatus);
   const migrationFailure = failedStatus?.code === 'EMBEDDING_MODEL_MIGRATION_REQUIRED';
   const statusDescription = document
     ? failed
       ? failedStatus?.retryable || migrationFailure
-        ? '请选择需要执行的操作。'
-        : '该失败当前不可重试，可查看原因后重新准备文件。'
-      : processingLabel(document)
+        ? t('documentActions.choose')
+        : t('documentActions.notRetryable')
+      : processingLabel(document, t)
     : '';
 
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent visible={Boolean(document)}>
-      <Pressable accessibilityLabel="关闭文档操作" onPress={onClose} style={styles.backdrop} />
+      <Pressable
+        accessibilityLabel={t('documentActions.close')}
+        onPress={onClose}
+        style={styles.backdrop}
+      />
       <SafeAreaView edges={['bottom']} style={styles.sheet}>
         <Text accessibilityRole="header" numberOfLines={1} style={styles.title}>
           {document?.title ?? ''}
@@ -113,7 +122,7 @@ export function KnowledgeDocumentActions({
           <ActionItem
             disabled={pending}
             icon="document-text-outline"
-            label="查看文件"
+            label={t('documentActions.view')}
             onPress={onOpen}
           />
         ) : null}
@@ -121,7 +130,7 @@ export function KnowledgeDocumentActions({
           <ActionItem
             disabled={pending}
             icon="alert-circle-outline"
-            label="查看失败原因"
+            label={t('documentActions.failure')}
             onPress={onShowFailure}
           />
         ) : null}
@@ -129,7 +138,7 @@ export function KnowledgeDocumentActions({
           <ActionItem
             disabled={pending}
             icon="refresh-outline"
-            label={pending ? '正在重新解析…' : '重新解析'}
+            label={pending ? t('documentActions.reparsing') : t('documentDetail.reparse')}
             onPress={onRetry}
           />
         ) : null}
@@ -137,14 +146,14 @@ export function KnowledgeDocumentActions({
           <ActionItem
             disabled={pending}
             icon="cloud-upload-outline"
-            label={pending ? '正在处理…' : '重新上传文件'}
+            label={pending ? t('documentActions.processing') : t('documentActions.reupload')}
             onPress={onReupload}
           />
         ) : null}
         {!failed && document?.status.kind !== 'ready' ? (
           <View accessibilityLiveRegion="polite" style={styles.statusOnly}>
             <Ionicons color={colors.secondary} name="time-outline" size={20} />
-            <Text style={styles.statusText}>当前状态暂不可操作</Text>
+            <Text style={styles.statusText}>{t('documentActions.unavailable')}</Text>
           </View>
         ) : null}
         <Pressable
@@ -153,7 +162,7 @@ export function KnowledgeDocumentActions({
           onPress={onClose}
           style={styles.cancel}
         >
-          <Text style={styles.cancelText}>取消</Text>
+          <Text style={styles.cancelText}>{t('common.cancel')}</Text>
         </Pressable>
       </SafeAreaView>
     </Modal>

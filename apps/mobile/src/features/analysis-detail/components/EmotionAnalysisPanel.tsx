@@ -11,6 +11,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import type { TranslationKey } from '@/shared/i18n/translations';
 import {
   colors,
   fontFamilies,
@@ -21,45 +23,46 @@ import {
 } from '@/shared/theme/tokens';
 import type { TranscriptSegment } from '../model';
 
-const labels: Record<string, string> = {
-  neutral: '平静',
-  happy: '愉快',
-  sad: '悲伤',
-  angry: '生气',
-  anxious: '焦虑',
-  excited: '兴奋',
-  impatient: '不耐烦',
-  frustrated: '沮丧',
-  sarcastic: '讽刺',
-  other: '其他',
-  unknown: '未知',
-  cooperative: '配合',
-  engaged: '投入',
-  dismissive: '敷衍',
-  resistant: '抵触',
-  hesitant: '犹豫',
-  assertive: '坚定',
-  low: '低',
-  medium: '中',
-  high: '高',
-  slow: '慢',
-  normal: '正常',
-  fast: '快',
-  variable: '变化明显',
-  elevated: '提高',
-  rising: '上升',
-  falling: '下降',
-  few: '较少',
-  frequent: '频繁',
-  long: '长停顿',
-  irregular: '不规律',
+const labelKeys: Record<string, TranslationKey> = {
+  neutral: 'emotion.neutral',
+  happy: 'emotion.happy',
+  sad: 'emotion.sad',
+  angry: 'emotion.angry',
+  anxious: 'emotion.anxious',
+  excited: 'emotion.excited',
+  impatient: 'emotion.impatient',
+  frustrated: 'emotion.frustrated',
+  sarcastic: 'emotion.sarcastic',
+  other: 'emotion.other',
+  unknown: 'emotion.unknown',
+  cooperative: 'emotion.cooperative',
+  engaged: 'emotion.engaged',
+  dismissive: 'emotion.dismissive',
+  resistant: 'emotion.resistant',
+  hesitant: 'emotion.hesitant',
+  assertive: 'emotion.assertive',
+  low: 'emotion.low',
+  medium: 'emotion.medium',
+  high: 'emotion.high',
+  slow: 'emotion.slow',
+  normal: 'emotion.normal',
+  fast: 'emotion.fast',
+  variable: 'emotion.variable',
+  elevated: 'emotion.elevated',
+  rising: 'emotion.rising',
+  falling: 'emotion.falling',
+  few: 'emotion.few',
+  frequent: 'emotion.frequent',
+  long: 'emotion.long',
+  irregular: 'emotion.irregular',
 };
 
 function DetailRow({ label, value }: { label: string; value: string }) {
+  const { t } = useAppLanguage();
   return (
     <View style={styles.row}>
       <Text style={styles.label}>{label}</Text>
-      <Text style={styles.value}>{labels[value] ?? value}</Text>
+      <Text style={styles.value}>{labelKeys[value] ? t(labelKeys[value]) : value}</Text>
     </View>
   );
 }
@@ -72,30 +75,38 @@ export function EmotionAnalysisPanel({
   segment?: TranscriptSegment;
   onClose: () => void;
 }) {
+  const { t } = useAppLanguage();
   const analysis = segment?.emotionAnalysis;
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent visible={Boolean(analysis)}>
-      <Pressable accessibilityLabel="关闭情绪分析详情" onPress={onClose} style={styles.backdrop} />
+      <Pressable
+        accessibilityLabel={t('emotion.detailTitle')}
+        onPress={onClose}
+        style={styles.backdrop}
+      />
       <SafeAreaView edges={['bottom']} style={styles.sheet}>
         <View style={styles.header}>
           <Text accessibilityRole="header" style={styles.title}>
-            情绪分析详情
+            {t('emotion.detailTitle')}
           </Text>
-          <Pressable accessibilityLabel="关闭" onPress={onClose}>
+          <Pressable accessibilityLabel={t('common.close')} onPress={onClose}>
             <Ionicons color={colors.ink} name="close" size={24} />
           </Pressable>
         </View>
         {analysis ? (
           <ScrollView contentContainerStyle={styles.content}>
-            <DetailRow label="主情绪" value={analysis.label} />
-            <DetailRow label="置信度" value={`${Math.round(analysis.confidence * 100)}%`} />
-            <DetailRow label="态度" value={analysis.attitude} />
-            <DetailRow label="唤醒度" value={analysis.arousal} />
-            <DetailRow label="语速" value={analysis.pace} />
-            <DetailRow label="音量趋势" value={analysis.volumeTrend} />
-            <DetailRow label="音高变化" value={analysis.pitchVariation} />
-            <DetailRow label="停顿模式" value={analysis.pausePattern} />
-            <Text style={styles.cueTitle}>声音线索</Text>
+            <DetailRow label={t('emotion.primary')} value={analysis.label} />
+            <DetailRow
+              label={t('emotion.confidence')}
+              value={`${Math.round(analysis.confidence * 100)}%`}
+            />
+            <DetailRow label={t('emotion.attitude')} value={analysis.attitude} />
+            <DetailRow label={t('emotion.arousal')} value={analysis.arousal} />
+            <DetailRow label={t('emotion.pace')} value={analysis.pace} />
+            <DetailRow label={t('emotion.volumeTrend')} value={analysis.volumeTrend} />
+            <DetailRow label={t('emotion.pitchVariation')} value={analysis.pitchVariation} />
+            <DetailRow label={t('emotion.pausePattern')} value={analysis.pausePattern} />
+            <Text style={styles.cueTitle}>{t('emotion.vocalCues')}</Text>
             {analysis.vocalCues.length ? (
               analysis.vocalCues.map((cue) => (
                 <Text key={cue} style={styles.cue}>
@@ -103,9 +114,9 @@ export function EmotionAnalysisPanel({
                 </Text>
               ))
             ) : (
-              <Text style={styles.cue}>暂无明确声音线索</Text>
+              <Text style={styles.cue}>{t('emotion.noCues')}</Text>
             )}
-            <Text style={styles.model}>模型：{analysis.model}</Text>
+            <Text style={styles.model}>{t('emotion.model', { model: analysis.model })}</Text>
           </ScrollView>
         ) : null}
       </SafeAreaView>

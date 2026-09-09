@@ -27,15 +27,7 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
-
-function historyTime(value: string) {
-  return new Date(value).toLocaleString('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 /** 渲染最近问答的只读弹层。 */
 export function QueryHistoryModal({
@@ -53,17 +45,19 @@ export function QueryHistoryModal({
   onRetry: () => void;
   visible: boolean;
 }) {
+  const { formatDateTime, formatNumber, t } = useAppLanguage();
+
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
       <View accessibilityViewIsModal style={styles.overlay}>
         <View style={styles.sheet}>
           <View style={styles.header}>
             <View>
-              <Text style={styles.title}>最近问答</Text>
-              <Text style={styles.subtitle}>仅展示最近 6 个已完成问答</Text>
+              <Text style={styles.title}>{t('queryHistory.title')}</Text>
+              <Text style={styles.subtitle}>{t('queryHistory.subtitle')}</Text>
             </View>
             <Pressable
-              accessibilityLabel="关闭历史记录"
+              accessibilityLabel={t('queryHistory.close')}
               accessibilityRole="button"
               hitSlop={8}
               onPress={onClose}
@@ -74,8 +68,11 @@ export function QueryHistoryModal({
           </View>
           {loading ? (
             <View style={styles.state}>
-              <ActivityIndicator accessibilityLabel="正在加载历史记录" color={colors.ink} />
-              <Text style={styles.stateText}>正在读取最近问答…</Text>
+              <ActivityIndicator
+                accessibilityLabel={t('queryHistory.loading')}
+                color={colors.ink}
+              />
+              <Text style={styles.stateText}>{t('queryHistory.reading')}</Text>
             </View>
           ) : error ? (
             <View style={styles.state}>
@@ -83,20 +80,20 @@ export function QueryHistoryModal({
                 {error}
               </Text>
               <Pressable accessibilityRole="button" onPress={onRetry} style={styles.retryButton}>
-                <Text style={styles.retryText}>重新加载</Text>
+                <Text style={styles.retryText}>{t('common.retry')}</Text>
               </Pressable>
             </View>
           ) : items.length === 0 ? (
             <View style={styles.state}>
               <Ionicons color={colors.muted} name="chatbubble-ellipses-outline" size={32} />
-              <Text style={styles.stateText}>还没有已完成的问答记录</Text>
+              <Text style={styles.stateText}>{t('queryHistory.empty')}</Text>
             </View>
           ) : (
             <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
               {items.map((item) => (
                 <View key={item.id} style={styles.item}>
-                  <Text style={styles.time}>{historyTime(item.createdAt)}</Text>
-                  <Text style={styles.role}>你</Text>
+                  <Text style={styles.time}>{formatDateTime(item.createdAt)}</Text>
+                  <Text style={styles.role}>{t('queryHistory.you')}</Text>
                   <Text selectable style={styles.question}>
                     {item.question}
                   </Text>
@@ -105,7 +102,11 @@ export function QueryHistoryModal({
                     {item.answer}
                   </Text>
                   <Text style={styles.meta}>
-                    {item.citationCount > 0 ? `${item.citationCount} 条引用来源` : '无引用来源'}
+                    {item.citationCount > 0
+                      ? t('queryHistory.citations', {
+                          count: formatNumber(item.citationCount),
+                        })
+                      : t('queryHistory.noCitations')}
                   </Text>
                 </View>
               ))}

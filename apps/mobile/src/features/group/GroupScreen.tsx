@@ -43,6 +43,7 @@ import {
 } from '@/shared/api/groupsApi';
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import { useStarterTour, useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import {
@@ -74,9 +75,9 @@ import {
 } from './model';
 
 const tabs = [
-  { key: 'audio', label: '音频分析' },
-  { key: 'knowledge', label: '关联知识库' },
-  { key: 'sources', label: '连接数据源' },
+  { key: 'audio', labelKey: 'groups.tab.audio' },
+  { key: 'knowledge', labelKey: 'groups.tab.knowledge' },
+  { key: 'sources', labelKey: 'groups.tab.sources' },
 ] as const;
 
 export type TabKey = (typeof tabs)[number]['key'];
@@ -133,6 +134,7 @@ export function GroupScreen({
   onGroupChange?: (groupId?: string) => void;
   onTabChange?: (tab: TabKey) => void;
 }) {
+  const { t } = useAppLanguage();
   const runInitialRequest = useInitialRequestLoading();
   const { offerStarterTemplates } = useStarterTour();
   const menuTourRef = useStarterTourTarget('group-menu');
@@ -196,70 +198,86 @@ export function GroupScreen({
     onTabChangeRef.current = onTabChange;
   }, [initialGroupId, onGroupChange, onTabChange]);
 
-  const loadKnowledgeBases = useCallback(async (groupId: string) => {
-    setKnowledgeLoading(true);
-    setKnowledgeError('');
-    try {
-      const response = await listGroupKnowledgeBases(groupId);
-      if (selectedGroupId.current === groupId) setKnowledgeBases(response.items);
-    } catch (reason) {
-      if (selectedGroupId.current === groupId) {
-        setKnowledgeError(reason instanceof Error ? reason.message : '关联知识库加载失败。');
+  const loadKnowledgeBases = useCallback(
+    async (groupId: string) => {
+      setKnowledgeLoading(true);
+      setKnowledgeError('');
+      try {
+        const response = await listGroupKnowledgeBases(groupId);
+        if (selectedGroupId.current === groupId) setKnowledgeBases(response.items);
+      } catch (reason) {
+        if (selectedGroupId.current === groupId) {
+          setKnowledgeError(
+            reason instanceof Error ? reason.message : t('groups.loadKnowledgeFailed'),
+          );
+        }
+      } finally {
+        if (selectedGroupId.current === groupId) setKnowledgeLoading(false);
       }
-    } finally {
-      if (selectedGroupId.current === groupId) setKnowledgeLoading(false);
-    }
-  }, []);
+    },
+    [t],
+  );
 
-  const loadAudio = useCallback(async (groupId: string) => {
-    setAudioLoading(true);
-    setAudioError('');
-    try {
-      const response = await listGroupAudioFiles(groupId);
-      if (selectedGroupId.current === groupId) setAudioItems(response.items);
-    } catch (reason) {
-      if (selectedGroupId.current === groupId) {
-        setAudioError(reason instanceof Error ? reason.message : '分组音频加载失败。');
+  const loadAudio = useCallback(
+    async (groupId: string) => {
+      setAudioLoading(true);
+      setAudioError('');
+      try {
+        const response = await listGroupAudioFiles(groupId);
+        if (selectedGroupId.current === groupId) setAudioItems(response.items);
+      } catch (reason) {
+        if (selectedGroupId.current === groupId) {
+          setAudioError(reason instanceof Error ? reason.message : t('groups.loadAudioFailed'));
+        }
+      } finally {
+        if (selectedGroupId.current === groupId) setAudioLoading(false);
       }
-    } finally {
-      if (selectedGroupId.current === groupId) setAudioLoading(false);
-    }
-  }, []);
+    },
+    [t],
+  );
 
-  const loadTemplateExample = useCallback(async (nextGroup: GroupSummary) => {
-    setTemplateExample(undefined);
-    setTemplateExampleError('');
-    if (!nextGroup.starterTemplateKey) {
-      setTemplateExampleLoading(false);
-      return;
-    }
-    setTemplateExampleLoading(true);
-    try {
-      const response = await getGroupTemplateExample(nextGroup.id);
-      if (selectedGroupId.current === nextGroup.id) setTemplateExample(response);
-    } catch (reason) {
-      if (selectedGroupId.current === nextGroup.id) {
-        setTemplateExampleError(reason instanceof Error ? reason.message : '模板示例加载失败。');
+  const loadTemplateExample = useCallback(
+    async (nextGroup: GroupSummary) => {
+      setTemplateExample(undefined);
+      setTemplateExampleError('');
+      if (!nextGroup.starterTemplateKey) {
+        setTemplateExampleLoading(false);
+        return;
       }
-    } finally {
-      if (selectedGroupId.current === nextGroup.id) setTemplateExampleLoading(false);
-    }
-  }, []);
+      setTemplateExampleLoading(true);
+      try {
+        const response = await getGroupTemplateExample(nextGroup.id);
+        if (selectedGroupId.current === nextGroup.id) setTemplateExample(response);
+      } catch (reason) {
+        if (selectedGroupId.current === nextGroup.id) {
+          setTemplateExampleError(
+            reason instanceof Error ? reason.message : t('groups.loadExampleFailed'),
+          );
+        }
+      } finally {
+        if (selectedGroupId.current === nextGroup.id) setTemplateExampleLoading(false);
+      }
+    },
+    [t],
+  );
 
-  const loadSources = useCallback(async (groupId: string) => {
-    setSourcesLoading(true);
-    setSourcesError('');
-    try {
-      const response = await listGroupDataSources(groupId);
-      if (selectedGroupId.current === groupId) setDataSources(response.items);
-    } catch (reason) {
-      if (selectedGroupId.current === groupId) {
-        setSourcesError(reason instanceof Error ? reason.message : '分组数据源加载失败。');
+  const loadSources = useCallback(
+    async (groupId: string) => {
+      setSourcesLoading(true);
+      setSourcesError('');
+      try {
+        const response = await listGroupDataSources(groupId);
+        if (selectedGroupId.current === groupId) setDataSources(response.items);
+      } catch (reason) {
+        if (selectedGroupId.current === groupId) {
+          setSourcesError(reason instanceof Error ? reason.message : t('groups.loadSourcesFailed'));
+        }
+      } finally {
+        if (selectedGroupId.current === groupId) setSourcesLoading(false);
       }
-    } finally {
-      if (selectedGroupId.current === groupId) setSourcesLoading(false);
-    }
-  }, []);
+    },
+    [t],
+  );
 
   const clearSelection = useCallback(() => {
     selectedGroupId.current = undefined;
@@ -339,14 +357,14 @@ export function GroupScreen({
           onGroupChangeRef.current?.(undefined);
         }
       } catch (reason) {
-        setDirectoryError(reason instanceof Error ? reason.message : '分组加载失败。');
+        setDirectoryError(reason instanceof Error ? reason.message : t('groups.loadFailed'));
         setGroups([]);
         clearSelection();
       } finally {
         if (showLoading) setDirectoryLoading(false);
       }
     },
-    [clearSelection, offerStarterTemplates, selectGroup],
+    [clearSelection, offerStarterTemplates, selectGroup, t],
   );
 
   const refreshPage = useCallback(async () => {
@@ -403,7 +421,7 @@ export function GroupScreen({
       void selectGroup(created, true);
       return true;
     } catch (reason) {
-      setCreateError(reason instanceof Error ? reason.message : '创建分组失败。');
+      setCreateError(reason instanceof Error ? reason.message : t('groups.createFailed'));
       return false;
     } finally {
       setCreating(false);
@@ -460,7 +478,8 @@ export function GroupScreen({
     }
   };
 
-  const searchEmpty = searchQuery ? `没有匹配“${searchQuery}”的内容` : '';
+  const searchEmpty = searchQuery ? t('groups.noMatch', { query: searchQuery }) : '';
+  const localizedTabs = tabs.map((tab) => ({ key: tab.key, label: t(tab.labelKey) }));
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
@@ -482,15 +501,15 @@ export function GroupScreen({
       {searchVisible ? (
         <SearchSheet
           appliedQuery={searchQuery}
-          inputLabel="输入搜索关键词"
+          inputLabel={t('groups.searchInput')}
           onApply={(query) => {
             setSearchQuery(query);
             setSearchVisible(false);
           }}
           onClose={() => setSearchVisible(false)}
-          placeholder="搜索音频、知识库或数据源"
-          subtitle="查询会同时作用于三个标签页"
-          title="搜索当前分组"
+          placeholder={t('groups.searchPlaceholder')}
+          subtitle={t('groups.searchSubtitle')}
+          title={t('groups.searchTitle')}
           visible
         />
       ) : null}
@@ -527,7 +546,7 @@ export function GroupScreen({
         <View style={styles.topLeft}>
           <IconButton
             icon="menu"
-            label="菜单"
+            label={t('groups.menu')}
             onPress={() => {
               setCreateError('');
               setDrawerVisible(true);
@@ -539,7 +558,9 @@ export function GroupScreen({
               <Text testID="group-inline-title" style={styles.inlineTitle}>
                 {group?.name}
               </Text>
-              {group?.starterTemplateKey ? <Text style={styles.templateBadge}>模板</Text> : null}
+              {group?.starterTemplateKey ? (
+                <Text style={styles.templateBadge}>{t('groups.template')}</Text>
+              ) : null}
             </View>
           ) : null}
         </View>
@@ -547,13 +568,13 @@ export function GroupScreen({
           <IconButton
             disabled={!group}
             icon="search"
-            label="搜索"
+            label={t('common.search')}
             onPress={() => setSearchVisible(true)}
           />
           <IconButton
             disabled={!group}
             icon="options-outline"
-            label="分组设置"
+            label={t('groups.settings')}
             onPress={() => {
               if (group) onOpenSettings?.(group.id);
             }}
@@ -565,15 +586,17 @@ export function GroupScreen({
       {!headerCollapsed ? (
         <View collapsable={false} ref={titleTourRef} style={styles.displayTitleRow}>
           <Text testID="group-display-title" style={styles.displayTitle}>
-            {directoryLoading ? '正在加载分组' : (group?.name ?? '暂无分组')}
+            {directoryLoading ? t('groups.loading') : (group?.name ?? t('groups.empty'))}
           </Text>
-          {group?.starterTemplateKey ? <Text style={styles.templateBadge}>模板</Text> : null}
+          {group?.starterTemplateKey ? (
+            <Text style={styles.templateBadge}>{t('groups.template')}</Text>
+          ) : null}
         </View>
       ) : null}
 
       {directoryLoading ? (
         <View style={styles.pageState}>
-          <ActivityIndicator accessibilityLabel="正在加载分组目录" color={colors.ink} />
+          <ActivityIndicator accessibilityLabel={t('groups.loadingDirectory')} color={colors.ink} />
         </View>
       ) : !group ? (
         <ScrollView
@@ -582,11 +605,9 @@ export function GroupScreen({
           refreshControl={<ScreenRefreshControl {...screenRefresh} />}
         >
           <Ionicons color={colors.muted} name="albums-outline" size={40} />
-          <Text style={styles.emptyGroupTitle}>{directoryError || '还没有可用分组'}</Text>
+          <Text style={styles.emptyGroupTitle}>{directoryError || t('groups.noneAvailable')}</Text>
           <Text style={styles.emptyGroupDescription}>
-            {directoryError
-              ? '请检查网络连接后重试。'
-              : '打开分组菜单，创建一个分组后即可管理音频、知识库和数据源。'}
+            {directoryError ? t('groups.retryHint') : t('groups.emptyHint')}
           </Text>
           <Pressable
             accessibilityRole="button"
@@ -597,7 +618,7 @@ export function GroupScreen({
             style={({ pressed }) => [styles.emptyGroupButton, pressed && styles.primaryPressed]}
           >
             <Text style={styles.emptyGroupButtonText}>
-              {directoryError ? '重新加载分组' : '打开分组菜单'}
+              {directoryError ? t('groups.reload') : t('groups.openMenu')}
             </Text>
           </Pressable>
         </ScrollView>
@@ -606,11 +627,11 @@ export function GroupScreen({
           <PageTabs
             activeTab={activeTab}
             onChange={selectTab}
-            tabs={tabs}
+            tabs={localizedTabs}
             testIDPrefix="group-tab"
           />
           <ScrollView
-            accessibilityLabel="分组内容分页"
+            accessibilityLabel={t('groups.pager')}
             directionalLockEnabled
             horizontal
             nestedScrollEnabled
@@ -636,7 +657,7 @@ export function GroupScreen({
                 <AudioContent
                   emptyMessage={
                     searchEmpty ||
-                    (audioStatuses.size ? '没有符合当前状态筛选的音频' : '当前分组还没有音频')
+                    (audioStatuses.size ? t('groups.noAudioFilter') : t('groups.noAudio'))
                   }
                   error={audioError}
                   items={visibleAudio}
@@ -674,8 +695,8 @@ export function GroupScreen({
                   emptyMessage={
                     searchEmpty ||
                     (knowledgeDocumentFilter !== 'all'
-                      ? '没有符合当前文档筛选的知识库'
-                      : '当前分组还没有关联知识库')
+                      ? t('groups.noKnowledgeFilter')
+                      : t('groups.noKnowledge'))
                   }
                   error={knowledgeError}
                   knowledgeBases={visibleKnowledge}
@@ -704,8 +725,8 @@ export function GroupScreen({
                   emptyMessage={
                     searchEmpty ||
                     (sourceLocations.size || sourceStatuses.size
-                      ? '没有符合当前筛选的数据源'
-                      : '当前分组还没有连接数据源')
+                      ? t('groups.noSourceFilter')
+                      : t('groups.noSources'))
                   }
                   error={sourcesError}
                   loading={sourcesLoading}

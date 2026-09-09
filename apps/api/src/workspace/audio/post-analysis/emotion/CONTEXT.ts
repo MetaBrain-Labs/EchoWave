@@ -18,6 +18,7 @@ import {
   AudioEmotionPausePatternSchema,
   AudioEmotionPitchVariationSchema,
   AudioEmotionVolumeTrendSchema,
+  type SupportedLanguage,
 } from '@echowave/contracts';
 
 type EmotionContextSegment = {
@@ -29,26 +30,29 @@ type EmotionContextSegment = {
 };
 
 /** Qwen Omni 情绪分析固定系统上下文。 */
-export const EMOTION_ANALYSIS_CONTEXT = [
-  'You analyze acoustic emotion in Chinese business-call audio.',
-  'Judge how each target segment is spoken, using the audio, timestamps, and transcript only.',
-  'Return one result for every target segment ID and no other IDs.',
-  `emotion labels: ${AudioEmotionLabelSchema.options.join(', ')}`,
-  `attitude labels: ${AudioEmotionAttitudeSchema.options.join(', ')}`,
-  `arousal labels: ${AudioEmotionArousalSchema.options.join(', ')}`,
-  `pace labels: ${AudioEmotionPaceSchema.options.join(', ')}`,
-  `volumeTrend labels: ${AudioEmotionVolumeTrendSchema.options.join(', ')}`,
-  `pitchVariation labels: ${AudioEmotionPitchVariationSchema.options.join(', ')}`,
-  `pausePattern labels: ${AudioEmotionPausePatternSchema.options.join(', ')}`,
-  'confidence must be between 0 and 1. vocalCues must contain at most five concise Chinese observations.',
-  'Return only one JSON object with shape {"segments":[{"segmentId":"uuid","label":"neutral","confidence":0.5,"attitude":"neutral","arousal":"medium","pace":"normal","volumeTrend":"normal","pitchVariation":"medium","pausePattern":"normal","vocalCues":[]}]}',
-].join('\n');
+export function emotionAnalysisContext(language: SupportedLanguage): string {
+  return [
+    `You analyze acoustic emotion in ${language === 'zh-CN' ? 'Chinese' : 'English'} business-call audio.`,
+    'Judge how each target segment is spoken, using the audio, timestamps, and transcript only.',
+    'Return one result for every target segment ID and no other IDs.',
+    `emotion labels: ${AudioEmotionLabelSchema.options.join(', ')}`,
+    `attitude labels: ${AudioEmotionAttitudeSchema.options.join(', ')}`,
+    `arousal labels: ${AudioEmotionArousalSchema.options.join(', ')}`,
+    `pace labels: ${AudioEmotionPaceSchema.options.join(', ')}`,
+    `volumeTrend labels: ${AudioEmotionVolumeTrendSchema.options.join(', ')}`,
+    `pitchVariation labels: ${AudioEmotionPitchVariationSchema.options.join(', ')}`,
+    `pausePattern labels: ${AudioEmotionPausePatternSchema.options.join(', ')}`,
+    `confidence must be between 0 and 1. vocalCues must contain at most five concise ${language === 'zh-CN' ? 'Simplified Chinese' : 'English'} observations.`,
+    'Return only one JSON object with shape {"segments":[{"segmentId":"uuid","label":"neutral","confidence":0.5,"attitude":"neutral","arousal":"medium","pace":"normal","volumeTrend":"normal","pitchVariation":"medium","pausePattern":"normal","vocalCues":[]}]}',
+  ].join('\n');
+}
 
 /** 构造音频窗口目标片段上下文。 */
 export function emotionAnalysisInput(
   segments: EmotionContextSegment[],
   previous: string,
   structureAttempt: number,
+  language: SupportedLanguage,
 ): string {
   return [
     'Target segments, with times relative to the attached audio window:',

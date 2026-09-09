@@ -15,6 +15,7 @@ import { useEffect, type Dispatch, type SetStateAction } from 'react';
 import type { KnowledgeBaseDetail, KnowledgeDocument } from '@echowave/contracts';
 
 import { streamKnowledgeDocuments } from '@/shared/api/liveUpdateStreams';
+import { localizeRequestError } from '@/shared/i18n/errorLocalization';
 
 import { getKnowledgeBase } from '../apiClient';
 
@@ -63,7 +64,7 @@ export function useKnowledgeDocumentUpdates({
           signal: controller.signal,
           onEvent: (event) => {
             if (event.type === 'error') {
-              setError(event.error.message);
+              setError(localizeRequestError(event.error.code, event.error.message));
               return;
             }
             failures = 0;

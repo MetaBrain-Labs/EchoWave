@@ -523,7 +523,7 @@ describe('workspace routes', () => {
     assert.equal(started.status, 202);
     assert.deepEqual(startedBusinessAnalysisInput, {
       id: groupId,
-      input: { groupId, force: true },
+      input: { groupId, force: true, language: 'zh-CN' },
     });
 
     const invalid = await workspaceApp.request(`/api/audio-files/${groupId}/business-analyses`, {
@@ -865,6 +865,7 @@ describe('workspace routes', () => {
       id: groupId,
       input: {
         includeAcousticEmotion: true,
+        language: 'zh-CN',
         preprocessing: 'whole_file',
         segmentationMode: 'speaker_turn',
       },

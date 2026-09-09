@@ -23,6 +23,7 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 import { useServerConnection } from '@/shared/api/ServerConnectionProvider';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 import { fetchServerHealth } from './apiClient';
 
@@ -41,6 +42,7 @@ export const ServiceStatusCard = forwardRef<
   ServiceStatusCardHandle,
   { onChangeServer: () => void }
 >(function ServiceStatusCard({ onChangeServer }, ref) {
+  const { t } = useAppLanguage();
   const { serverUrl } = useServerConnection();
   const [state, setState] = useState<ServiceState>({ phase: 'loading' });
   const requestVersion = useRef(0);
@@ -50,7 +52,7 @@ export const ServiceStatusCard = forwardRef<
     setState({ phase: 'loading' });
 
     if (!serverUrl) {
-      setState({ phase: 'offline', message: '请先配置 EchoWave API 地址。' });
+      setState({ phase: 'offline', message: t('service.configure') });
       return;
     }
 
@@ -66,11 +68,11 @@ export const ServiceStatusCard = forwardRef<
       if (version === requestVersion.current) {
         setState({
           phase: 'offline',
-          message: error instanceof Error ? error.message : '无法连接 EchoWave API。',
+          message: error instanceof Error ? error.message : t('service.unreachable'),
         });
       }
     }
-  }, [serverUrl]);
+  }, [serverUrl, t]);
   useImperativeHandle(ref, () => ({ refresh }), [refresh]);
 
   useEffect(() => {
@@ -89,7 +91,7 @@ export const ServiceStatusCard = forwardRef<
         if (version === requestVersion.current) {
           setState({
             phase: 'offline',
-            message: error instanceof Error ? error.message : '无法连接 EchoWave API。',
+            message: error instanceof Error ? error.message : t('service.unreachable'),
           });
         }
       });
@@ -97,7 +99,7 @@ export const ServiceStatusCard = forwardRef<
     return () => {
       requestVersion.current += 1;
     };
-  }, [serverUrl]);
+  }, [serverUrl, t]);
 
   const isLoading = state.phase === 'loading';
   const isOnline = state.phase === 'online';
@@ -107,10 +109,16 @@ export const ServiceStatusCard = forwardRef<
       <View style={styles.headingRow}>
         <View>
           <Text style={styles.eyebrow}>ECHOWAVE SERVER</Text>
-          <Text style={styles.title}>服务状态</Text>
+          <Text style={styles.title}>{t('more.service.title')}</Text>
         </View>
         <View
-          accessibilityLabel={isLoading ? '检测中' : isOnline ? '在线' : '离线'}
+          accessibilityLabel={
+            isLoading
+              ? t('service.checking')
+              : isOnline
+                ? t('service.online')
+                : t('service.offline')
+          }
           style={[styles.statusBadge, isOnline ? styles.onlineBadge : styles.neutralBadge]}
         >
           {isLoading ? (
@@ -123,16 +131,20 @@ export const ServiceStatusCard = forwardRef<
             />
           )}
           <Text style={[styles.statusLabel, isOnline && styles.onlineStatusLabel]}>
-            {isLoading ? '检测中' : isOnline ? '在线' : '离线'}
+            {isLoading
+              ? t('service.checking')
+              : isOnline
+                ? t('service.online')
+                : t('service.offline')}
           </Text>
         </View>
       </View>
 
       <View style={styles.messageBox}>
-        <Text style={styles.messageLabel}>返回消息</Text>
+        <Text style={styles.messageLabel}>{t('service.response')}</Text>
         <Text style={styles.message}>
           {isLoading
-            ? '正在连接 EchoWave API…'
+            ? t('service.connecting')
             : state.phase === 'online'
               ? state.message
               : state.message}
@@ -144,7 +156,7 @@ export const ServiceStatusCard = forwardRef<
       </Text>
 
       <Pressable
-        accessibilityLabel="重试连接"
+        accessibilityLabel={t('service.retry')}
         accessibilityRole="button"
         disabled={isLoading}
         onPress={() => void refresh()}
@@ -155,10 +167,10 @@ export const ServiceStatusCard = forwardRef<
         ]}
       >
         <Ionicons color={colors.ink} name="refresh" size={typography.body.lineHeight} />
-        <Text style={styles.retryText}>重试连接</Text>
+        <Text style={styles.retryText}>{t('service.retry')}</Text>
       </Pressable>
       <Pressable
-        accessibilityLabel="修改服务器"
+        accessibilityLabel={t('service.change')}
         accessibilityRole="button"
         onPress={onChangeServer}
         style={({ pressed }) => [styles.changeButton, pressed && styles.pressedButton]}
@@ -168,7 +180,7 @@ export const ServiceStatusCard = forwardRef<
           name="server-outline"
           size={typography.body.lineHeight}
         />
-        <Text style={styles.changeText}>修改服务器</Text>
+        <Text style={styles.changeText}>{t('service.change')}</Text>
       </Pressable>
     </View>
   );

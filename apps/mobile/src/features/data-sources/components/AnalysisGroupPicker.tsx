@@ -23,6 +23,7 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 /** 选择本次业务分析使用的分组上下文。 */
 export function AnalysisGroupPicker({
@@ -36,18 +37,23 @@ export function AnalysisGroupPicker({
   onSelect: (groupId: string) => void;
   visible: boolean;
 }) {
+  const { formatNumber, t } = useAppLanguage();
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
-      <Pressable accessibilityLabel="关闭分析分组选择" onPress={onClose} style={styles.backdrop} />
+      <Pressable
+        accessibilityLabel={t('analysisGroup.close')}
+        onPress={onClose}
+        style={styles.backdrop}
+      />
       <SafeAreaView edges={['bottom']} style={styles.sheet}>
         <View style={styles.header}>
           <View>
             <Text accessibilityRole="header" style={styles.title}>
-              选择分析分组
+              {t('analysisGroup.title')}
             </Text>
-            <Text style={styles.description}>本次分析只会使用所选分组的设置和关联知识库。</Text>
+            <Text style={styles.description}>{t('analysisGroup.description')}</Text>
           </View>
-          <Pressable accessibilityLabel="关闭" onPress={onClose} style={styles.close}>
+          <Pressable accessibilityLabel={t('common.close')} onPress={onClose} style={styles.close}>
             <Ionicons color={colors.ink} name="close" size={24} />
           </Pressable>
         </View>
@@ -61,7 +67,10 @@ export function AnalysisGroupPicker({
             <View style={styles.copy}>
               <Text style={styles.rowTitle}>{group.name}</Text>
               <Text style={styles.meta}>
-                {group.knowledgeCount} 个知识库 · {group.audioCount} 条音频
+                {t('analysisGroup.counts', {
+                  knowledge: formatNumber(group.knowledgeCount),
+                  audio: formatNumber(group.audioCount),
+                })}
               </Text>
             </View>
             <Ionicons color={colors.secondary} name="chevron-forward" size={20} />

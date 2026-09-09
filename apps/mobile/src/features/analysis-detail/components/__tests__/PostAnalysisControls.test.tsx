@@ -43,6 +43,7 @@ describe('PostAnalysisControls lightweight acoustic recovery', () => {
           message: '声学分析最终失败。',
           retryable: false,
           confirmationVersion: 1,
+          language: 'zh-CN',
           requiresSourceRemount: true,
         }}
         onRemountSource={jest.fn()}
@@ -67,6 +68,7 @@ describe('PostAnalysisControls lightweight acoustic recovery', () => {
           model: 'qwen3.5-omni-flash',
           completedAt: '2026-09-03T03:00:00.000Z',
           confirmationVersion: 1,
+          language: 'zh-CN',
         }}
         onStart={onStart}
         role={{ state: 'idle' }}

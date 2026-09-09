@@ -12,6 +12,7 @@ import type {
   AudioPostAnalysisState,
   AudioPostAnalysisType,
   AudioRuntimeMode,
+  SupportedLanguage,
 } from '@echowave/contracts';
 import { useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -24,6 +25,9 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import { AnalysisLanguagePicker } from '@/shared/i18n/AnalysisLanguagePicker';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { localizeRequestError } from '@/shared/i18n/errorLocalization';
 import {
   getPostAnalysisControlsCollapsedPreference,
   setPostAnalysisControlsCollapsedPreference,
@@ -44,22 +48,31 @@ function TaskCard({
   onStart: (type: AudioPostAnalysisType) => void;
   onRemountSource?: () => void;
 }) {
+  const { formatDateTime, t } = useAppLanguage();
   const emotion = type === 'emotion';
   const lightweightBundledEmotion = emotion && runtimeMode === 'lightweight_local';
   const completedDuringTranscription = lightweightBundledEmotion && state.state === 'ready';
-  const title = emotion ? '情绪分析' : '角色识别';
+  const title = emotion ? t('post.emotionTitle') : t('post.roleTitle');
   const running = state.state === 'queued' || state.state === 'running';
   const remountRequired = state.state === 'failed' && state.requiresSourceRemount === true;
   const unavailable =
     state.state === 'not_requested' || state.state === 'source_unavailable' || remountRequired;
   const versionLabel =
-    state.state === 'idle' || unavailable ? '' : ` · 基于确认版 v${state.confirmationVersion}`;
+    state.state === 'idle' || unavailable
+      ? ''
+      : ` · ${t('post.version', { version: state.confirmationVersion })} · ${t(
+          'analysisLanguage.current',
+          {
+            language:
+              state.language === 'zh-CN' ? t('analysisLanguage.zhCN') : t('analysisLanguage.en'),
+          },
+        )}`;
   const action = lightweightBundledEmotion
-    ? '已在转写时完成'
+    ? t('post.doneInTranscription')
     : state.state === 'ready' || state.state === 'failed'
       ? emotion
-        ? '重新分析'
-        : '重新识别'
+        ? t('post.rerunEmotion')
+        : t('post.rerunRole')
       : title;
   return (
     <View style={styles.card}>
@@ -73,32 +86,34 @@ function TaskCard({
           <Text style={styles.title}>{title}</Text>
           <Text style={styles.meta}>
             {!confirmed
-              ? '请先确认转写正文'
+              ? t('post.confirmTranscript')
               : state.state === 'idle'
                 ? emotion
-                  ? '使用 Qwen3.5-Omni 分析每个说话轮次'
-                  : '使用 DeepSeek 识别录音级业务角色'
+                  ? t('post.emotionDescription')
+                  : t('post.roleDescription')
                 : state.state === 'not_requested'
-                  ? '本次转写未启用声学情绪分析；需重新选择源文件并新建转写'
+                  ? t('post.notRequested')
                   : state.state === 'source_unavailable'
-                    ? '源音频已清理或过期，无法再次执行声学分析'
+                    ? t('post.sourceUnavailable')
                     : state.state === 'queued'
                       ? lightweightBundledEmotion
-                        ? '随本次转写自动执行'
-                        : '等待后台任务'
+                        ? t('post.autoQueued')
+                        : t('post.queued')
                       : state.state === 'running'
                         ? lightweightBundledEmotion
-                          ? `随本次转写自动执行 · 分析中 ${state.progress}%`
-                          : `分析中 ${state.progress}%`
+                          ? t('post.autoRunning', { progress: state.progress })
+                          : t('post.running', { progress: state.progress })
                         : state.state === 'ready'
                           ? lightweightBundledEmotion
-                            ? '已在转写时完成声学情绪分析'
-                            : `已完成 · ${new Date(state.completedAt).toLocaleString()}`
+                            ? t('post.bundledReady')
+                            : t('post.completed', { date: formatDateTime(state.completedAt) })
                           : state.state === 'failed'
                             ? remountRequired
-                              ? `${state.message} 请重新选择原音频并创建新转写。`
-                              : state.message
-                            : '等待后台任务'}
+                              ? t('post.remountSuffix', {
+                                  message: localizeRequestError(state.code, state.message),
+                                })
+                              : localizeRequestError(state.code, state.message)
+                            : t('post.queued')}
             {confirmed ? versionLabel : ''}
           </Text>
         </View>
@@ -145,6 +160,7 @@ export function PostAnalysisControls({
   onStart: (type: AudioPostAnalysisType) => void;
   onRemountSource?: () => void;
 }) {
+  const { t } = useAppLanguage();
   const [collapsed, setCollapsed] = useState(getPostAnalysisControlsCollapsedPreference);
   const toggleCollapsed = () => {
     const nextCollapsed = !collapsed;
@@ -155,7 +171,7 @@ export function PostAnalysisControls({
   return (
     <View style={styles.container}>
       <Pressable
-        accessibilityLabel={collapsed ? '展开情绪分析与角色识别' : '折叠情绪分析与角色识别'}
+        accessibilityLabel={collapsed ? t('post.expand') : t('post.collapse')}
         accessibilityRole="button"
         accessibilityState={{ expanded: !collapsed }}
         onPress={toggleCollapsed}
@@ -163,13 +179,13 @@ export function PostAnalysisControls({
       >
         <Ionicons color={colors.secondary} name="analytics-outline" size={22} />
         <View style={styles.collapseCopy}>
-          <Text style={styles.collapseTitle}>情绪分析与角色识别</Text>
+          <Text style={styles.collapseTitle}>{t('post.sectionTitle')}</Text>
           <Text style={styles.collapseDescription}>
             {collapsed
-              ? '点击展开分析状态与操作'
+              ? t('post.collapsedDescription')
               : runtimeMode === 'lightweight_local'
-                ? '声学情绪随本次转写自动执行，角色识别可单独运行'
-                : '可分别查看状态或重新运行分析'}
+                ? t('post.lightweightDescription')
+                : t('post.expandedDescription')}
           </Text>
         </View>
         <Ionicons
@@ -192,12 +208,12 @@ export function PostAnalysisControls({
             (emotion.state === 'failed' && emotion.requiresSourceRemount === true)) &&
           onRemountSource ? (
             <Pressable
-              accessibilityLabel="重新选择源音频并创建新转写"
+              accessibilityLabel={t('post.remount')}
               accessibilityRole="button"
               onPress={onRemountSource}
               style={styles.remountAction}
             >
-              <Text style={styles.actionText}>重新选择源音频并创建新转写</Text>
+              <Text style={styles.actionText}>{t('post.remount')}</Text>
             </Pressable>
           ) : null}
           <TaskCard
@@ -219,29 +235,32 @@ export function PostAnalysisConfirmDialog({
   type,
   onCancel,
   onConfirm,
+  language,
+  onLanguageChange,
 }: {
   pending: boolean;
   type?: AudioPostAnalysisType;
   onCancel: () => void;
   onConfirm: () => void;
+  language: SupportedLanguage;
+  onLanguageChange: (language: SupportedLanguage) => void;
 }) {
+  const { t } = useAppLanguage();
   const emotion = type === 'emotion';
   return (
     <Modal animationType="fade" onRequestClose={onCancel} transparent visible={Boolean(type)}>
       <View style={styles.dialogRoot}>
         <View accessibilityViewIsModal style={styles.dialogCard}>
           <Text accessibilityRole="header" style={styles.dialogTitle}>
-            {emotion ? '开始情绪分析？' : '开始角色识别？'}
+            {emotion ? t('post.startEmotionTitle') : t('post.startRoleTitle')}
           </Text>
           <Text style={styles.dialogBody}>
-            {emotion
-              ? '将使用 Qwen3.5-Omni-Flash 分析所有转写片段的声学情绪，并产生模型调用费用。'
-              : '将使用 DeepSeek 根据完整正文和说话人识别业务角色，并产生模型调用费用。'}
-            已发布结果会保留到本次任务成功。
+            {emotion ? t('post.emotionCost') : t('post.roleCost')} {t('post.preserveResult')}
           </Text>
+          <AnalysisLanguagePicker value={language} onChange={onLanguageChange} />
           <View style={styles.dialogActions}>
             <Pressable disabled={pending} onPress={onCancel} style={styles.dialogButton}>
-              <Text style={styles.cancelText}>取消</Text>
+              <Text style={styles.cancelText}>{t('common.cancel')}</Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
@@ -249,7 +268,9 @@ export function PostAnalysisConfirmDialog({
               onPress={onConfirm}
               style={[styles.dialogButton, styles.confirmButton]}
             >
-              <Text style={styles.confirmText}>{pending ? '正在启动…' : '确认'}</Text>
+              <Text style={styles.confirmText}>
+                {pending ? t('post.starting') : t('common.confirm')}
+              </Text>
             </Pressable>
           </View>
         </View>

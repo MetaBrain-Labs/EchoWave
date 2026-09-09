@@ -11,7 +11,7 @@
  * - 文档与解析结果始终以服务器响应为准，重新解析暂不调用失败任务专用接口。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { KnowledgeDocumentDetail } from '@echowave/contracts';
+import type { KnowledgeDocumentDetail, SupportedLanguage } from '@echowave/contracts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, type TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -22,6 +22,7 @@ import { PageTabs } from '@/shared/ui/PageTabs';
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import {
   colors,
@@ -38,27 +39,17 @@ import { SearchAndFilter } from '../components/SearchAndFilter';
 import { showComingSoon } from '../components/feedback';
 import { toggleImportantBlock, useImportantBlocks } from '../importantBlocks';
 
-const tabs = [
-  { key: 'parsed', label: '文档解析' },
-  { key: 'original', label: '文档原文' },
-] as const;
-type Tab = (typeof tabs)[number]['key'];
+const tabKeys = ['parsed', 'original'] as const;
+type Tab = (typeof tabKeys)[number];
 type PreviewMode = 'preview' | 'code';
-const tabKeys = tabs.map((tab) => tab.key);
 
-const formatLabels = {
-  markdown: 'Markdown',
-  spreadsheet: '表格',
-  word: 'Word',
-} as const;
-
-function formatBytes(sizeBytes: number) {
-  if (sizeBytes < 1024 * 1024) return `${(sizeBytes / 1024).toFixed(1)} KB`;
-  return `${(sizeBytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function formatDateTime(value: string) {
-  return new Date(value).toLocaleString('zh-CN', { hour12: false });
+function formatBytes(sizeBytes: number, language: SupportedLanguage) {
+  const formatter = new Intl.NumberFormat(language, {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
+  if (sizeBytes < 1024 * 1024) return `${formatter.format(sizeBytes / 1024)} KB`;
+  return `${formatter.format(sizeBytes / 1024 / 1024)} MB`;
 }
 
 /** 加载并展示指定知识文档的解析结果与原文预览。 */
@@ -77,6 +68,11 @@ export function DocumentDetailScreen({
   onBack: () => void;
   onOpenBlock: (blockId: string) => void;
 }) {
+  const { formatDateTime, formatNumber, language, t } = useAppLanguage();
+  const tabs = [
+    { key: 'parsed', label: t('documentDetail.parsedTab') },
+    { key: 'original', label: t('documentDetail.originalTab') },
+  ] as const;
   const [document, setDocument] = useState<KnowledgeDocumentDetail>();
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const [previewMode, setPreviewMode] = useState<PreviewMode>('preview');
@@ -97,9 +93,9 @@ export function DocumentDetailScreen({
       setDocument(await getDocument(knowledgeId, documentId));
       setError('');
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '文档加载失败。');
+      setError(reason instanceof Error ? reason.message : t('documentDetail.loadFailed'));
     }
-  }, [documentId, knowledgeId]);
+  }, [documentId, knowledgeId, t]);
   const screenRefresh = useScreenRefresh(load);
 
   useEffect(() => {
@@ -119,15 +115,19 @@ export function DocumentDetailScreen({
   if (!document) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <PageHeader onBack={onBack} onMore={() => showComingSoon('更多操作')} title="文件详情" />
+        <PageHeader
+          onBack={onBack}
+          onMore={() => showComingSoon(t('common.moreActions'))}
+          title={t('documentDetail.title')}
+        />
         <ScrollView
           alwaysBounceVertical
           contentContainerStyle={styles.emptyRefreshContent}
           refreshControl={<ScreenRefreshControl {...screenRefresh} />}
         >
           <EmptyState
-            description={error || '正在从服务器读取解析结果。'}
-            title={error ? '加载失败' : '正在加载'}
+            description={error || t('documentDetail.loadingDescription')}
+            title={error ? t('common.loadFailed') : t('common.loading')}
           />
         </ScrollView>
       </SafeAreaView>
@@ -153,19 +153,23 @@ export function DocumentDetailScreen({
 
   const parsedAt = document.status.kind === 'ready' ? document.status.parsedAt : document.updatedAt;
   const totalCharacters = document.chunks.reduce((sum, chunk) => sum + chunk.charCount, 0);
-  const reparse = () => showComingSoon('成功文档重新解析');
+  const reparse = () => showComingSoon(t('documentDetail.reparseSuccess'));
 
   return (
     <SafeAreaView style={styles.safeAreaWhite}>
       <PageHeader
         leading={<DocumentFormatIcon format={document.format} size={28} />}
-        onMore={() => showComingSoon('更多操作')}
+        onMore={() => showComingSoon(t('common.moreActions'))}
         onBack={onBack}
         onSearch={() => {
           if (activeTab === 'parsed') searchInputRef.current?.focus();
-          else showComingSoon('文档原文搜索');
+          else showComingSoon(t('documentDetail.originalSearch'));
         }}
-        searchLabel={activeTab === 'parsed' ? '聚焦文本块搜索' : '搜索文档原文'}
+        searchLabel={
+          activeTab === 'parsed'
+            ? t('documentDetail.chunkSearch')
+            : t('documentDetail.searchOriginal')
+        }
         title={document.title}
       />
       <PageTabs
@@ -197,25 +201,42 @@ export function DocumentDetailScreen({
             testID="document-parsed-scroll"
           >
             <View style={styles.parsedOverview}>
-              <Text style={styles.sectionTitle}>解析状态</Text>
-              <Text style={styles.timestamp}>解析完成于 {formatDateTime(parsedAt)}</Text>
+              <Text style={styles.sectionTitle}>{t('documentDetail.parseStatus')}</Text>
+              <Text style={styles.timestamp}>
+                {t('documentDetail.parsedAt', { date: formatDateTime(parsedAt) })}
+              </Text>
               <View style={styles.metrics}>
-                <Metric label="文本块" value={document.chunks.length} />
-                <Metric divider label="字符数" value={totalCharacters.toLocaleString('zh-CN')} />
-                <Metric divider label="原文件大小" value={formatBytes(document.sizeBytes)} />
+                <Metric
+                  label={t('documentDetail.chunks')}
+                  value={formatNumber(document.chunks.length)}
+                />
                 <Metric
                   divider
-                  label="向量数量"
-                  value={document.vectorCount.toLocaleString('zh-CN')}
+                  label={t('documentDetail.characters')}
+                  value={formatNumber(totalCharacters)}
+                />
+                <Metric
+                  divider
+                  label={t('documentDetail.originalSize')}
+                  value={formatBytes(document.sizeBytes, language)}
+                />
+                <Metric
+                  divider
+                  label={t('documentDetail.vectors')}
+                  value={formatNumber(document.vectorCount)}
                 />
               </View>
-              <Text style={styles.sectionTitle}>文本块列表（{document.chunks.length}）</Text>
+              <Text style={styles.sectionTitle}>
+                {t('documentDetail.chunkList', {
+                  count: formatNumber(document.chunks.length),
+                })}
+              </Text>
             </View>
             <View style={styles.stickySearch}>
               <SearchAndFilter
                 inputRef={searchInputRef}
                 onChangeText={setQuery}
-                placeholder="搜索解析内容..."
+                placeholder={t('documentDetail.searchParsed')}
                 value={query}
               />
             </View>
@@ -225,7 +246,7 @@ export function DocumentDetailScreen({
                 return (
                   <Pressable
                     key={chunk.id}
-                    accessibilityLabel={`打开文本块：${chunk.title}`}
+                    accessibilityLabel={t('documentDetail.openChunk', { title: chunk.title })}
                     accessibilityRole="button"
                     onPress={() => onOpenBlock(chunk.id)}
                     style={({ pressed }) => [
@@ -236,10 +257,16 @@ export function DocumentDetailScreen({
                   >
                     <View style={styles.chunkHeader}>
                       <Text style={styles.chunkTitle}>
-                        块 {chunk.index} · {chunk.title || '正文'}
+                        {t('documentDetail.chunkTitle', {
+                          index: formatNumber(chunk.index),
+                          title: chunk.title || t('documentDetail.body'),
+                        })}
                       </Text>
                       <Pressable
-                        accessibilityLabel={`${important ? '取消' : '设为'}重点：${chunk.title}`}
+                        accessibilityLabel={t('documentDetail.markImportant', {
+                          action: important ? t('documentDetail.unset') : t('documentDetail.set'),
+                          title: chunk.title,
+                        })}
                         accessibilityRole="button"
                         accessibilityState={{ selected: important }}
                         hitSlop={8}
@@ -270,16 +297,24 @@ export function DocumentDetailScreen({
                       />
                     </View>
                     <View style={styles.chunkMetaRow}>
-                      <Text style={styles.meta}>向量 ID：{chunk.vectorId.slice(0, 8)}</Text>
-                      <Text style={styles.meta}>字符数：{chunk.charCount}</Text>
+                      <Text style={styles.meta}>
+                        {t('documentDetail.vectorId', { id: chunk.vectorId.slice(0, 8) })}
+                      </Text>
+                      <Text style={styles.meta}>
+                        {t('documentDetail.characterCount', {
+                          count: formatNumber(chunk.charCount),
+                        })}
+                      </Text>
                     </View>
                   </Pressable>
                 );
               })}
-              {!chunks.length ? <Text style={styles.emptyText}>没有匹配的文本块</Text> : null}
+              {!chunks.length ? (
+                <Text style={styles.emptyText}>{t('documentDetail.noChunks')}</Text>
+              ) : null}
             </View>
           </ScrollView>
-          <FixedAction label="重新解析" onPress={reparse} />
+          <FixedAction label={t('documentDetail.reparse')} onPress={reparse} />
         </View>
 
         <View style={[styles.page, { width: pageWidth }]}>
@@ -296,16 +331,21 @@ export function DocumentDetailScreen({
                   {document.title}
                 </Text>
                 <Text style={styles.meta}>
-                  {formatLabels[document.format]} · {formatBytes(document.sizeBytes)}
+                  {document.format === 'spreadsheet'
+                    ? t('knowledgeDetail.spreadsheet')
+                    : document.format === 'word'
+                      ? 'Word'
+                      : 'Markdown'}{' '}
+                  · {formatBytes(document.sizeBytes, language)}
                 </Text>
                 <Text style={styles.timestamp}>
-                  更新于 {new Date(document.updatedAt).toLocaleDateString('zh-CN')}
+                  {t('documentDetail.updated', { date: formatDateTime(document.updatedAt) })}
                 </Text>
               </View>
               <Pressable
-                accessibilityLabel="下载原文件"
+                accessibilityLabel={t('documentDetail.downloadAccessibility')}
                 accessibilityRole="button"
-                onPress={() => showComingSoon('文档下载')}
+                onPress={() => showComingSoon(t('documentDetail.downloadAction'))}
                 style={({ pressed }) => [styles.downloadButton, pressed && styles.pressed]}
               >
                 <Ionicons
@@ -313,7 +353,7 @@ export function DocumentDetailScreen({
                   name="cloud-download-outline"
                   size={typography.heading1.lineHeight}
                 />
-                <Text style={styles.downloadText}>下载</Text>
+                <Text style={styles.downloadText}>{t('documentDetail.download')}</Text>
               </Pressable>
             </View>
             <View style={styles.divider} />
@@ -327,7 +367,7 @@ export function DocumentDetailScreen({
               title={document.title}
             />
           </ScrollView>
-          <FixedAction label="重新解析" onPress={reparse} />
+          <FixedAction label={t('documentDetail.reparse')} onPress={reparse} />
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -380,7 +420,8 @@ function DocumentPreview({
   refreshing: boolean;
   title: string;
 }) {
-  const content = previewText || '原文件已在解析后删除，当前没有规范化文本预览。';
+  const { t } = useAppLanguage();
+  const content = previewText || t('documentDetail.noPreview');
   return (
     <View
       style={[styles.previewCard, fullScreen && styles.fullScreenPreview]}
@@ -399,7 +440,7 @@ function DocumentPreview({
                 style={styles.previewTab}
               >
                 <Text style={[styles.previewTabText, selected && styles.previewTabTextActive]}>
-                  {item === 'preview' ? '预览' : '代码'}
+                  {item === 'preview' ? t('documentDetail.preview') : t('documentDetail.code')}
                 </Text>
                 <View style={[styles.previewTabLine, selected && styles.previewTabLineActive]} />
               </Pressable>
@@ -407,16 +448,18 @@ function DocumentPreview({
           })}
         </View>
         <Pressable
-          accessibilityLabel="调整文档缩放"
+          accessibilityLabel={t('documentDetail.zoomAccessibility')}
           accessibilityRole="button"
-          onPress={() => showComingSoon('文档缩放')}
+          onPress={() => showComingSoon(t('documentDetail.zoomAction'))}
           style={styles.toolbarButton}
         >
           <Text style={styles.toolbarText}>100%</Text>
           <Ionicons color={colors.ink} name="chevron-down" size={typography.heading5.lineHeight} />
         </Pressable>
         <Pressable
-          accessibilityLabel={fullScreen ? '退出全屏预览' : '全屏预览'}
+          accessibilityLabel={
+            fullScreen ? t('documentDetail.exitFullscreen') : t('documentDetail.fullscreen')
+          }
           accessibilityRole="button"
           onPress={onToggleFullScreen}
           style={styles.toolbarButton}

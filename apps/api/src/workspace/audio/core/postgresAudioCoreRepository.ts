@@ -20,6 +20,11 @@ import { WorkspaceRepositoryError } from '../../errors.ts';
 import { integer, iso } from './projection.ts';
 import type { AudioCoreRepository, AudioPlaybackSource } from './repository.ts';
 
+/** 将旧快照中的 zh 或缺失值安全映射为当前支持语言。 */
+function supportedLanguage(value: unknown): 'zh-CN' | 'en' {
+  return value === 'en' ? 'en' : 'zh-CN';
+}
+
 /** 为当前租户实现音频核心读取端口。 */
 export class PostgresAudioCoreRepository implements AudioCoreRepository {
   private readonly schema: string;
@@ -292,6 +297,7 @@ export class PostgresAudioCoreRepository implements AudioCoreRepository {
         `SELECT DISTINCT ON (job.analysis_type)
                 job.id, job.analysis_type, job.model, job.status, job.progress,
                 job.completed_at, job.error_code, job.error_message, job.error_retryable,
+                job.input_snapshot,
                 tc.version_no AS confirmation_version
          FROM ${this.table('audio_post_analysis_jobs')} job
          JOIN ${this.table('transcript_confirmations')} tc
@@ -527,6 +533,7 @@ export class PostgresAudioCoreRepository implements AudioCoreRepository {
           jobId: job.id,
           model: job.model,
           progress: integer(job.progress),
+          language: supportedLanguage(job.input_snapshot?.language),
           confirmationVersion:
             type === 'emotion' && String(job.id) === String(row.bundled_emotion_job_id)
               ? integer(row.confirmation_version)
@@ -539,6 +546,7 @@ export class PostgresAudioCoreRepository implements AudioCoreRepository {
           jobId: job.id,
           model: job.model,
           completedAt: iso(job.completed_at),
+          language: supportedLanguage(job.input_snapshot?.language),
           confirmationVersion:
             type === 'emotion' && String(job.id) === String(row.bundled_emotion_job_id)
               ? integer(row.confirmation_version)
@@ -552,6 +560,7 @@ export class PostgresAudioCoreRepository implements AudioCoreRepository {
         code: String(job.error_code ?? 'ANALYSIS_FAILED'),
         message: String(job.error_message ?? '分析失败。'),
         retryable: Boolean(job.error_retryable),
+        language: supportedLanguage(job.input_snapshot?.language),
         confirmationVersion:
           type === 'emotion' && String(job.id) === String(row.bundled_emotion_job_id)
             ? integer(row.confirmation_version)
@@ -577,7 +586,7 @@ export class PostgresAudioCoreRepository implements AudioCoreRepository {
       sourceDeleteAfter: row.source_delete_after ? iso(row.source_delete_after) : null,
       transcription: {
         model: row.transcription_model,
-        language: typeof settings.language === 'string' ? settings.language : 'undetermined',
+        language: supportedLanguage(settings.language),
         diarizationStatus,
         responseGranularity,
         segmentationMode,

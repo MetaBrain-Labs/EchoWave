@@ -26,6 +26,8 @@ import {
 } from '@/shared/theme/tokens';
 import { createDataSource, listDataSources } from '@/shared/api/dataSourcesApi';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import type { TranslationKey } from '@/shared/i18n/translations';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { SearchSheet } from '@/shared/ui/SearchSheet';
@@ -34,23 +36,24 @@ import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 
 import { DataSourceFormSheet, type DataSourceFormValue } from '../components/DataSourceDialogs';
 
-const connectionStatusLabels: Record<DataSourceSummary['connectionStatus'], string> = {
-  connected: '已连接',
-  disconnected: '已断开',
-  error: '连接错误',
-  disabled: '已停用',
+const connectionStatusLabelKeys: Record<DataSourceSummary['connectionStatus'], TranslationKey> = {
+  connected: 'sources.connected',
+  disconnected: 'sources.disconnected',
+  error: 'sources.connectionError',
+  disabled: 'sources.disabled',
 };
 
-const locationLabels: Record<DataSourceSummary['location'], string> = {
-  local: '本地',
-  cloud: '云端',
+const locationLabelKeys: Record<DataSourceSummary['location'], TranslationKey> = {
+  local: 'sources.local',
+  cloud: 'sources.cloud',
 };
 
 function DataSourceCard({ onOpen, source }: { onOpen: () => void; source: DataSourceSummary }) {
+  const { formatDateTime, t } = useAppLanguage();
   return (
     <Pressable
-      accessibilityHint="打开该数据源的详情"
-      accessibilityLabel={`打开数据源：${source.name}`}
+      accessibilityHint={t('sources.openHint')}
+      accessibilityLabel={t('sources.open', { name: source.name })}
       accessibilityRole="button"
       onPress={onOpen}
       style={({ pressed }) => [styles.card, pressed && styles.pressedCard]}
@@ -67,7 +70,9 @@ function DataSourceCard({ onOpen, source }: { onOpen: () => void; source: DataSo
           </Text>
         </View>
         <View
-          accessibilityLabel={source.location === 'local' ? '本地来源' : '云端来源'}
+          accessibilityLabel={
+            source.location === 'local' ? t('sources.localSource') : t('sources.cloudSource')
+          }
           style={styles.locationIcon}
         >
           <Ionicons
@@ -78,14 +83,18 @@ function DataSourceCard({ onOpen, source }: { onOpen: () => void; source: DataSo
         </View>
       </View>
       <Text numberOfLines={2} style={styles.description}>
-        {source.description || '暂无描述'}
+        {source.description || t('sources.noDescription')}
       </Text>
       <Text numberOfLines={1} style={styles.metaText}>
-        接入 {source.linkedGroupCount} 个分组 · {source.connectionLabel}
+        {t('sources.linkedGroups', {
+          count: source.linkedGroupCount,
+          connection: source.connectionLabel,
+        })}
       </Text>
       <Text style={styles.uploadedAt}>
-        最近上传　
-        {source.lastUploadedAt ? new Date(source.lastUploadedAt).toLocaleString() : '暂无'}
+        {t('sources.lastUpload', {
+          date: source.lastUploadedAt ? formatDateTime(source.lastUploadedAt) : t('sources.none'),
+        })}
       </Text>
     </Pressable>
   );
@@ -97,6 +106,7 @@ export function DataSourceListScreen({
 }: {
   onOpenSource: (sourceId: string) => void;
 }) {
+  const { t } = useAppLanguage();
   const headerTourRef = useStarterTourTarget('data-sources-header');
   const createTourRef = useStarterTourTarget('data-sources-create');
   const [dataSources, setDataSources] = useState<DataSourceSummary[]>([]);
@@ -108,17 +118,20 @@ export function DataSourceListScreen({
   const [formError, setFormError] = useState('');
   const [creating, setCreating] = useState(false);
   const runInitialRequest = useInitialRequestLoading();
-  const load = useCallback(async (showLoading = true) => {
-    if (showLoading) setLoading(true);
-    setError('');
-    try {
-      setDataSources((await listDataSources()).items);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '数据源加载失败。');
-    } finally {
-      if (showLoading) setLoading(false);
-    }
-  }, []);
+  const load = useCallback(
+    async (showLoading = true) => {
+      if (showLoading) setLoading(true);
+      setError('');
+      try {
+        setDataSources((await listDataSources()).items);
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : t('sources.loadFailed'));
+      } finally {
+        if (showLoading) setLoading(false);
+      }
+    },
+    [t],
+  );
   const screenRefresh = useScreenRefresh(() => load(false));
   useEffect(() => {
     const task = setTimeout(() => void runInitialRequest(load), 0);
@@ -134,7 +147,7 @@ export function DataSourceListScreen({
       setFormVisible(false);
       onOpenSource(created.id);
     } catch (reason) {
-      setFormError(reason instanceof Error ? reason.message : '数据源创建失败。');
+      setFormError(reason instanceof Error ? reason.message : t('sources.createFailed'));
     } finally {
       setCreating(false);
     }
@@ -148,25 +161,25 @@ export function DataSourceListScreen({
         source.name,
         source.description,
         source.connectionLabel,
-        connectionStatusLabels[source.connectionStatus],
-        locationLabels[source.location],
+        t(connectionStatusLabelKeys[source.connectionStatus]),
+        t(locationLabelKeys[source.location]),
       ].some((value) => value.toLocaleLowerCase().includes(normalized)),
     );
-  }, [dataSources, searchQuery]);
+  }, [dataSources, searchQuery, t]);
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       {searchVisible ? (
         <SearchSheet
           appliedQuery={searchQuery}
-          inputLabel="输入数据源搜索关键词"
+          inputLabel={t('sources.searchInput')}
           onApply={(query) => {
             setSearchQuery(query);
             setSearchVisible(false);
           }}
           onClose={() => setSearchVisible(false)}
-          placeholder="搜索名称、描述、位置或连接状态"
-          title="搜索数据源"
+          placeholder={t('sources.searchPlaceholder')}
+          title={t('sources.searchTitle')}
           visible
         />
       ) : null}
@@ -187,14 +200,14 @@ export function DataSourceListScreen({
         <TopLevelPageHeader
           actions={[
             {
-              accessibilityLabel: '搜索数据源',
+              accessibilityLabel: t('sources.search'),
               icon: 'search-outline',
               onPress: () => setSearchVisible(true),
             },
             {
-              accessibilityLabel: '新建数据源',
+              accessibilityLabel: t('sources.create'),
               icon: 'add',
-              label: '新建',
+              label: t('sources.createShort'),
               onPress: () => {
                 setFormError('');
                 setFormVisible(true);
@@ -203,7 +216,7 @@ export function DataSourceListScreen({
               testID: 'e2e-new-data-source',
             },
           ]}
-          title="数据源"
+          title={t('sources.title')}
         />
       </View>
       <ScrollView
@@ -215,7 +228,7 @@ export function DataSourceListScreen({
       >
         <View style={styles.list}>
           {loading ? (
-            <ActivityIndicator accessibilityLabel="正在加载数据源" color={colors.ink} />
+            <ActivityIndicator accessibilityLabel={t('sources.loading')} color={colors.ink} />
           ) : null}
           {error ? (
             <View style={styles.errorCard}>
@@ -223,15 +236,15 @@ export function DataSourceListScreen({
                 {error}
               </Text>
               <Pressable accessibilityRole="button" onPress={() => void load()}>
-                <Text style={styles.retryText}>重新加载</Text>
+                <Text style={styles.retryText}>{t('sources.reload')}</Text>
               </Pressable>
             </View>
           ) : null}
           {!loading && !error && dataSources.length === 0 ? (
-            <Text style={styles.description}>暂无数据源。</Text>
+            <Text style={styles.description}>{t('sources.empty')}</Text>
           ) : null}
           {!loading && !error && dataSources.length > 0 && visibleDataSources.length === 0 ? (
-            <Text style={styles.description}>没有匹配“{searchQuery}”的数据源。</Text>
+            <Text style={styles.description}>{t('sources.noMatch', { query: searchQuery })}</Text>
           ) : null}
           {!loading && !error
             ? visibleDataSources.map((source) => (

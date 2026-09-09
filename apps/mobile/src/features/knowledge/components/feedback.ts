@@ -10,8 +10,12 @@
  * - 不用于已实现操作的错误反馈。
  */
 import { Alert } from 'react-native';
+import { translateAppText } from '@/shared/i18n/LanguageProvider';
 
 /** 为尚未实现的知识库操作显示一致提示。 */
 export function showComingSoon(feature: string): void {
-  Alert.alert('功能建设中', `${feature}将在后续版本开放。`);
+  Alert.alert(
+    translateAppText('common.inProgress'),
+    translateAppText('sourceFixed.comingSoon', { feature }),
+  );
 }

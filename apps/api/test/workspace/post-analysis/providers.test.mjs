@@ -206,4 +206,47 @@ describe('post-analysis providers', () => {
     });
     await assert.rejects(() => recognizer.recognize(segments, []), /完整、可验证/);
   });
+
+  it('keeps stable role kinds while requesting English labels and prose', async () => {
+    let requestBody;
+    const recognizer = new DeepSeekRoleRecognizer({
+      apiKey: 'test',
+      baseUrl: 'https://api.deepseek.test',
+      model: 'deepseek-v4-flash',
+      sleep: async () => {},
+      fetch: async (_url, init) => {
+        requestBody = JSON.parse(init.body);
+        return response(
+          JSON.stringify({
+            speakers: [
+              {
+                speakerKey: 'Speaker 0',
+                role: 'Sales',
+                confidence: 0.9,
+                evidenceSegmentIds: [firstId],
+              },
+              {
+                speakerKey: 'Speaker 1',
+                role: 'Customer',
+                confidence: 0.8,
+                evidenceSegmentIds: [secondId],
+              },
+            ],
+          }),
+        );
+      },
+    });
+
+    const result = await recognizer.recognize(segments, [], undefined, 'en');
+
+    assert.deepEqual(
+      result.map(({ kind, label }) => ({ kind, label })),
+      [
+        { kind: 'sales', label: 'Sales' },
+        { kind: 'customer', label: 'Customer' },
+      ],
+    );
+    assert.match(requestBody.messages[0].content, /English call transcript/);
+    assert.match(requestBody.messages[0].content, /"Sales"/);
+  });
 });

@@ -39,7 +39,6 @@ import { detectSpeakerReviewCandidates } from '../speaker-review/rules.ts';
 import type { PrimaryOssStore } from '../runtime-mode/primaryOssStore.ts';
 import path from 'node:path';
 
-const AUDIO_TRANSCRIPTION_LANGUAGE = 'zh' as const;
 const POLL_DELAYS_MS = [2_000, 5_000, 10_000, 15_000] as const;
 const SAFETY_POLL_INTERVAL_MS = 15_000;
 const MIN_DEADLINE_DELAY_MS = 50;
@@ -299,7 +298,7 @@ export class AudioTranscriptionWorker {
           preprocessingMode: job.preprocessingMode,
           model: job.model,
           provider: job.provider,
-          language: AUDIO_TRANSCRIPTION_LANGUAGE,
+          language: job.language,
         },
       },
     });
@@ -368,6 +367,7 @@ export class AudioTranscriptionWorker {
           preprocessing: job.preprocessingMode,
         },
         job.expectedSpeakerCount ?? undefined,
+        job.language,
       ),
     );
     const submittedAt = new Date();
@@ -481,13 +481,13 @@ export class AudioTranscriptionWorker {
       input: {
         kind: 'file-transcription',
         audio: '[OMITTED_AUDIO]',
-        language: AUDIO_TRANSCRIPTION_LANGUAGE,
+        language: job.language,
         durationMs: providerDurationMs,
         preprocessingMode: job.preprocessingMode,
         diarizationEnabled: true,
         timestampGranularity: 'word',
       },
-      output: { language: AUDIO_TRANSCRIPTION_LANGUAGE, segments: result.segments },
+      output: { language: job.language, segments: result.segments },
     });
 
     let segments = result.segments;
@@ -509,7 +509,7 @@ export class AudioTranscriptionWorker {
         job,
         segments,
         {
-          language: AUDIO_TRANSCRIPTION_LANGUAGE,
+          language: job.language,
           diarizationRequested: true,
           diarizationObserved: true,
           responseGranularity: 'word',

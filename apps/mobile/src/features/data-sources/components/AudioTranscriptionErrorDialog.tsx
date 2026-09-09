@@ -21,29 +21,33 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 import type { SourceAudioItem } from '../model';
 
-const categoryLabels = {
-  invalid_json: '模型输出不是有效 JSON',
-  schema_validation: '模型输出字段不符合约定',
-  semantic_validation: '模型输出内容未通过语义校验',
-  provider: '模型服务调用失败',
-  timeout: '模型服务请求超时',
-  preprocessing: '音频预处理失败',
-  internal: '内部处理失败',
+const categoryKeys = {
+  invalid_json: 'asrError.invalidJson',
+  schema_validation: 'asrError.schema',
+  semantic_validation: 'asrError.semantic',
+  provider: 'asrError.provider',
+  timeout: 'asrError.timeout',
+  preprocessing: 'asrError.preprocessing',
+  internal: 'asrError.internal',
 } as const;
 
 /** 根据稳定诊断信息提供不包含内部实现细节的重试建议。 */
-function retrySuggestion(audio: SourceAudioItem): string {
+function retrySuggestion(
+  audio: SourceAudioItem,
+  t: ReturnType<typeof useAppLanguage>['t'],
+): string {
   if (audio.status.kind !== 'transcription-failed') return '';
   if (!audio.status.retryable) {
-    return '该错误当前不可直接重试，请先检查音频格式、服务配置或账户权限。';
+    return t('asrError.checkConfig');
   }
   if (audio.status.details?.category === 'preprocessing') {
-    return '请检查服务端 FFmpeg 配置后重新发起整文件转写。';
+    return t('asrError.checkFfmpeg');
   }
-  return '可以重新发起 DashScope 整文件转写；若仍失败，请检查账户权限、OSS 与音频内容。';
+  return t('asrError.retryHint');
 }
 
 /** 展示单条音频最近一次转写修订的安全失败诊断。 */
@@ -56,8 +60,10 @@ export function AudioTranscriptionErrorDialog({
   onClose: () => void;
   onRetry: () => void;
 }) {
+  const { formatNumber, language, t } = useAppLanguage();
   const status = audio?.status.kind === 'transcription-failed' ? audio.status : undefined;
   const details = status?.details;
+  const categoryLabel = details ? t(categoryKeys[details.category]) : '';
   return (
     <Modal animationType="fade" onRequestClose={onClose} transparent visible={Boolean(status)}>
       <View style={styles.root}>
@@ -66,11 +72,11 @@ export function AudioTranscriptionErrorDialog({
             <View style={styles.titleRow}>
               <Ionicons color={colors.ink} name="alert-circle-outline" size={24} />
               <Text accessibilityRole="header" style={styles.title}>
-                音频转写失败
+                {t('asrError.title')}
               </Text>
             </View>
             <Pressable
-              accessibilityLabel="关闭错误详情"
+              accessibilityLabel={t('common.close')}
               onPress={onClose}
               style={styles.iconButton}
             >
@@ -81,44 +87,54 @@ export function AudioTranscriptionErrorDialog({
           <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
             <Text style={styles.audioTitle}>{audio?.title}</Text>
             <View style={styles.summaryBox}>
-              <Text style={styles.label}>错误码</Text>
+              <Text style={styles.label}>{t('asrError.code')}</Text>
               <Text selectable style={styles.code}>
                 {status?.code}
               </Text>
-              <Text style={styles.message}>{status?.message}</Text>
+              <Text style={styles.message}>
+                {language === 'zh-CN'
+                  ? status?.message
+                  : t('common.unknownError', { code: status?.code ?? 'UNKNOWN' })}
+              </Text>
             </View>
 
             {details ? (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>失败诊断</Text>
-                <Text style={styles.detailText}>类型：{categoryLabels[details.category]}</Text>
-                <Text style={styles.detailText}>阶段：ASR 转写</Text>
+                <Text style={styles.sectionTitle}>{t('asrError.diagnosis')}</Text>
+                <Text style={styles.detailText}>{t('asrError.type', { type: categoryLabel })}</Text>
+                <Text style={styles.detailText}>{t('asrError.stage')}</Text>
                 {details.chunkIndex !== null ? (
                   <Text style={styles.detailText}>
-                    分块：{details.chunkIndex}
+                    {t('asrError.chunk', { index: formatNumber(details.chunkIndex) })}
                     {details.chunkCount !== null ? ` / ${details.chunkCount}` : ''}
                   </Text>
                 ) : null}
                 {details.structureAttempts > 0 ? (
-                  <Text style={styles.detailText}>结构纠正次数：{details.structureAttempts}</Text>
+                  <Text style={styles.detailText}>
+                    {t('asrError.attempts', {
+                      count: formatNumber(details.structureAttempts),
+                    })}
+                  </Text>
                 ) : null}
               </View>
             ) : (
-              <Text style={styles.fallback}>
-                此失败记录没有更详细的结构化诊断，请根据错误码检查配置后重试。
-              </Text>
+              <Text style={styles.fallback}>{t('asrError.noDetails')}</Text>
             )}
 
             {details?.issues.length ? (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>校验问题</Text>
+                <Text style={styles.sectionTitle}>{t('asrError.validation')}</Text>
                 {details.issues.map((issue, index) => (
                   <View key={`${issue.path}-${issue.code}-${index}`} style={styles.issue}>
                     <Text style={styles.issueTitle}>
                       {index + 1}. {issue.code}
                     </Text>
-                    <Text style={styles.issuePath}>字段：{issue.path || '$'}</Text>
-                    <Text style={styles.detailText}>{issue.message}</Text>
+                    <Text style={styles.issuePath}>
+                      {t('asrError.field', { path: issue.path || '$' })}
+                    </Text>
+                    {language === 'zh-CN' ? (
+                      <Text style={styles.detailText}>{issue.message}</Text>
+                    ) : null}
                   </View>
                 ))}
               </View>
@@ -126,15 +142,15 @@ export function AudioTranscriptionErrorDialog({
 
             <View style={styles.suggestionBox}>
               <Text style={styles.sectionTitle}>
-                {status?.retryable ? '可以重试' : '暂不可直接重试'}
+                {status?.retryable ? t('asrError.retryable') : t('asrError.notRetryable')}
               </Text>
-              <Text style={styles.detailText}>{audio ? retrySuggestion(audio) : ''}</Text>
+              <Text style={styles.detailText}>{audio ? retrySuggestion(audio, t) : ''}</Text>
             </View>
           </ScrollView>
 
           <View style={styles.actions}>
             <Pressable accessibilityRole="button" onPress={onClose} style={styles.button}>
-              <Text style={styles.buttonText}>关闭</Text>
+              <Text style={styles.buttonText}>{t('common.close')}</Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
@@ -142,7 +158,7 @@ export function AudioTranscriptionErrorDialog({
               style={[styles.button, styles.primaryButton]}
               testID="transcription-error-retry"
             >
-              <Text style={styles.primaryButtonText}>重新转写</Text>
+              <Text style={styles.primaryButtonText}>{t('asrError.retry')}</Text>
             </Pressable>
           </View>
         </View>

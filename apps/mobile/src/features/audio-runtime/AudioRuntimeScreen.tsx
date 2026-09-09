@@ -25,6 +25,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { getAudioRuntime, updateAudioRuntime } from '@/shared/api/audioRuntimeApi';
 import { WorkspaceRequestError } from '@/shared/api/request';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import {
   colors,
   fontFamilies,
@@ -37,34 +38,42 @@ import { PageHeader } from '@/shared/ui/PageHeader';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 
-const modeCopy: Record<
+const modeCopyKeys: Record<
   AudioRuntimeMode,
-  { title: string; description: string; icon: keyof typeof Ionicons.glyphMap }
+  {
+    title: 'runtime.hybrid' | 'runtime.objectStorage' | 'runtime.lightweight';
+    description:
+      | 'runtime.hybridDescription'
+      | 'runtime.objectStorageDescription'
+      | 'runtime.lightweightDescription';
+    icon: keyof typeof Ionicons.glyphMap;
+  }
 > = {
   hybrid: {
-    title: '混合存储模式（默认）',
-    description: '原音频保存在 API 本地目录，OSS 仅用于模型临时中转。',
+    title: 'runtime.hybrid',
+    description: 'runtime.hybridDescription',
     icon: 'git-merge-outline',
   },
   object_storage: {
-    title: '对象存储模式',
-    description: '原音频直接进入企业 OSS，APP 退出后由服务端继续处理。',
+    title: 'runtime.objectStorage',
+    description: 'runtime.objectStorageDescription',
     icon: 'cloud-outline',
   },
   lightweight_local: {
-    title: '轻量本地模式',
-    description: 'API 仅临时保存音频，ASR 和可选声学情绪完成后自动清理。',
+    title: 'runtime.lightweight',
+    description: 'runtime.lightweightDescription',
     icon: 'phone-portrait-outline',
   },
 };
 
-function errorText(error: unknown): string {
+function errorText(error: unknown, fallback: string): string {
   if (error instanceof WorkspaceRequestError) return error.message;
-  return '运行模式操作失败，请稍后重试。';
+  return fallback;
 }
 
 /** 渲染运行模式选择与管理员保存流程。 */
 export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
+  const { t } = useAppLanguage();
   const noticeTourRef = useStarterTourTarget('runtime-notice');
   const modesTourRef = useStarterTourTarget('runtime-modes');
   const saveTourRef = useStarterTourTarget('runtime-save');
@@ -91,9 +100,9 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     getAudioRuntime()
       .then(applyOverview)
-      .catch((reason) => setError(errorText(reason)))
+      .catch((reason) => setError(errorText(reason, t('runtime.operationFailed'))))
       .finally(() => setLoading(false));
-  }, []);
+  }, [t]);
 
   const refreshPage = async () => {
     try {
@@ -106,7 +115,7 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
       }
       setError(undefined);
     } catch (reason) {
-      setError(errorText(reason));
+      setError(errorText(reason, t('runtime.operationFailed')));
     }
   };
   const screenRefresh = useScreenRefresh(refreshPage);
@@ -127,7 +136,7 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
       applyOverview(updated);
       setToken('');
     } catch (reason) {
-      setError(errorText(reason));
+      setError(errorText(reason, t('runtime.operationFailed')));
     } finally {
       setSaving(false);
     }
@@ -135,7 +144,7 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-      <PageHeader onBack={onBack} onMore={() => undefined} title="运行模式" />
+      <PageHeader onBack={onBack} onMore={() => undefined} title={t('runtime.title')} />
       <ScrollView
         alwaysBounceVertical
         contentContainerStyle={styles.content}
@@ -145,19 +154,17 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
       >
         <View collapsable={false} ref={noticeTourRef} style={styles.notice}>
           <Ionicons color={colors.secondary} name="information-circle-outline" size={22} />
-          <Text style={styles.noticeText}>
-            模式和期限修改只影响之后上传的音频，不迁移或删除已有资产。
-          </Text>
+          <Text style={styles.noticeText}>{t('runtime.notice')}</Text>
         </View>
         {loading ? <ActivityIndicator color={colors.ink} /> : null}
         <View collapsable={false} ref={modesTourRef} style={styles.modeList}>
           {overview
             ? overview.modes.map((availability) => {
-                const copy = modeCopy[availability.mode];
+                const copy = modeCopyKeys[availability.mode];
                 const active = selected === availability.mode;
                 return (
                   <Pressable
-                    accessibilityLabel={copy.title}
+                    accessibilityLabel={t(copy.title)}
                     accessibilityRole="radio"
                     accessibilityState={{ checked: active, disabled: !availability.available }}
                     disabled={!availability.available || saving}
@@ -174,8 +181,8 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
                   >
                     <Ionicons color={colors.ink} name={copy.icon} size={24} />
                     <View style={styles.modeCopy}>
-                      <Text style={styles.title}>{copy.title}</Text>
-                      <Text style={styles.description}>{copy.description}</Text>
+                      <Text style={styles.title}>{t(copy.title)}</Text>
+                      <Text style={styles.description}>{t(copy.description)}</Text>
                       {!availability.available ? (
                         <Text style={styles.warning}>{availability.unavailableReason}</Text>
                       ) : null}
@@ -192,10 +199,10 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
         </View>
         {selected === 'object_storage' ? (
           <View style={styles.formCard}>
-            <Text style={styles.title}>对象生命周期</Text>
-            <Text style={styles.label}>原音频保留天数（留空表示永久）</Text>
+            <Text style={styles.title}>{t('runtime.lifecycle')}</Text>
+            <Text style={styles.label}>{t('runtime.originalDays')}</Text>
             <TextInput
-              accessibilityLabel="原音频保留天数"
+              accessibilityLabel={t('runtime.originalDays')}
               inputMode="numeric"
               onChangeText={(value) => {
                 setOriginalDays(value);
@@ -204,9 +211,9 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
               style={styles.input}
               value={originalDays}
             />
-            <Text style={styles.label}>中间文件保留小时数（1–168）</Text>
+            <Text style={styles.label}>{t('runtime.intermediateHours')}</Text>
             <TextInput
-              accessibilityLabel="中间文件保留小时数"
+              accessibilityLabel={t('runtime.intermediateHours')}
               inputMode="numeric"
               onChangeText={(value) => {
                 setIntermediateHours(value);
@@ -218,10 +225,10 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
           </View>
         ) : null}
         <View collapsable={false} ref={saveTourRef} style={styles.formCard}>
-          <Text style={styles.title}>管理员确认</Text>
-          <Text style={styles.description}>保存会改变整个租户的新音频处理策略。</Text>
+          <Text style={styles.title}>{t('runtime.adminConfirmation')}</Text>
+          <Text style={styles.description}>{t('runtime.adminDescription')}</Text>
           <TextInput
-            accessibilityLabel="管理员口令"
+            accessibilityLabel={t('runtime.adminToken')}
             onChangeText={setToken}
             placeholder="CONFIGURATION_ADMIN_TOKEN"
             secureTextEntry
@@ -239,7 +246,7 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
             onPress={() => void save()}
             style={[styles.saveButton, (saving || !token.trim()) && styles.disabled]}
           >
-            <Text style={styles.saveText}>{saving ? '保存中…' : '保存运行模式'}</Text>
+            <Text style={styles.saveText}>{saving ? t('runtime.saving') : t('runtime.save')}</Text>
           </Pressable>
         </View>
       </ScrollView>

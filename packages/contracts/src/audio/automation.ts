@@ -12,7 +12,7 @@
  */
 import { z } from 'zod';
 
-import { EntityIdSchema } from '../common.ts';
+import { EntityIdSchema, SupportedLanguageSchema } from '../common.ts';
 import { AudioRuntimeModeSchema, AudioUploadSessionResponseSchema } from './runtime.ts';
 
 export const AudioAnalysisTaskStatusSchema = z.enum([
@@ -68,6 +68,7 @@ export const AudioAnalysisUploadItemSchema = z
 const AudioAnalysisBatchBaseSchema = z.object({
   dataSourceId: EntityIdSchema,
   groupId: EntityIdSchema,
+  language: SupportedLanguageSchema.default('zh-CN'),
   scheduledFor: z.string().datetime().nullable().default(null),
   pipeline: AudioAnalysisPipelineOptionsSchema.default({
     confirmation: 'system_raw_snapshot',
@@ -162,6 +163,7 @@ export const AudioAnalysisBatchSchema = z
     scheduledFor: z.string().datetime().nullable(),
     configurationSnapshot: z.object({
       groupName: z.string().min(1),
+      language: SupportedLanguageSchema.default('zh-CN'),
       analysisTiming: z.enum(['automatic', 'manual']),
       contentFocus: z.string().min(1),
       tone: z.string().min(1),

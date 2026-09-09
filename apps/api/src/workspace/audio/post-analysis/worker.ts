@@ -260,6 +260,7 @@ export class AudioPostAnalysisWorker {
       job.segments,
       job.customBusinessRoles,
       report,
+      job.language,
     );
     await this.options.repository.updateProgress(job.id, 95);
     this.notify(job, false);
@@ -403,6 +404,7 @@ export class AudioPostAnalysisWorker {
           endMs,
           segmentIds: segments.map((segment) => segment.id),
         },
+        job.language,
       );
     } catch (error) {
       if (

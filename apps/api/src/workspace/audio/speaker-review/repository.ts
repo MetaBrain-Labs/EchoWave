@@ -7,6 +7,8 @@
  * - 领取、恢复、发布和失败收敛说话人复核任务。
  * - 原子合并规则与模型发现。
  */
+import { SupportedLanguageSchema, type SupportedLanguage } from '@echowave/contracts';
+
 import { quoteIdentifier, type DatabasePool } from '../../../infrastructure/postgres.ts';
 
 export type SpeakerReviewSegment = {
@@ -22,6 +24,7 @@ export type ClaimedSpeakerReviewJob = {
   revisionId: string;
   capabilityBindingRevisionId: string | null;
   model: string;
+  language: SupportedLanguage;
   segments: SpeakerReviewSegment[];
 };
 
@@ -72,7 +75,8 @@ export class SpeakerReviewRepository {
        FROM candidate
        WHERE job.id = candidate.id
        RETURNING job.id, job.audio_file_id, job.analysis_revision_id,
-                 job.capability_binding_revision_id, job.model`,
+                 job.capability_binding_revision_id, job.model,
+                 coalesce(job.settings_snapshot->>'language', 'zh-CN') AS language`,
       [this.tenantId],
     );
     const row = claimed.rows[0];
@@ -98,6 +102,7 @@ export class SpeakerReviewRepository {
       revisionId: row.analysis_revision_id,
       capabilityBindingRevisionId: row.capability_binding_revision_id ?? null,
       model: row.model,
+      language: SupportedLanguageSchema.parse(row.language === 'en' ? 'en' : 'zh-CN'),
       segments: segments.rows.map((segment) => ({
         id: String(segment.id),
         speakerKey: String(segment.speaker_key),

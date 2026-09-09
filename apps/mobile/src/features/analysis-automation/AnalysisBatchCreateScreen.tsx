@@ -14,6 +14,7 @@ import type {
   AudioFileSummary,
   DataSourceSummary,
   LinkedDataSourceGroup,
+  SupportedLanguage,
 } from '@echowave/contracts';
 import * as DocumentPicker from 'expo-document-picker';
 import { useRouter, type Href } from 'expo-router';
@@ -47,6 +48,9 @@ import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import { colors, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
+import { AnalysisLanguagePicker } from '@/shared/i18n/AnalysisLanguagePicker';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import type { TranslationKey } from '@/shared/i18n/translations';
 
 const pipeline = {
   confirmation: 'system_raw_snapshot' as const,
@@ -59,6 +63,7 @@ const pipeline = {
 /** 渲染新建标签的一键分析表单。 */
 export function AnalysisBatchCreateScreen() {
   const router = useRouter();
+  const { language: appLanguage, formatDateTime, t } = useAppLanguage();
   const scrollRef = useRef<ScrollView>(null);
   const prepareAudioTourTarget = useCallback(() => {
     scrollRef.current?.scrollTo({ animated: true, y: 180 });
@@ -74,10 +79,11 @@ export function AnalysisBatchCreateScreen() {
   const [selectedAudioIds, setSelectedAudioIds] = useState<string[]>([]);
   const [assets, setAssets] = useState<DocumentPicker.DocumentPickerAsset[]>([]);
   const [sourceKind, setSourceKind] = useState<'uploads' | 'existing_audio'>('uploads');
+  const [analysisLanguage, setAnalysisLanguage] = useState<SupportedLanguage>(appLanguage);
   const [scheduled, setScheduled] = useState(false);
   const [scheduledText, setScheduledText] = useState('');
   const [runtimeMode, setRuntimeMode] = useState('');
-  const [preview, setPreview] = useState('选择分组后显示冻结配置');
+  const [preview, setPreview] = useState(() => t('analysisBatch.previewEmpty'));
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [recentBatches, setRecentBatches] = useState<AudioAnalysisBatch[]>([]);
@@ -92,10 +98,13 @@ export function AnalysisBatchCreateScreen() {
         setRecentBatches(batches.items);
       })
       .catch((error) =>
-        Alert.alert('加载失败', error instanceof Error ? error.message : '请稍后重试。'),
+        Alert.alert(
+          t('analysisBatch.loadFailed'),
+          error instanceof Error ? error.message : t('analysisBatch.tryAgain'),
+        ),
       )
       .finally(() => setLoading(false));
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (!sourceId) return;
@@ -106,20 +115,29 @@ export function AnalysisBatchCreateScreen() {
         setAudioFiles(audioResponse.items);
       })
       .catch((error) =>
-        Alert.alert('加载失败', error instanceof Error ? error.message : '请稍后重试。'),
+        Alert.alert(
+          t('analysisBatch.loadFailed'),
+          error instanceof Error ? error.message : t('analysisBatch.tryAgain'),
+        ),
       );
-  }, [sourceId]);
+  }, [sourceId, t]);
 
   useEffect(() => {
     if (!groupId) return;
     void getGroupSettings(groupId)
       .then((settings) =>
         setPreview(
-          `重点：${settings.analysis.contentFocus}\n语气：${settings.analysis.tone}\n标签：${settings.analysis.customTags.join('、') || '无'}`,
+          t('analysisBatch.preview', {
+            focus: settings.analysis.contentFocus,
+            tone: settings.analysis.tone,
+            tags:
+              settings.analysis.customTags.join(appLanguage === 'en' ? ', ' : '、') ||
+              t('analysisBatch.none'),
+          }),
         ),
       )
-      .catch(() => setPreview('配置预览暂时不可用，服务端仍会在入队时冻结。'));
-  }, [groupId]);
+      .catch(() => setPreview(t('analysisBatch.previewUnavailable')));
+  }, [appLanguage, groupId, t]);
 
   const refreshPage = useCallback(async () => {
     try {
@@ -141,7 +159,7 @@ export function AnalysisBatchCreateScreen() {
         setGroupId('');
         setAudioFiles([]);
         setSelectedAudioIds([]);
-        setPreview('选择分组后显示冻结配置');
+        setPreview(t('analysisBatch.previewEmpty'));
         setRefreshError('');
         return;
       }
@@ -159,31 +177,37 @@ export function AnalysisBatchCreateScreen() {
       setSelectedAudioIds((current) =>
         current.filter((id) => {
           const audio = audioResponse.items.find((item) => item.id === id);
-          return audio ? existingAudioDisabledReason(audio, runtime.mode) === null : false;
+          return audio ? existingAudioDisabledReason(audio, runtime.mode, t) === null : false;
         }),
       );
       if (nextGroupId) {
         const settings = await getGroupSettings(nextGroupId);
         setPreview(
-          `重点：${settings.analysis.contentFocus}\n语气：${settings.analysis.tone}\n标签：${settings.analysis.customTags.join('、') || '无'}`,
+          t('analysisBatch.preview', {
+            focus: settings.analysis.contentFocus,
+            tone: settings.analysis.tone,
+            tags:
+              settings.analysis.customTags.join(appLanguage === 'en' ? ', ' : '、') ||
+              t('analysisBatch.none'),
+          }),
         );
       } else {
-        setPreview('选择分组后显示冻结配置');
+        setPreview(t('analysisBatch.previewEmpty'));
       }
       setRefreshError('');
     } catch (error) {
-      setRefreshError(error instanceof Error ? error.message : '刷新失败，请稍后重试。');
+      setRefreshError(error instanceof Error ? error.message : t('analysisBatch.tryAgain'));
     }
-  }, [groupId, sourceId]);
+  }, [appLanguage, groupId, sourceId, t]);
   const screenRefresh = useScreenRefresh(refreshPage);
 
   const selectedCount = sourceKind === 'uploads' ? assets.length : selectedAudioIds.length;
   const incompatibility = useMemo(
     () =>
       scheduled && runtimeMode === 'lightweight_local'
-        ? '轻量本地模式不支持定时分析，请改为立即执行。'
+        ? t('analysisBatch.lightweightSchedule')
         : null,
-    [runtimeMode, scheduled],
+    [runtimeMode, scheduled, t],
   );
 
   async function pickFiles() {
@@ -199,26 +223,35 @@ export function AnalysisBatchCreateScreen() {
     setSourceId(id);
     setGroupId('');
     setSelectedAudioIds([]);
-    setPreview('选择分组后显示冻结配置');
+    setPreview(t('analysisBatch.previewEmpty'));
   }
 
   function scheduledFor(): string | null {
     if (!scheduled) return null;
     const date = new Date(scheduledText.trim().replace(' ', 'T'));
     if (!scheduledText.trim() || Number.isNaN(date.getTime()) || date.getTime() <= Date.now()) {
-      throw new Error('请输入晚于当前时间的本地时间，例如 2026-09-05 09:30。');
+      throw new Error(t('analysisBatch.invalidSchedule'));
     }
     return date.toISOString();
   }
 
   async function submit() {
     if (!sourceId || !groupId || selectedCount < 1 || selectedCount > 20 || incompatibility) {
-      Alert.alert('无法创建', incompatibility ?? '请选择数据源、分组和 1 至 20 个音频。');
+      Alert.alert(
+        t('analysisBatch.unableCreate'),
+        incompatibility ?? t('analysisBatch.invalidSelection'),
+      );
       return;
     }
     setSubmitting(true);
     try {
-      const common = { dataSourceId: sourceId, groupId, scheduledFor: scheduledFor(), pipeline };
+      const common = {
+        dataSourceId: sourceId,
+        groupId,
+        language: analysisLanguage,
+        scheduledFor: scheduledFor(),
+        pipeline,
+      };
       const batch =
         sourceKind === 'uploads'
           ? await createUploadAnalysisBatch(common, assets)
@@ -234,7 +267,10 @@ export function AnalysisBatchCreateScreen() {
         params: { id: batch.id },
       } as unknown as Href);
     } catch (error) {
-      Alert.alert('创建失败', error instanceof Error ? error.message : '请稍后重试。');
+      Alert.alert(
+        t('analysisBatch.createFailed'),
+        error instanceof Error ? error.message : t('analysisBatch.tryAgain'),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -244,8 +280,8 @@ export function AnalysisBatchCreateScreen() {
     return (
       <SafeAreaView style={styles.page}>
         <TopLevelPageHeader
-          subtitle="上传后由服务器自动完成转写、情绪、角色和业务分析"
-          title="一键分析"
+          subtitle={t('analysisBatch.subtitle')}
+          title={t('analysisBatch.title')}
         />
         <View style={styles.center}>
           <ActivityIndicator color={colors.ink} />
@@ -254,10 +290,7 @@ export function AnalysisBatchCreateScreen() {
     );
   return (
     <SafeAreaView style={styles.page}>
-      <TopLevelPageHeader
-        subtitle="上传后由服务器自动完成转写、情绪、角色和业务分析"
-        title="一键分析"
-      />
+      <TopLevelPageHeader subtitle={t('analysisBatch.subtitle')} title={t('analysisBatch.title')} />
       <ScrollView
         alwaysBounceVertical
         contentContainerStyle={styles.content}
@@ -267,11 +300,11 @@ export function AnalysisBatchCreateScreen() {
       >
         {refreshError ? (
           <Text accessibilityRole="alert" style={styles.danger}>
-            刷新失败：{refreshError}
+            {t('analysisBatch.refreshFailed', { message: refreshError })}
           </Text>
         ) : null}
         <View collapsable={false} ref={sourceTourRef}>
-          <Section title="1. 数据源">
+          <Section title={t('analysisBatch.sourceStep')}>
             <ChoiceRow
               items={sources.map((item) => ({ id: item.id, label: item.name }))}
               selected={sourceId}
@@ -280,7 +313,7 @@ export function AnalysisBatchCreateScreen() {
           </Section>
         </View>
         <View collapsable={false} ref={groupTourRef}>
-          <Section title="2. 分组（单选）">
+          <Section title={t('analysisBatch.groupStep')}>
             {groups.length ? (
               <ChoiceRow
                 items={groups.map((item) => ({ id: item.id, label: item.name }))}
@@ -288,16 +321,16 @@ export function AnalysisBatchCreateScreen() {
                 onSelect={setGroupId}
               />
             ) : (
-              <Text style={styles.hint}>当前数据源尚未关联分组。</Text>
+              <Text style={styles.hint}>{t('analysisBatch.noGroups')}</Text>
             )}
           </Section>
         </View>
         <View collapsable={false} ref={audioTourRef}>
-          <Section title="3. 音频">
+          <Section title={t('analysisBatch.audioStep')}>
             <ChoiceRow
               items={[
-                { id: 'uploads', label: '新上传' },
-                { id: 'existing_audio', label: '已有音频' },
+                { id: 'uploads', label: t('analysisBatch.uploads') },
+                { id: 'existing_audio', label: t('analysisBatch.existing') },
               ]}
               selected={sourceKind}
               onSelect={(id) => setSourceKind(id as typeof sourceKind)}
@@ -309,13 +342,15 @@ export function AnalysisBatchCreateScreen() {
                 style={styles.secondaryButton}
               >
                 <Ionicons color={colors.ink} name="cloud-upload-outline" size={20} />
-                <Text style={styles.buttonText}>选择多个音频（{assets.length}/20）</Text>
+                <Text style={styles.buttonText}>
+                  {t('analysisBatch.pickFiles', { count: assets.length })}
+                </Text>
               </Pressable>
             ) : (
               <View style={styles.list}>
                 {audioFiles.map((audio) => {
                   const selected = selectedAudioIds.includes(audio.id);
-                  const disabledReason = existingAudioDisabledReason(audio, runtimeMode);
+                  const disabledReason = existingAudioDisabledReason(audio, runtimeMode, t);
                   return (
                     <Pressable
                       accessibilityRole="checkbox"
@@ -342,7 +377,9 @@ export function AnalysisBatchCreateScreen() {
                         {audio.title}
                       </Text>
                       <View style={styles.checkMeta}>
-                        <Text style={styles.hint}>{audio.runtimeMode ?? '模式未知'}</Text>
+                        <Text style={styles.hint}>
+                          {audio.runtimeMode ?? t('analysisBatch.unknownMode')}
+                        </Text>
                         {disabledReason ? (
                           <Text style={styles.danger}>{disabledReason}</Text>
                         ) : null}
@@ -354,20 +391,23 @@ export function AnalysisBatchCreateScreen() {
             )}
           </Section>
         </View>
-        <Section title="4. 执行时间">
+        <Section title={t('analysisBatch.languageStep')}>
+          <AnalysisLanguagePicker value={analysisLanguage} onChange={setAnalysisLanguage} />
+        </Section>
+        <Section title={t('analysisBatch.timeStep')}>
           <ChoiceRow
             items={[
-              { id: 'now', label: '立即执行' },
-              { id: 'later', label: '指定时间' },
+              { id: 'now', label: t('analysisBatch.now') },
+              { id: 'later', label: t('analysisBatch.later') },
             ]}
             selected={scheduled ? 'later' : 'now'}
             onSelect={(id) => setScheduled(id === 'later')}
           />
           {scheduled ? (
             <TextInput
-              accessibilityLabel="计划执行时间"
+              accessibilityLabel={t('analysisBatch.scheduleLabel')}
               onChangeText={setScheduledText}
-              placeholder="本地时间：2026-09-05 09:30"
+              placeholder={t('analysisBatch.schedulePlaceholder')}
               style={styles.input}
               value={scheduledText}
             />
@@ -378,15 +418,14 @@ export function AnalysisBatchCreateScreen() {
             </Text>
           ) : null}
           <Text style={styles.hint}>
-            本批次冻结模式：{runtimeMode || '未知'}
-            。文件上传与校验立即进行，模型阶段在计划时间后开始。
+            {t('analysisBatch.runtimeFrozen', {
+              mode: runtimeMode || t('analysisBatch.unknown'),
+            })}
           </Text>
         </Section>
-        <Section title="5. 冻结配置预览">
+        <Section title={t('analysisBatch.previewStep')}>
           <Text style={styles.preview}>{preview}</Text>
-          <Text style={styles.hint}>
-            知识库、模型能力绑定和阶段开关会随批次保存；后续设置变化不影响已入队任务。
-          </Text>
+          <Text style={styles.hint}>{t('analysisBatch.previewHint')}</Text>
         </Section>
         <Pressable
           accessibilityRole="button"
@@ -398,11 +437,11 @@ export function AnalysisBatchCreateScreen() {
           {submitting ? (
             <ActivityIndicator color={colors.white} />
           ) : (
-            <Text style={styles.primaryText}>上传并开始全流程</Text>
+            <Text style={styles.primaryText}>{t('analysisBatch.start')}</Text>
           )}
         </Pressable>
         {recentBatches.length ? (
-          <Section title="最近批次">
+          <Section title={t('analysisBatch.recent')}>
             {recentBatches.slice(0, 5).map((batch) => (
               <Pressable
                 accessibilityRole="button"
@@ -418,8 +457,12 @@ export function AnalysisBatchCreateScreen() {
                 <View>
                   <Text style={styles.buttonText}>{batch.configurationSnapshot.groupName}</Text>
                   <Text style={styles.hint}>
-                    {new Date(batch.createdAt).toLocaleString()} · 完成 {batch.counts.completed} ·
-                    警告 {batch.counts.partial} · 失败 {batch.counts.failed}
+                    {t('analysisBatch.recentCounts', {
+                      date: formatDateTime(batch.createdAt),
+                      completed: batch.counts.completed,
+                      partial: batch.counts.partial,
+                      failed: batch.counts.failed,
+                    })}
                   </Text>
                 </View>
                 <Ionicons color={colors.secondary} name="chevron-forward" size={20} />
@@ -432,17 +475,23 @@ export function AnalysisBatchCreateScreen() {
   );
 }
 
-function existingAudioDisabledReason(audio: AudioFileSummary, runtimeMode: string): string | null {
-  if (!runtimeMode) return '正在读取当前运行模式';
+function existingAudioDisabledReason(
+  audio: AudioFileSummary,
+  runtimeMode: string,
+  t: (key: TranslationKey, options?: Record<string, unknown>) => string,
+): string | null {
+  if (!runtimeMode) return t('analysisBatch.readingRuntime');
   if (audio.runtimeMode !== runtimeMode)
-    return `当前为 ${audio.runtimeMode ?? '未知'}，需切换运行模式`;
+    return t('analysisBatch.modeMismatch', {
+      mode: audio.runtimeMode ?? t('analysisBatch.unknown'),
+    });
   if (
     runtimeMode === 'lightweight_local' &&
     pipeline.includeEmotion &&
     audio.sourceState !== 'available' &&
     !audio.acousticEmotionReady
   ) {
-    return '需重新挂载原文件';
+    return t('analysisBatch.remountRequired');
   }
   return null;
 }

@@ -395,6 +395,7 @@ describe('DataSourceDetailScreen', () => {
     await waitFor(() =>
       expect(workspaceApi.startAudioTranscription).toHaveBeenCalledWith(failed.id, {
         includeAcousticEmotion: true,
+        language: 'zh-CN',
         model: 'qwen-audio-3.0-asr-flash-filetrans',
         preprocessing: 'silero_vad',
         segmentationMode: 'speaker_turn',
@@ -620,6 +621,7 @@ describe('DataSourceDetailScreen', () => {
       expect(workspaceApi.startAudioTranscription).toHaveBeenCalledWith(audioFixtures[0].id, {
         model: 'qwen-audio-3.0-asr-flash-filetrans',
         includeAcousticEmotion: true,
+        language: 'zh-CN',
         preprocessing: 'silero_vad',
         segmentationMode: 'speaker_turn',
         expectedSpeakerCount: 3,
@@ -687,6 +689,7 @@ describe('DataSourceDetailScreen', () => {
       expect(workspaceApi.startAudioTranscription).toHaveBeenCalledWith(audioFixtures[0].id, {
         model: 'qwen-audio-3.0-asr-flash-filetrans',
         includeAcousticEmotion: true,
+        language: 'zh-CN',
         preprocessing: 'whole_file',
         segmentationMode: 'speaker_turn',
       }),

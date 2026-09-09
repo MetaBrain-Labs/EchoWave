@@ -9,14 +9,16 @@
  */
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import type { TranslationKey } from '@/shared/i18n/translations';
 import { colors, fontFamilies, spacing, textColors, typography } from '@/shared/theme/tokens';
 
 export type AnalysisTab = 'transcript' | 'tasks' | 'summary' | 'model';
-const analysisTabs: readonly { key: AnalysisTab; label: string }[] = [
-  { key: 'transcript', label: '转写分析' },
-  { key: 'tasks', label: '分析任务' },
-  { key: 'summary', label: '分析总结' },
-  { key: 'model', label: '模型详情' },
+const analysisTabs: readonly { key: AnalysisTab; labelKey: TranslationKey }[] = [
+  { key: 'transcript', labelKey: 'analysis.tabs.transcript' },
+  { key: 'tasks', labelKey: 'analysis.tabs.tasks' },
+  { key: 'summary', labelKey: 'analysis.tabs.summary' },
+  { key: 'model', labelKey: 'analysis.tabs.model' },
 ];
 export const analysisTabKeys = analysisTabs.map((tab) => tab.key);
 
@@ -29,6 +31,7 @@ export function DetailTabs({
   onChange: (tab: AnalysisTab) => void;
   showSummary?: boolean;
 }) {
+  const { t } = useAppLanguage();
   return (
     <View accessibilityRole="tablist" style={styles.detailTabs}>
       {analysisTabs
@@ -44,7 +47,7 @@ export function DetailTabs({
               style={({ pressed }) => [styles.detailTab, pressed && styles.pressed]}
             >
               <Text style={[styles.detailTabText, selected && styles.activeDetailTabText]}>
-                {tab.label}
+                {t(tab.labelKey)}
               </Text>
               <View style={[styles.tabUnderline, selected && styles.activeTabUnderline]} />
             </Pressable>

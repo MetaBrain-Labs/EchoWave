@@ -11,7 +11,7 @@
  */
 import { z } from 'zod';
 
-import { EntityIdSchema } from './common.ts';
+import { EntityIdSchema, SupportedLanguageSchema } from './common.ts';
 
 export const ExpoPushTokenSchema = z.string().regex(/^(Exponent|Expo)PushToken\[[A-Za-z0-9_-]+\]$/);
 
@@ -19,6 +19,7 @@ export const PushDeviceRegisterRequestSchema = z
   .object({
     token: ExpoPushTokenSchema,
     platform: z.enum(['ios', 'android']),
+    locale: SupportedLanguageSchema.default('zh-CN'),
   })
   .strict();
 
@@ -28,6 +29,7 @@ export const PushDeviceSchema = z
   .object({
     id: EntityIdSchema,
     platform: z.enum(['ios', 'android']),
+    locale: SupportedLanguageSchema.default('zh-CN'),
     enabled: z.boolean(),
     updatedAt: z.string().datetime(),
   })

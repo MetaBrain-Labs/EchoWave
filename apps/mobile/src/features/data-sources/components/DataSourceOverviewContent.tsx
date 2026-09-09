@@ -14,6 +14,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { colors, fontFamilies, spacing, textColors, typography } from '@/shared/theme/tokens';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 import { AudioRow } from './DataSourceAudioRow';
 import type { DataSourceDetailView, SourceAudioItem } from '../model';
@@ -76,67 +77,91 @@ export function OverviewContent({
   onShowAudioProgress: (audio: SourceAudioItem) => void;
   source: DataSourceDetailView;
 }) {
+  const { formatNumber, t } = useAppLanguage();
   const completedCount = source.audioItems.filter((item) => item.status.kind === 'complete').length;
   const pendingCount = source.audioItems.length - completedCount;
   return (
     <View style={styles.overviewContent}>
-      <Text style={styles.sectionTitle}>数据源详情</Text>
-      <Text style={styles.recentUpload}>最近上传　{source.uploadedAt}:00</Text>
+      <Text style={styles.sectionTitle}>{t('sourceOverview.details')}</Text>
+      <Text style={styles.recentUpload}>
+        {t('sourceOverview.recentUpload', { date: source.uploadedAt })}
+      </Text>
       <View style={styles.metrics}>
-        <Metric label="音频数" value={`${source.audioItems.length}`} />
-        <Metric divider label="总时长" value={source.totalDuration} />
-        <Metric divider label="已转写" value={`${completedCount}`} />
-        <Metric divider label="待处理" value={`${pendingCount}`} />
+        <Metric
+          label={t('sourceOverview.audioCount')}
+          value={formatNumber(source.audioItems.length)}
+        />
+        <Metric divider label={t('sourceOverview.totalDuration')} value={source.totalDuration} />
+        <Metric
+          divider
+          label={t('sourceOverview.transcribed')}
+          value={formatNumber(completedCount)}
+        />
+        <Metric divider label={t('sourceOverview.pending')} value={formatNumber(pendingCount)} />
       </View>
 
       <View style={styles.infoSection}>
-        <Text style={styles.sectionTitle}>音频接入</Text>
-        <InfoRow icon="cloud-upload-outline" label="接入方式" value="手动上传" />
+        <Text style={styles.sectionTitle}>{t('sourceForm.audioAccess')}</Text>
+        <InfoRow
+          icon="cloud-upload-outline"
+          label={t('sourceForm.accessMethod')}
+          value={t('sourceForm.manualUpload')}
+        />
         <InfoRow
           icon="grid-outline"
-          label="存储位置"
-          value={source.location === 'local' ? '本地' : '云端'}
+          label={t('sourceForm.storageLocation')}
+          value={source.location === 'local' ? t('sourceForm.local') : t('knowledgeDetail.cloud')}
         />
       </View>
 
       <View style={styles.infoSection}>
-        <Text style={styles.sectionTitle}>音频分析</Text>
-        <InfoRow icon="hardware-chip-outline" label="转写模型" value={source.analysisModel} />
+        <Text style={styles.sectionTitle}>{t('sourceForm.audioAnalysis')}</Text>
+        <InfoRow
+          icon="hardware-chip-outline"
+          label={t('sourceForm.transcriptionModel')}
+          value={source.analysisModel}
+        />
         <InfoRow
           icon="happy-outline"
-          label="情绪分析"
-          value={source.emotionAnalysis ? '已开启' : '未开启'}
+          label={t('sourceOverview.emotion')}
+          value={
+            source.emotionAnalysis ? t('sourceOverview.enabled') : t('sourceOverview.disabled')
+          }
         />
         <InfoRow
           icon="people-outline"
-          label="说话人分离"
-          value={source.roleSeparation ? '已开启' : '未开启'}
+          label={t('sourceOverview.speaker')}
+          value={source.roleSeparation ? t('sourceOverview.enabled') : t('sourceOverview.disabled')}
         />
         <InfoRow
           icon="copy-outline"
-          label="场景分离"
-          value={source.sceneSeparation ? '已开启' : '未开启'}
+          label={t('sourceOverview.scene')}
+          value={
+            source.sceneSeparation ? t('sourceOverview.enabled') : t('sourceOverview.disabled')
+          }
         />
       </View>
 
       <View style={styles.infoSection}>
-        <Text style={styles.sectionTitle}>音频处理</Text>
+        <Text style={styles.sectionTitle}>{t('sourceOverview.processing')}</Text>
         <InfoRow
           icon="stats-chart-outline"
-          label="转写方式"
-          value={source.autoTranscribe ? '自动转写' : '手动转写'}
+          label={t('sourceOverview.transcriptionMethod')}
+          value={source.autoTranscribe ? t('sourceOverview.automatic') : t('sourceOverview.manual')}
         />
         <InfoRow
           icon="arrow-redo-outline"
-          label="跳过无效音频"
-          value={source.skipInvalidAudio ? '已开启' : '未开启'}
+          label={t('sourceOverview.skipInvalid')}
+          value={
+            source.skipInvalidAudio ? t('sourceOverview.enabled') : t('sourceOverview.disabled')
+          }
         />
       </View>
 
       <View style={styles.recentAudioSection}>
-        <Text style={styles.sectionTitle}>近期音频</Text>
+        <Text style={styles.sectionTitle}>{t('sourceOverview.recentAudio')}</Text>
         {source.audioItems.length === 0 ? (
-          <Text style={styles.listEmptyText}>暂无音频，上传后会在这里显示。</Text>
+          <Text style={styles.listEmptyText}>{t('sourceOverview.noAudio')}</Text>
         ) : (
           source.audioItems
             .slice(0, 3)

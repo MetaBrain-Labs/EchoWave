@@ -32,6 +32,7 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 /** 渲染可复用的底部搜索表单。 */
 export function SearchSheet({
@@ -53,6 +54,7 @@ export function SearchSheet({
   title: string;
   visible: boolean;
 }) {
+  const { t } = useAppLanguage();
   const [draft, setDraft] = useState(appliedQuery);
 
   const submit = () => {
@@ -67,7 +69,7 @@ export function SearchSheet({
         style={styles.overlay}
       >
         <Pressable
-          accessibilityLabel="关闭搜索抽屉遮罩"
+          accessibilityLabel={t('common.closeSearchDrawer')}
           accessibilityRole="button"
           onPress={onClose}
           style={StyleSheet.absoluteFill}
@@ -81,7 +83,7 @@ export function SearchSheet({
               {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
             </View>
             <Pressable
-              accessibilityLabel="关闭搜索抽屉"
+              accessibilityLabel={t('common.closeSearchDrawer')}
               accessibilityRole="button"
               hitSlop={8}
               onPress={onClose}
@@ -106,7 +108,7 @@ export function SearchSheet({
               />
               {draft ? (
                 <Pressable
-                  accessibilityLabel="清除搜索"
+                  accessibilityLabel={t('common.clearSearch')}
                   accessibilityRole="button"
                   hitSlop={8}
                   onPress={() => setDraft('')}
@@ -116,7 +118,7 @@ export function SearchSheet({
               ) : null}
             </View>
             <Pressable
-              accessibilityLabel="执行搜索"
+              accessibilityLabel={t('common.performSearch')}
               accessibilityRole="button"
               onPress={submit}
               style={({ pressed }) => [styles.searchButton, pressed && styles.primaryPressed]}

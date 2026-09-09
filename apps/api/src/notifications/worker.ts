@@ -15,6 +15,41 @@ import { PushNotificationRepository, type ClaimedNotificationDelivery } from './
 
 const SAFETY_SCAN_MS = 15_000;
 
+function localizedContent(delivery: ClaimedNotificationDelivery): {
+  title: string;
+  body: string;
+} {
+  if (delivery.locale === 'zh-CN' || !delivery.templateKey) {
+    return { title: delivery.title, body: delivery.body };
+  }
+  const count = (key: string) => Number(delivery.templateParams[key] ?? 0);
+  if (delivery.templateKey === 'COMPLETED') {
+    return {
+      title: 'Analysis batch completed',
+      body: `${count('total')} items: ${count('completed')} completed, ${count('failed')} failed.`,
+    };
+  }
+  if (delivery.templateKey === 'PARTIAL_COMPLETED') {
+    return {
+      title: 'Analysis batch partially completed',
+      body: `${count('total')} items: ${count('completed')} completed, ${count('failed')} failed.`,
+    };
+  }
+  if (delivery.templateKey === 'FAILED') {
+    return {
+      title: 'Analysis batch has failures',
+      body: `${count('total')} items: ${count('completed')} completed, ${count('failed')} failed.`,
+    };
+  }
+  if (delivery.templateKey === 'HARD_BLOCKED') {
+    return {
+      title: 'Analysis task needs attention',
+      body: 'Open EchoWave to review the blocked task and required configuration.',
+    };
+  }
+  return { title: delivery.title, body: delivery.body };
+}
+
 type PushWorkerOptions = {
   repository: PushNotificationRepository;
   wakeup?: WorkerWakeupSource;
@@ -115,11 +150,12 @@ export class PushNotificationWorker {
       });
       return;
     }
+    const content = localizedContent(delivery);
     const [ticket] = await this.expo.sendPushNotificationsAsync([
       {
         to: delivery.token,
-        title: delivery.title,
-        body: delivery.body,
+        title: content.title,
+        body: content.body,
         sound: 'default',
         channelId: 'analysis-alerts',
         data: {

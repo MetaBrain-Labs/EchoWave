@@ -92,10 +92,10 @@ jest.mock('@/shared/ui/StatusBarBackdrop', () => ({
 }));
 
 describe('Root navigation stack', () => {
-  it('uses a headerless native Stack so gesture back preserves the previous tab scene', () => {
+  it('uses a headerless native Stack so gesture back preserves the previous tab scene', async () => {
     const screen = render(<RootLayout />);
 
-    expect(screen.getByTestId('root-native-stack')).toBeTruthy();
+    expect(await screen.findByTestId('root-native-stack')).toBeTruthy();
     expect(screen.getByLabelText(JSON.stringify({ headerShown: false }))).toBeTruthy();
   });
 });

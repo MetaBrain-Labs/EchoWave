@@ -37,6 +37,7 @@ import { linkKnowledgeBaseGroups, listKnowledgeBaseGroups } from '@/shared/api/k
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
 import { useGroupAssociationEditor } from '@/shared/hooks/useGroupAssociationEditor';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { PageTabs } from '@/shared/ui/PageTabs';
 import { SearchSheet } from '@/shared/ui/SearchSheet';
@@ -63,18 +64,12 @@ import { getKnowledgeBase, listDocuments, retryDocument, uploadDocument } from '
 import { useKnowledgeDocumentUpdates } from '../hooks/useKnowledgeDocumentUpdates';
 
 const detailTabs = [
-  { key: 'overview', label: '概览' },
-  { key: 'files', label: '库文件' },
-  { key: 'groups', label: '关联分组' },
+  { key: 'overview', labelKey: 'knowledgeDetail.tabOverview' },
+  { key: 'files', labelKey: 'knowledgeDetail.tabFiles' },
+  { key: 'groups', labelKey: 'knowledgeDetail.tabGroups' },
 ] as const;
 type DetailTab = (typeof detailTabs)[number]['key'];
 const detailTabKeys = detailTabs.map((tab) => tab.key);
-
-const formatLabels = {
-  markdown: 'Markdown',
-  word: 'Word',
-  spreadsheet: '表格',
-} as const;
 
 function formatBytes(sizeBytes: number) {
   if (sizeBytes < 1024 * 1024) return `${(sizeBytes / 1024).toFixed(1)} KB`;
@@ -82,23 +77,23 @@ function formatBytes(sizeBytes: number) {
   return `${(sizeBytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
 
-function statusLabel(status: DocumentStatus) {
+function statusLabel(status: DocumentStatus, t: ReturnType<typeof useAppLanguage>['t']) {
   switch (status.kind) {
     case 'ready':
-      return '解析完成';
+      return t('knowledgeDetail.ready');
     case 'queued':
-      return '待解析';
+      return t('knowledgeDetail.queued');
     case 'validating':
-      return '校验中';
+      return t('knowledgeDetail.validating');
     case 'parsing':
     case 'chunking':
-      return '解析中';
+      return t('knowledgeDetail.parsing');
     case 'embedding':
-      return `向量化 ${status.progress}%`;
+      return t('knowledgeDetail.embedding', { progress: status.progress });
     case 'failed':
-      return '解析失败';
+      return t('knowledgeDetail.failed');
     case 'deleting':
-      return '删除中';
+      return t('knowledgeDetail.deleting');
   }
 }
 
@@ -152,7 +147,14 @@ function DocumentRow({
   onMore: () => void;
   onOpen: () => void;
 }) {
+  const { formatDateTime, t } = useAppLanguage();
   const enabled = document.status.kind === 'ready';
+  const formatLabel =
+    document.format === 'spreadsheet'
+      ? t('knowledgeDetail.spreadsheet')
+      : document.format === 'word'
+        ? 'Word'
+        : 'Markdown';
   const content = (
     <>
       <DocumentFormatIcon format={document.format} size={40} />
@@ -161,10 +163,10 @@ function DocumentRow({
           {document.title}
         </Text>
         <Text style={styles.documentMeta}>
-          {formatLabels[document.format]} · {formatBytes(document.sizeBytes)}
+          {formatLabel} · {formatBytes(document.sizeBytes)}
         </Text>
         <Text style={styles.documentUpdated}>
-          更新于 {new Date(document.updatedAt).toLocaleDateString()}
+          {t('knowledge.updated', { date: formatDateTime(document.updatedAt) })}
         </Text>
         {document.status.kind === 'failed' ? (
           <Text numberOfLines={2} style={styles.failureReason}>
@@ -181,7 +183,7 @@ function DocumentRow({
     <View style={styles.documentRow}>
       {enabled ? (
         <Pressable
-          accessibilityLabel={`打开文件：${document.title}`}
+          accessibilityLabel={t('knowledgeDetail.openFile', { title: document.title })}
           accessibilityRole="button"
           onPress={onOpen}
           style={({ pressed }) => [styles.documentOpen, pressed && styles.pressed]}
@@ -192,7 +194,7 @@ function DocumentRow({
         <View style={styles.documentOpen}>{content}</View>
       )}
       <Pressable
-        accessibilityLabel={`${document.title}更多操作`}
+        accessibilityLabel={t('knowledgeDetail.fileActions', { title: document.title })}
         accessibilityRole="button"
         hitSlop={8}
         onPress={onMore}
@@ -205,6 +207,7 @@ function DocumentRow({
 }
 
 function GroupCard({ group, onSwitch }: { group: GroupSummary; onSwitch: () => void }) {
+  const { formatNumber, t } = useAppLanguage();
   return (
     <View style={styles.groupCard}>
       <View style={styles.groupTitleRow}>
@@ -212,7 +215,7 @@ function GroupCard({ group, onSwitch }: { group: GroupSummary; onSwitch: () => v
           {group.name}
         </Text>
         <Pressable
-          accessibilityLabel={`切换至分组：${group.name}`}
+          accessibilityLabel={t('knowledgeDetail.switchGroup', { name: group.name })}
           accessibilityRole="button"
           hitSlop={8}
           onPress={onSwitch}
@@ -226,10 +229,25 @@ function GroupCard({ group, onSwitch }: { group: GroupSummary; onSwitch: () => v
         </Pressable>
       </View>
       <View style={styles.groupStats}>
-        <Metric label="分析数" value={`${group.metrics.analysisCount}`} />
-        <Metric divider label="音频数" value={`${group.metrics.audioCount}`} />
-        <Metric divider label="知识库" value={`${group.metrics.knowledgeCount}`} />
-        <Metric divider label="数据源" value={`${group.metrics.sourceCount}`} />
+        <Metric
+          label={t('knowledgeDetail.analysisCount')}
+          value={formatNumber(group.metrics.analysisCount)}
+        />
+        <Metric
+          divider
+          label={t('knowledgeDetail.audioCount')}
+          value={formatNumber(group.metrics.audioCount)}
+        />
+        <Metric
+          divider
+          label={t('knowledgeDetail.knowledgeCount')}
+          value={formatNumber(group.metrics.knowledgeCount)}
+        />
+        <Metric
+          divider
+          label={t('knowledgeDetail.sourceCount')}
+          value={formatNumber(group.metrics.sourceCount)}
+        />
       </View>
     </View>
   );
@@ -284,6 +302,7 @@ export function KnowledgeDetailScreen({
   onOpenDocument: (documentId: string) => void;
   onSwitchGroup?: (groupId: string) => void;
 }) {
+  const { formatDateTime, formatNumber, t } = useAppLanguage();
   const [knowledge, setKnowledge] = useState<KnowledgeBaseDetail>();
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
   const [linkedGroups, setLinkedGroups] = useState<GroupSummary[]>([]);
@@ -318,12 +337,12 @@ export function KnowledgeDetailScreen({
         setDocuments(nextDocuments.items);
         setLinkedGroups(nextGroups.items);
       } catch (reason) {
-        setError(reason instanceof Error ? reason.message : '知识库加载失败。');
+        setError(reason instanceof Error ? reason.message : t('knowledge.loadFailed'));
       } finally {
         if (showLoading) setLoading(false);
       }
     },
-    [knowledgeId],
+    [knowledgeId, t],
   );
 
   useEffect(() => {
@@ -358,12 +377,16 @@ export function KnowledgeDetailScreen({
     return documents.filter((document) =>
       [
         document.title,
-        formatLabels[document.format],
-        statusLabel(document.status),
+        document.format === 'spreadsheet'
+          ? t('knowledgeDetail.spreadsheet')
+          : document.format === 'word'
+            ? 'Word'
+            : 'Markdown',
+        statusLabel(document.status, t),
         document.status.kind === 'failed' ? document.status.message : '',
       ].some((value) => value.toLocaleLowerCase().includes(normalized)),
     );
-  }, [documents, query]);
+  }, [documents, query, t]);
   const linkedGroupIds = useMemo(
     () => new Set(linkedGroups.map((group) => group.id)),
     [linkedGroups],
@@ -400,7 +423,7 @@ export function KnowledgeDetailScreen({
       setDocuments((items) => items.map((item) => (item.id === current.id ? current : item)));
       setActionDocument(undefined);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '重试失败，请重新上传文件。');
+      setError(reason instanceof Error ? reason.message : t('knowledgeDetail.retryFailed'));
     } finally {
       setPendingDocumentId(undefined);
     }
@@ -430,37 +453,49 @@ export function KnowledgeDetailScreen({
       ]);
       setKnowledge(await getKnowledgeBase(knowledgeId));
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '文档上传失败。');
+      setError(reason instanceof Error ? reason.message : t('knowledgeDetail.uploadFailed'));
     } finally {
       setUploading(false);
     }
   };
 
   const confirmRetry = (document: KnowledgeDocument) => {
-    Alert.alert('确认重新解析', `将重新排队解析“${document.title}”，是否继续？`, [
-      { text: '取消', style: 'cancel' },
-      { text: '重新解析', onPress: () => void retry(document) },
-    ]);
+    Alert.alert(
+      t('knowledgeDetail.confirmRetry'),
+      t('knowledgeDetail.confirmRetryBody', { title: document.title }),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('knowledgeDetail.retryParsing'), onPress: () => void retry(document) },
+      ],
+    );
   };
   const confirmReupload = (document: KnowledgeDocument) => {
-    Alert.alert('确认重新上传', `“${document.title}”需要使用当前嵌入模型重新上传原文件。`, [
-      { text: '取消', style: 'cancel' },
-      {
-        text: '选择文件',
-        onPress: () => {
-          setActionDocument(undefined);
-          void pickAndUpload();
+    Alert.alert(
+      t('knowledgeDetail.confirmReupload'),
+      t('knowledgeDetail.confirmReuploadBody', { title: document.title }),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('knowledgeDetail.selectFile'),
+          onPress: () => {
+            setActionDocument(undefined);
+            void pickAndUpload();
+          },
         },
-      },
-    ]);
+      ],
+    );
   };
 
   if (loading && !knowledge) {
     return (
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-        <PageHeader onBack={onBack} onMore={() => showComingSoon('更多操作')} title="知识库详情" />
+        <PageHeader
+          onBack={onBack}
+          onMore={() => showComingSoon(t('common.moreActions'))}
+          title={t('knowledgeDetail.title')}
+        />
         <ActivityIndicator
-          accessibilityLabel="正在加载知识库详情"
+          accessibilityLabel={t('knowledgeDetail.loading')}
           color={colors.ink}
           style={styles.loading}
         />
@@ -471,15 +506,19 @@ export function KnowledgeDetailScreen({
   if (!knowledge) {
     return (
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-        <PageHeader onBack={onBack} onMore={() => showComingSoon('更多操作')} title="知识库详情" />
+        <PageHeader
+          onBack={onBack}
+          onMore={() => showComingSoon(t('common.moreActions'))}
+          title={t('knowledgeDetail.title')}
+        />
         <ScrollView
           alwaysBounceVertical
           contentContainerStyle={styles.emptyRefreshContent}
           refreshControl={<ScreenRefreshControl {...screenRefresh} />}
         >
           <EmptyState
-            description="该知识库可能已被移除，请返回知识库列表。"
-            title={error || '未找到知识库'}
+            description={t('knowledgeDetail.removed')}
+            title={error || t('knowledgeDetail.notFound')}
           />
         </ScrollView>
       </SafeAreaView>
@@ -491,7 +530,7 @@ export function KnowledgeDetailScreen({
       <PageTabs
         activeTab={activeTab}
         onChange={selectTab}
-        tabs={detailTabs}
+        tabs={detailTabs.map((tab) => ({ key: tab.key, label: t(tab.labelKey) }))}
         testIDPrefix="knowledge-detail-tab"
       />
     </View>
@@ -502,22 +541,30 @@ export function KnowledgeDetailScreen({
         {knowledge.name}
       </Text>
       <Text numberOfLines={3} style={styles.heroDescription}>
-        {knowledge.description || '暂无描述'}
+        {knowledge.description || t('knowledge.noDescription')}
       </Text>
       <Text style={styles.heroMeta}>
-        {knowledge.documentCount} 份文档 · 关联 {knowledge.linkedGroupCount} 个分组
+        {t('knowledge.counts', {
+          documents: formatNumber(knowledge.documentCount),
+          groups: formatNumber(knowledge.linkedGroupCount),
+        })}
       </Text>
     </View>
   );
   const fixedActions =
     activeTab === 'groups' ? (
-      <FixedActionButton emphasized icon="add" label="关联新分组" onPress={openGroupPicker} />
+      <FixedActionButton
+        emphasized
+        icon="add"
+        label={t('knowledgeDetail.linkGroup')}
+        onPress={openGroupPicker}
+      />
     ) : activeTab === 'files' ? (
       <>
         <FixedActionButton
           disabled={uploading}
           icon="cloud-upload-outline"
-          label={uploading ? '正在上传并解析…' : '上传文档'}
+          label={uploading ? t('knowledgeDetail.uploading') : t('knowledgeDetail.upload')}
           onPress={() => {
             void pickAndUpload();
           }}
@@ -525,7 +572,7 @@ export function KnowledgeDetailScreen({
         <FixedActionButton
           emphasized
           icon="chatbubble-ellipses-outline"
-          label="问知识库"
+          label={t('knowledgeDetail.ask')}
           onPress={() => onAsk?.()}
         />
       </>
@@ -533,14 +580,14 @@ export function KnowledgeDetailScreen({
       <>
         <FixedActionButton
           icon="analytics-outline"
-          label="全部解析"
-          onPress={() => showComingSoon('全部解析')}
+          label={t('knowledgeDetail.parseAll')}
+          onPress={() => showComingSoon(t('knowledgeDetail.parseAll'))}
         />
         <FixedActionButton
           disabled={uploading}
           emphasized
           icon="cloud-upload-outline"
-          label={uploading ? '正在上传并解析…' : '上传文档'}
+          label={uploading ? t('knowledgeDetail.uploading') : t('knowledgeDetail.upload')}
           onPress={() => {
             void pickAndUpload();
           }}
@@ -553,16 +600,16 @@ export function KnowledgeDetailScreen({
       {searchVisible ? (
         <SearchSheet
           appliedQuery={query}
-          inputLabel="输入知识库内容搜索关键词"
+          inputLabel={t('knowledgeDetail.searchInput')}
           onApply={(nextQuery) => {
             setQuery(nextQuery);
             setSearchVisible(false);
             if (nextQuery) selectTab('files');
           }}
           onClose={() => setSearchVisible(false)}
-          placeholder="搜索文档标题、格式或解析状态"
-          subtitle="搜索结果将在库文件中展示"
-          title="搜索知识库内容"
+          placeholder={t('knowledgeDetail.searchPlaceholder')}
+          subtitle={t('knowledgeDetail.searchSubtitle')}
+          title={t('knowledgeDetail.searchTitle')}
           visible
         />
       ) : null}
@@ -613,8 +660,11 @@ export function KnowledgeDetailScreen({
         onShowFailure={() => {
           if (actionDocument?.status.kind === 'failed') {
             Alert.alert(
-              '解析失败原因',
-              `${actionDocument.status.message}\n\n错误代码：${actionDocument.status.code}`,
+              t('knowledgeDetail.failureReason'),
+              t('knowledgeDetail.errorCode', {
+                message: actionDocument.status.message,
+                code: actionDocument.status.code,
+              }),
             );
           }
         }}
@@ -622,9 +672,9 @@ export function KnowledgeDetailScreen({
       />
       <PageHeader
         onBack={onBack}
-        onMore={() => showComingSoon('知识库更多操作')}
+        onMore={() => showComingSoon(t('knowledgeDetail.moreActions'))}
         onSearch={() => setSearchVisible(true)}
-        searchLabel="搜索知识库内容"
+        searchLabel={t('knowledgeDetail.searchTitle')}
         title={knowledge.name}
       />
       <ScrollView
@@ -655,59 +705,83 @@ export function KnowledgeDetailScreen({
             </Text>
           ) : null}
           <View style={styles.overviewContent}>
-            <Text style={styles.sectionTitle}>知识库详情</Text>
+            <Text style={styles.sectionTitle}>{t('knowledgeDetail.title')}</Text>
             <Text style={styles.recentUpload}>
-              最近上传　
-              {knowledge.lastUploadedAt
-                ? new Date(knowledge.lastUploadedAt).toLocaleString('zh-CN', { hour12: false })
-                : '暂无'}
+              {t('knowledgeDetail.recentUpload', {
+                date: knowledge.lastUploadedAt
+                  ? formatDateTime(knowledge.lastUploadedAt)
+                  : t('sources.none'),
+              })}
             </Text>
             <View style={styles.metrics}>
-              <Metric label="文档数" value={`${knowledge.documentCount}`} />
-              <Metric divider label="总大小" value={formatBytes(knowledge.totalSizeBytes)} />
-              <Metric divider label="已解析" value={`${knowledge.parsedDocumentCount}`} />
-              <Metric divider label="待处理" value={`${knowledge.pendingDocumentCount}`} />
-            </View>
-            <View style={styles.infoSection}>
-              <Text style={styles.sectionTitle}>内容存储</Text>
-              <InfoRow
-                icon="grid-outline"
-                label="存储位置"
-                value={knowledge.settings.storageLocation === 'local' ? '本地' : '云端'}
+              <Metric
+                label={t('knowledgeDetail.documentCount')}
+                value={formatNumber(knowledge.documentCount)}
+              />
+              <Metric
+                divider
+                label={t('knowledgeDetail.totalSize')}
+                value={formatBytes(knowledge.totalSizeBytes)}
+              />
+              <Metric
+                divider
+                label={t('knowledgeDetail.parsed')}
+                value={formatNumber(knowledge.parsedDocumentCount)}
+              />
+              <Metric
+                divider
+                label={t('knowledgeDetail.pending')}
+                value={formatNumber(knowledge.pendingDocumentCount)}
               />
             </View>
             <View style={styles.infoSection}>
-              <Text style={styles.sectionTitle}>知识解析</Text>
+              <Text style={styles.sectionTitle}>{t('knowledge.contentStorage')}</Text>
+              <InfoRow
+                icon="grid-outline"
+                label={t('knowledge.storageLocation')}
+                value={
+                  knowledge.settings.storageLocation === 'local'
+                    ? t('knowledge.local')
+                    : t('knowledgeDetail.cloud')
+                }
+              />
+            </View>
+            <View style={styles.infoSection}>
+              <Text style={styles.sectionTitle}>{t('knowledge.parsing')}</Text>
               <InfoRow
                 icon="git-network-outline"
-                label="索引方式"
+                label={t('knowledge.indexMethod')}
                 value={
                   knowledge.settings.indexingMode === 'rag'
-                    ? '检索增强（RAG）'
-                    : '上下文注入（Full Context）'
+                    ? t('knowledge.rag')
+                    : t('knowledgeDetail.fullContext')
                 }
               />
               <InfoRow
                 icon="hardware-chip-outline"
-                label="嵌入模型"
+                label={t('knowledge.embeddingModel')}
                 value={knowledge.settings.embeddingModel}
               />
               <InfoRow
                 icon="hardware-chip-outline"
-                label="重排序模型"
-                value={knowledge.settings.rerankerModel ?? '未启用'}
+                label={t('knowledge.rerankModel')}
+                value={knowledge.settings.rerankerModel ?? t('knowledge.disabled')}
               />
             </View>
             <View style={styles.infoSection}>
-              <Text style={styles.sectionTitle}>解析处理</Text>
+              <Text style={styles.sectionTitle}>{t('knowledge.processing')}</Text>
               <InfoRow
                 icon="analytics-outline"
-                label="解析方式"
-                value={knowledge.settings.parsingMode === 'automatic' ? '自动解析' : '手动解析'}
+                label={t('knowledge.parsingMethod')}
+                value={
+                  knowledge.settings.parsingMode === 'automatic'
+                    ? t('knowledge.autoParse')
+                    : t('knowledgeDetail.manualParse')
+                }
               />
             </View>
             <View style={styles.recentDocuments}>
-              <Text style={styles.sectionTitle}>近期文档</Text>
+              <Text style={styles.sectionTitle}>{t('knowledgeDetail.recentDocuments')}</Text>
               {documents.length ? (
                 documents
                   .slice(0, 3)
@@ -720,7 +794,7 @@ export function KnowledgeDetailScreen({
                     />
                   ))
               ) : (
-                <Text style={styles.emptyText}>暂无近期文档</Text>
+                <Text style={styles.emptyText}>{t('knowledgeDetail.noRecentDocuments')}</Text>
               )}
             </View>
           </View>
@@ -738,7 +812,11 @@ export function KnowledgeDetailScreen({
         >
           {renderTabs()}
           <View style={styles.stickySearch}>
-            <SearchAndFilter onChangeText={setQuery} placeholder="搜索文档..." value={query} />
+            <SearchAndFilter
+              onChangeText={setQuery}
+              placeholder={t('knowledgeDetail.searchDocuments')}
+              value={query}
+            />
           </View>
           {error ? (
             <Text accessibilityRole="alert" style={styles.failureReason}>
@@ -757,7 +835,9 @@ export function KnowledgeDetailScreen({
               ))
             ) : (
               <Text style={styles.emptyText}>
-                {query.trim() ? `没有匹配“${query}”的文档` : '暂无文档'}
+                {query.trim()
+                  ? t('knowledgeDetail.noDocumentMatch', { query })
+                  : t('knowledgeDetail.noDocuments')}
               </Text>
             )}
           </View>
@@ -779,7 +859,10 @@ export function KnowledgeDetailScreen({
                 <GroupCard group={group} key={group.id} onSwitch={() => setSwitchTarget(group)} />
               ))
             ) : (
-              <EmptyState description="使用下方按钮将知识库关联到已有分组。" title="暂无关联分组" />
+              <EmptyState
+                description={t('knowledgeDetail.noGroupsDescription')}
+                title={t('knowledgeDetail.noGroups')}
+              />
             )}
           </View>
         </ScrollView>

@@ -35,6 +35,7 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 /** 渲染从左侧进入的分组目录。 */
 export function GroupDrawer({
@@ -58,6 +59,7 @@ export function GroupDrawer({
   selectedGroupId?: string;
   visible: boolean;
 }) {
+  const { formatNumber, t } = useAppLanguage();
   const [translateX] = useState(() => new Animated.Value(-380));
   const closing = useRef(false);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -113,7 +115,7 @@ export function GroupDrawer({
             {adding ? (
               <View style={styles.createBox}>
                 <TextInput
-                  accessibilityLabel="分组名称"
+                  accessibilityLabel={t('groupDrawer.name')}
                   autoFocus
                   editable={!creating}
                   maxLength={120}
@@ -121,7 +123,7 @@ export function GroupDrawer({
                   onSubmitEditing={() => {
                     void submit();
                   }}
-                  placeholder="输入分组名称"
+                  placeholder={t('groupDrawer.namePlaceholder')}
                   placeholderTextColor={textColors.tertiary}
                   returnKeyType="done"
                   style={styles.input}
@@ -142,7 +144,7 @@ export function GroupDrawer({
                     }}
                     style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
                   >
-                    <Text style={styles.secondaryButtonText}>取消</Text>
+                    <Text style={styles.secondaryButtonText}>{t('common.cancel')}</Text>
                   </Pressable>
                   <Pressable
                     accessibilityRole="button"
@@ -159,32 +161,32 @@ export function GroupDrawer({
                     {creating ? (
                       <ActivityIndicator color={colors.white} size="small" />
                     ) : (
-                      <Text style={styles.createSubmitText}>创建</Text>
+                      <Text style={styles.createSubmitText}>{t('groupDrawer.create')}</Text>
                     )}
                   </Pressable>
                 </View>
               </View>
             ) : (
               <Pressable
-                accessibilityLabel="添加分组"
+                accessibilityLabel={t('groupDrawer.add')}
                 accessibilityRole="button"
                 onPress={() => setAdding(true)}
                 style={({ pressed }) => [styles.addButton, pressed && styles.primaryPressed]}
               >
                 <Ionicons color={colors.white} name="add" size={32} />
-                <Text style={styles.addButtonText}>创建新分组</Text>
+                <Text style={styles.addButtonText}>{t('groupDrawer.createNew')}</Text>
               </Pressable>
             )}
 
-            <Text style={styles.sectionTitle}>分组列表</Text>
+            <Text style={styles.sectionTitle}>{t('groupDrawer.list')}</Text>
             <ScrollView
               contentContainerStyle={styles.groupList}
               showsVerticalScrollIndicator={false}
             >
               {groups.length === 0 ? (
                 <View style={styles.emptyState}>
-                  <Text style={styles.emptyTitle}>还没有分组</Text>
-                  <Text style={styles.emptyDescription}>使用上方按钮创建第一个分组。</Text>
+                  <Text style={styles.emptyTitle}>{t('groupDrawer.empty')}</Text>
+                  <Text style={styles.emptyDescription}>{t('groupDrawer.emptyHint')}</Text>
                 </View>
               ) : (
                 groups.map((group) => {
@@ -196,7 +198,7 @@ export function GroupDrawer({
                       style={[styles.groupCard, selected && styles.selectedCard]}
                     >
                       <Pressable
-                        accessibilityLabel={`切换到分组：${group.name}`}
+                        accessibilityLabel={t('groupDrawer.switch', { name: group.name })}
                         accessibilityRole="button"
                         accessibilityState={{ selected }}
                         onPress={() => {
@@ -210,15 +212,18 @@ export function GroupDrawer({
                             {group.name}
                           </Text>
                           {group.starterTemplateKey ? (
-                            <Text style={styles.templateBadge}>模板</Text>
+                            <Text style={styles.templateBadge}>{t('groupDrawer.template')}</Text>
                           ) : null}
                         </View>
                         <Text style={styles.groupMetrics}>
-                          {group.metrics.analysisCount} 份分析{selected ? ' · 当前分组' : ''}
+                          {t('groupDrawer.analysisCount', {
+                            count: formatNumber(group.metrics.analysisCount),
+                            current: selected ? t('groupDrawer.current') : '',
+                          })}
                         </Text>
                       </Pressable>
                       <Pressable
-                        accessibilityLabel={`打开分组设置：${group.name}`}
+                        accessibilityLabel={t('groupDrawer.settings', { name: group.name })}
                         accessibilityRole="button"
                         hitSlop={6}
                         onPress={() => closeDrawer(() => onOpenSettings(group))}
@@ -234,7 +239,7 @@ export function GroupDrawer({
           </SafeAreaView>
         </Animated.View>
         <Pressable
-          accessibilityLabel="关闭分组侧栏遮罩"
+          accessibilityLabel={t('groupDrawer.closeOverlay')}
           accessibilityRole="button"
           onPress={() => closeDrawer()}
           style={styles.drawerBackdrop}

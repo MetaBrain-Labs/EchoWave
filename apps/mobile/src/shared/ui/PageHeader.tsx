@@ -15,15 +15,16 @@ import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, fontFamilies, spacing, textColors, typography } from '@/shared/theme/tokens';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 /** 渲染详情层级页面使用的可访问返回页头。 */
 export function PageHeader({
   leading,
-  moreLabel = '更多操作',
+  moreLabel,
   onBack,
   onMore,
   onSearch,
-  searchLabel = '搜索',
+  searchLabel,
   title,
 }: {
   leading?: ReactNode;
@@ -34,10 +35,11 @@ export function PageHeader({
   searchLabel?: string;
   title: string;
 }) {
+  const { t } = useAppLanguage();
   return (
     <View style={styles.pageHeader}>
       <Pressable
-        accessibilityLabel="返回"
+        accessibilityLabel={t('common.back')}
         accessibilityRole="button"
         hitSlop={8}
         onPress={onBack}
@@ -54,7 +56,7 @@ export function PageHeader({
       <View style={styles.headerActions}>
         {onSearch ? (
           <Pressable
-            accessibilityLabel={searchLabel}
+            accessibilityLabel={searchLabel ?? t('common.search')}
             accessibilityRole="button"
             hitSlop={8}
             onPress={onSearch}
@@ -64,7 +66,7 @@ export function PageHeader({
           </Pressable>
         ) : null}
         <Pressable
-          accessibilityLabel={moreLabel}
+          accessibilityLabel={moreLabel ?? t('common.moreActions')}
           accessibilityRole="button"
           hitSlop={8}
           onPress={onMore}

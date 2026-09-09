@@ -25,6 +25,8 @@ import { AppState } from 'react-native';
 
 import { fetchServerHealth } from '@/shared/api/serverHealth';
 import { useServerConnection } from '@/shared/api/ServerConnectionProvider';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { localizeRequestError } from '@/shared/i18n/errorLocalization';
 
 import {
   PushRegistrationError,
@@ -72,7 +74,11 @@ const PushNotificationContext = createContext<PushNotificationContextValue | nul
 /** 管理当前服务器对应的推送登记生命周期。 */
 export function PushNotificationProvider({ children }: PropsWithChildren) {
   const connection = useServerConnection();
-  const [state, setState] = useState<PushRegistrationState>(initialState);
+  const { language, t } = useAppLanguage();
+  const [state, setState] = useState<PushRegistrationState>(() => ({
+    ...initialState,
+    message: t('push.checking'),
+  }));
   const activeRun = useRef<Promise<void> | null>(null);
   const generation = useRef(0);
 
@@ -85,7 +91,7 @@ export function PushNotificationProvider({ children }: PropsWithChildren) {
       if (connection.phase !== 'ready' || !serverUrl) {
         setState({
           phase: 'server_disabled',
-          message: '请先连接 EchoWave Server。',
+          message: t('push.connectServer'),
           serverCapability: 'unavailable',
           systemPermission: 'unknown',
           deviceRegistration: 'not_started',
@@ -95,14 +101,14 @@ export function PushNotificationProvider({ children }: PropsWithChildren) {
         });
         return;
       }
-      setState({ ...initialState, lastAttemptAt: attemptedAt });
+      setState({ ...initialState, message: t('push.checking'), lastAttemptAt: attemptedAt });
       try {
         const health = await fetchServerHealth(serverUrl);
         if (runGeneration !== generation.current) return;
         if (!health.capabilities.remotePush) {
           setState({
             phase: 'server_disabled',
-            message: '当前 EchoWave Server 未启用远程推送。',
+            message: t('push.serverDisabled'),
             serverCapability: 'disabled',
             systemPermission: 'unknown',
             deviceRegistration: 'not_started',
@@ -117,7 +123,7 @@ export function PushNotificationProvider({ children }: PropsWithChildren) {
           if (progress === 'permission') {
             setState({
               phase: 'checking',
-              message: '正在检查系统通知权限。',
+              message: t('push.permissionChecking'),
               serverCapability: 'enabled',
               systemPermission: 'checking',
               deviceRegistration: 'not_started',
@@ -128,7 +134,7 @@ export function PushNotificationProvider({ children }: PropsWithChildren) {
           } else if (progress === 'token') {
             setState({
               phase: 'fetching_token',
-              message: '权限已允许，正在获取 Expo Push Token。',
+              message: t('push.fetchingToken'),
               serverCapability: 'enabled',
               systemPermission: 'granted',
               deviceRegistration: 'not_started',
@@ -139,7 +145,7 @@ export function PushNotificationProvider({ children }: PropsWithChildren) {
           } else {
             setState({
               phase: 'registering',
-              message: '正在将设备登记到 EchoWave Server。',
+              message: t('push.registering'),
               serverCapability: 'enabled',
               systemPermission: 'granted',
               deviceRegistration: 'registering',
@@ -149,12 +155,17 @@ export function PushNotificationProvider({ children }: PropsWithChildren) {
             });
           }
         };
-        const result = await registerPushDevice(updateProgress);
+        const result = await registerPushDevice(
+          updateProgress,
+          {},
+          language,
+          t('notifications.channel'),
+        );
         if (runGeneration !== generation.current) return;
         if (result.status === 'registered') {
           setState({
             phase: 'registered',
-            message: '设备已登记，可接收新分析批次的远程通知。',
+            message: t('push.registered'),
             serverCapability: 'enabled',
             systemPermission: 'granted',
             deviceRegistration: 'registered',
@@ -165,7 +176,7 @@ export function PushNotificationProvider({ children }: PropsWithChildren) {
         } else if (result.status === 'permission_denied') {
           setState({
             phase: 'permission_denied',
-            message: '系统通知权限未允许，请在系统设置中启用后重试。',
+            message: t('push.permissionDenied'),
             serverCapability: 'enabled',
             systemPermission: 'denied',
             deviceRegistration: 'not_started',
@@ -176,7 +187,7 @@ export function PushNotificationProvider({ children }: PropsWithChildren) {
         } else if (result.status === 'unsupported') {
           setState({
             phase: 'unsupported',
-            message: '当前运行环境不支持远程推送，请使用原生 Development Build。',
+            message: t('push.unsupported'),
             serverCapability: 'enabled',
             systemPermission: 'unknown',
             deviceRegistration: 'not_started',
@@ -187,7 +198,7 @@ export function PushNotificationProvider({ children }: PropsWithChildren) {
         } else {
           setState({
             phase: 'failed',
-            message: 'EAS projectId 缺失，无法获取 Expo Push Token。',
+            message: t('push.missingProject'),
             serverCapability: 'enabled',
             systemPermission: 'granted',
             deviceRegistration: 'failed',
@@ -201,7 +212,7 @@ export function PushNotificationProvider({ children }: PropsWithChildren) {
         const known = error instanceof PushRegistrationError;
         setState({
           phase: 'failed',
-          message: known ? error.message : '推送设备登记失败，请稍后重试。',
+          message: known ? localizeRequestError(error.code, error.message) : t('push.failed'),
           serverCapability: known ? 'enabled' : 'unavailable',
           systemPermission:
             known &&
@@ -220,7 +231,7 @@ export function PushNotificationProvider({ children }: PropsWithChildren) {
     });
     activeRun.current = run;
     return run;
-  }, [connection.phase, connection.serverUrl]);
+  }, [connection.phase, connection.serverUrl, language, t]);
 
   useEffect(() => {
     generation.current += 1;
@@ -233,7 +244,7 @@ export function PushNotificationProvider({ children }: PropsWithChildren) {
     } else {
       void refresh();
     }
-  }, [connection.revision, refresh]);
+  }, [connection.revision, language, refresh]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {

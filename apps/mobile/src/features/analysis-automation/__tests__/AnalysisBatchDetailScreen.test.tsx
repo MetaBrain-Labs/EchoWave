@@ -36,6 +36,7 @@ const audioFileId = '55555555-5555-4555-8555-555555555555';
 
 const configurationSnapshot = {
   groupName: '销售组',
+  language: 'zh-CN' as const,
   analysisTiming: 'automatic' as const,
   contentFocus: '分析销售表现',
   tone: '专业',

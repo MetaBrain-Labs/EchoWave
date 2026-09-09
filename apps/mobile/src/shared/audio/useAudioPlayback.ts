@@ -20,6 +20,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { audioPlaybackUrl } from '@/shared/api/apiUrl';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 type PlaybackRange = {
   endSeconds: number;
@@ -49,6 +50,7 @@ function sourceFor(audioFileId: string | undefined): AudioSource {
 
 /** 创建一个离开页面即停止的音频播放控制器。 */
 export function useAudioPlayback(initialAudioFileId?: string) {
+  const { t } = useAppLanguage();
   const player = useAudioPlayer(sourceFor(initialAudioFileId), {
     crossOrigin: 'anonymous',
     updateInterval: 100,
@@ -64,13 +66,13 @@ export function useAudioPlayback(initialAudioFileId?: string) {
     mountedRef.current = true;
     void configureAudioMode().catch(() => {
       if (!mountedRef.current) return;
-      setOperationError('无法初始化设备音频播放，请稍后重试。');
+      setOperationError(t('audioPlayback.initializeFailed'));
     });
     return () => {
       // useAudioPlayer 会在同一次卸载中自动停止并释放原生 SharedObject，不能再次调用 pause。
       mountedRef.current = false;
     };
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (initialAudioFileId === sourceIdRef.current) return;
@@ -98,10 +100,10 @@ export function useAudioPlayback(initialAudioFileId?: string) {
         setOperationError(undefined);
         await player.seekTo(Math.max(0, seconds));
       } catch {
-        setOperationError('无法跳转到指定播放位置，请重试。');
+        setOperationError(t('audioPlayback.seekFailed'));
       }
     },
-    [player],
+    [player, t],
   );
 
   const toggleFullPlayback = useCallback(async () => {
@@ -153,10 +155,10 @@ export function useAudioPlayback(initialAudioFileId?: string) {
         player.play();
       } catch {
         if (!mountedRef.current) return;
-        setOperationError('无法播放该正文片段，请重试。');
+        setOperationError(t('audioPlayback.rangeFailed'));
       }
     },
-    [activeRange, activeRangeEnded, player, status.currentTime, status.playing],
+    [activeRange, activeRangeEnded, player, status.currentTime, status.playing, t],
   );
 
   const toggleAudio = useCallback(

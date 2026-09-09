@@ -20,6 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 import {
   colors,
@@ -54,6 +55,7 @@ export function KnowledgeQueryScreen({
   onBack: () => void;
   onOpenCitation: (documentId: string, chunkId: string) => void;
 }) {
+  const { t } = useAppLanguage();
   const [question, setQuestion] = useState('');
   const [conversationId, setConversationId] = useState<string>();
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -113,7 +115,7 @@ export function KnowledgeQueryScreen({
       completionTimers.current.add(timer);
     } catch (reason) {
       if (!mounted.current) return;
-      const message = reason instanceof Error ? reason.message : '问答请求失败。';
+      const message = reason instanceof Error ? reason.message : t('knowledgeQuery.failed');
       setTurns((items) =>
         items.map((item) =>
           item.id === turnId
@@ -156,7 +158,9 @@ export function KnowledgeQueryScreen({
       if (mounted.current) setHistoryItems(history.items);
     } catch (reason) {
       if (mounted.current) {
-        setHistoryError(reason instanceof Error ? reason.message : '历史记录加载失败。');
+        setHistoryError(
+          reason instanceof Error ? reason.message : t('knowledgeQuery.historyFailed'),
+        );
       }
     } finally {
       if (mounted.current) setHistoryLoading(false);
@@ -171,7 +175,12 @@ export function KnowledgeQueryScreen({
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <PageHeader moreLabel="查看历史记录" onBack={onBack} onMore={openHistory} title="问知识库" />
+      <PageHeader
+        moreLabel={t('knowledgeQuery.history')}
+        onBack={onBack}
+        onMore={openHistory}
+        title={t('knowledgeQuery.title')}
+      />
       <ScrollView
         alwaysBounceVertical
         contentContainerStyle={styles.content}
@@ -181,9 +190,7 @@ export function KnowledgeQueryScreen({
         ref={scrollRef}
         refreshControl={<ScreenRefreshControl {...screenRefresh} />}
       >
-        {turns.length === 0 ? (
-          <Text style={styles.hint}>回答只基于已完成解析的知识库文档；依据不足时会明确拒答。</Text>
-        ) : null}
+        {turns.length === 0 ? <Text style={styles.hint}>{t('knowledgeQuery.hint')}</Text> : null}
         {turns.map((turn) => (
           <View key={turn.id} style={styles.turn}>
             <View style={styles.questionBubble}>
@@ -203,19 +210,21 @@ export function KnowledgeQueryScreen({
               <View style={styles.failureCard}>
                 <View style={styles.failureTitleRow}>
                   <Ionicons color="#b42318" name="alert-circle-outline" size={21} />
-                  <Text style={styles.failureTitle}>请求未完成</Text>
+                  <Text style={styles.failureTitle}>{t('knowledgeQuery.incomplete')}</Text>
                 </View>
                 <Text accessibilityRole="alert" style={styles.failureText}>
                   {turn.error}
                 </Text>
                 <Pressable
-                  accessibilityLabel={`重新尝试：${turn.question}`}
+                  accessibilityLabel={t('knowledgeQuery.retryAccessibility', {
+                    question: turn.question,
+                  })}
                   accessibilityRole="button"
                   disabled={activeTurnId !== undefined}
                   onPress={() => retryTurn(turn)}
                   style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
                 >
-                  <Text style={styles.retryText}>重新尝试</Text>
+                  <Text style={styles.retryText}>{t('knowledgeQuery.retry')}</Text>
                 </Pressable>
               </View>
             ) : null}
@@ -232,16 +241,16 @@ export function KnowledgeQueryScreen({
       </ScrollView>
       <View style={styles.composer}>
         <TextInput
-          accessibilityLabel="输入知识库问题"
+          accessibilityLabel={t('knowledgeQuery.input')}
           maxLength={2_000}
           multiline
           onChangeText={setQuestion}
-          placeholder="输入问题…"
+          placeholder={t('knowledgeQuery.placeholder')}
           style={styles.input}
           value={question}
         />
         <Pressable
-          accessibilityLabel="发送问题"
+          accessibilityLabel={t('knowledgeQuery.send')}
           accessibilityRole="button"
           accessibilityState={{ disabled: activeTurnId !== undefined || !question.trim() }}
           disabled={activeTurnId !== undefined || !question.trim()}

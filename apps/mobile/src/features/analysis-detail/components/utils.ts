@@ -8,6 +8,7 @@
  * - 提供一致的功能建设中提示。
  */
 import { Alert } from 'react-native';
+import { translateAppText } from '@/shared/i18n/LanguageProvider';
 
 /** 将秒数格式化为两位分钟和秒钟。 */
 export function formatTime(totalSeconds: number) {
@@ -18,5 +19,8 @@ export function formatTime(totalSeconds: number) {
 
 /** 展示统一的功能建设中提示。 */
 export function showComingSoon(feature: string) {
-  Alert.alert('功能建设中', `${feature}将在后续版本开放。`);
+  Alert.alert(
+    translateAppText('common.inProgress'),
+    translateAppText('sourceFixed.comingSoon', { feature }),
+  );
 }

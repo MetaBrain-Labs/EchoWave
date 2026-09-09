@@ -13,10 +13,11 @@
 import {
   TemplateExampleSchema,
   type StarterTemplateKey,
+  type SupportedLanguage,
   type TemplateExample,
 } from '@echowave/contracts';
 
-const examples: Record<StarterTemplateKey, TemplateExample> = {
+const zhCNExamples: Record<StarterTemplateKey, TemplateExample> = {
   sales_call_review: TemplateExampleSchema.parse({
     templateKey: 'sales_call_review',
     exampleVersion: 1,
@@ -221,7 +222,233 @@ const examples: Record<StarterTemplateKey, TemplateExample> = {
   }),
 };
 
+const enExamples: Record<StarterTemplateKey, TemplateExample> = {
+  sales_call_review: TemplateExampleSchema.parse({
+    templateKey: 'sales_call_review',
+    exampleVersion: 1,
+    title: 'B2B discovery call example',
+    scenario:
+      'A sales representative and customer discuss contact-center quality review efficiency and agree on a product demo.',
+    playbackAvailable: false,
+    roles: [
+      { id: 'sales', label: 'Sales' },
+      { id: 'customer', label: 'Customer' },
+    ],
+    transcript: [
+      {
+        id: 's1',
+        roleId: 'sales',
+        roleLabel: 'Sales',
+        emotion: 'Friendly',
+        startMs: 0,
+        endMs: 12000,
+        text: 'Could you walk me through how you review customer-service calls today?',
+      },
+      {
+        id: 's2',
+        roleId: 'customer',
+        roleLabel: 'Customer',
+        emotion: 'Calm',
+        startMs: 12000,
+        endMs: 29000,
+        text: 'Supervisors sample calls each week. Coverage is under five percent, so we find issues quite late.',
+      },
+      {
+        id: 's3',
+        roleId: 'sales',
+        roleLabel: 'Sales',
+        emotion: 'Focused',
+        startMs: 29000,
+        endMs: 44000,
+        text: 'What impact does finding an issue a week late have on complaints or team coaching?',
+      },
+      {
+        id: 's4',
+        roleId: 'customer',
+        roleLabel: 'Customer',
+        emotion: 'Concerned',
+        startMs: 44000,
+        endMs: 60000,
+        text: 'The complaint has already happened, that week’s training opportunity is gone, and supervisors spend about two days compiling everything.',
+      },
+      {
+        id: 's5',
+        roleId: 'sales',
+        roleLabel: 'Sales',
+        emotion: 'Confident',
+        startMs: 60000,
+        endMs: 82000,
+        text: 'We can transcribe calls automatically and group evidence by objections, emotion, and risk so supervisors see the relevant segments the same day.',
+      },
+      {
+        id: 's6',
+        roleId: 'customer',
+        roleLabel: 'Customer',
+        emotion: 'Cautious',
+        startMs: 82000,
+        endMs: 96000,
+        text: 'If the automated analysis is inconsistent, supervisors will still have to verify everything again.',
+      },
+      {
+        id: 's7',
+        roleId: 'sales',
+        roleLabel: 'Sales',
+        emotion: 'Composed',
+        startMs: 96000,
+        endMs: 118000,
+        text: 'Each report cites the original transcript and time range for quick review. Could I demonstrate it next Tuesday with one of your anonymized samples?',
+      },
+      {
+        id: 's8',
+        roleId: 'customer',
+        roleLabel: 'Customer',
+        emotion: 'Positive',
+        startMs: 118000,
+        endMs: 126000,
+        text: 'Yes, next Tuesday at 3 p.m.',
+      },
+    ],
+    summarySections: [
+      {
+        title: 'Outcome',
+        body: 'The call identified low review coverage and delayed feedback as core problems, then scheduled an anonymized-sample demo for next Tuesday at 3 p.m.',
+      },
+      {
+        title: 'What worked well',
+        body: 'Impact questions quantified complaint and training delays, while time-linked evidence addressed the accuracy objection.',
+      },
+      {
+        title: 'Still to confirm',
+        body: 'Budget, decision process, purchasing timeline, and key stakeholders were not confirmed.',
+      },
+    ],
+    analysisTags: [
+      {
+        kind: 'strength',
+        title: 'Effective discovery',
+        detail:
+          'The conversation moved from the current process to business impact through a clear question sequence.',
+        evidenceSegmentIds: ['s1', 's2', 's3', 's4'],
+      },
+      {
+        kind: 'strength',
+        title: 'Clear next step',
+        detail: 'The follow-up was defined with the demo material, date, and time.',
+        evidenceSegmentIds: ['s7', 's8'],
+      },
+      {
+        kind: 'improvement',
+        title: 'Insufficient decision context',
+        detail:
+          'Missing budget, decision-process, and stakeholder details may limit opportunity assessment.',
+        evidenceSegmentIds: ['s8'],
+      },
+    ],
+    recommendations: [
+      'Confirm the attendees and each person’s priorities before the demo.',
+      'Ask about current review costs, the budget window, and the final decision-maker.',
+      'Use the customer’s anonymized sample to compare manual review time and evidence accuracy.',
+    ],
+    limitations: [
+      'This is product demonstration content and does not represent a real customer, recording, or model run.',
+    ],
+  }),
+  personal_speaking_coach: TemplateExampleSchema.parse({
+    templateKey: 'personal_speaking_coach',
+    exampleVersion: 1,
+    title: 'Two-minute introduction example',
+    scenario:
+      'A job candidate gives a two-minute introduction covering an opening, experience, evidence of ability, and career goals.',
+    playbackAvailable: false,
+    roles: [{ id: 'speaker', label: 'Speaker' }],
+    transcript: [
+      {
+        id: 'p1',
+        roleId: 'speaker',
+        roleLabel: 'Speaker',
+        emotion: 'Slightly nervous',
+        startMs: 0,
+        endMs: 17000,
+        text: 'Hello, I’m Lin Chen. I’ve spent the past three years building enterprise software products.',
+      },
+      {
+        id: 'p2',
+        roleId: 'speaker',
+        roleLabel: 'Speaker',
+        emotion: 'Calm',
+        startMs: 17000,
+        endMs: 47000,
+        text: 'I worked on a customer-feedback platform, um, from research through launch, collaborating with sales and delivery teams.',
+      },
+      {
+        id: 'p3',
+        roleId: 'speaker',
+        roleLabel: 'Speaker',
+        emotion: 'Confident',
+        startMs: 47000,
+        endMs: 77000,
+        text: 'Six months after launch, ticket diagnosis time fell by forty percent. That is one example of how I turn complex problems into executable processes.',
+      },
+      {
+        id: 'p4',
+        roleId: 'speaker',
+        roleLabel: 'Speaker',
+        emotion: 'Optimistic',
+        startMs: 77000,
+        endMs: 108000,
+        text: 'I want to keep building products with clear business value and bring this cross-functional experience to my next team.',
+      },
+    ],
+    summarySections: [
+      {
+        title: 'Structure',
+        body: 'The introduction has a clear through-line: identity, relevant experience, quantified evidence, and career goal.',
+      },
+      {
+        title: 'Delivery',
+        body: 'The delivery is generally clear and steady. There is one filler word in the middle, mild nervousness at the start, and room for a stronger close.',
+      },
+      {
+        title: 'Core strength',
+        body: 'The forty-percent reduction in diagnosis time demonstrates ability more convincingly than responsibilities alone.',
+      },
+    ],
+    analysisTags: [
+      {
+        kind: 'strength',
+        title: 'Quantified evidence',
+        detail: 'The outcome metric makes the claim about solving complex problems more credible.',
+        evidenceSegmentIds: ['p3'],
+      },
+      {
+        kind: 'improvement',
+        title: 'Reduce filler words',
+        detail:
+          'Removing the mid-sentence hesitation would make the experience summary more concise.',
+        evidenceSegmentIds: ['p2'],
+      },
+      {
+        kind: 'action',
+        title: 'Strengthen the close',
+        detail: 'Replace the general goal with a role-specific value commitment.',
+        evidenceSegmentIds: ['p4'],
+      },
+    ],
+    recommendations: [
+      'Revise the second segment to: “I led the work from user research through launch and partnered with sales and delivery to close the customer-feedback loop.”',
+      'Revise the close to: “I want to use this experience to help the team turn customer problems into validated product outcomes faster.”',
+      'Pause for one second after the opening and keep the full introduction between 130 and 155 words per minute.',
+    ],
+    limitations: [
+      'This example has no original audio; pace and emotion descriptions only demonstrate the report structure.',
+    ],
+  }),
+};
+
 /** 按模板标识读取产品内置示例。 */
-export function getStarterTemplateExample(key: StarterTemplateKey): TemplateExample {
-  return examples[key];
+export function getStarterTemplateExample(
+  key: StarterTemplateKey,
+  language: SupportedLanguage = 'zh-CN',
+): TemplateExample {
+  return language === 'en' ? enExamples[key] : zhCNExamples[key];
 }

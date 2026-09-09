@@ -13,6 +13,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import {
   colors,
   fontFamilies,
@@ -140,6 +141,7 @@ function LivelyLoadingMark() {
 
 /** 为子树提供可计数、按真实请求生命周期展示的导航加载状态。 */
 export function NavigationLoadingProvider({ children }: { children: React.ReactNode }) {
+  const { t } = useAppLanguage();
   const [visible, setVisible] = useState(false);
   const pendingOperations = useRef(0);
   const showTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -177,7 +179,7 @@ export function NavigationLoadingProvider({ children }: { children: React.ReactN
       {children}
       {visible ? (
         <View
-          accessibilityLabel="页面正在加载"
+          accessibilityLabel={t('common.pageLoading')}
           accessibilityLiveRegion="polite"
           accessibilityRole="progressbar"
           accessibilityViewIsModal
@@ -185,7 +187,7 @@ export function NavigationLoadingProvider({ children }: { children: React.ReactN
         >
           <View style={styles.indicatorCard}>
             <LivelyLoadingMark />
-            <Text style={styles.loadingText}>加载中</Text>
+            <Text style={styles.loadingText}>{t('common.loading')}</Text>
           </View>
         </View>
       ) : null}

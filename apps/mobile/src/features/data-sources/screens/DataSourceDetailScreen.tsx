@@ -18,6 +18,7 @@ import type {
   AudioTranscriptionPreprocessing,
   AudioRuntimeMode,
   LinkedDataSourceGroup,
+  SupportedLanguage,
 } from '@echowave/contracts';
 import { DEFAULT_AUDIO_TRANSCRIPTION_MODEL } from '@echowave/contracts';
 import * as DocumentPicker from 'expo-document-picker';
@@ -70,6 +71,7 @@ import {
   startAudioTranscription,
 } from '@/shared/api/audioAnalysisApi';
 import { getAudioRuntime } from '@/shared/api/audioRuntimeApi';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 import {
   AudioTranscriptionConfirmDialog,
@@ -93,14 +95,9 @@ import { GroupCard } from '../components/DataSourceGroupCard';
 import { OverviewContent } from '../components/DataSourceOverviewContent';
 import { UploadRecordRow } from '../components/DataSourceUploadRecordRow';
 
-const detailTabs = [
-  { key: 'overview', label: '概览' },
-  { key: 'audio', label: '音频文件' },
-  { key: 'uploads', label: '上传记录' },
-  { key: 'groups', label: '关联分组' },
-] as const;
-type DetailTab = (typeof detailTabs)[number]['key'];
-const detailTabKeys = detailTabs.map((tab) => tab.key);
+const detailTabKeys = ['overview', 'audio', 'uploads', 'groups'] as const;
+type DetailTab = (typeof detailTabKeys)[number];
+type TranslationFunction = ReturnType<typeof useAppLanguage>['t'];
 
 /** 规范化详情搜索并匹配一组可见文本。 */
 function matchesDetailSearch(query: string, values: (string | number)[]) {
@@ -109,21 +106,21 @@ function matchesDetailSearch(query: string, values: (string | number)[]) {
   return values.some((value) => String(value).toLocaleLowerCase().includes(normalized));
 }
 
-/** 将音频处理状态转换为用户能够直接搜索的中文文本。 */
-function audioStatusSearchText(item: SourceAudioItem) {
+/** 将音频处理状态转换为当前应用语言的可搜索文本。 */
+function audioStatusSearchText(item: SourceAudioItem, t: TranslationFunction) {
   switch (item.status.kind) {
     case 'complete':
-      return '已完成 已转写';
+      return t('sourceDetail.statusComplete');
     case 'uploading':
-      return '上传中';
+      return t('sourceDetail.statusUploading');
     case 'waiting':
-      return '待转写';
+      return t('sourceDetail.statusWaiting');
     case 'transcribing':
-      return '转写中 正在转写';
+      return t('sourceDetail.statusTranscribing');
     case 'upload-failed':
-      return `上传失败 ${item.status.code} ${item.status.message}`;
+      return `${t('sourceDetail.statusUploadFailed')} ${item.status.code} ${item.status.message}`;
     case 'transcription-failed':
-      return `转写失败 ${item.status.code} ${item.status.message}`;
+      return `${t('sourceDetail.statusTranscriptionFailed')} ${item.status.code} ${item.status.message}`;
   }
 }
 
@@ -143,6 +140,13 @@ export function DataSourceDetailScreen({
   preferredGroupId?: string;
   sourceId: string;
 }) {
+  const { formatNumber, language: appLanguage, t } = useAppLanguage();
+  const detailTabs = [
+    { key: 'overview', label: t('sourceDetail.tabOverview') },
+    { key: 'audio', label: t('sourceDetail.tabAudio') },
+    { key: 'uploads', label: t('sourceDetail.tabUploads') },
+    { key: 'groups', label: t('sourceDetail.tabGroups') },
+  ] as const;
   const [source, setSource] = useState<DataSourceDetailView>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -169,6 +173,7 @@ export function DataSourceDetailScreen({
   const [includeAcousticEmotion, setIncludeAcousticEmotion] = useState(true);
   const [audioRuntimeMode, setAudioRuntimeMode] = useState<AudioRuntimeMode>('hybrid');
   const [expectedSpeakerCount, setExpectedSpeakerCount] = useState('');
+  const [analysisLanguage, setAnalysisLanguage] = useState<SupportedLanguage>(appLanguage);
   const [startingTranscription, setStartingTranscription] = useState(false);
   const [unlinkTarget, setUnlinkTarget] = useState<LinkedDataSourceGroup>();
   const [switchTarget, setSwitchTarget] = useState<LinkedDataSourceGroup>();
@@ -202,21 +207,23 @@ export function DataSourceDetailScreen({
         ]);
         if (showLoading) setTranscriptionCapabilities(capabilities);
         if (runtime) setAudioRuntimeMode(runtime.mode);
-        setSource(toDataSourceDetailView(detail, audio.items, records.items, groups.items));
+        setSource(
+          toDataSourceDetailView(detail, audio.items, records.items, groups.items, appLanguage),
+        );
         if (!showLoading) setProgressRefreshError('');
       } catch (reason) {
-        const message = reason instanceof Error ? reason.message : '数据源加载失败。';
+        const message = reason instanceof Error ? reason.message : t('sources.loadFailed');
         if (showLoading) {
           setSource(undefined);
           setError(message);
         } else {
-          setProgressRefreshError(`进度刷新失败：${message}`);
+          setProgressRefreshError(t('sourceDetail.progressRefreshFailed', { message }));
         }
       } finally {
         if (showLoading) setLoading(false);
       }
     },
-    [sourceId],
+    [appLanguage, sourceId, t],
   );
   useEffect(() => {
     const task = setTimeout(() => void runInitialRequest(load), 0);
@@ -231,10 +238,12 @@ export function DataSourceDetailScreen({
         getAudioRuntime().then((runtime) => setAudioRuntimeMode(runtime.mode)),
       ]);
     } catch (reason) {
-      setProgressRefreshError(reason instanceof Error ? reason.message : '刷新数据源失败。');
+      setProgressRefreshError(
+        reason instanceof Error ? reason.message : t('sourceDetail.refreshFailed'),
+      );
       throw reason;
     }
-  }, [load]);
+  }, [load, t]);
   const screenRefresh = useScreenRefresh(refreshPage);
 
   useEffect(() => {
@@ -252,6 +261,7 @@ export function DataSourceDetailScreen({
     dataSourceId: sourceId,
     hasActiveTranscription: Boolean(hasActiveTranscription),
     load,
+    language: appLanguage,
     setProgressRefreshError,
     setSource,
   });
@@ -299,7 +309,7 @@ export function DataSourceDetailScreen({
       setEditVisible(false);
       await load(false);
     } catch (reason) {
-      setFormError(reason instanceof Error ? reason.message : '数据源保存失败。');
+      setFormError(reason instanceof Error ? reason.message : t('sourceDetail.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -321,7 +331,7 @@ export function DataSourceDetailScreen({
       setPendingUploadAssets(undefined);
       await load(false);
     } catch (reason) {
-      setOperationError(reason instanceof Error ? reason.message : '音频上传失败。');
+      setOperationError(reason instanceof Error ? reason.message : t('sourceDetail.uploadFailed'));
     } finally {
       setUploading(false);
     }
@@ -338,7 +348,7 @@ export function DataSourceDetailScreen({
     const assets = selection.assets;
     const allowedExtensions = new Set(['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'webm']);
     if (assets.length > 20) {
-      setOperationError('单批最多上传 20 个音频文件。');
+      setOperationError(t('sourceDetail.batchLimit'));
       return;
     }
     if (
@@ -346,7 +356,7 @@ export function DataSourceDetailScreen({
         (asset) => !allowedExtensions.has(asset.name.split('.').pop()?.toLowerCase() ?? ''),
       )
     ) {
-      setOperationError('仅支持 MP3、WAV、M4A、AAC、FLAC、OGG 和 WebM 音频。');
+      setOperationError(t('sourceDetail.formatLimit'));
       return;
     }
     const totalBytes = assets.reduce((total, asset) => total + (asset.size ?? 0), 0);
@@ -354,7 +364,7 @@ export function DataSourceDetailScreen({
       assets.some((asset) => (asset.size ?? 0) > 200 * 1024 * 1024) ||
       totalBytes > 200 * 1024 * 1024
     ) {
-      setOperationError('单个文件和整批文件总大小均不能超过 200 MB。');
+      setOperationError(t('sourceDetail.sizeLimit'));
       return;
     }
     if (audioRuntimeMode === 'lightweight_local') {
@@ -373,7 +383,7 @@ export function DataSourceDetailScreen({
       setArchiveSourceVisible(false);
       (onArchived ?? onBack)();
     } catch (reason) {
-      setOperationError(reason instanceof Error ? reason.message : '数据源归档失败。');
+      setOperationError(reason instanceof Error ? reason.message : t('sourceDetail.archiveFailed'));
       setArchiveSourceVisible(false);
     } finally {
       setConfirming(false);
@@ -390,7 +400,9 @@ export function DataSourceDetailScreen({
       setAudioArchiveTarget(undefined);
       await load(false);
     } catch (reason) {
-      setOperationError(reason instanceof Error ? reason.message : '音频归档失败。');
+      setOperationError(
+        reason instanceof Error ? reason.message : t('sourceDetail.archiveAudioFailed'),
+      );
     } finally {
       setConfirming(false);
     }
@@ -416,12 +428,15 @@ export function DataSourceDetailScreen({
         includeAcousticEmotion,
         preprocessing: transcriptionPreprocessing,
         segmentationMode: 'speaker_turn',
+        language: analysisLanguage,
         ...(expectedSpeakerCount ? { expectedSpeakerCount: Number(expectedSpeakerCount) } : {}),
       });
       setTranscriptionTarget(undefined);
       await load(false);
     } catch (reason) {
-      setOperationError(reason instanceof Error ? reason.message : 'ASR 转写启动失败。');
+      setOperationError(
+        reason instanceof Error ? reason.message : t('sourceDetail.startAsrFailed'),
+      );
     } finally {
       setStartingTranscription(false);
     }
@@ -437,7 +452,7 @@ export function DataSourceDetailScreen({
       setUnlinkTarget(undefined);
       await load(false);
     } catch (reason) {
-      setOperationError(reason instanceof Error ? reason.message : '解除关联失败。');
+      setOperationError(reason instanceof Error ? reason.message : t('sourceDetail.unlinkFailed'));
     } finally {
       setConfirming(false);
     }
@@ -446,9 +461,13 @@ export function DataSourceDetailScreen({
   if (loading) {
     return (
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-        <PageHeader onBack={onBack} onMore={() => showComingSoon('更多操作')} title="数据源详情" />
+        <PageHeader
+          onBack={onBack}
+          onMore={() => showComingSoon(t('common.moreActions'))}
+          title={t('sourceDetail.title')}
+        />
         <ActivityIndicator
-          accessibilityLabel="正在加载数据源详情"
+          accessibilityLabel={t('sourceDetail.loading')}
           color={colors.ink}
           style={styles.loading}
         />
@@ -459,7 +478,11 @@ export function DataSourceDetailScreen({
   if (!source) {
     return (
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-        <PageHeader onBack={onBack} onMore={() => showComingSoon('更多操作')} title="数据源详情" />
+        <PageHeader
+          onBack={onBack}
+          onMore={() => showComingSoon(t('common.moreActions'))}
+          title={t('sourceDetail.title')}
+        />
         <ScrollView
           alwaysBounceVertical
           contentContainerStyle={styles.emptyState}
@@ -467,17 +490,17 @@ export function DataSourceDetailScreen({
         >
           <Ionicons color={colors.secondary} name="git-network-outline" size={40} />
           <Text style={styles.emptyTitle}>
-            {error.includes('不存在') ? '未找到数据源' : '数据源加载失败'}
+            {error.includes('不存在') ? t('sourceDetail.notFound') : t('common.loadFailed')}
           </Text>
           <Text accessibilityRole="alert" style={styles.emptyDescription}>
-            {error || '该数据源可能已移除，请返回数据源列表。'}
+            {error || t('sourceDetail.removed')}
           </Text>
           <Pressable
             accessibilityRole="button"
             onPress={() => void load()}
             style={styles.retryButton}
           >
-            <Text style={styles.retryText}>重新加载</Text>
+            <Text style={styles.retryText}>{t('sources.reload')}</Text>
           </Pressable>
         </ScrollView>
       </SafeAreaView>
@@ -499,7 +522,7 @@ export function DataSourceDetailScreen({
       item.title,
       item.duration,
       item.createdAt,
-      audioStatusSearchText(item),
+      audioStatusSearchText(item, t),
     ]),
   );
   const filteredUploadRecords = source.uploadRecords.filter((record) =>
@@ -507,10 +530,10 @@ export function DataSourceDetailScreen({
       record.date,
       record.time,
       record.kind === 'upload-success'
-        ? '上传成功'
+        ? t('sourceDetail.uploadSuccess')
         : record.kind === 'upload-failed'
-          ? '上传失败'
-          : '转写失败',
+          ? t('sourceDetail.statusUploadFailed')
+          : t('sourceDetail.statusTranscriptionFailed'),
       record.description,
       record.detail,
     ]),
@@ -523,6 +546,7 @@ export function DataSourceDetailScreen({
     setTranscriptionPreprocessing('silero_vad');
     setExpectedSpeakerCount('');
     setIncludeAcousticEmotion(true);
+    setAnalysisLanguage(appLanguage);
     setTranscriptionTarget(target);
   };
 
@@ -531,14 +555,14 @@ export function DataSourceDetailScreen({
       void confirmTranscription();
       return;
     }
-    Alert.alert(
-      '关闭声学情绪分析？',
-      '本次 ASR 完成后会删除临时音频，并永久关闭该转写版本的情绪分析入口。若以后需要情绪分析，必须重新选择原文件并创建新转写。',
-      [
-        { text: '返回', style: 'cancel' },
-        { text: '仍然关闭', style: 'destructive', onPress: () => void confirmTranscription() },
-      ],
-    );
+    Alert.alert(t('sourceDetail.disableEmotion'), t('sourceDetail.disableEmotionBody'), [
+      { text: t('common.back'), style: 'cancel' },
+      {
+        text: t('sourceDetail.disableAnyway'),
+        style: 'destructive',
+        onPress: () => void confirmTranscription(),
+      },
+    ]);
   };
   const requestLightweightUpload = () => {
     const assets = pendingUploadAssets;
@@ -547,30 +571,30 @@ export function DataSourceDetailScreen({
       void performUpload(assets, true);
       return;
     }
-    Alert.alert(
-      '关闭声学情绪分析？',
-      '这些音频完成 ASR 后会立即删除临时副本，并且对应转写版本不会提供情绪分析。以后需要时必须重新选择原文件并创建新转写。',
-      [
-        { text: '返回', style: 'cancel' },
-        {
-          text: '仍然关闭',
-          style: 'destructive',
-          onPress: () => void performUpload(assets, false),
-        },
-      ],
-    );
+    Alert.alert(t('sourceDetail.disableEmotion'), t('sourceDetail.disableEmotionBatchBody'), [
+      { text: t('common.back'), style: 'cancel' },
+      {
+        text: t('sourceDetail.disableAnyway'),
+        style: 'destructive',
+        onPress: () => void performUpload(assets, false),
+      },
+    ]);
   };
   const openMoreActions = () =>
-    Alert.alert('数据源操作', source.name, [
+    Alert.alert(t('sourceDetail.actions'), source.name, [
       {
-        text: '编辑数据源',
+        text: t('sourceDetail.edit'),
         onPress: () => {
           setFormError('');
           setEditVisible(true);
         },
       },
-      { text: '归档数据源', onPress: () => setArchiveSourceVisible(true), style: 'destructive' },
-      { text: '取消', style: 'cancel' },
+      {
+        text: t('sourceDetail.archive'),
+        onPress: () => setArchiveSourceVisible(true),
+        style: 'destructive',
+      },
+      { text: t('common.cancel'), style: 'cancel' },
     ]);
 
   return (
@@ -578,16 +602,16 @@ export function DataSourceDetailScreen({
       {searchVisible ? (
         <SearchSheet
           appliedQuery={searchQuery}
-          inputLabel="输入数据源内容搜索关键词"
+          inputLabel={t('sourceDetail.searchInput')}
           onApply={(nextQuery) => {
             setSearchQuery(nextQuery);
             setSearchVisible(false);
             if (nextQuery && activeTab === 'overview') selectTab('audio');
           }}
           onClose={() => setSearchVisible(false)}
-          placeholder="搜索音频、上传记录或关联分组"
-          subtitle="搜索条件会应用到三个内容标签"
-          title="搜索数据源内容"
+          placeholder={t('sourceDetail.searchPlaceholder')}
+          subtitle={t('sourceDetail.searchSubtitle')}
+          title={t('sourceDetail.searchTitle')}
           visible
         />
       ) : null}
@@ -615,7 +639,7 @@ export function DataSourceDetailScreen({
           else if (source.linkedGroups.length === 1)
             onOpenAudio?.(target.id, source.linkedGroups[0].id);
           else if (source.linkedGroups.length > 1) setAnalysisGroupTarget(target);
-          else setOperationError('当前数据源尚未关联分组，请先关联分组后再分析。');
+          else setOperationError(t('sourceDetail.noGroupForAnalysis'));
         }}
         onArchive={() => {
           const target = audioActionTarget;
@@ -677,25 +701,25 @@ export function DataSourceDetailScreen({
         visible={pickerVisible}
       />
       <DataSourceConfirmDialog
-        body="归档后该数据源及其音频将从分组中隐藏，但关联、音频记录和本地文件会保留。"
-        confirmLabel="确认归档"
+        body={t('sourceDetail.archiveBody')}
+        confirmLabel={t('sourceDetail.confirmArchive')}
         onCancel={() => setArchiveSourceVisible(false)}
         onConfirm={() => {
           void confirmArchiveSource();
         }}
         pending={confirming}
-        title="归档数据源？"
+        title={t('sourceDetail.archiveTitle')}
         visible={archiveSourceVisible}
       />
       <DataSourceConfirmDialog
-        body={`归档“${audioArchiveTarget?.title ?? ''}”后，它将不再出现在数据源和分组列表中。`}
-        confirmLabel="归档音频"
+        body={t('sourceDetail.archiveAudioBody', { title: audioArchiveTarget?.title ?? '' })}
+        confirmLabel={t('sourceDetail.archiveAudio')}
         onCancel={() => setAudioArchiveTarget(undefined)}
         onConfirm={() => {
           void confirmArchiveAudio();
         }}
         pending={confirming}
-        title="归档音频？"
+        title={t('sourceDetail.archiveAudioTitle')}
         visible={Boolean(audioArchiveTarget)}
       />
       <AudioTranscriptionConfirmDialog
@@ -715,6 +739,8 @@ export function DataSourceDetailScreen({
         sileroVad={transcriptionCapabilities?.sileroVad}
         showAcousticEmotionOption={audioRuntimeMode === 'lightweight_local'}
         visible={Boolean(transcriptionTarget)}
+        language={analysisLanguage}
+        onLanguageChange={setAnalysisLanguage}
       />
       <LightweightUploadConfirmDialog
         includeAcousticEmotion={uploadIncludeAcousticEmotion}
@@ -727,40 +753,40 @@ export function DataSourceDetailScreen({
         visible={Boolean(pendingUploadAssets)}
       />
       <DataSourceConfirmDialog
-        body={`解除后，“${unlinkTarget?.name ?? ''}”将不再通过此数据源看到相关音频；显式分享不受影响。`}
-        confirmLabel="解除关联"
+        body={t('sourceDetail.unlinkBody', { name: unlinkTarget?.name ?? '' })}
+        confirmLabel={t('sourceDetail.unlink')}
         onCancel={() => setUnlinkTarget(undefined)}
         onConfirm={() => {
           void confirmUnlink();
         }}
         pending={confirming}
-        title="解除分组关联？"
+        title={t('sourceDetail.unlinkTitle')}
         visible={Boolean(unlinkTarget)}
       />
       <DataSourceConfirmDialog
-        body={`将返回主页并切换到“${switchTarget?.name ?? ''}”的连接数据源分页。`}
-        confirmLabel="确认切换"
+        body={t('sourceDetail.switchBody', { name: switchTarget?.name ?? '' })}
+        confirmLabel={t('sourceDetail.confirmSwitch')}
         onCancel={() => setSwitchTarget(undefined)}
         onConfirm={() => {
           const target = switchTarget;
           setSwitchTarget(undefined);
           if (target) onSwitchGroup?.(target.id);
         }}
-        title="切换分组？"
+        title={t('sourceDetail.switchTitle')}
         visible={Boolean(switchTarget)}
       />
       <PageHeader
         onBack={onBack}
         onMore={openMoreActions}
         onSearch={() => setSearchVisible(true)}
-        searchLabel="搜索数据源内容"
+        searchLabel={t('sourceDetail.searchTitle')}
         title={source.name}
       />
       {operationError || audioPlayback.error ? (
         <View style={styles.operationError}>
           <Text accessibilityRole="alert" style={styles.operationErrorText}>
             {audioPlayback.error
-              ? `音频播放失败：${audioPlayback.error} 请再次点击播放按钮重试。`
+              ? t('sourceDetail.playbackFailed', { message: audioPlayback.error })
               : operationError}
           </Text>
         </View>
@@ -775,7 +801,7 @@ export function DataSourceDetailScreen({
             onPress={() => void load(false)}
             style={styles.refreshRetryButton}
           >
-            <Text style={styles.refreshRetryText}>立即重试</Text>
+            <Text style={styles.refreshRetryText}>{t('sourceDetail.retryNow')}</Text>
           </Pressable>
         </View>
       ) : null}
@@ -803,9 +829,14 @@ export function DataSourceDetailScreen({
             <Text accessibilityRole="header" style={styles.heroTitle}>
               {source.name}
             </Text>
-            <Text style={styles.heroDescription}>{source.description || '暂无描述'}</Text>
+            <Text style={styles.heroDescription}>
+              {source.description || t('sources.noDescription')}
+            </Text>
             <Text style={styles.heroMeta}>
-              {source.connection}　接入 {source.linkedGroupCount} 个分组
+              {t('sourceDetail.meta', {
+                connection: source.connection,
+                count: formatNumber(source.linkedGroupCount),
+              })}
             </Text>
           </View>
           {renderTabs()}
@@ -835,8 +866,8 @@ export function DataSourceDetailScreen({
             {filteredAudioItems.length === 0 ? (
               <Text style={styles.listEmptyText}>
                 {searchQuery
-                  ? `没有匹配“${searchQuery}”的音频。`
-                  : '暂无音频，点击下方“上传音频”开始添加。'}
+                  ? t('sourceDetail.noAudioMatch', { query: searchQuery })
+                  : t('sourceDetail.noAudio')}
               </Text>
             ) : (
               filteredAudioItems.map((item) => (
@@ -872,7 +903,9 @@ export function DataSourceDetailScreen({
           <View style={styles.recordsList}>
             {uploadDates.length === 0 ? (
               <Text style={styles.listEmptyText}>
-                {searchQuery ? `没有匹配“${searchQuery}”的上传记录。` : '暂无上传记录。'}
+                {searchQuery
+                  ? t('sourceDetail.noUploadMatch', { query: searchQuery })
+                  : t('sourceDetail.noUploads')}
               </Text>
             ) : (
               uploadDates.map((date, index) => (
@@ -911,7 +944,9 @@ export function DataSourceDetailScreen({
           <View style={styles.groupList}>
             {filteredGroups.length === 0 ? (
               <Text style={styles.listEmptyText}>
-                {searchQuery ? `没有匹配“${searchQuery}”的关联分组。` : '暂未关联分组。'}
+                {searchQuery
+                  ? t('sourceDetail.noGroupMatch', { query: searchQuery })
+                  : t('sourceDetail.noGroups')}
               </Text>
             ) : (
               filteredGroups.map((group) => (

@@ -11,10 +11,17 @@ import type { GroupSummary, StarterTemplateKey } from '@echowave/contracts';
 import { createContext, useCallback, useContext, type RefCallback } from 'react';
 import type { View } from 'react-native';
 
-import { GUIDE_IDS, type GuideId, type GuideStatus, type StarterTourTargetKey } from './guideRegistry';
+import {
+  GUIDE_IDS,
+  type GuideId,
+  type GuideStatus,
+  type StarterTourTargetKey,
+} from './guideRegistry';
 
 type GuideStatuses = Record<GuideId, GuideStatus>;
-const defaultStatuses = Object.fromEntries(GUIDE_IDS.map((id) => [id, 'not_started'])) as GuideStatuses;
+const defaultStatuses = Object.fromEntries(
+  GUIDE_IDS.map((id) => [id, 'not_started']),
+) as GuideStatuses;
 
 export type StarterTourContextValue = {
   activeGuide: GuideId | null;
@@ -28,16 +35,26 @@ export type StarterTourContextValue = {
 };
 
 export const StarterTourContext = createContext<StarterTourContextValue>({
-  activeGuide: null, activeStep: null, offerStarterTemplates: () => undefined,
-  registerTarget: () => undefined, replay: () => undefined, startGuide: () => undefined,
-  statuses: defaultStatuses, templates: {},
+  activeGuide: null,
+  activeStep: null,
+  offerStarterTemplates: () => undefined,
+  registerTarget: () => undefined,
+  replay: () => undefined,
+  startGuide: () => undefined,
+  statuses: defaultStatuses,
+  templates: {},
 });
 
 /** 读取多引导编排、状态和重播能力。 */
-export function useStarterTour(): StarterTourContextValue { return useContext(StarterTourContext); }
+export function useStarterTour(): StarterTourContextValue {
+  return useContext(StarterTourContext);
+}
 
 /** 为可测量 View 生成稳定的引导目标 ref。 */
-export function useStarterTourTarget(key: StarterTourTargetKey, prepare?: () => void): RefCallback<View> {
+export function useStarterTourTarget(
+  key: StarterTourTargetKey,
+  prepare?: () => void,
+): RefCallback<View> {
   const { registerTarget } = useStarterTour();
   return useCallback((node) => registerTarget(key, node, prepare), [key, prepare, registerTarget]);
 }

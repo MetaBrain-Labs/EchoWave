@@ -15,6 +15,7 @@ import {
   GroupResourceLinksUpdateRequestSchema,
   GroupSettingsUpdateRequestSchema,
   KnowledgeBaseGroupLinkRequestSchema,
+  SupportedLanguageSchema,
 } from '@echowave/contracts';
 import type { Hono } from 'hono';
 
@@ -41,7 +42,12 @@ export function registerGroupRoutes(app: Hono, service: GroupService): void {
     return context.json(await service.createGroup(input), 201);
   });
   app.get('/api/groups/:groupId/template-example', async (context) =>
-    context.json(await service.getTemplateExample(entityId(context.req.param('groupId')))),
+    context.json(
+      await service.getTemplateExample(
+        entityId(context.req.param('groupId')),
+        SupportedLanguageSchema.parse(context.req.query('language') ?? 'zh-CN'),
+      ),
+    ),
   );
   app.get('/api/groups/:groupId', async (context) =>
     context.json(await service.getGroup(entityId(context.req.param('groupId')))),

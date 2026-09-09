@@ -125,7 +125,10 @@ export class AudioAutomationWorker {
   private async advanceTranscription(task: ClaimedAutomationTask): Promise<void> {
     let revisionId = task.analysisRevisionId;
     if (!revisionId) {
-      revisionId = await this.options.repository.reusableRevision(task.audioFileId);
+      revisionId = await this.options.repository.reusableRevision(
+        task.audioFileId,
+        task.configuration.language,
+      );
       const reused = Boolean(revisionId);
       if (!revisionId) {
         const queued = await this.options.audio.startAudioTranscription(
@@ -135,6 +138,7 @@ export class AudioAutomationWorker {
             segmentationMode: 'speaker_turn',
             includeAcousticEmotion:
               task.runtimeMode === 'lightweight_local' && task.pipeline.includeEmotion,
+            language: task.configuration.language,
           },
           task.configuration.capabilityBindings,
         );
@@ -195,7 +199,10 @@ export class AudioAutomationWorker {
     let roleJobId = task.roleJobId;
     let emotionSource = task.stageSources.emotion;
     let roleSource = task.stageSources.role;
-    const reusable = await this.options.repository.postAnalysisReferences(task.analysisRevisionId);
+    const reusable = await this.options.repository.postAnalysisReferences(
+      task.analysisRevisionId,
+      task.configuration.language,
+    );
     if (task.pipeline.includeEmotion && !emotionJobId) {
       emotionJobId = reusable.emotionJobId;
       if (emotionJobId) {
@@ -207,6 +214,7 @@ export class AudioAutomationWorker {
             task.audioFileId,
             'emotion',
             task.configuration.capabilityBindings,
+            task.configuration.language,
           )
         ).jobId;
         emotionSource = 'created';
@@ -223,6 +231,7 @@ export class AudioAutomationWorker {
             task.audioFileId,
             'role',
             task.configuration.capabilityBindings,
+            task.configuration.language,
           )
         ).jobId;
         roleSource = 'created';
@@ -300,6 +309,7 @@ export class AudioAutomationWorker {
         {
           groupId: task.groupId,
           force: false,
+          language: task.configuration.language,
         },
         task.configuration.capabilityBindings,
         {

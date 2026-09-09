@@ -23,6 +23,7 @@ import {
 } from 'react';
 
 import { getDevelopmentServerUrl, normalizeServerUrl, setRuntimeServerUrl } from './serverUrl';
+import { translateAppText } from '@/shared/i18n/LanguageProvider';
 
 export const SERVER_URL_STORAGE_KEY = 'echowave.server-url.v1';
 
@@ -70,7 +71,7 @@ export function ServerConnectionProvider({ children }: PropsWithChildren) {
         if (!active) return;
         setRuntimeServerUrl(null);
         setServerUrl(null);
-        setError('无法读取本机服务器设置，请重试。');
+        setError(translateAppText('server.readFailed'));
         setPhase('error');
       });
     return () => {

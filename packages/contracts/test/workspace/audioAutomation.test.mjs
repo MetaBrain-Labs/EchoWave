@@ -33,6 +33,7 @@ describe('audio analysis automation contracts', () => {
       transcriptPolicy: 'reuse_or_create',
     });
     assert.equal(parsed.scheduledFor, null);
+    assert.equal(parsed.language, 'zh-CN');
   });
 
   it('rejects more than twenty items and duplicate existing audio ids', () => {
@@ -81,8 +82,17 @@ describe('audio analysis automation contracts', () => {
       PushDeviceRegisterRequestSchema.safeParse({
         token: 'ExponentPushToken[abc_123-XYZ]',
         platform: 'android',
+        locale: 'en',
       }).success,
       true,
+    );
+    assert.equal(
+      PushDeviceRegisterRequestSchema.safeParse({
+        token: 'ExponentPushToken[abc_123-XYZ]',
+        platform: 'android',
+        locale: 'fr',
+      }).success,
+      false,
     );
     assert.equal(
       PushDeviceRegisterRequestSchema.safeParse({ token: 'plain-token', platform: 'ios' }).success,

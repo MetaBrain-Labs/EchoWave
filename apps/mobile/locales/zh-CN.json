@@ -1,0 +1,4 @@
+{
+  "CFBundleDisplayName": "EchoWave",
+  "NSLocalNetworkUsageDescription": "EchoWave 需要连接你在本地网络中运行的自托管服务器。"
+}

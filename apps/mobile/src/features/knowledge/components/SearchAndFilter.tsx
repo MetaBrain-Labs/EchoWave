@@ -14,6 +14,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { type RefObject, useRef } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import {
   colors,
   fontFamilies,
@@ -37,6 +38,7 @@ export function SearchAndFilter({
   placeholder: string;
   value: string;
 }) {
+  const { t } = useAppLanguage();
   const localInputRef = useRef<TextInput>(null);
   const resolvedInputRef = inputRef ?? localInputRef;
   return (
@@ -58,12 +60,12 @@ export function SearchAndFilter({
         />
       </Pressable>
       <Pressable
-        accessibilityLabel="筛选"
+        accessibilityLabel={t('searchFilter.filter')}
         accessibilityRole="button"
-        onPress={() => showComingSoon('筛选')}
+        onPress={() => showComingSoon(t('searchFilter.filter'))}
         style={({ pressed }) => [styles.filterButton, pressed && styles.pressed]}
       >
-        <Text style={styles.filterText}>筛选</Text>
+        <Text style={styles.filterText}>{t('searchFilter.filter')}</Text>
         <Ionicons
           color={colors.secondary}
           name="filter-outline"
