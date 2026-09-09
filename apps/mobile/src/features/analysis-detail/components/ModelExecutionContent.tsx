@@ -31,6 +31,7 @@ import {
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { localizeRequestError } from '@/shared/i18n/errorLocalization';
+import type { TranslationKey } from '@/shared/i18n/translations';
 
 import {
   colors,
@@ -93,6 +94,50 @@ const englishStepLabels: Record<string, string> = {
   'retrieval-planning': 'Plan knowledge retrieval',
   'analysis-generation': 'Generate business analysis',
 };
+
+const modelCallNameKeys: Record<string, TranslationKey> = {
+  'audio-file-transcription': 'execution.modelCall.audioFileTranscription',
+  'audio-emotion-analysis': 'execution.modelCall.audioEmotionAnalysis',
+  'audio-role-recognition': 'execution.modelCall.audioRoleRecognition',
+  'audio-speaker-review': 'execution.modelCall.audioSpeakerReview',
+  'business-analysis-retrieval-planning': 'execution.modelCall.businessAnalysisRetrievalPlanning',
+  'business-analysis-query-embedding': 'execution.modelCall.businessAnalysisQueryEmbedding',
+  'business-analysis-generation': 'execution.modelCall.businessAnalysisGeneration',
+  'business-analysis-structure-repair': 'execution.modelCall.businessAnalysisStructureRepair',
+  'business-analysis-window': 'execution.modelCall.businessAnalysisWindow',
+  'business-analysis-synthesis': 'execution.modelCall.businessAnalysisSynthesis',
+};
+
+/** 兼容旧执行轨迹中只有中文 displayName、没有可靠 operation 的记录。 */
+const legacyModelCallNameKeys: Record<string, TranslationKey> = {
+  识别整段音频并生成带时间戳的说话人转写: 'execution.modelCall.audioFileTranscription',
+  判断当前音频片段的情绪与置信度: 'execution.modelCall.audioEmotionAnalysis',
+  根据完整对话识别说话人的业务角色: 'execution.modelCall.audioRoleRecognition',
+  复核疑似说话人切换边界: 'execution.modelCall.audioSpeakerReview',
+  规划业务分析所需的知识检索问题: 'execution.modelCall.businessAnalysisRetrievalPlanning',
+  将知识检索问题转换为语义向量: 'execution.modelCall.businessAnalysisQueryEmbedding',
+  结合转写与知识证据生成业务分析: 'execution.modelCall.businessAnalysisGeneration',
+  修复业务分析的结构与引用: 'execution.modelCall.businessAnalysisStructureRepair',
+  分层分析窗口: 'execution.modelCall.businessAnalysisWindow',
+  汇总分层分析结果: 'execution.modelCall.businessAnalysisSynthesis',
+};
+
+/** 返回稳定模型操作对应的翻译键；未知或自定义名称必须保留原文。 */
+export function getModelCallNameKey(
+  operation: string | undefined,
+  name: string,
+): TranslationKey | undefined {
+  return modelCallNameKeys[operation ?? ''] ?? legacyModelCallNameKeys[name];
+}
+
+function localizeModelCallName(
+  operation: string,
+  name: string,
+  t: ReturnType<typeof useAppLanguage>['t'],
+): string {
+  const key = getModelCallNameKey(operation, name);
+  return key ? t(key) : name;
+}
 const reasoningBottomThreshold = 24;
 
 function duration(value: number | null, t: ReturnType<typeof useAppLanguage>['t']): string {
@@ -254,6 +299,7 @@ function ModelCallCard({ call }: { call: AudioAiExecutionRun['modelCalls'][numbe
       : call.status === 'completed'
         ? t('execution.success')
         : t('execution.failed');
+  const visibleName = localizeModelCallName(call.operation, call.name, t);
   return (
     <View style={styles.modelCallCard}>
       <Pressable
@@ -263,7 +309,7 @@ function ModelCallCard({ call }: { call: AudioAiExecutionRun['modelCalls'][numbe
         style={({ pressed }) => [styles.modelCallHeader, pressed && styles.pressed]}
       >
         <View style={styles.cardTitleArea}>
-          <Text style={styles.detailTitle}>{call.name}</Text>
+          <Text style={styles.detailTitle}>{visibleName}</Text>
           <Text style={styles.meta}>
             {call.provider} · {call.model}
           </Text>
@@ -283,7 +329,7 @@ function ModelCallCard({ call }: { call: AudioAiExecutionRun['modelCalls'][numbe
       </Pressable>
       {expanded ? (
         <View style={styles.modelCallBody}>
-          <Text style={styles.bodyText}>{t('execution.focus', { name: call.name })}</Text>
+          <Text style={styles.bodyText}>{t('execution.focus', { name: visibleName })}</Text>
           <Text style={styles.meta}>
             {t('execution.tokens', {
               input: call.inputTokens ?? '—',

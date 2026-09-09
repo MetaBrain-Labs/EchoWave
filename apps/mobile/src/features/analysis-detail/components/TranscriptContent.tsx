@@ -55,6 +55,41 @@ const emotionLabelKeys: Record<string, TranslationKey> = {
   unknown: 'emotion.unknown',
 };
 
+const reviewFindingKeys: Record<string, TranslationKey> = {
+  single_speaker_recording: 'analysis.reviewFinding.singleSpeaker',
+  question_answer_transition: 'analysis.reviewFinding.questionAnswerTransition',
+  long_single_speaker_segment: 'analysis.reviewFinding.longSingleSpeakerSegment',
+  long_internal_pause: 'analysis.reviewFinding.longInternalPause',
+  dialogue_pattern: 'analysis.reviewFinding.dialoguePattern',
+};
+
+function visibleReviewExplanation(
+  finding: TranscriptSegment['reviewFindings'][number],
+  language: ReturnType<typeof useAppLanguage>['language'],
+  t: ReturnType<typeof useAppLanguage>['t'],
+): string {
+  if (language === 'en' && finding.source === 'rule') {
+    const key = reviewFindingKeys[finding.reasonCode];
+    if (key) return t(key);
+  }
+  return finding.explanation;
+}
+
+function visibleReviewMessage(
+  message: string | null,
+  language: ReturnType<typeof useAppLanguage>['language'],
+  t: ReturnType<typeof useAppLanguage>['t'],
+): string {
+  if (!message) return t('analysis.reviewRulesKept');
+  if (language === 'en' && /智能说话人复核未配置/u.test(message)) {
+    return t('analysis.reviewNotConfigured');
+  }
+  if (language === 'en' && /[\u3400-\u9fff]/u.test(message)) {
+    return t('analysis.reviewRulesKept');
+  }
+  return message;
+}
+
 export type TranscriptDisplayMode = 'current' | 'raw';
 
 function FilterButton({ label }: { label: string }) {
@@ -119,7 +154,7 @@ function SegmentView({
   speakerDisplayName: string;
   speakerOptions: readonly string[];
 }) {
-  const { t } = useAppLanguage();
+  const { language, t } = useAppLanguage();
   const [reviewIndex, setReviewIndex] = useState(0);
   const identifiedRole = segment.roleAnalysis;
   const primaryIdentity = identifiedRole?.label ?? speakerDisplayName;
@@ -321,7 +356,9 @@ function SegmentView({
                         </Pressable>
                       </View>
                     ) : null}
-                    <Text style={styles.reviewReason}>{finding.explanation}</Text>
+                    <Text style={styles.reviewReason}>
+                      {visibleReviewExplanation(finding, language, t)}
+                    </Text>
                     <View style={styles.reviewActions}>
                       {reviewPlaybackAvailable ? (
                         <Pressable
@@ -470,7 +507,7 @@ export function TranscriptContent({
   reviewPlaybackAvailable,
   selectedSegmentIds,
 }: TranscriptContentProps) {
-  const { formatDateTime, t } = useAppLanguage();
+  const { formatDateTime, language, t } = useAppLanguage();
   const [skipInvalid, setSkipInvalid] = useState(false);
   const [hideSpeakerReview, setHideSpeakerReview] = useState(false);
   const pendingReviewFindingCount = detail.speakerReview.findings.filter(
@@ -651,7 +688,7 @@ export function TranscriptContent({
           <Ionicons color={colors.secondary} name="alert-circle-outline" size={20} />
           <Text style={styles.diarizationNoticeText}>
             {t('analysis.reviewPartial', {
-              message: detail.speakerReview.message ?? t('analysis.reviewRulesKept'),
+              message: visibleReviewMessage(detail.speakerReview.message, language, t),
             })}
           </Text>
         </View>
@@ -733,7 +770,8 @@ export function TranscriptContent({
             <View style={styles.sceneTitleRow}>
               <View style={styles.sceneTitleLine} />
               <Text style={styles.sceneTitle}>
-                {sceneIndex + 1}. {scene.title}
+                {sceneIndex + 1}.{' '}
+                {scene.title === '完整录音' ? t('analysis.fullRecording') : scene.title}
               </Text>
               <View style={styles.sceneTitleLine} />
             </View>

@@ -14,13 +14,14 @@ import type { Href } from 'expo-router';
 
 type BackRouter = {
   back: () => void;
-  canGoBack: () => boolean;
+  canGoBack?: () => boolean;
   replace: (href: Href) => void;
 };
 
 /** 优先弹出真实父页面；没有应用内历史时替换为来源推导出的安全父页面。 */
 export function backOrReplace(router: BackRouter, fallback: Href) {
-  if (router.canGoBack()) {
+  // 适配器未提供历史探测能力时沿用既有返回行为；Expo Router 实例会提供该能力。
+  if (!router.canGoBack || router.canGoBack()) {
     router.back();
     return;
   }

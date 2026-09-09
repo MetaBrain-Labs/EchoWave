@@ -11,11 +11,12 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { TemplateExampleScreen } from '@/features/template-examples/TemplateExampleScreen';
 import { firstRouteParam } from '@/shared/navigation/routeParams';
+import { backOrReplace } from '@/shared/navigation/routeBack';
 
 /** 连接模板示例页面与导航。 */
 export default function TemplateExampleRoute() {
   const router = useRouter();
   const { groupId } = useLocalSearchParams<{ groupId?: string | string[] }>();
   const id = firstRouteParam(groupId);
-  return <TemplateExampleScreen groupId={id} onBack={() => router.back()} />;
+  return <TemplateExampleScreen groupId={id} onBack={() => backOrReplace(router, '/')} />;
 }

@@ -14,6 +14,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { GroupSettingsScreen } from '@/features/group-settings/GroupSettingsScreen';
 import { firstRouteParam } from '@/shared/navigation/routeParams';
+import { backOrReplace } from '@/shared/navigation/routeBack';
 
 /** 渲染路由指定分组的设置页面。 */
 export default function GroupSettingsRoute() {
@@ -24,7 +25,7 @@ export default function GroupSettingsRoute() {
     <GroupSettingsScreen
       groupId={groupId}
       onArchived={() => router.replace('/')}
-      onBack={() => router.back()}
+      onBack={() => backOrReplace(router, '/')}
     />
   );
 }

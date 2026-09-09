@@ -170,6 +170,11 @@ export const zhCN = {
   'transcriptionRuns.details': '%{status} · 声学情绪%{emotion} · %{language}',
   'transcriptionRuns.enabled': '已启用',
   'transcriptionRuns.disabled': '未启用',
+  'transcriptionRuns.status.queued': '排队中',
+  'transcriptionRuns.status.transcribing': '转写中',
+  'transcriptionRuns.status.analyzing': '分析中',
+  'transcriptionRuns.status.ready': '就绪',
+  'transcriptionRuns.status.failed': '失败',
   'transcriptionRuns.current': '当前',
   'transcriptionRuns.select': '选择',
   'analysis.transcriptionTitle': '转写语言',
@@ -247,6 +252,16 @@ export const zhCN = {
   'analysis.reviewComplete': '说话人复核已完成，所有疑点均已审核通过。',
   'analysis.reviewPartial': '智能说话人复核未完成。%{message}',
   'analysis.reviewRulesKept': '已保留本地规则检测结果。',
+  'analysis.reviewNotConfigured': '智能说话人复核未配置；当前仅显示本地规则结果。',
+  'analysis.reviewFinding.singleSpeaker': '本录音仅识别到 1 位说话人，请结合原音检查是否存在漏分。',
+  'analysis.reviewFinding.questionAnswerTransition':
+    '同一 Speaker 段内出现连续的提问与回答语义，建议回听边界。',
+  'analysis.reviewFinding.longSingleSpeakerSegment':
+    '同一 Speaker 连续片段较长，建议从中部开始回听是否存在漏分。',
+  'analysis.reviewFinding.longInternalPause':
+    '同一 Speaker 段内存在明显停顿，可能是未识别的说话轮次切换。',
+  'analysis.reviewFinding.dialoguePattern': '相邻分句呈现问答角色切换特征，建议结合原音确认。',
+  'analysis.fullRecording': '完整录音',
   'analysis.noDiarization': '本次模型未返回说话人信息，以下使用匿名发言编号。',
   'analysis.chunkDiarization':
     '本次结果只保证分块内的说话人身份，以下使用匿名发言编号，不代表跨块同一人。',
@@ -315,6 +330,16 @@ export const zhCN = {
   'execution.failed': '失败',
   'execution.attempt': '第 %{attempt} 次 · %{status} · %{duration}',
   'execution.focus': '当前关注事项：%{name}',
+  'execution.modelCall.audioFileTranscription': '识别整段音频并生成带时间戳的说话人转写',
+  'execution.modelCall.audioEmotionAnalysis': '判断当前音频片段的情绪与置信度',
+  'execution.modelCall.audioRoleRecognition': '根据完整对话识别说话人的业务角色',
+  'execution.modelCall.audioSpeakerReview': '复核疑似说话人切换边界',
+  'execution.modelCall.businessAnalysisRetrievalPlanning': '规划业务分析所需的知识检索问题',
+  'execution.modelCall.businessAnalysisQueryEmbedding': '将知识检索问题转换为语义向量',
+  'execution.modelCall.businessAnalysisGeneration': '结合转写与知识证据生成业务分析',
+  'execution.modelCall.businessAnalysisStructureRepair': '修复业务分析的结构与引用',
+  'execution.modelCall.businessAnalysisWindow': '分层分析窗口',
+  'execution.modelCall.businessAnalysisSynthesis': '汇总分层分析结果',
   'execution.tokens': 'Token：输入 %{input} / 输出 %{output}',
   'execution.rawReasoning': '原始推理',
   'execution.collapse': '收起',
@@ -1394,7 +1419,7 @@ export const en = {
   'analysisLanguage.title': 'Analysis language',
   'analysisLanguage.supported':
     'Chinese and English are currently supported. The selected language is used to recognize the audio and generate analysis; it does not translate recordings.',
-  'analysisLanguage.zhCN': '中文',
+  'analysisLanguage.zhCN': 'Chinese',
   'analysisLanguage.en': 'English',
   'analysisLanguage.current': 'Analysis language: %{language}',
   'analysisBatch.title': 'One-tap analysis',
@@ -1505,6 +1530,11 @@ export const en = {
   'transcriptionRuns.details': '%{status} · Acoustic emotion %{emotion} · %{language}',
   'transcriptionRuns.enabled': 'enabled',
   'transcriptionRuns.disabled': 'disabled',
+  'transcriptionRuns.status.queued': 'Queued',
+  'transcriptionRuns.status.transcribing': 'Transcribing',
+  'transcriptionRuns.status.analyzing': 'Analyzing',
+  'transcriptionRuns.status.ready': 'Ready',
+  'transcriptionRuns.status.failed': 'Failed',
   'transcriptionRuns.current': 'Current',
   'transcriptionRuns.select': 'Select',
   'analysis.transcriptionTitle': 'Transcription language',
@@ -1585,6 +1615,19 @@ export const en = {
   'analysis.reviewComplete': 'Speaker review is complete. All concerns have been reviewed.',
   'analysis.reviewPartial': 'Automated speaker review did not finish. %{message}',
   'analysis.reviewRulesKept': 'Local rule findings were preserved.',
+  'analysis.reviewNotConfigured':
+    'Speaker review is not configured; only local rule findings are shown.',
+  'analysis.reviewFinding.singleSpeaker':
+    'Only one speaker was detected in this recording. Check the original audio for a missed split.',
+  'analysis.reviewFinding.questionAnswerTransition':
+    'This speaker segment contains a possible question-and-answer transition. Review the boundary.',
+  'analysis.reviewFinding.longSingleSpeakerSegment':
+    'This speaker segment is unusually long. Review from the middle for a missed speaker change.',
+  'analysis.reviewFinding.longInternalPause':
+    'This speaker segment contains a long pause that may indicate an unrecognized speaker change.',
+  'analysis.reviewFinding.dialoguePattern':
+    'Adjacent clauses suggest a possible dialogue-role change. Review the original audio.',
+  'analysis.fullRecording': 'Full recording',
   'analysis.noDiarization':
     'The model did not return speaker information. Anonymous speaker numbers are shown below.',
   'analysis.chunkDiarization':
@@ -1654,6 +1697,22 @@ export const en = {
   'execution.failed': 'Failed',
   'execution.attempt': 'Attempt %{attempt} · %{status} · %{duration}',
   'execution.focus': 'Current focus: %{name}',
+  'execution.modelCall.audioFileTranscription':
+    'Recognize the full audio and produce timestamped speaker transcription',
+  'execution.modelCall.audioEmotionAnalysis':
+    'Assess emotion and confidence for the current audio segment',
+  'execution.modelCall.audioRoleRecognition': 'Identify business roles from the full conversation',
+  'execution.modelCall.audioSpeakerReview': 'Review suspected speaker-change boundaries',
+  'execution.modelCall.businessAnalysisRetrievalPlanning':
+    'Plan knowledge-retrieval questions for business analysis',
+  'execution.modelCall.businessAnalysisQueryEmbedding':
+    'Convert retrieval questions into semantic vectors',
+  'execution.modelCall.businessAnalysisGeneration':
+    'Generate business analysis from transcript and knowledge evidence',
+  'execution.modelCall.businessAnalysisStructureRepair':
+    'Repair business-analysis structure and citations',
+  'execution.modelCall.businessAnalysisWindow': 'Analyze a hierarchical window',
+  'execution.modelCall.businessAnalysisSynthesis': 'Synthesize hierarchical analysis results',
   'execution.tokens': 'Tokens: %{input} input / %{output} output',
   'execution.rawReasoning': 'Raw reasoning',
   'execution.collapse': 'Collapse',

@@ -13,9 +13,10 @@
 import { useRouter } from 'expo-router';
 
 import { GeneralSettingsScreen } from '@/features/general-settings/GeneralSettingsScreen';
+import { backOrReplace } from '@/shared/navigation/routeBack';
 
 /** 连接通用设置页面与导航。 */
 export default function GeneralSettingsRoute() {
   const router = useRouter();
-  return <GeneralSettingsScreen onBack={() => router.back()} />;
+  return <GeneralSettingsScreen onBack={() => backOrReplace(router, '/')} />;
 }

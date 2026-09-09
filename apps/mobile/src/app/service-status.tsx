@@ -23,6 +23,7 @@ import {
   PushNotificationStatusCard,
   type PushNotificationStatusCardHandle,
 } from '@/features/system-status/PushNotificationStatusCard';
+import { backOrReplace } from '@/shared/navigation/routeBack';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { colors, spacing } from '@/shared/theme/tokens';
@@ -44,7 +45,7 @@ export default function ServiceStatusRoute() {
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
       <PageHeader
-        onBack={() => router.back()}
+        onBack={() => backOrReplace(router, '/')}
         onMore={() => undefined}
         title={t('more.service.title')}
       />
