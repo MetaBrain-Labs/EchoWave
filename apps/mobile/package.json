@@ -4,6 +4,7 @@
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
+    "eas-build-post-install": "pnpm --dir ../.. --filter @echowave/contracts build",
     "android": "cross-env EXPO_NO_TELEMETRY=1 expo start --dev-client --android",
     "build": "cross-env EXPO_NO_TELEMETRY=1 expo export --platform all --max-workers 1 --no-bytecode",
     "dev": "cross-env EXPO_NO_TELEMETRY=1 expo start --dev-client",
