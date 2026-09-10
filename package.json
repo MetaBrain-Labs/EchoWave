@@ -19,7 +19,7 @@
   },
   "scripts": {
     "build": "turbo run build",
-    "check": "pnpm docs:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "check": "pnpm docs:check && pnpm release:test && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "dev": "turbo run dev",
     "dev:api": "pnpm --filter @echowave/contracts build && pnpm --filter @echowave/api dev",
     "dev:mobile": "pnpm --filter @echowave/contracts build && pnpm --filter @echowave/mobile dev",
@@ -32,8 +32,10 @@
     "e2e:android:triage": "node scripts/e2e/android-e2e.mjs triage",
     "e2e:android:repair": "node scripts/e2e/android-e2e.mjs repair",
     "e2e:android:test": "node --test --test-isolation=none scripts/e2e/*.test.mjs",
-    "showcase:video": "node scripts/showcase/render-video.mjs",
     "lint": "turbo run lint",
+    "release:test": "node --test --test-isolation=none scripts/release/*.test.mjs",
+    "release:validate": "node scripts/release/validate-release.mjs",
+    "showcase:video": "node scripts/showcase/render-video.mjs",
     "start": "turbo run dev:lan --ui=tui",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
@@ -43,6 +45,7 @@
   "devDependencies": {
     "eslint": "9.39.3",
     "eslint-config-expo": "57.0.1",
+    "jszip": "3.10.1",
     "prettier": "3.9.6",
     "turbo": "2.10.10",
     "typescript": "5.9.3"

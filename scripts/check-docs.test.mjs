@@ -23,6 +23,7 @@ function createFixture(testContext) {
   writeFixtureFile(rootDirectory, 'README.md', '[文档索引](docs/README.md)');
   writeFixtureFile(rootDirectory, 'AGENTS.md', '# Rules');
   writeFixtureFile(rootDirectory, 'docs/topic.md', '# Topic');
+  writeFixtureFile(rootDirectory, '.github/workflows/release.yml');
   writeFixtureFile(rootDirectory, 'apps/api/.env.example');
   writeFixtureFile(rootDirectory, 'apps/api/Dockerfile');
   writeFixtureFile(rootDirectory, 'apps/mobile/.env.example');
@@ -30,9 +31,11 @@ function createFixture(testContext) {
     rootDirectory,
     'apps/mobile/eas.json',
     JSON.stringify({
+      cli: { appVersionSource: 'remote' },
       build: {
         development: { developmentClient: true },
         'production-apk': {
+          autoIncrement: true,
           android: { buildType: 'apk' },
           env: { EXPO_PUBLIC_REQUIRE_SERVER_SELECTION: 'true' },
         },
@@ -41,12 +44,18 @@ function createFixture(testContext) {
     }),
   );
   writeFixtureFile(rootDirectory, 'compose.yaml');
+  writeFixtureFile(rootDirectory, 'deploy/release/README.md', '# Release package');
+  writeFixtureFile(rootDirectory, 'deploy/release/compose.template.yaml');
+  writeFixtureFile(rootDirectory, 'deploy/release/release.json', '{}');
   writeFixtureFile(rootDirectory, 'deploy/self-hosted/api.env.example');
+  writeFixtureFile(rootDirectory, 'scripts/release/release-lib.mjs');
+  writeFixtureFile(rootDirectory, 'scripts/release/release.test.mjs');
+  writeFixtureFile(rootDirectory, 'docs/releases.md', '# Releases');
   writeFixtureFile(rootDirectory, 'docs/self-hosting.md', '# Self-hosting');
   writeFixtureFile(
     rootDirectory,
     'docs/README.md',
-    '[导览](./documentation-guide.md)\n[主题](./topic.md)\n[自托管](./self-hosting.md)',
+    '[导览](./documentation-guide.md)\n[主题](./topic.md)\n[发布](./releases.md)\n[自托管](./self-hosting.md)',
   );
   writeFixtureFile(
     rootDirectory,
@@ -56,7 +65,9 @@ function createFixture(testContext) {
       '[工程规则](../AGENTS.md)',
       '[文档索引](./README.md)',
       '[主题](./topic.md)',
+      '[发布](./releases.md)',
       '[自托管](./self-hosting.md)',
+      '[发布包](../deploy/release/README.md)',
     ].join('\n'),
   );
   return rootDirectory;

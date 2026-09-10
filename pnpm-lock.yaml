@@ -14,6 +14,9 @@ importers:
       eslint-config-expo:
         specifier: 57.0.1
         version: 57.0.1(eslint@9.39.3)(typescript@5.9.3)
+      jszip:
+        specifier: 3.10.1
+        version: 3.10.1
       prettier:
         specifier: 3.9.6
         version: 3.9.6

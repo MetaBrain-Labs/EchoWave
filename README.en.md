@@ -14,7 +14,7 @@ English · [简体中文](./README.md)
 EchoWave helps teams turn interviews, sales calls, meetings, and other recordings into structured, reviewable knowledge. It combines a bilingual Expo client, a self-hosted API, PostgreSQL/pgvector RAG, versioned transcription and confirmation, speaker/emotion analysis, business reports, and auditable AI execution records.
 
 > [!IMPORTANT]
-> EchoWave `v0.1` is a development preview. It currently uses a fixed development tenant and does not yet provide real user accounts, authorization, or a production-grade public-internet security boundary. Deploy it only on a trusted LAN and never expose the API port directly to the internet. No installable release APK is available yet, so the client must currently be built from source.
+> EchoWave `v0.1` is a development preview. It currently uses a fixed development tenant and does not yet provide real user accounts, authorization, or a production-grade public-internet security boundary. Deploy it only on a trusted LAN and never expose the API port directly to the internet. After a stable tag has completed publishing, download its signed Android APK and Server bundle from [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases).
 
 [Quick start](#quick-start) · [Capabilities](#current-capabilities) · [Architecture](#how-it-works) · [Limitations](#current-limitations) · [Future](#future) · [Docs](./docs/README.md) · [Contributing](./CONTRIBUTING.md)
 
@@ -58,30 +58,28 @@ Zod schemas in `packages/contracts` are the shared API/client boundary. PostgreS
 
 - Source development: Node.js `24.x`, pnpm `11.3.0`, PostgreSQL `15+`, pgvector `0.8.0+`, and FFmpeg
 - Self-hosted server: Docker Engine/Desktop with Compose
-- Native app: Android tooling/device, or macOS with Xcode; an Expo Development Build is recommended
-
-Clone the repository:
-
-```bash
-git clone https://github.com/MetaBrain-Labs/EchoWave.git
-cd EchoWave
-```
+- Release app: an Android device; source builds additionally need Android tooling, and iOS development needs macOS with Xcode
 
 ### Option A: self-host the server
 
 ```bash
-cp deploy/self-hosted/api.env.example deploy/self-hosted/api.env
+unzip EchoWave-server-vX.Y.Z.zip -d echowave-server
+cd echowave-server
+cp api.env.example api.env
 # Replace the database password, CREDENTIAL_MASTER_KEY, and CONFIGURATION_ADMIN_TOKEN
 docker compose config
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 curl http://localhost:3001/health
 ```
 
-Until a release APK exists, you must still build the client from source. A phone connects to `http://<SERVER_LAN_IP>:<API_PORT>`, never the server's `localhost`. Follow the [self-hosting and app-build guide](./docs/self-hosting.md) for key generation, ports, volumes, firewall rules, and EAS builds.
+Download the matching Android APK and `EchoWave-server-vX.Y.Z.zip` from [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases), verify their SHA-256 checksums, and follow the bundled README. A phone connects to `http://<SERVER_LAN_IP>:<API_PORT>`, never the server's `localhost`. See the [release guide](./docs/releases.md) for upgrades and rollback, and the [self-hosting guide](./docs/self-hosting.md) for configuration details.
 
 ### Option B: local development
 
 ```bash
+git clone https://github.com/MetaBrain-Labs/EchoWave.git
+cd EchoWave
 pnpm install --frozen-lockfile
 cp apps/api/.env.example apps/api/.env
 cp apps/mobile/.env.example apps/mobile/.env
@@ -119,7 +117,7 @@ Android device regression is managed separately under `.maestro/`; see the [mobi
 - No real accounts, authentication, RBAC, or public-internet production baseline.
 - API and workers share one process; local audio paths and in-process SSE wakeups require a single API instance.
 - No automatic data-source sync, PDF/OCR/legacy Office ingestion, re-transcription, cursor pagination, or Redis queue.
-- No automated GitHub Release, signed downloadable APK, QR/mDNS discovery, or hosted cloud service.
+- No iOS Release, QR/mDNS discovery, in-app updater, or hosted cloud service.
 - Native iOS and push validation require macOS/Xcode and Apple/APNs credentials.
 
 Read the [security policy](./SECURITY.md) and [self-hosting guide](./docs/self-hosting.md) before deployment.
@@ -128,7 +126,7 @@ Read the [security policy](./SECURITY.md) and [self-hosting guide](./docs/self-h
 
 The roadmap follows one principle: make EchoWave a dependable self-hosted product before expanding the platform and ecosystem.
 
-1. **Installability and onboarding**: signed Android release APKs, automated releases and upgrades, better diagnostics, demos, and currently surfaced actions such as re-transcription.
+1. **Installability and onboarding**: maintain signed Android releases and Server rollback compatibility, then add better diagnostics, demos, and currently surfaced actions such as re-transcription.
 2. **Production security**: real accounts and tenants, RBAC, HTTPS/reverse-proxy baseline, rate limits, backup/restore, and stronger security auditing.
 3. **Scalable runtime**: separate API/workers, durable queues, multi-instance live events, object-storage-first audio lifecycle, and observability.
 4. **Broader knowledge and audio support**: data-source connectors, PDF/OCR/legacy Office, pluggable ASR/LLM providers, stronger retrieval, and configurable analysis templates.

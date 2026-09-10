@@ -14,7 +14,7 @@
 EchoWave 面向需要从访谈、销售通话、会议等音频中沉淀结构化洞察的团队。它提供中文和英文界面的 Expo 客户端、自托管 API、PostgreSQL/pgvector 知识库、版本化转写与人工确认、情绪/角色识别、业务分析以及可追溯的 AI 执行记录。
 
 > [!IMPORTANT]
-> EchoWave 当前是 `v0.1` 开发预览版：使用固定开发租户，尚未提供真实账号、权限控制和公网部署所需的完整安全边界。请仅部署在可信局域网，不要把 API 端口直接暴露到公网。仓库暂未发布可直接安装的正式 APK，现阶段需要从源码构建客户端。
+> EchoWave 当前是 `v0.1` 开发预览版：使用固定开发租户，尚未提供真实账号、权限控制和公网部署所需的完整安全边界。请仅部署在可信局域网，不要把 API 端口直接暴露到公网。稳定 Tag 发布完成后，签名 Android APK 与 Server 包将从 [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases) 下载。
 
 [快速开始](#快速开始) · [当前能力](#当前能力) · [架构](#系统如何工作) · [项目边界](#当前边界) · [Future](#future) · [完整文档](./docs/README.md) · [贡献指南](./CONTRIBUTING.md)
 
@@ -58,32 +58,31 @@ flowchart LR
 
 - 源码开发：Node.js `24.x`、pnpm `11.3.0`、PostgreSQL `15+`、pgvector `0.8.0+`、FFmpeg
 - 自托管 Server：Docker Desktop 或 Docker Engine + Compose
-- 原生 App：Android Studio/Android 设备，或 macOS + Xcode；推荐使用 Expo Development Build
-
-先克隆仓库：
-
-```bash
-git clone https://github.com/MetaBrain-Labs/EchoWave.git
-cd EchoWave
-```
+- Release App：Android 设备；源码构建另需 Android Studio，iOS 开发另需 macOS + Xcode
 
 ### 路径 A：启动自托管 Server
 
-这是最快的服务端体验路径，但在正式 Release APK 发布前仍需按[自托管与自行构建](./docs/self-hosting.md)构建客户端。
+这是最快的服务端体验路径。首个稳定 Release 完成后，普通用户应从 [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases) 下载同一版本的 Android APK 与 `EchoWave-server-vX.Y.Z.zip`，校验 SHA-256 后按压缩包内 README 启动。完整升级和回退规则见[发布指南](./docs/releases.md)。
 
 ```bash
-cp deploy/self-hosted/api.env.example deploy/self-hosted/api.env
+unzip EchoWave-server-vX.Y.Z.zip -d echowave-server
+cd echowave-server
+cp api.env.example api.env
 # 编辑 api.env，替换数据库密码、CREDENTIAL_MASTER_KEY 和 CONFIGURATION_ADMIN_TOKEN
 docker compose config
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
 PowerShell 请使用：
 
 ```powershell
-Copy-Item deploy/self-hosted/api.env.example deploy/self-hosted/api.env
+Expand-Archive EchoWave-server-vX.Y.Z.zip -DestinationPath echowave-server
+Set-Location echowave-server
+Copy-Item api.env.example api.env
 docker compose config
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
 确认服务已经启动：
@@ -97,9 +96,11 @@ curl http://localhost:3001/api/hello
 
 ### 路径 B：本地开发
 
-安装依赖，并从模板创建不跟踪的本地配置：
+先克隆仓库，再安装依赖并从模板创建不跟踪的本地配置：
 
 ```bash
+git clone https://github.com/MetaBrain-Labs/EchoWave.git
+cd EchoWave
 pnpm install --frozen-lockfile
 cp apps/api/.env.example apps/api/.env
 cp apps/mobile/.env.example apps/mobile/.env
@@ -157,7 +158,7 @@ Android 真机回归由 `.maestro/` 和 `scripts/e2e/android-e2e.mjs` 管理，�
 - 没有真实账号、鉴权、RBAC 或面向公网的生产安全基线。
 - API 与 Worker 在同一进程；本地音频路径和进程内 SSE 唤醒要求单 API 实例。
 - 尚无数据源自动同步、PDF/OCR/旧版 Office 解析、重新转写、游标分页或 Redis 队列。
-- 尚无自动 GitHub Release、可下载的签名 APK、二维码/mDNS 发现或官方托管云服务。
+- 尚无 iOS Release、二维码/mDNS 发现、App 内自动更新或官方托管云服务。
 - iOS 原生构建与推送验收需要 macOS/Xcode 及 Apple/APNs 凭据；仓库不能在 Windows 上完成该验证。
 
 这些限制不是隐藏的“企业版能力”，而是当前开源版本尚待完成的工程工作。部署前请阅读[安全策略](./SECURITY.md)与[自托管指南](./docs/self-hosting.md)。
@@ -166,7 +167,7 @@ Android 真机回归由 `.maestro/` 和 `scripts/e2e/android-e2e.mjs` 管理，�
 
 路线图按“先成为可靠的自托管产品，再扩展平台与生态”的顺序推进：
 
-1. **可安装与易上手**：签名 Android Release APK、自动发布与升级说明、演示素材、配置诊断，以及重新转写等已露出但尚未完成的操作。
+1. **可安装与易上手**：持续维护签名 Android Release APK、Server 回滚兼容与升级说明，并补齐演示素材、配置诊断以及重新转写等已露出但尚未完成的操作。
 2. **生产安全基础**：真实账号与租户、RBAC、HTTPS/反向代理基线、速率限制、备份恢复和更完整的安全审计。
 3. **可扩展运行时**：拆分 API 与 Worker、持久任务队列、多实例实时事件、对象存储优先的音频生命周期和可观测性。
 4. **更广的知识与音频能力**：数据源连接器、PDF/OCR/旧版 Office、可插拔 ASR/LLM Provider、更强的检索与可配置分析模板。

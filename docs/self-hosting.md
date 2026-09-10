@@ -1,10 +1,15 @@
 # EchoWave 自托管与自行构建
 
-EchoWave 支持两条开源使用路径：正式 Release APK 发布后安装 Android App 并连接自己的服务器，或 Clone 源码后创建自己的 Development/Production Build。当前仓库尚未提供正式 Release APK，因此现阶段应使用源码构建路径。
+EchoWave 支持两条开源使用路径：稳定 Tag 发布完成后，普通用户从 [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases) 下载同一版本的签名 Android APK 与 Server ZIP；维护者或 Fork 用户也可以 Clone 源码后创建自己的 Development/Production Build。下载、SHA-256 校验、升级与回退规则见[发布指南](./releases.md)。
 
 当前 API 使用固定开发租户，没有真实用户鉴权，只适合可信局域网。不要直接转发 API 端口到公网；公网部署必须先补齐鉴权、HTTPS、反向代理和运维防护。
 
 ## Docker Self-hosted Server
+
+正式 Release 用户应解压 `EchoWave-server-vX.Y.Z.zip`，复制包内 `api.env.example` 为
+`api.env`，然后直接运行 `docker compose pull && docker compose up -d`。包内 Compose 已固定
+到该版本的 GHCR 镜像 digest，不需要源码和本地镜像构建。下面的根 Compose 流程保留给 Clone
+源码开发和自行构建者。
 
 ### 1. 准备配置
 
@@ -211,7 +216,7 @@ Invoke-RestMethod "http://${serverLanIp}:${apiPort}/health"
 
 ## Production APK 与商店构建
 
-Development Build 推送通过后再生成可手动附加到未来 GitHub Release 的正式 APK：
+Development Build 推送通过后可手动生成与自动发布流程相同 profile 的正式 APK：
 
 ```powershell
 Set-Location apps/mobile
@@ -227,7 +232,7 @@ Production APK 验收：
 - `remotePush=false` 时不请求权限、不注册设备。
 - 修改服务器后旧 SSE 断开，页面数据重新加载。
 
-Google Play 发布时使用 `production` profile 生成默认 AAB；AAB 不能像 APK 一样直接安装到普通真机。本仓库当前不自动创建 GitHub Release。
+Google Play 发布时使用 `production` profile 生成默认 AAB；AAB 不能像 APK 一样直接安装到普通真机。稳定 `vX.Y.Z` Tag 会使用固定 EAS CLI 自动生成签名 APK、Server ZIP、Release manifest 与 SHA-256，并在全部门禁通过后公开 GitHub Release。
 
 ## Fork 或自行分发
 

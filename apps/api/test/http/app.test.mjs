@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
+import { readFileSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -19,6 +20,7 @@ import { AudioUploadValidationError } from '../../dist/workspace/data-sources/se
 import { DashScopeCallbackError } from '../../dist/workspace/audio/transcription/dashScopeCallback.js';
 
 const app = createApp({ corsOrigins: ['http://localhost:8081'] });
+const apiPackage = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
 const groupId = '11111111-1111-4111-8111-111111111111';
 
 describe('EchoWave API', () => {
@@ -30,7 +32,7 @@ describe('EchoWave API', () => {
     assert.deepEqual(HealthResponseSchema.parse(body), {
       name: 'EchoWave',
       service: 'echowave-api',
-      version: '0.1.0',
+      version: apiPackage.version,
       apiVersion: 1,
       status: 'ok',
       capabilities: { remotePush: false },

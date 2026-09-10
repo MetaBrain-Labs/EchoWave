@@ -28,15 +28,22 @@ const IGNORED_DIRECTORIES = new Set([
 ]);
 
 const REQUIRED_PATHS = [
+  '.github/workflows/release.yml',
   'apps/api/.env.example',
   'apps/api/Dockerfile',
   'apps/mobile/.env.example',
   'apps/mobile/eas.json',
   'compose.yaml',
+  'deploy/release/README.md',
+  'deploy/release/compose.template.yaml',
+  'deploy/release/release.json',
   'deploy/self-hosted/api.env.example',
   'docs/README.md',
   'docs/documentation-guide.md',
+  'docs/releases.md',
   'docs/self-hosting.md',
+  'scripts/release/release-lib.mjs',
+  'scripts/release/release.test.mjs',
 ];
 
 function collectMarkdownFiles(directory, files = []) {
@@ -161,6 +168,12 @@ function validateCriticalPaths(rootDirectory) {
     }
     if (eas.build?.['production-apk']?.android?.buildType !== 'apk') {
       errors.push('apps/mobile/eas.json: production-apk profile must produce an APK');
+    }
+    if (eas.cli?.appVersionSource !== 'remote') {
+      errors.push('apps/mobile/eas.json: appVersionSource must use EAS remote versioning');
+    }
+    if (eas.build?.['production-apk']?.autoIncrement !== true) {
+      errors.push('apps/mobile/eas.json: production-apk must auto increment Android versionCode');
     }
     for (const profile of ['production-apk', 'production']) {
       if (eas.build?.[profile]?.env?.EXPO_PUBLIC_REQUIRE_SERVER_SELECTION !== 'true') {

@@ -1,0 +1,229 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: write
+  attestations: write
+  id-token: write
+  artifact-metadata: write
+
+env:
+  EAS_CLI_VERSION: '24.0.0'
+  IMAGE_REPOSITORY: ghcr.io/metabrain-labs/echowave-api
+
+jobs:
+  release:
+    name: Build and publish immutable release
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Fetch authoritative main and tags
+        run: git fetch --force --tags origin main:refs/remotes/origin/main
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 11.3.0
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate tag and rollback contract
+        id: release_contract
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: node scripts/release/validate-release.mjs
+
+      - name: Refuse to replace an existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists and will not be replaced." >&2
+            exit 1
+          fi
+
+      - name: Run repository verification
+        run: pnpm check
+
+      - name: Set up Expo and EAS
+        uses: expo/expo-github-action@c7b66a9c327a43a8fa7c0158e7f30d6040d2481e # v8
+        with:
+          eas-version: ${{ env.EAS_CLI_VERSION }}
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build signed production APK on EAS
+        working-directory: apps/mobile
+        run: |
+          mkdir -p ../../dist/release
+          eas build \
+            --platform android \
+            --profile production-apk \
+            --non-interactive \
+            --wait \
+            --json > ../../dist/release/eas-build.json
+
+      - name: Extract EAS build result
+        id: eas_build
+        run: |
+          node scripts/release/extract-eas-build.mjs \
+            dist/release/eas-build.json \
+            dist/release/eas-artifact-url.txt
+
+      - name: Download EAS APK
+        run: |
+          artifact_url=$(<dist/release/eas-artifact-url.txt)
+          curl --fail --location --retry 3 \
+            --output dist/release/eas-output.apk \
+            "$artifact_url"
+
+      - name: Verify APK identity and signature
+        env:
+          RELEASE_VERSION: ${{ steps.release_contract.outputs.version }}
+        run: |
+          build_tools_dir=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+          "$build_tools_dir/apksigner" verify --verbose dist/release/eas-output.apk
+          badging=$("$build_tools_dir/aapt" dump badging dist/release/eas-output.apk | head -n 1)
+          grep -F "package: name='com.echowave.app'" <<<"$badging"
+          grep -F "versionName='$RELEASE_VERSION'" <<<"$badging"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build and push multi-architecture server image
+        id: server_image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: mode=max
+          sbom: true
+          tags: ${{ env.IMAGE_REPOSITORY }}:${{ github.ref_name }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.release_contract.outputs.version }}
+            org.opencontainers.image.licenses=Apache-2.0
+
+      - name: Attest server image provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: ${{ env.IMAGE_REPOSITORY }}
+          subject-digest: ${{ steps.server_image.outputs.digest }}
+          push-to-registry: true
+
+      - name: Verify image platforms and native runtime
+        env:
+          IMAGE_DIGEST: ${{ steps.server_image.outputs.digest }}
+        run: |
+          docker buildx imagetools inspect --raw "$IMAGE_REPOSITORY@$IMAGE_DIGEST" \
+            > dist/release/image-manifest.json
+          node scripts/release/verify-image-manifest.mjs dist/release/image-manifest.json
+          for platform in linux/amd64 linux/arm64; do
+            docker run --rm --platform "$platform" --entrypoint sh \
+              "$IMAGE_REPOSITORY@$IMAGE_DIGEST" -ec \
+              "node -e \"import('onnxruntime-node')\" && ffmpeg -version >/dev/null"
+          done
+
+      - name: Package release assets
+        env:
+          IMAGE_DIGEST: ${{ steps.server_image.outputs.digest }}
+          PREVIOUS_STABLE_TAG: ${{ steps.release_contract.outputs.previous_tag }}
+        run: |
+          created_at=$(git show -s --format=%cI "$GITHUB_SHA")
+          node scripts/release/package-release.mjs \
+            --tag "$GITHUB_REF_NAME" \
+            --commit "$GITHUB_SHA" \
+            --image-digest "$IMAGE_DIGEST" \
+            --apk dist/release/eas-output.apk \
+            --eas-build-json dist/release/eas-build.json \
+            --output-directory dist/release \
+            --created-at "$created_at"
+
+      - name: Verify fresh install, upgrade, and N-1 rollback
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIOUS_STABLE_TAG: ${{ steps.release_contract.outputs.previous_tag }}
+          RELEASE_VERSION: ${{ steps.release_contract.outputs.version }}
+        run: |
+          bash scripts/release/smoke-release-server.sh \
+            "dist/release/EchoWave-server-v${RELEASE_VERSION}.zip" \
+            "$RELEASE_VERSION" \
+            "$PREVIOUS_STABLE_TAG"
+
+      - name: Verify anonymous GHCR access
+        env:
+          IMAGE_DIGEST: ${{ steps.server_image.outputs.digest }}
+        run: |
+          anonymous_config=$(mktemp -d)
+          DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect \
+            "$IMAGE_REPOSITORY@$IMAGE_DIGEST" >/dev/null
+          rm -rf "$anonymous_config"
+
+      - name: Generate release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.release_contract.outputs.version }}
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+            -f tag_name="$GITHUB_REF_NAME" \
+            -f target_commitish="$GITHUB_SHA" \
+            --jq '.body' > dist/release/generated-notes.md
+          node scripts/release/create-release-notes.mjs \
+            "dist/release/EchoWave-release-v${RELEASE_VERSION}.json" \
+            dist/release/generated-notes.md \
+            dist/release/release-notes.md
+
+      - name: Create and publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.release_contract.outputs.version }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --draft \
+            --title "EchoWave $GITHUB_REF_NAME" \
+            --notes-file dist/release/release-notes.md \
+            "dist/release/EchoWave-android-v${RELEASE_VERSION}.apk" \
+            "dist/release/EchoWave-server-v${RELEASE_VERSION}.zip" \
+            "dist/release/EchoWave-release-v${RELEASE_VERSION}.json" \
+            "dist/release/SHA256SUMS-v${RELEASE_VERSION}.txt"
+          gh release edit "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false \
+            --latest

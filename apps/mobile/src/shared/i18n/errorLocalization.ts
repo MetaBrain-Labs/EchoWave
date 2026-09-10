@@ -23,6 +23,7 @@ const englishMessages: Record<string, string> = {
   TIMEOUT: 'The request timed out. Please try again.',
   NETWORK: 'Unable to connect to the service. Check your network.',
   INVALID_RESPONSE: 'The service returned an invalid response.',
+  FILE_UNAVAILABLE: 'Unable to read the selected file. Please choose it again.',
   HTTP_ERROR: 'The service request failed.',
 };
 
