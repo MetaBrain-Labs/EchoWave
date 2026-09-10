@@ -6,7 +6,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { ProviderConnectionWriteSchema, SettingsOverviewSchema } from '../../dist/settings.js';
+import {
+  AI_CAPABILITY_DEFAULTS,
+  AiCapabilitySchema,
+  ProviderConnectionWriteSchema,
+  SettingsOverviewSchema,
+} from '../../dist/settings.js';
 
 describe('settings contracts', () => {
   it('accepts a Local alias connection and a Secret-free overview', () => {
@@ -52,5 +57,20 @@ describe('settings contracts', () => {
       }).success,
       false,
     );
+  });
+
+  it('defines a valid default for every AI capability', () => {
+    assert.deepEqual(Object.keys(AI_CAPABILITY_DEFAULTS), AiCapabilitySchema.options);
+    for (const [capability, defaults] of Object.entries(AI_CAPABILITY_DEFAULTS)) {
+      assert.equal(AiCapabilitySchema.parse(capability), capability);
+      assert.equal(defaults.model.length > 0, true);
+      assert.equal(['dashscope', 'deepseek', 'aliyun_oss'].includes(defaults.providerType), true);
+    }
+    assert.deepEqual(AI_CAPABILITY_DEFAULTS.knowledge_chat.settings, {
+      enableThinking: false,
+    });
+    assert.deepEqual(AI_CAPABILITY_DEFAULTS.business_analysis.settings, {
+      enableThinking: false,
+    });
   });
 });
