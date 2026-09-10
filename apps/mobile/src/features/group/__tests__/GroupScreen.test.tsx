@@ -14,7 +14,9 @@ import type { ComponentProps } from 'react';
 import { StyleSheet } from 'react-native';
 
 import { GroupScreen } from '../GroupScreen';
+import * as dataSourcesApi from '@/shared/api/dataSourcesApi';
 import * as workspaceApi from '@/shared/api/groupsApi';
+import * as knowledgeBasesApi from '@/shared/api/knowledgeBasesApi';
 import { colors, spacing } from '@/shared/theme/tokens';
 import {
   audioFixtures,
@@ -37,6 +39,14 @@ jest.mock('@/shared/api/groupsApi', () => ({
   listGroupAudioFiles: jest.fn(),
   listGroupKnowledgeBases: jest.fn(),
   listGroupDataSources: jest.fn(),
+  replaceGroupKnowledgeBases: jest.fn(),
+  replaceGroupDataSources: jest.fn(),
+}));
+jest.mock('@/shared/api/knowledgeBasesApi', () => ({
+  listKnowledgeBases: jest.fn(),
+}));
+jest.mock('@/shared/api/dataSourcesApi', () => ({
+  listDataSources: jest.fn(),
 }));
 
 const secondGroup = {
@@ -105,6 +115,14 @@ describe('GroupScreen', () => {
     jest
       .mocked(workspaceApi.listGroupDataSources)
       .mockResolvedValue({ items: sourceFixtures.slice(0, 3) });
+    jest
+      .mocked(knowledgeBasesApi.listKnowledgeBases)
+      .mockResolvedValue({ items: knowledgeFixtures });
+    jest.mocked(dataSourcesApi.listDataSources).mockResolvedValue({ items: sourceFixtures });
+    jest
+      .mocked(workspaceApi.replaceGroupKnowledgeBases)
+      .mockResolvedValue({ items: knowledgeFixtures });
+    jest.mocked(workspaceApi.replaceGroupDataSources).mockResolvedValue({ items: sourceFixtures });
   });
 
   it('uses the special group title and inline icon sizing rules', async () => {
@@ -205,7 +223,7 @@ describe('GroupScreen', () => {
     });
     expect(screen.getByTestId('group-inline-title')).toBeTruthy();
 
-    fireEvent.press(screen.getByText('关联知识库'));
+    fireEvent.press(screen.getByRole('tab', { name: '关联知识库' }));
     expect(screen.getByTestId('group-display-title')).toBeTruthy();
 
     fireEvent.scroll(screen.getByTestId('group-knowledge-scroll'), {
@@ -233,11 +251,111 @@ describe('GroupScreen', () => {
 
     expect(screen.getByText('共 5 份音频')).toBeTruthy();
 
-    fireEvent.press(screen.getByText('关联知识库'));
+    fireEvent.press(screen.getByRole('tab', { name: '关联知识库' }));
     await waitFor(() => expect(screen.getByText('共关联 2 个知识库')).toBeTruthy());
 
     fireEvent.press(screen.getByText('连接数据源'));
     expect(screen.getByText('共连接 3 个数据源')).toBeTruthy();
+  });
+
+  it('links existing knowledge bases and data sources from empty tab states', async () => {
+    jest.mocked(workspaceApi.listGroupKnowledgeBases).mockResolvedValue({ items: [] });
+    jest.mocked(workspaceApi.listGroupDataSources).mockResolvedValue({ items: [] });
+    jest
+      .mocked(workspaceApi.replaceGroupKnowledgeBases)
+      .mockResolvedValue({ items: [knowledgeFixtures[1]!] });
+    jest
+      .mocked(workspaceApi.replaceGroupDataSources)
+      .mockResolvedValue({ items: [sourceFixtures[0]!] });
+    const screen = await renderGroup();
+
+    fireEvent.press(screen.getByRole('tab', { name: '关联知识库' }));
+    fireEvent.press(screen.getByRole('button', { name: '关联知识库' }));
+    await waitFor(() => expect(screen.getByText('团队文档空间')).toBeTruthy());
+    fireEvent.press(screen.getByLabelText('关联知识库：团队文档空间'));
+    fireEvent.press(screen.getByLabelText('保存关联'));
+
+    await waitFor(() =>
+      expect(workspaceApi.replaceGroupKnowledgeBases).toHaveBeenCalledWith(groupFixture.id, {
+        ids: [knowledgeFixtures[1]!.id],
+      }),
+    );
+    expect(screen.getByText('共关联 1 个知识库')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('连接数据源'));
+    fireEvent.press(screen.getByRole('button', { name: '关联数据源' }));
+    await waitFor(() => expect(screen.getByText('团队录音空间')).toBeTruthy());
+    fireEvent.press(screen.getByLabelText('关联数据源：团队录音空间'));
+    fireEvent.press(screen.getByLabelText('保存关联'));
+
+    await waitFor(() =>
+      expect(workspaceApi.replaceGroupDataSources).toHaveBeenCalledWith(groupFixture.id, {
+        ids: [sourceFixtures[0]!.id],
+      }),
+    );
+    expect(screen.getByText('共连接 1 个数据源')).toBeTruthy();
+  });
+
+  it('retries candidate loading and explains when no resources are available', async () => {
+    jest.mocked(workspaceApi.listGroupKnowledgeBases).mockResolvedValue({ items: [] });
+    jest.mocked(workspaceApi.listGroupDataSources).mockResolvedValue({ items: [] });
+    jest
+      .mocked(knowledgeBasesApi.listKnowledgeBases)
+      .mockRejectedValueOnce(new Error('知识库目录暂时不可用'))
+      .mockResolvedValueOnce({ items: [] });
+    const screen = await renderGroup();
+
+    fireEvent.press(screen.getByRole('tab', { name: '关联知识库' }));
+    fireEvent.press(screen.getByRole('button', { name: '关联知识库' }));
+    await waitFor(() => expect(screen.getByText('知识库目录暂时不可用')).toBeTruthy());
+    fireEvent.press(screen.getByLabelText('重试'));
+
+    await waitFor(() => expect(screen.getByText('暂无可关联知识库')).toBeTruthy());
+    expect(screen.getByLabelText('保存关联')).toBeDisabled();
+  });
+
+  it('retries a failed association save without losing the selected resources', async () => {
+    jest.mocked(workspaceApi.listGroupKnowledgeBases).mockResolvedValue({ items: [] });
+    jest.mocked(workspaceApi.listGroupDataSources).mockResolvedValue({ items: [] });
+    jest
+      .mocked(workspaceApi.replaceGroupKnowledgeBases)
+      .mockRejectedValueOnce(new Error('关联保存暂时失败'))
+      .mockResolvedValueOnce({ items: [knowledgeFixtures[0]!] });
+    const screen = await renderGroup();
+
+    fireEvent.press(screen.getByRole('tab', { name: '关联知识库' }));
+    fireEvent.press(screen.getByRole('button', { name: '关联知识库' }));
+    await waitFor(() => expect(screen.getByText('产品研究知识库')).toBeTruthy());
+    fireEvent.press(screen.getByLabelText('关联知识库：产品研究知识库'));
+    fireEvent.press(screen.getByLabelText('保存关联'));
+
+    await waitFor(() => expect(screen.getByText('关联保存暂时失败')).toBeTruthy());
+    fireEvent.press(screen.getByLabelText('重试'));
+
+    await waitFor(() => expect(workspaceApi.replaceGroupKnowledgeBases).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('共关联 1 个知识库')).toBeTruthy();
+  });
+
+  it('does not show link actions for search or filter empty results', async () => {
+    const screen = await renderGroup();
+
+    fireEvent.press(screen.getByLabelText('搜索'));
+    fireEvent.changeText(screen.getByLabelText('输入搜索关键词'), '不存在的资源');
+    fireEvent(screen.getByLabelText('输入搜索关键词'), 'submitEditing');
+    fireEvent.press(screen.getByRole('tab', { name: '关联知识库' }));
+
+    expect(screen.getAllByText('没有匹配“\u4e0d存在的资源”的内容')).toHaveLength(3);
+    expect(screen.queryByRole('button', { name: '关联知识库' })).toBeNull();
+
+    fireEvent.press(screen.getByLabelText('搜索'));
+    fireEvent.changeText(screen.getByLabelText('输入搜索关键词'), '');
+    fireEvent(screen.getByLabelText('输入搜索关键词'), 'submitEditing');
+    fireEvent.press(screen.getByLabelText('知识库排序筛选'));
+    fireEvent.press(screen.getByRole('radio', { name: '空知识库' }));
+    fireEvent.press(screen.getByLabelText('确认排序筛选'));
+
+    expect(screen.getByText('没有符合当前文档筛选的知识库')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '关联知识库' })).toBeNull();
   });
 
   it('opens linked knowledge bases and connected data sources from their cards', async () => {

@@ -26,15 +26,19 @@ export function DataSourcesContent({
   loading,
   onOpenFilter,
   onOpenSource,
+  onLink,
   onRetry,
+  showLinkAction,
   sources,
 }: {
   error: string;
   emptyMessage: string;
   loading: boolean;
+  onLink?: () => void;
   onOpenFilter: () => void;
   onOpenSource: (sourceId: string) => void;
   onRetry: () => void;
+  showLinkAction?: boolean;
   sources: DataSourceSummary[];
 }) {
   const { formatDateTime, formatNumber, t } = useAppLanguage();
@@ -116,6 +120,16 @@ export function DataSourcesContent({
       ) : (
         <View style={styles.emptyState}>
           <Text style={styles.emptyText}>{emptyMessage}</Text>
+          {showLinkAction && onLink ? (
+            <Pressable
+              accessibilityLabel={t('groupSettings.linkSources')}
+              accessibilityRole="button"
+              onPress={onLink}
+              style={({ pressed }) => [styles.linkButton, pressed && styles.pressed]}
+            >
+              <Text style={styles.linkButtonText}>{t('groupSettings.linkSources')}</Text>
+            </Pressable>
+          ) : null}
         </View>
       )}
     </>
@@ -164,6 +178,21 @@ const styles = StyleSheet.create({
     color: textColors.secondary,
     fontFamily: fontFamilies.sans,
     textAlign: 'center',
+  },
+  linkButton: {
+    alignItems: 'center',
+    backgroundColor: colors.ink,
+    borderRadius: radii.default,
+    justifyContent: 'center',
+    marginTop: spacing.md,
+    minHeight: 48,
+    paddingHorizontal: spacing.lg,
+  },
+  linkButtonText: {
+    ...typography.body,
+    color: colors.white,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
   },
   cardTitle: {
     ...typography.heading2,

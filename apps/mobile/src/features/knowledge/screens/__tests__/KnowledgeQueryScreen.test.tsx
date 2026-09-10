@@ -8,7 +8,7 @@
  * - 确保历史面板保持只读且按需刷新。
  */
 import { act, fireEvent, render } from '@testing-library/react-native';
-import { Text as MockText } from 'react-native';
+import { KeyboardAvoidingView, Platform, Text as MockText } from 'react-native';
 
 import { KnowledgeQueryScreen } from '../KnowledgeQueryScreen';
 import { listQueryHistory, queryKnowledge } from '../../apiClient';
@@ -43,8 +43,13 @@ const response = {
   usage: { embeddingTokens: 4, inputTokens: 12, outputTokens: 8 },
 };
 
+function setPlatform(os: 'android' | 'ios' | 'web') {
+  Object.defineProperty(Platform, 'OS', { configurable: true, value: os });
+}
+
 describe('KnowledgeQueryScreen', () => {
   beforeEach(() => {
+    setPlatform('android');
     jest.useFakeTimers();
     jest.mocked(listQueryHistory).mockResolvedValue({ items: [] });
   });
@@ -53,6 +58,24 @@ describe('KnowledgeQueryScreen', () => {
     jest.runOnlyPendingTimers();
     jest.useRealTimers();
     jest.resetAllMocks();
+  });
+
+  it.each([
+    ['android', 'height'],
+    ['ios', 'padding'],
+    ['web', undefined],
+  ] as const)('uses the expected keyboard behavior on %s', (os, behavior) => {
+    setPlatform(os);
+
+    const screen = render(
+      <KnowledgeQueryScreen
+        knowledgeId={knowledge.id}
+        onBack={jest.fn()}
+        onOpenCitation={jest.fn()}
+      />,
+    );
+
+    expect(screen.UNSAFE_getByType(KeyboardAvoidingView).props.behavior).toBe(behavior);
   });
 
   it('sends the question immediately and replaces progress with the final answer', async () => {

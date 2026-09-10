@@ -28,15 +28,19 @@ export function KnowledgeContent({
   loading,
   onOpenKnowledge,
   onOpenFilter,
+  onLink,
   onRetry,
+  showLinkAction,
 }: {
   error: string;
   emptyMessage: string;
   knowledgeBases: KnowledgeBaseSummary[];
   loading: boolean;
+  onLink?: () => void;
   onOpenKnowledge: (knowledgeId: string) => void;
   onOpenFilter: () => void;
   onRetry: () => void;
+  showLinkAction?: boolean;
 }) {
   const { formatDateTime, formatNumber, t } = useAppLanguage();
   if (loading) {
@@ -113,6 +117,16 @@ export function KnowledgeContent({
       ) : (
         <View style={styles.emptyState}>
           <Text style={styles.emptyText}>{emptyMessage}</Text>
+          {showLinkAction && onLink ? (
+            <Pressable
+              accessibilityLabel={t('groupSettings.linkKnowledge')}
+              accessibilityRole="button"
+              onPress={onLink}
+              style={({ pressed }) => [styles.linkButton, pressed && styles.pressed]}
+            >
+              <Text style={styles.linkButtonText}>{t('groupSettings.linkKnowledge')}</Text>
+            </Pressable>
+          ) : null}
         </View>
       )}
     </>
@@ -161,6 +175,21 @@ const styles = StyleSheet.create({
     color: textColors.secondary,
     fontFamily: fontFamilies.sans,
     textAlign: 'center',
+  },
+  linkButton: {
+    alignItems: 'center',
+    backgroundColor: colors.ink,
+    borderRadius: radii.default,
+    justifyContent: 'center',
+    marginTop: spacing.md,
+    minHeight: 48,
+    paddingHorizontal: spacing.lg,
+  },
+  linkButtonText: {
+    ...typography.body,
+    color: colors.white,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
   },
   cardTitle: {
     ...typography.heading2,

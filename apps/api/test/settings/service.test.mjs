@@ -33,7 +33,7 @@ function storedProvider(type) {
     config:
       type === 'dashscope'
         ? {
-            baseUrl: 'https://dashscope.aliyuncs.com',
+            baseUrl: 'https://dashscope.aliyuncs.com/api/v1',
             compatibleBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
             asyncNotifyMode: 'polling',
             eventBridgeCallbackUrl: null,

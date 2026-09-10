@@ -40,7 +40,11 @@ import {
   listGroupDataSources,
   listGroupKnowledgeBases,
   listGroups,
+  replaceGroupDataSources,
+  replaceGroupKnowledgeBases,
 } from '@/shared/api/groupsApi';
+import { listDataSources } from '@/shared/api/dataSourcesApi';
+import { listKnowledgeBases } from '@/shared/api/knowledgeBasesApi';
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
@@ -63,6 +67,11 @@ import { GroupDrawer } from './components/GroupDrawer';
 import { GroupFilterSheet } from './components/GroupFilterSheet';
 import { KnowledgeContent } from './components/KnowledgeContent';
 import {
+  GroupResourceLinkSheet,
+  type GroupResourceLinkKind,
+  type GroupResourceLinkOption,
+} from './components/GroupResourceLinkSheet';
+import {
   selectAudioItems,
   selectDataSources,
   selectKnowledgeBases,
@@ -83,6 +92,7 @@ const tabs = [
 export type TabKey = (typeof tabs)[number]['key'];
 const tabKeys = tabs.map((tab) => tab.key);
 const headerCollapseGuardMs = 250;
+type ResourceLinkRetryMode = 'load' | 'save';
 
 const IconButton = forwardRef<
   View,
@@ -173,6 +183,15 @@ export function GroupScreen({
   const [dataSources, setDataSources] = useState<DataSourceSummary[]>([]);
   const [sourcesLoading, setSourcesLoading] = useState(true);
   const [sourcesError, setSourcesError] = useState('');
+  const [resourceLinkKind, setResourceLinkKind] = useState<GroupResourceLinkKind>();
+  const [resourceLinkOptions, setResourceLinkOptions] = useState<GroupResourceLinkOption[]>([]);
+  const [resourceLinkSelectedIds, setResourceLinkSelectedIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [resourceLinkLoading, setResourceLinkLoading] = useState(false);
+  const [resourceLinkError, setResourceLinkError] = useState('');
+  const [resourceLinkRetryMode, setResourceLinkRetryMode] = useState<ResourceLinkRetryMode>('load');
+  const [resourceLinkSaving, setResourceLinkSaving] = useState(false);
   const [collapsedTabs, setCollapsedTabs] = useState<Record<TabKey, boolean>>({
     audio: false,
     knowledge: false,
@@ -302,6 +321,13 @@ export function GroupScreen({
     setAudioLoading(false);
     setKnowledgeLoading(false);
     setSourcesLoading(false);
+    setResourceLinkKind(undefined);
+    setResourceLinkOptions([]);
+    setResourceLinkSelectedIds(new Set());
+    setResourceLinkLoading(false);
+    setResourceLinkError('');
+    setResourceLinkRetryMode('load');
+    setResourceLinkSaving(false);
     setCollapsedTabs({ audio: false, knowledge: false, sources: false });
   }, []);
 
@@ -328,6 +354,13 @@ export function GroupScreen({
       setTemplateExampleError('');
       setKnowledgeBases([]);
       setDataSources([]);
+      setResourceLinkKind(undefined);
+      setResourceLinkOptions([]);
+      setResourceLinkSelectedIds(new Set());
+      setResourceLinkLoading(false);
+      setResourceLinkError('');
+      setResourceLinkRetryMode('load');
+      setResourceLinkSaving(false);
       setCollapsedTabs({ audio: false, knowledge: false, sources: false });
       await Promise.all([
         loadAudio(nextGroup.id),
@@ -428,6 +461,119 @@ export function GroupScreen({
     }
   };
 
+  const closeResourceLinkSheet = useCallback(() => {
+    setResourceLinkKind(undefined);
+    setResourceLinkOptions([]);
+    setResourceLinkSelectedIds(new Set());
+    setResourceLinkLoading(false);
+    setResourceLinkError('');
+    setResourceLinkRetryMode('load');
+  }, []);
+
+  const openResourceLinkSheet = useCallback(
+    (kind: GroupResourceLinkKind) => {
+      if (!group) return;
+      const groupId = group.id;
+      const linkedItems = kind === 'knowledge' ? knowledgeBases : dataSources;
+      setResourceLinkKind(kind);
+      setResourceLinkOptions([]);
+      setResourceLinkSelectedIds(new Set(linkedItems.map((item) => item.id)));
+      setResourceLinkLoading(true);
+      setResourceLinkError('');
+      setResourceLinkRetryMode('load');
+      void (async () => {
+        try {
+          if (kind === 'knowledge') {
+            const response = await listKnowledgeBases();
+            if (selectedGroupId.current !== groupId) return;
+            setResourceLinkOptions(
+              response.items.map((item) => ({
+                id: item.id,
+                name: item.name,
+                description: item.description || t('groupSettings.noDescription'),
+              })),
+            );
+          } else {
+            const response = await listDataSources();
+            if (selectedGroupId.current !== groupId) return;
+            setResourceLinkOptions(
+              response.items.map((item) => ({
+                id: item.id,
+                name: item.name,
+                description: item.description || item.connectionLabel,
+              })),
+            );
+          }
+        } catch (reason) {
+          if (selectedGroupId.current === groupId) {
+            setResourceLinkError(
+              reason instanceof Error
+                ? reason.message
+                : kind === 'knowledge'
+                  ? t('groups.loadKnowledgeFailed')
+                  : t('groups.loadSourcesFailed'),
+            );
+          }
+        } finally {
+          if (selectedGroupId.current === groupId) setResourceLinkLoading(false);
+        }
+      })();
+    },
+    [dataSources, group, knowledgeBases, t],
+  );
+
+  const toggleResourceLink = useCallback((id: string) => {
+    setResourceLinkSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const confirmResourceLinks = useCallback(async () => {
+    const kind = resourceLinkKind;
+    const currentGroup = group;
+    if (!kind || !currentGroup || resourceLinkSaving || resourceLinkSelectedIds.size === 0) {
+      return;
+    }
+    const groupId = currentGroup.id;
+    setResourceLinkSaving(true);
+    setResourceLinkError('');
+    setResourceLinkRetryMode('save');
+    try {
+      if (kind === 'knowledge') {
+        const response = await replaceGroupKnowledgeBases(groupId, {
+          ids: [...resourceLinkSelectedIds],
+        });
+        if (selectedGroupId.current !== groupId) return;
+        setKnowledgeBases(response.items);
+      } else {
+        const response = await replaceGroupDataSources(groupId, {
+          ids: [...resourceLinkSelectedIds],
+        });
+        if (selectedGroupId.current !== groupId) return;
+        setDataSources(response.items);
+      }
+      closeResourceLinkSheet();
+    } catch (reason) {
+      if (selectedGroupId.current === groupId) {
+        setResourceLinkError(
+          reason instanceof Error ? reason.message : t('groupSettings.linksFailed'),
+        );
+      }
+    } finally {
+      setResourceLinkSaving(false);
+    }
+  }, [
+    closeResourceLinkSheet,
+    group,
+    resourceLinkKind,
+    resourceLinkSaving,
+    resourceLinkSelectedIds,
+    t,
+  ]);
+
   const visibleAudio = useMemo(
     () => selectAudioItems(audioItems, searchQuery, audioStatuses, audioSortOrder),
     [audioItems, audioSortOrder, audioStatuses, searchQuery],
@@ -479,6 +625,13 @@ export function GroupScreen({
   };
 
   const searchEmpty = searchQuery ? t('groups.noMatch', { query: searchQuery }) : '';
+  const showKnowledgeLinkAction =
+    knowledgeBases.length === 0 && !searchQuery && knowledgeDocumentFilter === 'all';
+  const showSourceLinkAction =
+    dataSources.length === 0 &&
+    !searchQuery &&
+    sourceLocations.size === 0 &&
+    sourceStatuses.size === 0;
   const localizedTabs = tabs.map((tab) => ({ key: tab.key, label: t(tab.labelKey) }));
 
   return (
@@ -541,6 +694,23 @@ export function GroupScreen({
           visible
         />
       ) : null}
+      <GroupResourceLinkSheet
+        error={resourceLinkError}
+        kind={resourceLinkKind ?? 'knowledge'}
+        loading={resourceLinkLoading}
+        onClose={closeResourceLinkSheet}
+        onConfirm={() => void confirmResourceLinks()}
+        onRetry={() => {
+          if (!resourceLinkKind) return;
+          if (resourceLinkRetryMode === 'save') void confirmResourceLinks();
+          else openResourceLinkSheet(resourceLinkKind);
+        }}
+        onToggle={toggleResourceLink}
+        options={resourceLinkOptions}
+        pending={resourceLinkSaving}
+        selectedIds={resourceLinkSelectedIds}
+        visible={resourceLinkKind !== undefined}
+      />
 
       <View style={styles.topBar} testID="group-top-bar">
         <View style={styles.topLeft}>
@@ -701,11 +871,13 @@ export function GroupScreen({
                   error={knowledgeError}
                   knowledgeBases={visibleKnowledge}
                   loading={knowledgeLoading}
+                  onLink={() => openResourceLinkSheet('knowledge')}
                   onOpenFilter={() => setFilterVisible(true)}
                   onOpenKnowledge={(id) => onOpenKnowledge?.(id, group.id)}
                   onRetry={() => {
                     void loadKnowledgeBases(group.id);
                   }}
+                  showLinkAction={showKnowledgeLinkAction}
                 />
               </ScrollView>
             </View>
@@ -731,12 +903,14 @@ export function GroupScreen({
                   error={sourcesError}
                   loading={sourcesLoading}
                   onOpenFilter={() => setFilterVisible(true)}
+                  onLink={() => openResourceLinkSheet('sources')}
                   onOpenSource={(id) => {
                     if (group) onOpenSource?.(id, group.id);
                   }}
                   onRetry={() => {
                     void loadSources(group.id);
                   }}
+                  showLinkAction={showSourceLinkAction}
                   sources={visibleSources}
                 />
               </ScrollView>

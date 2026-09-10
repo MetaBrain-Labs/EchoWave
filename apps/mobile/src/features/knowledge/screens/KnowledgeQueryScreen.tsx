@@ -14,7 +14,16 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { RagHistoryItem, RagQueryResponse } from '@echowave/contracts';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PageHeader } from '@/shared/ui/PageHeader';
@@ -175,95 +184,106 @@ export function KnowledgeQueryScreen({
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <PageHeader
-        moreLabel={t('knowledgeQuery.history')}
-        onBack={onBack}
-        onMore={openHistory}
-        title={t('knowledgeQuery.title')}
-      />
-      <ScrollView
-        alwaysBounceVertical
-        contentContainerStyle={styles.content}
-        keyboardDismissMode="interactive"
-        keyboardShouldPersistTaps="handled"
-        onContentSizeChange={scrollToLatest}
-        ref={scrollRef}
-        refreshControl={<ScreenRefreshControl {...screenRefresh} />}
+      <KeyboardAvoidingView
+        behavior={
+          Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined
+        }
+        style={styles.flex}
       >
-        {turns.length === 0 ? <Text style={styles.hint}>{t('knowledgeQuery.hint')}</Text> : null}
-        {turns.map((turn) => (
-          <View key={turn.id} style={styles.turn}>
-            <View style={styles.questionBubble}>
-              <Text selectable style={styles.questionText}>
-                {turn.question}
-              </Text>
-            </View>
-            {turn.status === 'pending' || turn.status === 'verified' ? (
-              <AnswerProgressCard
-                onProgressChange={scrollToLatest}
-                sourceCount={
-                  turn.status === 'verified' ? turn.response.citations.length : undefined
-                }
-              />
-            ) : null}
-            {turn.status === 'failed' ? (
-              <View style={styles.failureCard}>
-                <View style={styles.failureTitleRow}>
-                  <Ionicons color="#b42318" name="alert-circle-outline" size={21} />
-                  <Text style={styles.failureTitle}>{t('knowledgeQuery.incomplete')}</Text>
-                </View>
-                <Text accessibilityRole="alert" style={styles.failureText}>
-                  {turn.error}
-                </Text>
-                <Pressable
-                  accessibilityLabel={t('knowledgeQuery.retryAccessibility', {
-                    question: turn.question,
-                  })}
-                  accessibilityRole="button"
-                  disabled={activeTurnId !== undefined}
-                  onPress={() => retryTurn(turn)}
-                  style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
-                >
-                  <Text style={styles.retryText}>{t('knowledgeQuery.retry')}</Text>
-                </Pressable>
-              </View>
-            ) : null}
-            {turn.status === 'completed' ? (
-              <View style={styles.answerCard}>
-                <Text selectable style={styles.answerText}>
-                  {turn.response.answer}
-                </Text>
-                <CitationList citations={turn.response.citations} onOpenCitation={onOpenCitation} />
-              </View>
-            ) : null}
-          </View>
-        ))}
-      </ScrollView>
-      <View style={styles.composer}>
-        <TextInput
-          accessibilityLabel={t('knowledgeQuery.input')}
-          maxLength={2_000}
-          multiline
-          onChangeText={setQuestion}
-          placeholder={t('knowledgeQuery.placeholder')}
-          style={styles.input}
-          value={question}
+        <PageHeader
+          moreLabel={t('knowledgeQuery.history')}
+          onBack={onBack}
+          onMore={openHistory}
+          title={t('knowledgeQuery.title')}
         />
-        <Pressable
-          accessibilityLabel={t('knowledgeQuery.send')}
-          accessibilityRole="button"
-          accessibilityState={{ disabled: activeTurnId !== undefined || !question.trim() }}
-          disabled={activeTurnId !== undefined || !question.trim()}
-          onPress={submit}
-          style={({ pressed }) => [styles.send, pressed && styles.pressed]}
+        <ScrollView
+          alwaysBounceVertical
+          contentContainerStyle={styles.content}
+          keyboardDismissMode="interactive"
+          keyboardShouldPersistTaps="handled"
+          onContentSizeChange={scrollToLatest}
+          ref={scrollRef}
+          refreshControl={<ScreenRefreshControl {...screenRefresh} />}
+          style={styles.flex}
         >
-          <Ionicons
-            color={colors.card}
-            name={activeTurnId !== undefined ? 'hourglass-outline' : 'arrow-up'}
-            size={22}
+          {turns.length === 0 ? <Text style={styles.hint}>{t('knowledgeQuery.hint')}</Text> : null}
+          {turns.map((turn) => (
+            <View key={turn.id} style={styles.turn}>
+              <View style={styles.questionBubble}>
+                <Text selectable style={styles.questionText}>
+                  {turn.question}
+                </Text>
+              </View>
+              {turn.status === 'pending' || turn.status === 'verified' ? (
+                <AnswerProgressCard
+                  onProgressChange={scrollToLatest}
+                  sourceCount={
+                    turn.status === 'verified' ? turn.response.citations.length : undefined
+                  }
+                />
+              ) : null}
+              {turn.status === 'failed' ? (
+                <View style={styles.failureCard}>
+                  <View style={styles.failureTitleRow}>
+                    <Ionicons color="#b42318" name="alert-circle-outline" size={21} />
+                    <Text style={styles.failureTitle}>{t('knowledgeQuery.incomplete')}</Text>
+                  </View>
+                  <Text accessibilityRole="alert" style={styles.failureText}>
+                    {turn.error}
+                  </Text>
+                  <Pressable
+                    accessibilityLabel={t('knowledgeQuery.retryAccessibility', {
+                      question: turn.question,
+                    })}
+                    accessibilityRole="button"
+                    disabled={activeTurnId !== undefined}
+                    onPress={() => retryTurn(turn)}
+                    style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
+                  >
+                    <Text style={styles.retryText}>{t('knowledgeQuery.retry')}</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+              {turn.status === 'completed' ? (
+                <View style={styles.answerCard}>
+                  <Text selectable style={styles.answerText}>
+                    {turn.response.answer}
+                  </Text>
+                  <CitationList
+                    citations={turn.response.citations}
+                    onOpenCitation={onOpenCitation}
+                  />
+                </View>
+              ) : null}
+            </View>
+          ))}
+        </ScrollView>
+        <View style={styles.composer}>
+          <TextInput
+            accessibilityLabel={t('knowledgeQuery.input')}
+            maxLength={2_000}
+            multiline
+            onChangeText={setQuestion}
+            placeholder={t('knowledgeQuery.placeholder')}
+            style={styles.input}
+            value={question}
           />
-        </Pressable>
-      </View>
+          <Pressable
+            accessibilityLabel={t('knowledgeQuery.send')}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: activeTurnId !== undefined || !question.trim() }}
+            disabled={activeTurnId !== undefined || !question.trim()}
+            onPress={submit}
+            style={({ pressed }) => [styles.send, pressed && styles.pressed]}
+          >
+            <Ionicons
+              color={colors.card}
+              name={activeTurnId !== undefined ? 'hourglass-outline' : 'arrow-up'}
+              size={22}
+            />
+          </Pressable>
+        </View>
+      </KeyboardAvoidingView>
       <QueryHistoryModal
         error={historyError}
         items={historyItems}
@@ -278,6 +298,7 @@ export function KnowledgeQueryScreen({
 
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.card, flex: 1 },
+  flex: { flex: 1 },
   content: { gap: spacing.md, padding: spacing.md, paddingBottom: spacing.xl },
   hint: {
     ...typography.body,

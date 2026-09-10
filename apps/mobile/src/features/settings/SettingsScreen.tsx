@@ -113,23 +113,85 @@ type ProviderDraft = {
   accessKeySecret: string;
 };
 
+type ProviderDraftDefaults = Pick<
+  ProviderDraft,
+  | 'baseUrl'
+  | 'compatibleBaseUrl'
+  | 'notifyMode'
+  | 'callbackUrl'
+  | 'region'
+  | 'bucket'
+  | 'apiKey'
+  | 'callbackToken'
+  | 'accessKeyId'
+  | 'accessKeySecret'
+>;
+
+const providerDraftDefaults: Record<ProviderType, ProviderDraftDefaults> = {
+  dashscope: {
+    baseUrl: 'https://dashscope.aliyuncs.com/api/v1',
+    compatibleBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    notifyMode: 'polling',
+    callbackUrl: '',
+    region: '',
+    bucket: '',
+    apiKey: '',
+    callbackToken: '',
+    accessKeyId: '',
+    accessKeySecret: '',
+  },
+  deepseek: {
+    baseUrl: 'https://api.deepseek.com',
+    compatibleBaseUrl: '',
+    notifyMode: 'polling',
+    callbackUrl: '',
+    region: '',
+    bucket: '',
+    apiKey: '',
+    callbackToken: '',
+    accessKeyId: '',
+    accessKeySecret: '',
+  },
+  aliyun_oss: {
+    baseUrl: '',
+    compatibleBaseUrl: '',
+    notifyMode: 'polling',
+    callbackUrl: '',
+    region: 'oss-cn-beijing',
+    bucket: '',
+    apiKey: '',
+    callbackToken: '',
+    accessKeyId: '',
+    accessKeySecret: '',
+  },
+};
+
+function draftForProviderType(type: ProviderType): ProviderDraft {
+  return {
+    editingId: null,
+    type,
+    name: '',
+    credentialSource: 'local_file',
+    alias: '',
+    ...providerDraftDefaults[type],
+  };
+}
+
 const emptyDraft = (): ProviderDraft => ({
-  editingId: null,
-  type: 'dashscope',
-  name: '',
-  baseUrl: 'https://dashscope.aliyuncs.com',
-  compatibleBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-  notifyMode: 'polling',
-  callbackUrl: '',
-  region: 'oss-cn-beijing',
-  bucket: '',
-  credentialSource: 'local_file',
-  alias: '',
-  apiKey: '',
-  callbackToken: '',
-  accessKeyId: '',
-  accessKeySecret: '',
+  ...draftForProviderType('dashscope'),
 });
+
+/** 切换供应商时保留连接身份，但清理所有目标类型不适用的编辑内容。 */
+function switchProviderType(draft: ProviderDraft, type: ProviderType): ProviderDraft {
+  if (draft.type === type) return draft;
+  return {
+    ...draftForProviderType(type),
+    editingId: draft.editingId,
+    expectedRevision: draft.expectedRevision,
+    name: draft.name,
+    credentialSource: draft.credentialSource,
+  };
+}
 
 function errorMessage(error: unknown, t: TranslationFunction): string {
   if (error instanceof WorkspaceRequestError) {
@@ -142,7 +204,7 @@ function errorMessage(error: unknown, t: TranslationFunction): string {
 }
 
 function draftFromProvider(provider: ProviderConnection): ProviderDraft {
-  const draft = emptyDraft();
+  const draft = draftForProviderType(provider.type);
   const config = provider.config as Record<string, unknown>;
   return {
     ...draft,
@@ -773,7 +835,7 @@ function ProviderEditor({
           label: providerLabel(id, t),
         }))}
         selected={draft.type}
-        onSelect={(type) => patch({ type: type as ProviderType, alias: '' })}
+        onSelect={(type) => onChange(switchProviderType(draft, type as ProviderType))}
       />
       <Field
         label={t('aiSettings.name')}

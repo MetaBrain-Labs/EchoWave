@@ -69,7 +69,7 @@ describe('SettingsScreen', () => {
           name: '主连接',
           revision: 1,
           config: {
-            baseUrl: 'https://dashscope.aliyuncs.com',
+            baseUrl: 'https://dashscope.aliyuncs.com/api/v1',
             compatibleBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
             asyncNotifyMode: 'polling',
             eventBridgeCallbackUrl: null,
@@ -166,6 +166,53 @@ describe('SettingsScreen', () => {
     expect(screen.getByLabelText('名称').props.value).toBe('主连接');
     fireEvent.press(screen.getByText('取消修改'));
     expect(screen.queryByLabelText('名称')).toBeNull();
+  });
+
+  it('uses provider-specific defaults and clears switched fields while preserving connection identity', async () => {
+    mockedApi.updateProvider.mockResolvedValue({
+      ...(await mockedApi.overview('admin-token')).providers[0]!,
+      type: 'deepseek',
+      revision: 2,
+    });
+    const screen = render(<SettingsScreen onBack={jest.fn()} />);
+    await enterConfigurationCenter(screen);
+
+    fireEvent.press(screen.getByText('修改'));
+    fireEvent.changeText(
+      screen.getByLabelText('Base URL（必须为公网 HTTPS）'),
+      'https://example.invalid/custom',
+    );
+    fireEvent.press(screen.getByLabelText('DeepSeek'));
+
+    expect(screen.getByLabelText('名称').props.value).toBe('主连接');
+    expect(screen.getByLabelText('Base URL（必须为公网 HTTPS）').props.value).toBe(
+      'https://api.deepseek.com',
+    );
+    expect(screen.queryByLabelText('Compatible Base URL')).toBeNull();
+
+    fireEvent.press(screen.getByText('保存修改'));
+    await waitFor(() =>
+      expect(mockedApi.updateProvider).toHaveBeenCalledWith(
+        'admin-token',
+        '11111111-1111-4111-8111-111111111111',
+        expect.objectContaining({
+          type: 'deepseek',
+          name: '主连接',
+          config: { baseUrl: 'https://api.deepseek.com' },
+          credentialSource: 'database',
+          expectedRevision: 1,
+        }),
+      ),
+    );
+
+    fireEvent.press(screen.getByText('修改'));
+    fireEvent.press(screen.getByLabelText('DashScope'));
+    expect(screen.getByLabelText('Base URL（必须为公网 HTTPS）').props.value).toBe(
+      'https://dashscope.aliyuncs.com/api/v1',
+    );
+    expect(screen.getByLabelText('Compatible Base URL').props.value).toBe(
+      'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    );
   });
 
   it('uses stable single-line input metrics and the standard app radius', async () => {
