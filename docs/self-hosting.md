@@ -1,15 +1,17 @@
 # EchoWave 自托管与自行构建
 
-EchoWave 支持两条开源使用路径：稳定 Tag 发布完成后，普通用户从 [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases) 下载同一版本的签名 Android APK 与 Server ZIP；维护者或 Fork 用户也可以 Clone 源码后创建自己的 Development/Production Build。下载、SHA-256 校验、升级与回退规则见[发布指南](./releases.md)。
+EchoWave 支持两条开源使用路径：稳定 Tag 发布完成后，普通用户从 [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases) 下载同一版本的签名 Android APK 与 Server ZIP；维护者或 Fork 用户也可以 Clone 源码后创建自己的 Development/Production Build。Ubuntu 22.04 x86_64 源码部署、Windows Docker Desktop、HTTPS、备份和卸载见[Server 部署指南](./server-deployment.md)，下载、SHA-256 校验、升级与回退规则见[发布指南](./releases.md)。
 
-当前 API 使用固定开发租户，没有真实用户鉴权，只适合可信局域网。不要直接转发 API 端口到公网；公网部署必须先补齐鉴权、HTTPS、反向代理和运维防护。
+当前 API 使用固定开发租户，没有真实用户鉴权、RBAC 或速率限制。可信本机和局域网可以使用 HTTP；任何云服务器或公网 App 服务端都必须通过反向代理提供 HTTPS，限制 443 来源，并保持 3001/5432 不对公网开放。即使完成这些措施，当前版本仍不应作为公开多用户服务运行。
+
+部署前还要选择音频运行模式：轻量本地不需要 OSS 且会在处理后清理源音频；默认混合模式把原音频保存在本地 volume、使用 OSS 中转；对象存储模式把 OSS 作为权威原音频存储。模式只影响之后创建的资产，详见[音频运行模式](./audio-runtime-modes.md)。
 
 ## Docker Self-hosted Server
 
 正式 Release 用户应解压 `EchoWave-server-vX.Y.Z.zip`，复制包内 `api.env.example` 为
 `api.env`，然后直接运行 `docker compose pull && docker compose up -d`。包内 Compose 已固定
 到该版本的 GHCR 镜像 digest，不需要源码和本地镜像构建。下面的根 Compose 流程保留给 Clone
-源码开发和自行构建者。
+源码开发和自行构建者。完整的操作系统分支、Provider 配置和公网 HTTPS 流程不要在本节重复维护，统一以 [Server 部署指南](./server-deployment.md)为准。
 
 ### 1. 准备配置
 

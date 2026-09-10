@@ -2,6 +2,39 @@
 
 EchoWave 将服务端配置分成三个边界：`apps/api/.env` 保存启动级配置，PostgreSQL 保存租户级普通配置，Credential Provider 保存密钥。移动端还单独保存当前服务器根地址。AI 配置入口位于“更多 → AI 配置”，服务器地址位于“更多 → 服务状态”。
 
+## 当前模型与平台选择
+
+EchoWave 当前以阿里云百炼和通义千问能力为主，是因为百炼在同一平台覆盖文本生成、Embedding、ASR 和全模态模型，同时提供 DeepSeek 等第三方模型的 OpenAI-compatible 接口。部署者可以用一个阿里云账号开通大部分模型服务和 OSS，减少跨平台账号与账单管理；这不表示所有能力共用同一种密钥。
+
+- DashScope 连接使用百炼 API Key，负责 Qwen Embedding、文件转写和声学情绪。
+- DeepSeek 是 EchoWave 中独立的逻辑连接。它可以使用 DeepSeek 官方 API，也可以把 Base URL 改为百炼业务空间的 OpenAI-compatible endpoint，并使用百炼 API Key。
+- 阿里云 OSS 连接使用 AccessKey ID/AccessKey Secret，不使用百炼 API Key。即使它们属于同一阿里云账号，也必须按不同 Credential 类型保存。
+
+百炼的地域、业务空间和模型可用范围可能不同。使用百炼承载 DeepSeek 时，必须使用目标地域实际提供的 endpoint 和模型，不能直接照抄其他账号的 Workspace ID。官方说明见[什么是阿里云百炼](https://help.aliyun.com/zh/model-studio/what-is-model-studio/)和[百炼 DeepSeek API](https://help.aliyun.com/zh/model-studio/deepseek-api)。
+
+当前权威默认绑定来自 `packages/contracts/src/settings.ts`：
+
+| 能力                           | Provider 类型 | 默认模型或后端                       |
+| ------------------------------ | ------------- | ------------------------------------ |
+| 知识库 Embedding               | DashScope     | `qwen3.7-text-embedding`             |
+| 知识问答                       | DeepSeek      | `deepseek-v4-flash`                  |
+| 音频转写                       | DashScope     | `qwen-audio-3.0-asr-flash-filetrans` |
+| 声学情绪                       | DashScope     | `qwen3.5-omni-flash`                 |
+| 业务角色、说话人复核、业务分析 | DeepSeek      | `deepseek-v4-flash`                  |
+| 临时音频中转、权威对象存储     | 阿里云 OSS    | `aliyun-oss`                         |
+
+配置页允许编辑模型名是为了支持经过适配和验证的后续版本，不代表任意模型现在都与 Prompt、结构化输出、时间戳、Speaker、Thinking 或恢复协议兼容。当前只有仓库已经适配的默认模型保证可用；项目后续会逐步增加更多模型与 Provider。
+
+运行模式决定 OSS 是否必需：
+
+| 运行模式 | DashScope | DeepSeek                           | 阿里云 OSS                                      |
+| -------- | --------- | ---------------------------------- | ----------------------------------------------- |
+| 轻量本地 | 必需      | 使用知识问答、角色或业务分析时必需 | 不需要                                          |
+| 混合     | 必需      | 使用知识问答、角色或业务分析时必需 | `audio_staging` 必需                            |
+| 对象存储 | 必需      | 使用知识问答、角色或业务分析时必需 | `audio_staging` 与 `audio_primary_storage` 必需 |
+
+模式选择、原音频位置和清理语义见[音频运行模式](./audio-runtime-modes.md)，完整 Server 安装顺序见[Server 部署指南](./server-deployment.md)。
+
 ## 启动级 `.env`
 
 从 `apps/api/.env.example` 创建本地 `.env`。API 只读取这一个文件，不合并启动进程的系统环境变量。除 HTTP、PostgreSQL、Redis、目录、FFmpeg、Worker 和诊断字段外，下列安全字段必须显式配置：

@@ -6,14 +6,17 @@
 EchoWave 的稳定版本以 `vMAJOR.MINOR.PATCH` Tag 和对应的 GitHub Release 为唯一分发入口。
 GitHub 自动生成的 Source code 压缩包不是 Server 安装包。
 
-> EchoWave 当前是固定开发租户的预览版本，只适合可信局域网。不要把 API 端口直接暴露到
-> 公网；发布流程不会自动提供鉴权、HTTPS 反向代理或公网运维防护。
+> EchoWave 当前是固定开发租户的预览版本，没有真实鉴权、RBAC 或速率限制。可信本机和局域网
+> 可以使用 HTTP；任何云服务器或公网 App 服务端都必须使用 HTTPS、反向代理和最小网络访问
+> 范围，并保持 3001/5432 不对公网开放。这些措施仍不能把当前版本变成公开多用户服务。
 
 ## 1. 你需要阅读哪一部分
 
 - 只安装 Android App：阅读第 2、3、5 节。
 - 部署或升级 Server：阅读第 2、3、4、6、7 节。
 - 维护仓库并发布新版本：阅读第 8、9 节。
+
+Ubuntu 22.04 x86_64 源码部署、Windows Docker Desktop、运行模式、HTTPS 和完整停用/卸载说明见 [Server 部署指南](./server-deployment.md)。
 
 ## 2. 选择并下载版本
 
@@ -82,8 +85,8 @@ Write-Host "Checksum verified: $file"
 - Linux、macOS，或者使用 Linux containers 的 Windows Docker Desktop。
 - Docker Engine 或 Docker Desktop，并启用 Docker Compose v2。
 - 能够访问 GitHub Container Registry `ghcr.io`。
-- Android 手机和 Server 位于同一个可信局域网。
-- Server 的 3001 端口允许被该局域网访问；不要向公网开放。
+- 本地部署时，Android 手机和 Server 位于同一个可信局域网，3001 只允许该局域网访问。
+- 云服务器部署时，先准备 HTTPS 反向代理和最小化安全组；3001 和 5432 不允许公网访问。
 
 先确认 Docker 可用：
 
@@ -251,6 +254,8 @@ docker compose ps -a
 docker compose logs migrate
 docker compose logs api
 ```
+
+启动成功后，在 App 的“更多 → AI 配置”中创建 DashScope、DeepSeek 逻辑连接，并按运行模式决定是否配置阿里云 OSS。轻量本地模式不需要 OSS；默认混合模式需要 `audio_staging`；对象存储模式还需要 `audio_primary_storage`。随后在“更多 → 运行模式”中保存选择。当前默认模型和使用百炼承载 DeepSeek 的方式见[配置与 Credential 指南](./configuration.md)。
 
 ## 7. 回退 Server
 
@@ -430,3 +435,22 @@ GHCR 包还不是 public，或者当前网络无法访问 `ghcr.io`。管理员�
 
 不可以。历史 Tag、Release、APK、Server ZIP 和被 Release manifest 引用的镜像 digest 是回退
 能力的一部分，必须永久保留。
+
+## 11. 停用与卸载
+
+暂时停用并保留 PostgreSQL、音频、配置和 Credential：
+
+```bash
+docker compose down
+```
+
+以后可以在同一安装目录执行 `docker compose up -d` 恢复。
+
+> [!CAUTION]
+> 只有确认所有 Server 数据都不再需要，并且已经验证备份后，才能使用下面的完全卸载命令。`-v` 会不可逆地删除 EchoWave 的 PostgreSQL 和音频 volume。
+
+```bash
+docker compose down -v --remove-orphans
+```
+
+Release 包使用远程不可变镜像，是否删除本机镜像应由部署者按实际 digest 决定，不要运行全局 `docker system prune -a --volumes`。随后只删除当前 EchoWave 安装目录及该实例独占的 Nginx site；Certbot 证书使用 `certbot delete --cert-name <CERT_NAME>`。不要卸载可能被其他应用使用的 Docker、Nginx 或 FFmpeg。

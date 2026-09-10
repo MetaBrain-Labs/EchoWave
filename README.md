@@ -14,7 +14,7 @@
 EchoWave 面向需要从访谈、销售通话、会议等音频中沉淀结构化洞察的团队。它提供中文和英文界面的 Expo 客户端、自托管 API、PostgreSQL/pgvector 知识库、版本化转写与人工确认、情绪/角色识别、业务分析以及可追溯的 AI 执行记录。
 
 > [!IMPORTANT]
-> EchoWave 当前是 `v0.1` 开发预览版：使用固定开发租户，尚未提供真实账号、权限控制和公网部署所需的完整安全边界。请仅部署在可信局域网，不要把 API 端口直接暴露到公网。稳定 Tag 发布完成后，签名 Android APK 与 Server 包将从 [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases) 下载。
+> EchoWave 当前是 `v0.1` 开发预览版：使用固定开发租户，尚未提供真实账号、权限控制、速率限制和完整公网安全边界。可信本机和局域网可以使用 HTTP；任何云服务器或公网 App 服务端都必须使用 HTTPS、反向代理和最小网络访问范围，并保持 3001/5432 不对公网开放。即使完成这些措施，当前版本仍不应作为公开多用户服务运行。稳定 Tag 发布完成后，签名 Android APK 与 Server 包将从 [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases) 下载。
 
 [快速开始](#快速开始) · [当前能力](#当前能力) · [架构](#系统如何工作) · [项目边界](#当前边界) · [Future](#future) · [完整文档](./docs/README.md) · [贡献指南](./CONTRIBUTING.md)
 
@@ -60,6 +60,10 @@ flowchart LR
 - 自托管 Server：Docker Desktop 或 Docker Engine + Compose
 - Release App：Android 设备；源码构建另需 Android Studio，iOS 开发另需 macOS + Xcode
 
+Server 可以运行在 Ubuntu 22.04 x86_64，或运行在使用 Linux containers 的 Windows 10/11 Docker Desktop。完整的源码部署、Windows PowerShell、HTTPS、备份和卸载步骤见 [Server 部署指南](./docs/server-deployment.md)。
+
+部署时还要选择音频运行模式：轻量本地无需 OSS、处理后清理源音频；默认混合模式把原音频保存在本地 volume 并使用 OSS 中转；对象存储模式把 OSS 作为权威原音频存储。模式只影响之后创建的音频，详细差异见[音频运行模式](./docs/audio-runtime-modes.md)。
+
 ### 路径 A：启动自托管 Server
 
 这是最快的服务端体验路径。首个稳定 Release 完成后，普通用户应从 [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases) 下载同一版本的 Android APK 与 `EchoWave-server-vX.Y.Z.zip`，校验 SHA-256 后按压缩包内 README 启动。完整升级和回退规则见[发布指南](./docs/releases.md)。
@@ -92,7 +96,7 @@ curl http://localhost:3001/health
 curl http://localhost:3001/api/hello
 ```
 
-手机需要连接 `http://<SERVER_LAN_IP>:<API_PORT>`，不能使用服务器的 `localhost`。密钥生成、持久卷、端口、防火墙以及 Production APK 构建步骤见[自托管指南](./docs/self-hosting.md)。
+可信局域网中的手机连接 `http://<SERVER_LAN_IP>:<API_PORT>`，不能使用服务器的 `localhost`；云服务器或其他公网地址必须使用不包含内部 API 端口的 HTTPS 反向代理地址。密钥生成、持久卷、端口、防火墙和证书步骤见 [Server 部署指南](./docs/server-deployment.md)，Production APK 构建见[自托管指南](./docs/self-hosting.md)。
 
 ### 路径 B：本地开发
 
@@ -136,9 +140,9 @@ pnpm start
 
 ### 配置 AI 能力
 
-服务启动后，在 App 的“更多 → AI 配置”中建立 Provider、选择 Local Credential alias 或安全写入 Database Credential，并绑定各项能力。当前完整流程会用到 DashScope、DeepSeek 和阿里云 OSS；供应商调用可能产生费用，模型与区域可用性以你的账号为准。
+服务启动后，在 App 的“更多 → AI 配置”中建立 Provider、选择 Local Credential alias 或安全写入 Database Credential，并绑定各项能力。项目当前以阿里云百炼/通义千问为主，是因为一个阿里云账号可以开通覆盖 Embedding、ASR、全模态和第三方 DeepSeek 的大部分模型服务，并同时管理 OSS；百炼 API Key 与 OSS AccessKey 仍是不同 Credential。轻量本地无需 OSS，混合/对象存储模式必须配置 OSS。
 
-详细字段、安全传输限制和 Credential 轮换方式见[配置与 Credential 指南](./docs/configuration.md)。
+当前只有仓库已适配的默认模型保证可用，后续会逐步增加更多模型和 Provider。详细默认绑定、百炼 DeepSeek 配置、安全传输限制和 Credential 轮换方式见[配置与 Credential 指南](./docs/configuration.md)。
 
 ## 常用命令
 
@@ -155,7 +159,7 @@ Android 真机回归由 `.maestro/` 和 `scripts/e2e/android-e2e.mjs` 管理，�
 
 ## 当前边界
 
-- 没有真实账号、鉴权、RBAC 或面向公网的生产安全基线。
+- 没有真实账号、鉴权、RBAC、速率限制或面向公网的生产安全基线；公网测试必须使用 HTTPS 和最小化网络访问范围。
 - API 与 Worker 在同一进程；本地音频路径和进程内 SSE 唤醒要求单 API 实例。
 - 尚无数据源自动同步、PDF/OCR/旧版 Office 解析、重新转写、游标分页或 Redis 队列。
 - 尚无 iOS Release、二维码/mDNS 发现、App 内自动更新或官方托管云服务。

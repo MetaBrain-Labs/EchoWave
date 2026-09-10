@@ -19,8 +19,9 @@ Linux 容器的 Docker Desktop 上运行。不要把 Compose 中的 digest 改�
    ```
 
 4. 确认 `http://localhost:3001/health` 返回 `version={{VERSION}}` 与 `status=ok`。
+5. 在 App 的“更多 → AI 配置”中创建 DashScope、DeepSeek 逻辑连接；混合/对象存储模式还要配置阿里云 OSS。然后在“更多 → 运行模式”中选择轻量本地、混合或对象存储。
 
-EchoWave 当前只适合可信局域网。不要把 API 端口直接暴露到公网。
+可信本机和局域网可以使用 HTTP。任何云服务器或公网 App 服务端必须使用 HTTPS 反向代理，限制 443 来源，并保持 3001/5432 不对公网开放。EchoWave 当前仍是固定开发租户预览版，HTTPS 不能替代尚未实现的鉴权、RBAC 和速率限制。完整 Ubuntu、Windows、证书和运行模式流程见 <https://github.com/MetaBrain-Labs/EchoWave/blob/main/docs/server-deployment.md>。
 
 ## 升级前备份
 
@@ -62,3 +63,7 @@ docker compose up -d
 
 恢复后检查 `/health`、`/api/hello`，再从 App 验证分组和知识库。回退数据库会丢弃备份时点
 之后的数据库变更；音频卷不会被自动删除或还原。
+
+## 停用与卸载
+
+`docker compose down` 只停用服务并保留数据。只有完成并验证备份、确认不再需要任何数据后，才能运行 `docker compose down -v --remove-orphans`；其中 `-v` 会不可逆地删除 PostgreSQL 和音频 volume。不要使用全局 `docker system prune -a --volumes`，也不要卸载服务器上可能由其他应用共享的 Docker 或反向代理。
