@@ -1,5 +1,9 @@
 # EchoWave 文档索引
 
+- [English README](../README.en.md)：面向英文用户的项目定位、能力、快速启动、边界与路线图摘要。
+- [Future Roadmap](../ROADMAP.md)：开源版本的阶段目标、完成信号与明确非目标。
+- [贡献指南](../CONTRIBUTING.md)：开发环境、变更边界、验证要求与 Issue/PR 流程。
+- [安全策略](../SECURITY.md)：支持范围、负责任披露方式、部署警告与高敏感边界。
 - [文档导览](./documentation-guide.md)：全部文档的用途、读者、权威来源与维护触发条件。
 - [架构说明](./architecture.md)：系统边界、RAG 数据流和关键技术决策。
 - [数据库结构](./database-schema.md)：PostgreSQL/pgvector 表、关系、约束与数据生命周期。
@@ -12,4 +16,4 @@
 - [设计规范](./design-system.md)：移动端视觉令牌、排版、布局与交互约束。
 - [领域语言](./domain-language.md)：知识库、文档 revision、可信回答等统一术语。
 
-仓库使用方式、环境配置和启动命令仍以根目录 [README](../README.md) 为准；工程代理规则以根目录 [AGENTS.md](../AGENTS.md) 为准。
+仓库使用方式、环境配置和启动命令仍以根目录 [README](../README.md) 为准；贡献流程以[贡献指南](../CONTRIBUTING.md)为准；工程代理规则以根目录 [AGENTS.md](../AGENTS.md) 为准。
