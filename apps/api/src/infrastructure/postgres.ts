@@ -6,7 +6,7 @@
  *
  * Responsibilities:
  * - 校验并引用动态 PostgreSQL 标识符。
- * - 创建带 pgvector 类型支持的连接池。
+ * - 按调用场景创建普通连接池或带 pgvector 类型支持的连接池。
  * - 生成 LangGraph checkpointer 使用的连接字符串。
  *
  * Notes:
@@ -22,6 +22,11 @@ const { Pool } = pg;
 /** 应用共享的 PostgreSQL 连接池类型。 */
 export type DatabasePool = pg.Pool;
 
+/** 控制连接建立阶段是否依赖已经存在的 pgvector 类型。 */
+interface DatabasePoolOptions {
+  registerVectorTypes?: boolean;
+}
+
 /** 校验并引用动态 PostgreSQL 标识符，阻止 schema/table 名注入。 */
 export function quoteIdentifier(identifier: string): string {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier)) {
@@ -30,8 +35,17 @@ export function quoteIdentifier(identifier: string): string {
   return `"${identifier}"`;
 }
 
-/** 创建已注册 pgvector 类型、具有显式连接上限的数据库连接池。 */
-export function createDatabasePool(config: ApiConfig['database']): DatabasePool {
+/**
+ * 创建具有显式连接上限的数据库连接池。
+ *
+ * 普通运行时默认注册 pgvector 类型；首次迁移必须关闭注册，让 `001_rag.sql`
+ * 能先创建 vector 扩展，避免连接初始化与扩展创建形成循环依赖。
+ */
+export function createDatabasePool(
+  config: ApiConfig['database'],
+  options: DatabasePoolOptions = {},
+): DatabasePool {
+  const { registerVectorTypes = true } = options;
   const pool = new Pool({
     host: config.host,
     port: config.port,
@@ -41,10 +55,14 @@ export function createDatabasePool(config: ApiConfig['database']): DatabasePool 
     ssl: config.ssl ? { rejectUnauthorized: true } : false,
     max: 10,
     idleTimeoutMillis: 30_000,
-    onConnect: async (client) => {
-      // pg-pool 会在连接交给调用方前等待此钩子，避免普通 connect 事件与首个查询发生竞态。
-      await registerTypes(client);
-    },
+    ...(registerVectorTypes
+      ? {
+          onConnect: async (client) => {
+            // pg-pool 会在连接交给调用方前等待此钩子，避免普通 connect 事件与首个查询发生竞态。
+            await registerTypes(client);
+          },
+        }
+      : {}),
   });
 
   return pool;
