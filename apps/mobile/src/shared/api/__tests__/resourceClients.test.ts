@@ -19,6 +19,7 @@ import {
   AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES,
   DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
 } from '@echowave/contracts';
+import { File, Paths } from 'expo-file-system';
 import {
   confirmAudioTranscript,
   getAudioTranscriptionCapabilities,
@@ -223,10 +224,12 @@ describe('resource API clients', () => {
       }),
     );
 
+    const audioFile = new File(Paths.cache, 'sample.wav');
+    audioFile.create();
     await uploadDataSourceAudioFiles(dataSourceDetailFixture.id, [
       {
         name: 'sample.wav',
-        uri: 'file:///sample.wav',
+        uri: audioFile.uri,
         mimeType: 'audio/wav',
         size: 1_644,
         lastModified: 0,

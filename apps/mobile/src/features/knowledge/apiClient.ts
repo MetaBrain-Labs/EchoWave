@@ -27,6 +27,7 @@ import {
 } from '@echowave/contracts';
 
 import { getApiUrl } from '@/shared/api/apiUrl';
+import { resolveUploadFile } from '@/shared/api/uploadFile';
 import { localizeRequestError } from '@/shared/i18n/errorLocalization';
 
 /** 知识库请求在移动端暴露的稳定错误类型。 */
@@ -86,6 +87,7 @@ async function request<T>(
         localizeRequestError('TIMEOUT', '请求超时，请重试。'),
         true,
       );
+    if (__DEV__) console.error('[knowledge-api] request failed', { path, error });
     throw new KnowledgeRequestError(
       'NETWORK',
       localizeRequestError('NETWORK', '无法连接服务，请检查网络。'),
@@ -129,11 +131,14 @@ export async function uploadDocument(knowledgeId: string, asset: DocumentPickerA
   if (Platform.OS === 'web' && asset.file) {
     form.append('file', asset.file);
   } else {
-    form.append('file', {
-      uri: asset.uri,
-      name: asset.name,
-      type: asset.mimeType ?? 'application/octet-stream',
-    } as unknown as Blob);
+    const file = resolveUploadFile(asset);
+    if (!file) {
+      throw new KnowledgeRequestError(
+        'FILE_UNAVAILABLE',
+        localizeRequestError('FILE_UNAVAILABLE', '无法读取所选择的文件，请重新选择。'),
+      );
+    }
+    form.append('file', file);
   }
   return request(
     `/api/knowledge-bases/${knowledgeId}/documents`,

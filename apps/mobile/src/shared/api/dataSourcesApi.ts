@@ -35,6 +35,7 @@ import {
 
 import { getApiUrl } from './apiUrl';
 import { request } from './request';
+import { resolveUploadFile } from './uploadFile';
 import { localizeRequestError } from '@/shared/i18n/errorLocalization';
 
 export const listDataSources = () => request('/api/data-sources', DataSourceListResponseSchema);
@@ -73,11 +74,13 @@ export async function uploadDataSourceAudioFiles(id: string, assets: DocumentPic
     if (Platform.OS === 'web' && asset.file) {
       form.append('files', asset.file);
     } else {
-      form.append('files', {
-        uri: asset.uri,
-        name: asset.name,
-        type: asset.mimeType ?? 'application/octet-stream',
-      } as unknown as Blob);
+      const file = resolveUploadFile(asset);
+      if (!file) {
+        throw new Error(
+          localizeRequestError('FILE_UNAVAILABLE', '无法读取所选择的文件，请重新选择。'),
+        );
+      }
+      form.append('files', file);
     }
   }
   return request(`/api/data-sources/${id}/audio-files`, DataSourceAudioUploadResponseSchema, {
