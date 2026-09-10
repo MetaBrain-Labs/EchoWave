@@ -125,26 +125,64 @@ export function StarterTourProvider({
     };
   }, [serverUrl]);
 
+  // const navigateToStep = useCallback(
+  //   (step: GuideStep, knownTemplates = templates) => {
+  //     const routes = {
+  //       create: '/(tabs)/create',
+  //       knowledge: '/(tabs)/knowledge',
+  //       data_sources: '/(tabs)/sources',
+  //       ai_configuration: '/settings',
+  //       runtime_mode: '/audio-runtime',
+  //     } as const satisfies Record<Exclude<GuideStep['route'], 'group' | 'analysis'>, string>;
+  //     if (step.route === 'group') {
+  //       const groupId = knownTemplates.sales_call_review;
+  //       router.replace(groupId ? ({ pathname: '/', params: { groupId } } as Href) : ('/' as Href));
+  //     } else if (step.route === 'analysis') {
+  //       const groupId = knownTemplates.sales_call_review;
+  //       router.replace(
+  //         groupId
+  //           ? ({ pathname: '/groups/[groupId]/template-example', params: { groupId } } as Href)
+  //           : ('/' as Href),
+  //       );
+  //     } else router.replace(routes[step.route]);
+  //   },
+  //   [router, templates],
+  // );
   const navigateToStep = useCallback(
     (step: GuideStep, knownTemplates = templates) => {
-      const routes: Record<Exclude<GuideStep['route'], 'group' | 'analysis'>, Href> = {
-        create: '/(tabs)/create' as Href,
-        knowledge: '/(tabs)/knowledge' as Href,
-        data_sources: '/(tabs)/sources' as Href,
-        ai_configuration: '/settings' as Href,
-        runtime_mode: '/audio-runtime' as Href,
-      };
+      const routes = {
+        create: '/(tabs)/create',
+        knowledge: '/(tabs)/knowledge',
+        data_sources: '/(tabs)/sources',
+        ai_configuration: '/settings',
+        runtime_mode: '/audio-runtime',
+      } as const satisfies Record<Exclude<GuideStep['route'], 'group' | 'analysis'>, string>;
+
       if (step.route === 'group') {
         const groupId = knownTemplates.sales_call_review;
-        router.replace(groupId ? ({ pathname: '/', params: { groupId } } as Href) : ('/' as Href));
+
+        if (groupId) {
+          router.replace({
+            pathname: '/',
+            params: { groupId },
+          });
+        } else {
+          router.replace('/');
+        }
       } else if (step.route === 'analysis') {
         const groupId = knownTemplates.sales_call_review;
-        router.replace(
-          groupId
-            ? ({ pathname: '/groups/[groupId]/template-example', params: { groupId } } as Href)
-            : ('/' as Href),
-        );
-      } else router.replace(routes[step.route]);
+
+        if (groupId) {
+          router.replace({
+            pathname: '/groups/[groupId]/template-example',
+            params: { groupId },
+          });
+        } else {
+          router.replace('/');
+        }
+      } else {
+        router.replace(routes[step.route]);
+      }
     },
     [router, templates],
   );
