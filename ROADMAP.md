@@ -1,79 +1,81 @@
 # EchoWave Future Roadmap
 
-本路线图描述 EchoWave 开源版本希望解决的问题和阶段性完成标准，不代表发布日期承诺。优先级会根据安全风险、真实用户反馈、贡献者能力和上游供应商变化调整；具体开发仍以关联 Issue 与合并后的代码为准。
+**English** | [简体中文](./ROADMAP.zh-CN.md)
 
-## 路线原则
+This roadmap describes the problems the EchoWave open-source project intends to solve and the completion criteria for each stage. It is not a release-date commitment. Priorities may change with security risk, user feedback, contributor capacity, and upstream provider changes; linked issues and merged code remain authoritative.
 
-- 先补齐自托管产品的安全性、可安装性和可恢复性，再追求规模与功能数量。
-- PostgreSQL 继续作为业务事实的唯一权威来源，不为引入缓存或队列制造第二份业务真相。
-- 音频、转写确认和分析结果保持版本化、可追溯、可重试且不静默覆盖。
-- Provider、模型与区域支持通过能力契约演进，不把单一供应商细节扩散到客户端。
-- Android、iOS 与 Web 共享产品行为；无法在当前环境验证的平台能力必须明确标记。
+## Roadmap principles
 
-## 1. 可安装与易上手
+- Improve self-hosting security, installability, and recoverability before pursuing scale or feature count.
+- Keep PostgreSQL as the sole source of business truth; caches and queues must not create a second authoritative store.
+- Keep audio, transcript confirmations, and analysis results versioned, traceable, retryable, and free from silent overwrites.
+- Evolve provider, model, and regional support through capability contracts rather than leaking one provider's details into clients.
+- Preserve shared behavior across Android, iOS, and Web, and explicitly label platform capabilities that have not been verified.
 
-目标是让非开发者能够安装 App、启动自己的 Server，并在遇到配置问题时得到明确诊断。
+## 1. Installability and onboarding
 
-- 已建立可复现的 Android 签名 Release APK、GitHub Release、版本说明与升级/回滚步骤；后续版本持续验证 N-1 Server 兼容窗口。
-- 提供不含真实业务数据的截图、演示视频和端到端首次使用流程。
-- 增强 Server、数据库、FFmpeg、Provider、Credential、OSS 和移动端连通性的自检。
-- 完成重新转写、失败任务专用重跑等已经在界面中明确标记为建设中的操作。
-- 为 Compose 数据卷提供经过验证的备份、恢复与版本升级路径。
+The goal is for non-developers to install the App, start their own Server, and receive actionable configuration diagnostics.
 
-完成信号：新用户只依赖 README 与自托管文档即可在可信局域网中完成“安装 App → 连接 Server → 上传音频 → 获得分析”的闭环。
+- Maintain reproducible signed Android APKs, GitHub Releases, release notes, and upgrade/rollback procedures; continue verifying the N-1 Server compatibility window.
+- Provide screenshots, demo recordings, and first-run flows that contain no real business data.
+- Improve self-checks for the Server, database, FFmpeg, providers, credentials, OSS, and mobile connectivity.
+- Finish clearly marked in-progress operations such as re-transcription and targeted retry of failed jobs.
+- Provide verified backup, restore, and version-upgrade procedures for Compose volumes.
 
-## 2. 生产安全基础
+Completion signal: a new user can follow only the README and self-hosting documentation to complete “install App → connect Server → upload audio → receive analysis” on a trusted LAN.
 
-目标是从固定开发租户演进为可由真实团队使用的安全边界。
+## 2. Production security foundation
 
-- 引入真实账号、会话、租户成员关系和最小可用 RBAC，并迁移固定租户数据。
-- 提供 HTTPS/反向代理参考部署、可信代理配置、速率限制和请求体/上传配额。
-- 完善管理操作、Credential 使用、数据导出与删除的审计和告警。
-- 定义密钥轮换、备份加密、灾难恢复、安全更新与支持版本策略。
-- 建立依赖与容器漏洞扫描、Secret 检测和负责任披露流程。
+The goal is to evolve from a fixed development tenant into a boundary suitable for real teams.
 
-完成信号：项目有明确的威胁模型和多用户隔离测试，且官方文档不再要求“仅可信局域网”作为唯一安全前提。
+- Add real accounts, sessions, tenant membership, and minimum viable RBAC, including migration of fixed-tenant data.
+- Provide HTTPS/reverse-proxy deployment references, trusted-proxy configuration, rate limits, and request/upload quotas.
+- Improve audits and alerts for administrative actions, credential use, data export, and deletion.
+- Define key rotation, encrypted backups, disaster recovery, security updates, and supported-version policies.
+- Add dependency/container vulnerability scanning, secret detection, and a responsible disclosure process.
 
-## 3. 可扩展运行时
+Completion signal: the project has an explicit threat model and multi-user isolation tests, and official documentation no longer relies on “trusted LAN only” as the sole security premise.
 
-目标是在不破坏任务快照、幂等性和版本化结果的前提下支持多进程与更长任务。
+## 3. Scalable runtime
 
-- 将 API 与 ingestion、ASR、后处理、业务分析、通知 Worker 拆分为独立运行单元。
-- 引入持久任务协调与跨实例唤醒；Redis 如被采用，仅承担缓存、协调或队列职责。
-- 用跨实例事件通道替代进程内 SSE 唤醒，并保留断线恢复与游标语义。
-- 让权威对象存储成为可扩展部署的默认音频路径，明确临时对象和清理补偿。
-- 增加结构化日志、指标、追踪、任务积压与供应商成本/限流可观测性。
+The goal is to support multiple processes and longer jobs without losing snapshots, idempotency, or versioned results.
 
-完成信号：至少两个 API/Worker 实例可以安全处理同一租户任务，不重复发布结果，也不依赖共享本地音频目录。
+- Split API, ingestion, ASR, post-analysis, business-analysis, and notification workers into independent runtime units.
+- Add durable task coordination and cross-instance wakeups; if Redis is adopted, limit it to cache, coordination, or queue duties.
+- Replace in-process SSE wakeups with a cross-instance event channel while preserving cursor and reconnect semantics.
+- Make authoritative object storage the default scalable audio path, with explicit temporary-object and cleanup compensation behavior.
+- Add structured logs, metrics, traces, backlog monitoring, and provider cost/rate-limit observability.
 
-## 4. 更广的知识与音频能力
+Completion signal: at least two API/Worker instances can safely process one tenant's jobs without duplicate publication or a shared local audio directory.
 
-目标是扩大可导入内容、模型选择和分析场景，同时保持现有可信边界。
+## 4. Broader knowledge and audio capabilities
 
-- 增加受控的数据源连接器与增量同步，不把第三方系统变成业务权威存储。
-- 支持 PDF、OCR、旧版 Office 等格式，并保留页码、单元格或段落级来源定位。
-- 抽象可插拔 ASR、embedding 与文本模型能力，保留区域、价格、生命周期和输出质量验证。
-- 改进混合检索、重排、回答流式体验和大规模知识库分页。
-- 将销售复盘扩展为可版本化的分析模板与领域词表，同时保持结构化输出契约。
+The goal is to expand import formats, model choice, and analysis scenarios while preserving current trust boundaries.
 
-完成信号：新增 Provider、文档格式或分析模板不要求绕过共享契约、审计、重试和引用校验。
+- Add controlled data-source connectors and incremental synchronization without making third-party systems authoritative business storage.
+- Support PDF, OCR, and legacy Office formats while retaining page-, cell-, or paragraph-level source locations.
+- Add pluggable ASR, embedding, and text-model capabilities with regional, pricing, lifecycle, and output-quality validation.
+- Improve hybrid retrieval, reranking, answer streaming, and large knowledge-base pagination.
+- Evolve sales review into versioned analysis templates and domain vocabularies while preserving structured output contracts.
 
-## 5. 平台覆盖与隐私能力
+Completion signal: adding a provider, document format, or analysis template never requires bypassing shared contracts, audit, retry, or citation validation.
 
-目标是在不同设备和网络环境中降低部署与使用门槛。
+## 5. Platform coverage and privacy
 
-- 在 macOS/Xcode 环境完成 iOS 原生构建、通知、音频播放和发布验收。
-- 增加二维码或 mDNS 局域网发现，同时保留地址校验、HTTPS 和用户确认。
-- 优化 Web 构建、部署和键盘/无障碍体验，明确浏览器媒体与存储限制。
-- 评估端侧转写、局部离线分析和端到端加密等隐私优先方案的成本与平台可行性。
+The goal is to lower deployment and usage friction across devices and network environments.
 
-完成信号：每个支持平台都有明确的构建、升级、兼容性和回归证据，而不是只在代码层面声明支持。
+- Complete native iOS build, notification, audio-playback, and release verification on macOS/Xcode.
+- Add QR or mDNS LAN discovery while preserving address validation, HTTPS, and explicit user confirmation.
+- Improve Web deployment, keyboard, and accessibility behavior, with clear browser media/storage limitations.
+- Evaluate the cost and platform feasibility of on-device transcription, partially offline analysis, and end-to-end encryption.
 
-## 当前明确不承诺
+Completion signal: every supported platform has explicit build, upgrade, compatibility, and regression evidence rather than code-only claims.
 
-- 不承诺路线项目的固定发布日期或完成顺序。
-- 不承诺官方托管云服务、免费第三方模型额度或任一供应商的长期可用性。
-- 不在鉴权和生产安全基线完成前推荐公网暴露当前 API。
-- 不为追求离线能力而复制一套与 PostgreSQL 无同步契约的业务数据源。
+## Explicit non-commitments
 
-如果你希望推动某一方向，请先按[贡献指南](./CONTRIBUTING.md)提交 Issue，说明用户问题、使用场景、边界和可验证的完成标准。
+- No fixed dates or ordering are promised for roadmap items.
+- No official hosted cloud service, free third-party model quota, or long-term availability of any provider is promised.
+- Public exposure of the current API is not recommended before authentication and the production security baseline exist.
+- Offline support will not be pursued by duplicating PostgreSQL business data without a synchronization contract.
+
+To advance an item, follow the [contribution guide](./CONTRIBUTING.md) and open an issue describing the user problem, scenario, boundaries, and verifiable completion criteria.

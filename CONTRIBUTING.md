@@ -1,17 +1,19 @@
-# 为 EchoWave 做贡献 / Contributing
+# Contributing to EchoWave
 
-感谢你关注 EchoWave。项目当前处于开发预览阶段，欢迎提交可复现的问题、边界清晰的功能建议、文档改进和经过验证的代码变更。
+**English** | [简体中文](./CONTRIBUTING.zh-CN.md)
 
-## 开始之前
+Thank you for your interest in EchoWave. The project is currently a development preview. Reproducible bug reports, clearly scoped feature proposals, documentation improvements, and verified code changes are welcome.
 
-1. 阅读根目录 [README](./README.md)、[文档索引](./docs/README.md)和与改动相关的专题文档。
-2. 搜索现有 [Issues](https://github.com/MetaBrain-Labs/EchoWave/issues)，避免重复工作。
-3. 对跨层功能、数据库迁移、公开契约、Provider 接入或大范围重构，先创建 Issue 描述目标和方案，等待范围达成共识后再实现。
-4. 安全问题不要创建包含复现细节的公开 Issue，请遵循[安全策略](./SECURITY.md)。
+## Before you start
 
-## 开发环境
+1. Read the root [README](./README.md), the [documentation index](./docs/README.md), and the topic documents related to your change.
+2. Search existing [Issues](https://github.com/MetaBrain-Labs/EchoWave/issues) to avoid duplicate work.
+3. For cross-layer features, database migrations, public contracts, provider integrations, or broad refactors, open an issue describing the goal and design before implementation.
+4. Do not disclose security details in a public issue; follow the [security policy](./SECURITY.md).
 
-仓库要求 Node.js `24.x`、pnpm `11.3.0`，并使用 pnpm workspace 与 Turborepo。不要使用 npm 或 Yarn 修改依赖和锁文件。
+## Development environment
+
+The repository requires Node.js `24.x` and pnpm `11.3.0`, and uses a pnpm workspace with Turborepo. Do not use npm or Yarn to modify dependencies or the lockfile.
 
 ```bash
 git clone https://github.com/MetaBrain-Labs/EchoWave.git
@@ -23,24 +25,24 @@ pnpm --filter @echowave/api migrate
 pnpm start
 ```
 
-Windows 请用 `Copy-Item` 替代 `cp`。完整配置、PostgreSQL/pgvector、FFmpeg、Development Build 和局域网地址要求见 [README](./README.md) 与[配置指南](./docs/configuration.md)。
+On Windows, replace `cp` with `Copy-Item`. See the [README](./README.md) and [configuration guide](./docs/configuration.md) for PostgreSQL/pgvector, FFmpeg, Development Build, and LAN-address requirements.
 
-## 变更约束
+## Change constraints
 
-- 保持修改聚焦，一个 Pull Request 解决一个明确问题；不要顺带重构无关代码。
-- API 与 App 的网络 wire shape 必须先在 `packages/contracts` 中定义和运行时校验。
-- PostgreSQL 是业务事实的权威来源；数据库变化使用有序 SQL migration，不直接改写历史 migration。
-- 保持音频转写与分析的版本、来源、幂等、重试、取消和下游失效语义。
-- 移动端继续使用 Expo Router、React Native primitives、`StyleSheet` 和共享设计令牌。
-- 新增用户文案同时维护简体中文和英文目录；模型使用的英文 prompt/工具描述中不要混入中文说明。
-- 不提交 `.env`、Credential、Keystore、Firebase 服务账号、运行时数据、构建产物或真实用户内容。
-- 人维护的 `.ts`/`.tsx` 文件需要符合仓库既有的简体中文 JSDoc 文件头与关键边界注释约定。
+- Keep each pull request focused on one problem; do not bundle unrelated refactors.
+- Define and runtime-validate API/App wire shapes in `packages/contracts` first.
+- Keep PostgreSQL authoritative. Apply database changes through ordered SQL migrations and never rewrite historical migrations.
+- Preserve versioning, provenance, idempotency, retry, cancellation, and downstream invalidation for transcription and analysis.
+- Keep the mobile application on Expo Router, React Native primitives, `StyleSheet`, and shared design tokens.
+- Maintain both Simplified Chinese and English user-facing copy. Do not put Chinese prose into English model-facing prompts or tool/schema descriptions.
+- Never commit `.env` files, credentials, keystores, Firebase service accounts, runtime data, build output, or real user content.
+- Human-maintained `.ts` and `.tsx` files must follow the repository's Simplified Chinese JSDoc header and boundary-comment convention.
 
-详细工程边界以仓库根目录 `AGENTS.md` 为准；它主要面向工程 Agent，但其中的架构、文档与验证约束也适用于人工贡献。
+The root `AGENTS.md` is authoritative for detailed engineering constraints. Although written primarily for engineering agents, its architecture, documentation, and verification rules also apply to human contributions.
 
-## 验证
+## Verification
 
-完成一批源代码变更后，从仓库根目录运行一次格式化，再按影响范围验证：
+After one batch of source changes, format once from the repository root and verify in proportion to impact:
 
 ```bash
 pnpm format
@@ -53,25 +55,25 @@ pnpm check
 git diff --check
 ```
 
-请不要重复运行会改写文件的格式化命令。纯文档变更至少运行 `pnpm docs:check` 和 `git diff --check`；涉及运行逻辑的变更先运行最小相关测试，再以 `pnpm check` 作为最终门禁。移动端行为变化如具备 Android 设备和工具，再运行最窄的 Maestro Flow；设备 E2E 不属于常规 `pnpm check`。
+Do not repeatedly run formatting commands that rewrite files. Documentation-only changes require at least `pnpm docs:check` and `git diff --check`. For runtime changes, run the narrowest relevant tests first and use `pnpm check` as the final gate. When an Android device and required tools are available, run the narrowest affected Maestro Flow; device E2E is intentionally outside ordinary `pnpm check`.
 
-## 提交 Issue
+## Filing an issue
 
-Bug 报告应包含：
+A bug report should include:
 
-- 使用路径、期望结果与实际结果。
-- 操作系统、客户端平台、Node/pnpm 版本和部署方式。
-- 最小复现步骤，以及经过脱敏的错误码或日志片段。
-- 是否可以稳定复现，是否涉及真实 Provider 调用。
+- The user path, expected result, and actual result.
+- Operating system, client platform, Node/pnpm versions, and deployment method.
+- Minimal reproduction steps and redacted error codes or logs.
+- Whether the issue reproduces reliably and whether it calls a real provider.
 
-功能建议应先说明用户问题、目标用户、成功标准与明确非目标。涉及 AI Provider 时还应说明区域可用性、费用、生命周期和所需输出契约。
+A feature proposal should begin with the user problem, target users, success criteria, and explicit non-goals. Provider proposals should also state regional availability, cost, lifecycle, and required output contract.
 
-## 提交 Pull Request
+## Opening a pull request
 
-- 从最新默认分支创建主题分支，使用清晰的提交信息。
-- 在 PR 中说明“改了什么、为什么、如何验证、未能验证什么、剩余风险”。
-- 关联对应 Issue，并为用户可见变化同步更新 README 或专题文档。
-- 公开契约变化需要覆盖有效与拒绝载荷；Bug 修复需要覆盖触发问题的失败或边界场景。
-- 不降低断言、关闭测试或用任意等待掩盖回归。
+- Branch from the latest default branch and use clear commit messages.
+- Explain what changed, why, how it was verified, what could not be verified, and remaining risks.
+- Link the issue and update the README or topic documentation for user-visible changes.
+- Cover accepted and rejected payloads for public contract changes; cover the triggering failure or edge case for bug fixes.
+- Never weaken assertions, disable tests, or hide regressions with arbitrary waits.
 
-维护者可能要求缩小范围、补充测试或拆分 PR。贡献一经提交，即按仓库的 [Apache License 2.0](./LICENSE) 条款提供。
+Maintainers may ask you to narrow the scope, add tests, or split the pull request. Contributions are provided under the repository's [Apache License 2.0](./LICENSE).
