@@ -1,0 +1,65 @@
+name: Bug report / 缺陷报告
+description: Report a reproducible EchoWave problem / 报告可复现的问题
+title: '[Bug]: '
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve EchoWave. Do not include secrets, private audio, or vulnerability details. Security issues must follow SECURITY.md.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Problem summary / 问题摘要
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction / 复现步骤
+      description: Provide the smallest stable sequence that reproduces the problem.
+      placeholder: |
+        1. Start...
+        2. Open...
+        3. Observe...
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface / 影响范围
+      options:
+        - Android
+        - iOS
+        - Web
+        - API / Worker
+        - Docker self-hosting
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment / 环境
+      description: OS, commit/version, Node and pnpm versions, device, and deployment mode.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted evidence / 脱敏证据
+      description: Error codes, minimal logs, or screenshots with all credentials and private data removed.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist / 检查项
+      options:
+        - label: I searched existing issues and did not find a duplicate. / 我已搜索现有 Issue。
+          required: true
+        - label: This report contains no secrets, private audio, or personal data. / 本报告不含密钥、私密音频或个人数据。
+          required: true
+        - label: This is not a security vulnerability report. / 这不是安全漏洞报告。
+          required: true

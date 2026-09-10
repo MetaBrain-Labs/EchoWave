@@ -18,6 +18,10 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-http://deb.debian.org/debian}
+        DEBIAN_SECURITY_MIRROR: ${DEBIAN_SECURITY_MIRROR:-http://deb.debian.org/debian-security}
     command: ['node', 'dist/bootstrap/migrate.js']
     restart: 'no'
     depends_on:
@@ -31,6 +35,10 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-http://deb.debian.org/debian}
+        DEBIAN_SECURITY_MIRROR: ${DEBIAN_SECURITY_MIRROR:-http://deb.debian.org/debian-security}
     restart: unless-stopped
     depends_on:
       migrate:

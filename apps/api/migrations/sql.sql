@@ -497,6 +497,7 @@ create table public.audio_speaker_review_jobs (
   error_message text,
   created_at timestamp with time zone not null default now(),
   completed_at timestamp with time zone,
+  settings_snapshot jsonb not null default '{"language": "zh-CN"}'::jsonb,
   foreign key (tenant_id, audio_file_id, analysis_revision_id) references public.audio_analysis_revisions (tenant_id, audio_file_id, id)
   match simple on update no action on delete cascade,
   foreign key (tenant_id, capability_binding_revision_id) references public.ai_capability_binding_revisions (tenant_id, id)
@@ -904,6 +905,8 @@ create table public.notification_events (
   title character varying(120) not null,
   body character varying(500) not null,
   created_at timestamp with time zone not null default now(),
+  template_key text,
+  template_params jsonb not null default '{}'::jsonb,
   foreign key (tenant_id, batch_id) references public.audio_analysis_batches (tenant_id, id)
   match simple on update no action on delete cascade,
   foreign key (tenant_id) references public.tenants (id)
@@ -957,6 +960,7 @@ create table public.push_devices (
   last_seen_at timestamp with time zone not null default now(),
   created_at timestamp with time zone not null default now(),
   updated_at timestamp with time zone not null default now(),
+  locale text not null default 'zh-CN'::text,
   foreign key (tenant_id) references public.tenants (id)
   match simple on update no action on delete no action
 );

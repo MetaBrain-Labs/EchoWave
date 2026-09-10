@@ -26,7 +26,10 @@ import { orderedMigrationFileNames } from './migrationFiles.ts';
 import { provisionStarterTemplates } from '../workspace/starter-templates/provisioner.ts';
 
 const config = readApiConfigFile(new URL('../../.env', import.meta.url));
-const pool = createDatabasePool(config.database);
+const pool = createDatabasePool(config.database, {
+  // 首次部署时 001_rag.sql 负责创建 vector 扩展，连接本身不能预先依赖该类型。
+  registerVectorTypes: false,
+});
 const schema = quoteIdentifier(config.database.schema);
 
 /**

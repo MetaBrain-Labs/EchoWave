@@ -1,130 +1,84 @@
-# EchoWave
+<div align="center">
+  <img src="./apps/mobile/assets/img/icon.png" alt="EchoWave" width="96" />
+  <h1>EchoWave</h1>
+  <p>把音频、业务分析与团队知识库连接起来的开源自托管工作台。</p>
 
-EchoWave 是一个面向音频分析、知识库检索和数据源管理的跨平台应用。仓库当前提供 Expo Android/iOS/Web 客户端、Node.js API、PostgreSQL/pgvector RAG、版本化音频转写与分析，以及可在可信局域网部署的 Docker Self-hosted Server。
+[English](./README.en.md) · 简体中文
 
-当前版本仍使用固定开发租户，没有真实账号、鉴权和公网部署所需的完整安全边界。仓库尚未发布可供普通用户下载的正式 APK；GitHub Releases + Self-hosted Server 是正式 APK 发布后的使用路径。
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
+![Node.js](https://img.shields.io/badge/Node.js-24-339933?logo=nodedotjs&logoColor=white)
+![pnpm](https://img.shields.io/badge/pnpm-11.3.0-F69220?logo=pnpm&logoColor=white)
+![Expo](https://img.shields.io/badge/Expo-SDK%2057-000020?logo=expo&logoColor=white)
+</div>
 
-## 技术基线
+EchoWave 面向需要从访谈、销售通话、会议等音频中沉淀结构化洞察的团队。它提供中文和英文界面的 Expo 客户端、自托管 API、PostgreSQL/pgvector 知识库、版本化转写与人工确认、情绪/角色识别、业务分析以及可追溯的 AI 执行记录。
 
-- Node.js 24、pnpm 11.3.0、Turborepo
-- Expo SDK 57、React Native 0.86、React 19
-- Hono、Zod、TypeScript、LangGraph/DeepAgents
-- PostgreSQL 15+、pgvector 0.8.0+
-- FFmpeg、Silero VAD、DashScope、DeepSeek
+> [!IMPORTANT]
+> EchoWave 当前是 `v0.1` 开发预览版：使用固定开发租户，尚未提供真实账号、权限控制和公网部署所需的完整安全边界。请仅部署在可信局域网，不要把 API 端口直接暴露到公网。仓库暂未发布可直接安装的正式 APK，现阶段需要从源码构建客户端。
 
-## 仓库结构
+[快速开始](#快速开始) · [当前能力](#当前能力) · [架构](#系统如何工作) · [项目边界](#当前边界) · [Future](#future) · [完整文档](./docs/README.md) · [贡献指南](./CONTRIBUTING.md)
 
-```text
-apps/api/                 Node.js API、领域服务、Worker 与 SQL migrations
-apps/mobile/              Expo Router 移动端与 Web 客户端
-packages/contracts/       API 与 App 共用的 Zod 网络契约
-deploy/self-hosted/       Docker Self-hosted 配置模板
-docs/                     架构、数据库、配置、运行模式与构建指南
-scripts/check-docs.mjs    文档结构和关键入口校验
-compose.yaml              PostgreSQL、migration 与 API 服务
+## 为什么是 EchoWave
+
+- **从音频到报告**：上传音频，完成 ASR、说话人复核、转写确认、角色/情绪识别和业务分析。
+- **结果可校正、可追溯**：原始转写、确认版本和后续分析分层保存；重试、取消、恢复和供应商调用均保留审计事实。
+- **知识库增强**：将 Markdown、Word 和表格文档写入 pgvector，通过带引用的检索回答支撑业务分析。
+- **自托管优先**：服务端、数据库、音频与 Credential 边界由部署者掌控，App 在运行时连接指定服务器。
+- **跨平台与双语**：同一 Expo 工程覆盖 Android、iOS 和 Web，App 与分析输出支持简体中文和英文。
+
+## 当前能力
+
+| 能力       | 已实现内容                                                                      |
+| ---------- | ------------------------------------------------------------------------------- |
+| 工作空间   | 分组、知识库、数据源、关联关系、音频上传、软归档与起步模板                      |
+| 音频处理   | DashScope 文件转写、Silero VAD、说话人分段、转写确认、重试/取消/恢复            |
+| 后续分析   | 说话人复核、业务角色、声学/文本情绪、LangGraph 销售复盘与自定义关注点           |
+| 知识库     | Markdown、DOCX、XLSX 文档解析，DashScope embedding、pgvector 检索与可信引用回答 |
+| 自动化     | 立即或定时批次、断点恢复、SSE 实时状态、应用内状态与可选 Expo Push              |
+| 配置与审计 | Provider/Credential revision、能力绑定、任务配置快照和脱敏 AI 执行报告          |
+| 客户端     | Android/iOS/Web、运行时服务器选择、新手引导、中文/英文界面与分析语言            |
+
+## 系统如何工作
+
+```mermaid
+flowchart LR
+  App[Expo App\nAndroid / iOS / Web] -->|REST · Upload · SSE| API[Hono API]
+  API --> PG[(PostgreSQL + pgvector)]
+  API --> Workers[In-process Workers\nASR · Ingestion · Analysis]
+  Workers --> AI[DashScope · DeepSeek · OSS]
+  Workers --> PG
+  API --> Push[Expo Push\noptional]
 ```
 
-完整主题入口见[文档索引](./docs/README.md)和[文档导览](./docs/documentation-guide.md)。
+`packages/contracts` 中的 Zod schema 是 API 与客户端之间的共享边界。PostgreSQL 是业务事实的唯一权威来源；Redis 目前只有配置契约，没有参与队列、缓存或业务持久化。更完整的模块、数据流和安全边界见[架构说明](./docs/architecture.md)。
 
-Android 真机回归使用专用 E2E Development Build，通过 Maestro 覆盖稳定 UI 流程与显式付费的真实 ASR/LLM 集成。环境准备、命令和诊断/修复门禁见 [Android 真机全量回归](./docs/mobile-e2e.md)。设备 E2E 不属于常规 `pnpm check`。
+## 快速开始
 
-## 本地开发
+### 前置条件
 
-### 1. 安装与配置
+- 源码开发：Node.js `24.x`、pnpm `11.3.0`、PostgreSQL `15+`、pgvector `0.8.0+`、FFmpeg
+- 自托管 Server：Docker Desktop 或 Docker Engine + Compose
+- 原生 App：Android Studio/Android 设备，或 macOS + Xcode；推荐使用 Expo Development Build
 
-确认使用仓库要求的工具链：
+先克隆仓库：
 
-```powershell
-node --version
-pnpm --version
-pnpm install
+```bash
+git clone https://github.com/MetaBrain-Labs/EchoWave.git
+cd EchoWave
 ```
 
-首次运行时创建未跟踪的本地配置：
+### 路径 A：启动自托管 Server
 
-```powershell
-Copy-Item apps/api/.env.example apps/api/.env
-Copy-Item apps/mobile/.env.example apps/mobile/.env
+这是最快的服务端体验路径，但在正式 Release APK 发布前仍需按[自托管与自行构建](./docs/self-hosting.md)构建客户端。
+
+```bash
+cp deploy/self-hosted/api.env.example deploy/self-hosted/api.env
+# 编辑 api.env，替换数据库密码、CREDENTIAL_MASTER_KEY 和 CONFIGURATION_ADMIN_TOKEN
+docker compose config
+docker compose up -d --build
 ```
 
-至少完成 PostgreSQL、`CREDENTIAL_MASTER_KEY`、`CONFIGURATION_ADMIN_TOKEN`、`LOCAL_CREDENTIALS_FILE` 和目录配置。供应商连接、能力绑定与 Credential 边界见[配置与 Credential 指南](./docs/configuration.md)。物理手机不能通过 `localhost` 访问电脑；`apps/mobile/.env` 应使用电脑的局域网地址并与 API 端口一致：
-
-```dotenv
-EXPO_PUBLIC_API_URL=http://<SERVER_LAN_IP>:<API_PORT>
-```
-
-首次启动前显式执行 migration；该命令会为当前固定租户一次性安装“销售通话复盘”、“个人表达教练”与共享上传数据源。已有项目重新执行 migration 也会安装一次，之后不会恢复用户已修改或归档的模板。需要额外演示数据时再运行幂等 seed：
-
-```powershell
-pnpm --filter @echowave/api migrate
-pnpm --filter @echowave/api seed:dev
-```
-
-### 2. 启动 API 与客户端
-
-可通过 Turbo TUI 一次启动 API 与使用 LAN 模式的 Development Build 客户端：
-
-```powershell
-pnpm start
-```
-
-也可在两个终端分别运行：
-
-```powershell
-pnpm dev:api
-```
-
-```powershell
-pnpm dev:mobile -- --lan
-```
-
-Metro 报告缓存无法反序列化时，停止旧进程后清缓存启动：
-
-```powershell
-pnpm dev:mobile -- --lan --clear
-```
-
-不同客户端使用的 API 主机通常为：
-
-- Web、iOS Simulator：`http://localhost:<API_PORT>`
-- Android Emulator：`http://10.0.2.2:<API_PORT>`
-- Android/iOS 真机：`http://<SERVER_LAN_IP>:<API_PORT>`
-
-## Development Build 与 Expo Go
-
-Development Build 是默认原生开发环境，支持项目自己的原生依赖、Firebase 和远程推送。当前官方 EAS 项目已经绑定；维护者必须在 `apps/mobile` 中执行 EAS 命令，不要在仓库根目录重新运行 `eas init`：
-
-```powershell
-Set-Location apps/mobile
-pnpm dlx eas-cli@latest login
-pnpm dlx eas-cli@latest build --platform android --profile development
-```
-
-普通 TS/TSX 修改通过 Metro/Fast Refresh 生效。升级 Expo SDK、添加或升级原生依赖、修改原生权限、Firebase 或通知配置后，需要重新构建 Development APK。
-
-Expo Go 只用于不依赖远程推送的兼容功能预览：
-
-```powershell
-pnpm --filter @echowave/mobile dev:go -- --lan
-```
-
-Android Expo Go 从 SDK 53 起不提供远程推送能力，EchoWave 会在该运行时安全跳过通知模块。完整的 Firebase/EAS 设置、Push 验收和 Production APK 流程见[自托管与自行构建](./docs/self-hosting.md)。
-
-## 运行时服务器连接
-
-App 将通过健康检查验证的服务器根地址保存到 AsyncStorage，所有 REST、上传、SSE、音频和通知注册请求都在调用时读取该地址。已保存地址优先于 Development/Expo Go 的 `EXPO_PUBLIC_API_URL` 默认值。
-
-当两个起步模板分组首次在当前设备加载成功时，App 只自动展示一次“基础引导”。“更多 → 新手引导”提供基础、知识库、数据源、AI 配置、运行模式和查看分析六项独立引导，完成或跳过状态按规范化 Server URL 保存为设备 UI 偏好；旧版基础引导完成状态会自动迁移。
-
-每个活动模板分组还通过 `GET /api/groups/:groupId/template-example` 提供一份代码维护的只读分析示例。示例不包含原始音频，不写入音频、转写、任务或分析表，也不计入分组统计；普通分组和已归档模板返回结构化 `404`。
-
-`production-apk` 与 `production` profile 强制忽略开发默认地址。清除应用数据后的 Production Build 首次只显示“连接到 EchoWave Server”，通过 `GET /health` 后才能保存并进入主应用。“更多 → 服务状态”可以修改服务器并重新挂载业务导航。
-
-客户端只允许 HTTP 指向 localhost、私有/链路本地地址或 `.local` 主机；公网服务器必须使用 HTTPS。`GET /health` 的 `capabilities.remotePush` 决定 App 是否请求通知权限并注册设备。
-
-## Self-hosted
-
-当前可从源码运行 Self-hosted Server：
+PowerShell 请使用：
 
 ```powershell
 Copy-Item deploy/self-hosted/api.env.example deploy/self-hosted/api.env
@@ -132,44 +86,100 @@ docker compose config
 docker compose up -d --build
 ```
 
-模板默认关闭远程推送，使用 PostgreSQL/pgvector、SSE 和应用内状态。正式 Release APK 发布后，普通用户可以安装 APK 并连接自己的局域网服务器。配置生成、持久卷、端口、防火墙和安全限制见[自托管与自行构建](./docs/self-hosting.md)。
+确认服务已经启动：
 
-当前 API 没有真实用户鉴权，不得直接暴露到公网。
+```bash
+curl http://localhost:3001/health
+curl http://localhost:3001/api/hello
+```
+
+手机需要连接 `http://<SERVER_LAN_IP>:<API_PORT>`，不能使用服务器的 `localhost`。密钥生成、持久卷、端口、防火墙以及 Production APK 构建步骤见[自托管指南](./docs/self-hosting.md)。
+
+### 路径 B：本地开发
+
+安装依赖，并从模板创建不跟踪的本地配置：
+
+```bash
+pnpm install --frozen-lockfile
+cp apps/api/.env.example apps/api/.env
+cp apps/mobile/.env.example apps/mobile/.env
+```
+
+Windows PowerShell：
+
+```powershell
+Copy-Item apps/api/.env.example apps/api/.env
+Copy-Item apps/mobile/.env.example apps/mobile/.env
+```
+
+编辑 `apps/api/.env`，至少完成 PostgreSQL、`CREDENTIAL_MASTER_KEY`、`CONFIGURATION_ADMIN_TOKEN`、`LOCAL_CREDENTIALS_FILE` 和目录配置。物理手机还需把 `apps/mobile/.env` 中的地址改为电脑局域网地址：
+
+```dotenv
+EXPO_PUBLIC_API_URL=http://<SERVER_LAN_IP>:<API_PORT>
+```
+
+初始化数据库；`seed:dev` 是可选的幂等演示数据：
+
+```bash
+pnpm --filter @echowave/api migrate
+pnpm --filter @echowave/api seed:dev
+```
+
+通过 Turbo TUI 同时启动 API 与 LAN Development Build 客户端：
+
+```bash
+pnpm start
+```
+
+也可以在两个终端分别运行 `pnpm dev:api` 与 `pnpm dev:mobile -- --lan`。尚未创建 Development Build 时，可用 `pnpm --filter @echowave/mobile dev:go -- --lan` 预览兼容功能；Expo Go 不支持本项目的完整远程推送流程。
+
+### 配置 AI 能力
+
+服务启动后，在 App 的“更多 → AI 配置”中建立 Provider、选择 Local Credential alias 或安全写入 Database Credential，并绑定各项能力。当前完整流程会用到 DashScope、DeepSeek 和阿里云 OSS；供应商调用可能产生费用，模型与区域可用性以你的账号为准。
+
+详细字段、安全传输限制和 Credential 轮换方式见[配置与 Credential 指南](./docs/configuration.md)。
 
 ## 常用命令
 
-```powershell
-pnpm docs:check
+```bash
+pnpm docs:check   # 文档链接、索引和关键入口
 pnpm lint
 pnpm typecheck
 pnpm test
-pnpm build
-pnpm check
+pnpm build        # 编译 API/契约并导出 Expo bundles，不生成 APK
+pnpm check        # 完整验证门禁
 ```
 
-`pnpm build` 编译共享契约与 API，并为 Android、iOS、Web 导出 Expo bundle；它不会生成可安装 APK。原生包使用 `apps/mobile/eas.json` 中的 `development`、`production-apk` 和 `production` profiles。仓库当前不自动创建 GitHub Release。
+Android 真机回归由 `.maestro/` 和 `scripts/e2e/android-e2e.mjs` 管理，不属于常规 `pnpm check`。命令、设备前置条件和真实付费集成边界见 [Android 真机全量回归](./docs/mobile-e2e.md)。
 
-## 当前能力与边界
+## 当前边界
 
-当前已经实现：
+- 没有真实账号、鉴权、RBAC 或面向公网的生产安全基线。
+- API 与 Worker 在同一进程；本地音频路径和进程内 SSE 唤醒要求单 API 实例。
+- 尚无数据源自动同步、PDF/OCR/旧版 Office 解析、重新转写、游标分页或 Redis 队列。
+- 尚无自动 GitHub Release、可下载的签名 APK、二维码/mDNS 发现或官方托管云服务。
+- iOS 原生构建与推送验收需要 macOS/Xcode 及 Apple/APNs 凭据；仓库不能在 Windows 上完成该验证。
 
-- 分组、知识库、数据源、音频上传和软归档的 PostgreSQL 纵切片
-- 一次性起步模板分组、可直接上传的共享数据源与跨页新手引导
-- 文档解析、pgvector 检索、可信引用问答和短历史
-- DashScope 版本化 ASR、Confirmed Transcript、说话人复核、情绪与角色分析
-- LangGraph 销售复盘、批次自动化、恢复/取消、SSE 状态与可选原生推送
-- AI 供应商配置、Credential revision、能力绑定与安全执行审计
-- Development/Production EAS profiles、运行时服务器选择和 Docker Self-hosted 模板
+这些限制不是隐藏的“企业版能力”，而是当前开源版本尚待完成的工程工作。部署前请阅读[安全策略](./SECURITY.md)与[自托管指南](./docs/self-hosting.md)。
 
-当前不包含真实鉴权、数据源自动同步、OCR/PDF/旧版 Office、Redis 实现、独立 Worker 部署、自动 Release、二维码/mDNS 发现、官方云服务或手机内置离线后端。API 与 Worker 仍在同一进程；本地音频路径和进程内 SSE 唤醒要求单 API 实例。iOS 原生运行与推送验收需要 macOS/Xcode 和 Apple/APNs 凭据。
+## Future
 
-专题说明：
+路线图按“先成为可靠的自托管产品，再扩展平台与生态”的顺序推进：
 
-- [架构说明](./docs/architecture.md)
-- [数据库结构](./docs/database-schema.md)
-- [配置与 Credential](./docs/configuration.md)
-- [音频运行模式](./docs/audio-runtime-modes.md)
-- [一键式音频全流程分析](./docs/audio-analysis-automation.md)
-- [自托管与自行构建](./docs/self-hosting.md)
-- [设计规范](./docs/design-system.md)
-- [领域语言](./docs/domain-language.md)
+1. **可安装与易上手**：签名 Android Release APK、自动发布与升级说明、演示素材、配置诊断，以及重新转写等已露出但尚未完成的操作。
+2. **生产安全基础**：真实账号与租户、RBAC、HTTPS/反向代理基线、速率限制、备份恢复和更完整的安全审计。
+3. **可扩展运行时**：拆分 API 与 Worker、持久任务队列、多实例实时事件、对象存储优先的音频生命周期和可观测性。
+4. **更广的知识与音频能力**：数据源连接器、PDF/OCR/旧版 Office、可插拔 ASR/LLM Provider、更强的检索与可配置分析模板。
+5. **平台覆盖**：iOS 发布验收、二维码/mDNS 局域网发现、Web 交付优化，并评估隐私优先的离线能力。
+
+优先级会根据真实使用反馈、维护能力和安全风险调整；路线图不代表发布日期承诺。每个方向的目标、完成标准和明确非目标见 [ROADMAP.md](./ROADMAP.md)。
+
+## 参与项目
+
+- 开始开发前请阅读[贡献指南](./CONTRIBUTING.md)。Bug 与功能建议可通过 [GitHub Issues](https://github.com/MetaBrain-Labs/EchoWave/issues) 提交。
+- 安全问题不要公开披露复现细节，请按[安全策略](./SECURITY.md)提供最小公开信息并转入私密渠道。
+- 架构、数据库、配置、运行模式和设计说明统一收录在[文档索引](./docs/README.md)。
+
+## 许可证
+
+EchoWave 使用 [Apache License 2.0](./LICENSE)。提交贡献即表示你同意按照该许可证提供贡献内容。

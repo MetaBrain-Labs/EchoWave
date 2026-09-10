@@ -1,0 +1,37 @@
+name: Private security contact / 安全私密联系
+description: Request a private reporting channel without publishing vulnerability details
+title: '[Security] Request private contact'
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not publish exploit steps, credentials, personal data, private audio, or screenshots here. First try **Security → Report a vulnerability**. Use this form only when private vulnerability reporting is unavailable.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Broad affected area / 大致影响范围
+      options:
+        - API / Authentication / Authorization
+        - Credentials / Secrets
+        - Audio / User data
+        - Mobile application
+        - Self-hosted deployment
+        - Dependency / Supply chain
+        - Unknown / Other
+    validations:
+      required: true
+  - type: input
+    id: contact
+    attributes:
+      label: GitHub contact / GitHub 联系账号
+      description: Provide only the GitHub username that maintainers can contact.
+      placeholder: '@username'
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Confirmation / 确认
+      options:
+        - label: I did not include vulnerability details, secrets, private data, or exploit steps in this public form. / 我没有在此公开表单中包含漏洞细节、密钥、私密数据或利用步骤。
+          required: true
