@@ -14,6 +14,7 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
 
 import {
+  AI_CAPABILITY_DEFAULTS,
   AliyunOssCredentialInputSchema,
   CapabilityBindingWriteSchema,
   DashScopeCredentialInputSchema,
@@ -38,30 +39,6 @@ import type { SettingsRepository, StoredProvider } from './repository.ts';
 import { isPrivateNetworkAddress, type TransportSecurity } from './transportSecurity.ts';
 import type { CredentialBundle, CredentialReference } from './types.ts';
 import { SettingsError } from './types.ts';
-
-const MODELS: Record<AiCapability, string> = {
-  knowledge_embedding: 'qwen3.7-text-embedding',
-  knowledge_chat: 'deepseek-v4-flash',
-  audio_transcription: 'qwen-audio-3.0-asr-flash-filetrans',
-  audio_emotion: 'qwen3.5-omni-flash',
-  audio_role: 'deepseek-v4-flash',
-  audio_speaker_review: 'deepseek-v4-flash',
-  business_analysis: 'deepseek-v4-flash',
-  audio_staging: 'aliyun-oss',
-  audio_primary_storage: 'aliyun-oss',
-};
-
-const PROVIDERS: Record<AiCapability, ProviderType> = {
-  knowledge_embedding: 'dashscope',
-  knowledge_chat: 'deepseek',
-  audio_transcription: 'dashscope',
-  audio_emotion: 'dashscope',
-  audio_role: 'deepseek',
-  audio_speaker_review: 'deepseek',
-  business_analysis: 'deepseek',
-  audio_staging: 'aliyun_oss',
-  audio_primary_storage: 'aliyun_oss',
-};
 
 const ThinkingSettingsSchema = z.object({ enableThinking: z.boolean() }).strict();
 const EmptySettingsSchema = z.object({}).strict();
@@ -202,7 +179,7 @@ export class SettingsService {
   /** 保存一个受支持能力的当前绑定。 */
   async saveBinding(capability: AiCapability, rawInput: CapabilityBindingWrite) {
     const input = CapabilityBindingWriteSchema.parse(rawInput);
-    if (input.model !== MODELS[capability]) {
+    if (input.model !== AI_CAPABILITY_DEFAULTS[capability].model) {
       throw new SettingsError('BAD_REQUEST', '该能力不支持所选模型。');
     }
     const settings = validSettings(capability, input.settings);
@@ -213,7 +190,7 @@ export class SettingsService {
       throw new SettingsError('BAD_REQUEST', '当前能力不支持第二供应商连接。');
     }
     const provider = await this.repository.getProvider(input.providerConnectionId);
-    if (provider.type !== PROVIDERS[capability]) {
+    if (provider.type !== AI_CAPABILITY_DEFAULTS[capability].providerType) {
       throw new SettingsError('BAD_REQUEST', '供应商连接类型与能力不兼容。');
     }
     if (provider.credential.source === 'local_file') {
@@ -277,21 +254,21 @@ export class SettingsService {
     const existingBindings = new Set(
       (await this.repository.listBindings()).map((binding) => binding.capability),
     );
-    for (const capability of Object.keys(MODELS) as AiCapability[]) {
+    for (const capability of Object.keys(AI_CAPABILITY_DEFAULTS) as AiCapability[]) {
       if (existingBindings.has(capability)) continue;
       const selected =
         capability === 'audio_primary_storage'
           ? undefined
           : capability === 'audio_staging'
             ? oss
-            : PROVIDERS[capability] === 'dashscope'
+            : AI_CAPABILITY_DEFAULTS[capability].providerType === 'dashscope'
               ? dashScope
               : deepSeek;
       if (!selected) continue;
       await this.saveBinding(capability, {
         providerConnectionId: selected.id,
         secondaryProviderConnectionId: null,
-        model: MODELS[capability],
+        model: AI_CAPABILITY_DEFAULTS[capability].model,
         settings:
           capability === 'knowledge_chat' || capability === 'business_analysis'
             ? { enableThinking: this.legacy.deepSeek.enableThinking }
@@ -506,7 +483,7 @@ export class SettingsService {
       }
       return {
         revisionId: null,
-        model: MODELS[capability],
+        model: AI_CAPABILITY_DEFAULTS[capability].model,
         settings: {},
         provider: {
           type: 'aliyun_oss',
@@ -515,13 +492,13 @@ export class SettingsService {
         },
       };
     }
-    if (PROVIDERS[capability] === 'dashscope') {
+    if (AI_CAPABILITY_DEFAULTS[capability].providerType === 'dashscope') {
       if (!this.legacy.dashScope) {
         throw new SettingsError('CONFIGURATION_REQUIRED', 'DashScope 尚未配置。');
       }
       return {
         revisionId: null,
-        model: MODELS[capability],
+        model: AI_CAPABILITY_DEFAULTS[capability].model,
         settings: {},
         provider: {
           type: 'dashscope',
@@ -535,7 +512,7 @@ export class SettingsService {
     }
     return {
       revisionId: null,
-      model: MODELS[capability],
+      model: AI_CAPABILITY_DEFAULTS[capability].model,
       settings:
         capability === 'knowledge_chat' || capability === 'business_analysis'
           ? { enableThinking: this.legacy.deepSeek.enableThinking }

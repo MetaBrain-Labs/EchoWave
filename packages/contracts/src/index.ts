@@ -308,6 +308,7 @@ export {
 } from './aiExecution.ts';
 export {
   AdminSessionResponseSchema,
+  AI_CAPABILITY_DEFAULTS,
   AiCapabilitySchema,
   AliyunOssConnectionConfigSchema,
   AliyunOssCredentialInputSchema,
@@ -331,6 +332,7 @@ export {
   TransportSecurityModeSchema,
   TransportSecuritySchema,
   type AiCapability,
+  type AiCapabilityDefault,
   type CapabilityBinding,
   type CapabilityBindingWrite,
   type CredentialBundleInput,

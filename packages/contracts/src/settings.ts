@@ -34,6 +34,65 @@ export const AiCapabilitySchema = z.enum([
   'audio_primary_storage',
 ]);
 
+export type ProviderType = z.infer<typeof ProviderTypeSchema>;
+export type AiCapability = z.infer<typeof AiCapabilitySchema>;
+
+/** AI 能力默认绑定配置，供 API 校验、旧配置导入和移动端预填共同使用。 */
+export type AiCapabilityDefault = {
+  providerType: ProviderType;
+  model: string;
+  settings: Record<string, unknown>;
+};
+
+/** 所有受支持 AI 能力的权威默认供应商、模型和运行设置。 */
+export const AI_CAPABILITY_DEFAULTS = {
+  knowledge_embedding: {
+    providerType: 'dashscope',
+    model: 'qwen3.7-text-embedding',
+    settings: {},
+  },
+  knowledge_chat: {
+    providerType: 'deepseek',
+    model: 'deepseek-v4-flash',
+    settings: { enableThinking: false },
+  },
+  audio_transcription: {
+    providerType: 'dashscope',
+    model: 'qwen-audio-3.0-asr-flash-filetrans',
+    settings: {},
+  },
+  audio_emotion: {
+    providerType: 'dashscope',
+    model: 'qwen3.5-omni-flash',
+    settings: {},
+  },
+  audio_role: {
+    providerType: 'deepseek',
+    model: 'deepseek-v4-flash',
+    settings: {},
+  },
+  audio_speaker_review: {
+    providerType: 'deepseek',
+    model: 'deepseek-v4-flash',
+    settings: {},
+  },
+  business_analysis: {
+    providerType: 'deepseek',
+    model: 'deepseek-v4-flash',
+    settings: { enableThinking: false },
+  },
+  audio_staging: {
+    providerType: 'aliyun_oss',
+    model: 'aliyun-oss',
+    settings: {},
+  },
+  audio_primary_storage: {
+    providerType: 'aliyun_oss',
+    model: 'aliyun-oss',
+    settings: {},
+  },
+} as const satisfies Readonly<Record<AiCapability, AiCapabilityDefault>>;
+
 const HttpsUrlSchema = z
   .string()
   .url()
@@ -229,10 +288,8 @@ export const SettingsOverviewSchema = z
 
 export const AdminSessionResponseSchema = z.object({ ok: z.literal(true) }).strict();
 
-export type ProviderType = z.infer<typeof ProviderTypeSchema>;
 export type CredentialSource = z.infer<typeof CredentialSourceSchema>;
 export type TransportSecurityMode = z.infer<typeof TransportSecurityModeSchema>;
-export type AiCapability = z.infer<typeof AiCapabilitySchema>;
 export type ProviderConnectionWrite = z.infer<typeof ProviderConnectionWriteSchema>;
 export type ProviderConnection = z.infer<typeof ProviderConnectionSchema>;
 export type CapabilityBindingWrite = z.infer<typeof CapabilityBindingWriteSchema>;

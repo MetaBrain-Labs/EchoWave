@@ -11,14 +11,16 @@
  * Notes:
  * - 管理口令和 Secret 只保存在当前组件内存，页面卸载后立即丢失。
  */
-import type {
-  AiCapability,
-  ProviderConnection,
-  ProviderConnectionWrite,
-  ProviderType,
-  SettingsOverview,
-  TransportSecurityMode,
+import {
+  AI_CAPABILITY_DEFAULTS,
+  type AiCapability,
+  type ProviderConnection,
+  type ProviderConnectionWrite,
+  type ProviderType,
+  type SettingsOverview,
+  type TransportSecurityMode,
 } from '@echowave/contracts';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useMemo, useState, type ComponentProps, type ReactNode } from 'react';
 import {
   ActivityIndicator,
@@ -47,17 +49,25 @@ import { PageHeader } from '@/shared/ui/PageHeader';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 
-const capabilities: readonly { id: AiCapability; provider: ProviderType }[] = [
-  { id: 'knowledge_embedding', provider: 'dashscope' },
-  { id: 'knowledge_chat', provider: 'deepseek' },
-  { id: 'audio_transcription', provider: 'dashscope' },
-  { id: 'audio_emotion', provider: 'dashscope' },
-  { id: 'audio_role', provider: 'deepseek' },
-  { id: 'audio_speaker_review', provider: 'deepseek' },
-  { id: 'business_analysis', provider: 'deepseek' },
-  { id: 'audio_staging', provider: 'aliyun_oss' },
-  { id: 'audio_primary_storage', provider: 'aliyun_oss' },
+const capabilities: readonly { id: AiCapability }[] = [
+  { id: 'knowledge_embedding' },
+  { id: 'knowledge_chat' },
+  { id: 'audio_transcription' },
+  { id: 'audio_emotion' },
+  { id: 'audio_role' },
+  { id: 'audio_speaker_review' },
+  { id: 'business_analysis' },
+  { id: 'audio_staging' },
+  { id: 'audio_primary_storage' },
 ];
+
+const providerTypes = ['dashscope', 'deepseek', 'aliyun_oss'] as const;
+
+type DefaultApplySummary = {
+  applied: number;
+  skipped: number;
+  failedCapabilities: AiCapability[];
+};
 
 type TranslationFunction = ReturnType<typeof useAppLanguage>['t'];
 
@@ -205,9 +215,13 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
   const [transportMode, setTransportMode] = useState<TransportSecurityMode | null>(null);
   const [secretAllowed, setSecretAllowed] = useState(false);
   const [draft, setDraft] = useState(emptyDraft);
+  const [providerEditorExpanded, setProviderEditorExpanded] = useState(false);
+  const [defaultProviderChoices, setDefaultProviderChoices] = useState<
+    Partial<Record<ProviderType, string>>
+  >({});
+  const [defaultApplySummary, setDefaultApplySummary] = useState<DefaultApplySummary | null>(null);
   const [bindingCapability, setBindingCapability] = useState<AiCapability | null>(null);
   const [bindingProviderId, setBindingProviderId] = useState('');
-  const [bindingModel, setBindingModel] = useState('');
   const [bindingThinking, setBindingThinking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -280,6 +294,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
       if (draft.editingId) await settingsApi.updateProvider(token, draft.editingId, input);
       else await settingsApi.createProvider(token, input);
       setDraft(emptyDraft());
+      setProviderEditorExpanded(false);
       await refresh(token);
     } catch (reason) {
       setError(errorMessage(reason, t));
@@ -289,10 +304,19 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
   };
 
   const beginBinding = (capability: AiCapability) => {
+    if (bindingCapability === capability) {
+      setBindingCapability(null);
+      return;
+    }
     const current = overview?.bindings.find((item) => item.capability === capability);
+    const compatible =
+      overview?.providers.filter(
+        ({ type }) => type === AI_CAPABILITY_DEFAULTS[capability].providerType,
+      ) ?? [];
     setBindingCapability(capability);
-    setBindingProviderId(current?.providerConnectionId ?? '');
-    setBindingModel(current?.model ?? '');
+    setBindingProviderId(
+      current?.providerConnectionId ?? (compatible.length === 1 ? compatible[0]!.id : ''),
+    );
     setBindingThinking(current?.settings.enableThinking === true);
   };
 
@@ -305,7 +329,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
       await settingsApi.saveCapability(token, bindingCapability, {
         providerConnectionId: bindingProviderId,
         secondaryProviderConnectionId: null,
-        model: bindingModel.trim(),
+        model: AI_CAPABILITY_DEFAULTS[bindingCapability].model,
         settings:
           bindingCapability === 'knowledge_chat' || bindingCapability === 'business_analysis'
             ? { enableThinking: bindingThinking }
@@ -322,9 +346,54 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
   };
 
   const compatibleProviders = useMemo(() => {
-    const required = capabilities.find(({ id }) => id === bindingCapability)?.provider;
+    const required = bindingCapability
+      ? AI_CAPABILITY_DEFAULTS[bindingCapability].providerType
+      : undefined;
     return overview?.providers.filter(({ type }) => type === required) ?? [];
   }, [bindingCapability, overview]);
+
+  const selectedDefaultProvider = (type: ProviderType): string | undefined => {
+    const compatible = overview?.providers.filter((provider) => provider.type === type) ?? [];
+    const selected = defaultProviderChoices[type];
+    if (selected && compatible.some((provider) => provider.id === selected)) return selected;
+    return compatible.length === 1 ? compatible[0]!.id : undefined;
+  };
+
+  const missingCapabilities = capabilities.filter(
+    ({ id }) => !overview?.bindings.some((binding) => binding.capability === id),
+  );
+  const defaultTargets = missingCapabilities.flatMap(({ id }) => {
+    const providerConnectionId = selectedDefaultProvider(AI_CAPABILITY_DEFAULTS[id].providerType);
+    return providerConnectionId ? [{ capability: id, providerConnectionId }] : [];
+  });
+
+  /** 使用共享默认值补齐可配置的缺失能力，并公开每项请求的真实结果。 */
+  const applyDefaultBindings = async () => {
+    if (!token || defaultTargets.length === 0) return;
+    setBusy(true);
+    setError(null);
+    setDefaultApplySummary(null);
+    const results = await Promise.allSettled(
+      defaultTargets.map(({ capability, providerConnectionId }) =>
+        settingsApi.saveCapability(token, capability, {
+          providerConnectionId,
+          secondaryProviderConnectionId: null,
+          model: AI_CAPABILITY_DEFAULTS[capability].model,
+          settings: AI_CAPABILITY_DEFAULTS[capability].settings,
+        }),
+      ),
+    );
+    const failedCapabilities = results.flatMap((result, index) =>
+      result.status === 'rejected' ? [defaultTargets[index]!.capability] : [],
+    );
+    await refresh(token);
+    setDefaultApplySummary({
+      applied: defaultTargets.length - failedCapabilities.length,
+      skipped: missingCapabilities.length - defaultTargets.length,
+      failedCapabilities,
+    });
+    setBusy(false);
+  };
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
@@ -370,7 +439,10 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
                   <Pressable
                     accessibilityRole="button"
                     key={provider.id}
-                    onPress={() => setDraft(draftFromProvider(provider))}
+                    onPress={() => {
+                      setDraft(draftFromProvider(provider));
+                      setProviderEditorExpanded(true);
+                    }}
                     style={styles.listRow}
                   >
                     <View style={styles.flex}>
@@ -385,16 +457,120 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
                     <Text style={styles.link}>{t('aiSettings.edit')}</Text>
                   </Pressable>
                 ))}
-                <ProviderEditor
-                  draft={draft}
-                  localAliases={overview.localCredentials.credentials}
-                  onChange={setDraft}
-                  onSave={() => void saveProvider()}
-                  secretAllowed={secretAllowed}
-                  busy={busy}
-                />
+                <Pressable
+                  accessibilityLabel={
+                    providerEditorExpanded
+                      ? t('aiSettings.collapseConnectionForm')
+                      : t('aiSettings.addConnection')
+                  }
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: providerEditorExpanded }}
+                  onPress={() => {
+                    if (providerEditorExpanded) {
+                      setDraft(emptyDraft());
+                      setProviderEditorExpanded(false);
+                    } else {
+                      setDraft(emptyDraft());
+                      setProviderEditorExpanded(true);
+                    }
+                  }}
+                  style={styles.disclosure}
+                >
+                  <Text style={styles.link}>
+                    {providerEditorExpanded
+                      ? t('aiSettings.collapseConnectionForm')
+                      : t('aiSettings.addConnection')}
+                  </Text>
+                  <Ionicons
+                    color={textColors.secondary}
+                    name={providerEditorExpanded ? 'chevron-up' : 'chevron-down'}
+                    size={18}
+                  />
+                </Pressable>
+                {providerEditorExpanded ? (
+                  <ProviderEditor
+                    draft={draft}
+                    localAliases={overview.localCredentials.credentials}
+                    onCancel={() => {
+                      setDraft(emptyDraft());
+                      setProviderEditorExpanded(false);
+                    }}
+                    onChange={setDraft}
+                    onSave={() => void saveProvider()}
+                    secretAllowed={secretAllowed}
+                    busy={busy}
+                  />
+                ) : null}
               </Section>
               <Section title={t('aiSettings.bindings')}>
+                <View style={styles.defaultPanel}>
+                  <Text style={styles.rowTitle}>{t('aiSettings.defaultBindingsTitle')}</Text>
+                  <Text style={styles.help}>{t('aiSettings.defaultBindingsHelp')}</Text>
+                  {providerTypes.map((type) => {
+                    const providers = overview.providers.filter(
+                      (provider) => provider.type === type,
+                    );
+                    return (
+                      <View key={type} style={styles.defaultProviderGroup}>
+                        <Text style={styles.fieldLabel}>{providerLabel(type, t)}</Text>
+                        {providers.length === 0 ? (
+                          <Text style={styles.help}>{t('aiSettings.missingProviderSkip')}</Text>
+                        ) : (
+                          <ChoiceRow
+                            options={providers.map((provider) => ({
+                              id: provider.id,
+                              label: provider.name,
+                            }))}
+                            selected={selectedDefaultProvider(type) ?? ''}
+                            onSelect={(providerId) =>
+                              setDefaultProviderChoices((current) => ({
+                                ...current,
+                                [type]: providerId,
+                              }))
+                            }
+                          />
+                        )}
+                      </View>
+                    );
+                  })}
+                  {missingCapabilities.length === 0 ? (
+                    <Text style={styles.successText}>{t('aiSettings.defaultsComplete')}</Text>
+                  ) : (
+                    <ActionButton
+                      disabled={busy || defaultTargets.length === 0}
+                      label={t('aiSettings.applyDefaults', {
+                        count: formatNumber(defaultTargets.length),
+                      })}
+                      onPress={() => void applyDefaultBindings()}
+                    />
+                  )}
+                  {defaultApplySummary ? (
+                    <Text
+                      accessibilityLiveRegion="polite"
+                      accessibilityRole={
+                        defaultApplySummary.failedCapabilities.length > 0 ? 'alert' : undefined
+                      }
+                      style={
+                        defaultApplySummary.failedCapabilities.length > 0
+                          ? styles.errorText
+                          : styles.successText
+                      }
+                    >
+                      {t('aiSettings.defaultsSummary', {
+                        applied: formatNumber(defaultApplySummary.applied),
+                        skipped: formatNumber(defaultApplySummary.skipped),
+                        failed: formatNumber(defaultApplySummary.failedCapabilities.length),
+                      })}
+                      {defaultApplySummary.failedCapabilities.length > 0
+                        ? ` ${t('aiSettings.defaultsFailures', {
+                            capabilities: defaultApplySummary.failedCapabilities
+                              .map((capability) => capabilityLabel(capability, t))
+                              .join('、'),
+                          })}`
+                        : ''}
+                    </Text>
+                  ) : null}
+                </View>
                 {capabilities.map((capability) => {
                   const current = overview.bindings.find(
                     (item) => item.capability === capability.id,
@@ -403,58 +579,70 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
                     (item) => item.id === current?.providerConnectionId,
                   );
                   return (
-                    <Pressable
-                      accessibilityRole="button"
+                    <View
                       key={capability.id}
-                      onPress={() => beginBinding(capability.id)}
-                      style={styles.listRow}
+                      style={styles.bindingItem}
+                      testID={`capability-item-${capability.id}`}
                     >
-                      <View style={styles.flex}>
-                        <Text style={styles.rowTitle}>{capabilityLabel(capability.id, t)}</Text>
-                        <Text style={styles.help}>
-                          {provider
-                            ? `${provider.name} · ${current?.model}`
-                            : t('aiSettings.unconfigured')}
-                        </Text>
-                      </View>
-                      <Text style={styles.link}>{t('aiSettings.configure')}</Text>
-                    </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityState={{ expanded: bindingCapability === capability.id }}
+                        onPress={() => beginBinding(capability.id)}
+                        style={styles.listRow}
+                        testID={`capability-row-${capability.id}`}
+                      >
+                        <View style={styles.flex}>
+                          <Text style={styles.rowTitle}>{capabilityLabel(capability.id, t)}</Text>
+                          <Text style={styles.help}>
+                            {provider
+                              ? `${provider.name} · ${current?.model}`
+                              : t('aiSettings.unconfigured')}
+                          </Text>
+                        </View>
+                        <Text style={styles.link}>{t('aiSettings.configure')}</Text>
+                      </Pressable>
+                      {bindingCapability === capability.id ? (
+                        <View
+                          accessibilityLabel={t('aiSettings.bindingEditor', {
+                            capability: capabilityLabel(capability.id, t),
+                          })}
+                          style={styles.editor}
+                          testID={`capability-editor-${capability.id}`}
+                        >
+                          <Text style={styles.rowTitle}>{capabilityLabel(capability.id, t)}</Text>
+                          <ChoiceRow
+                            options={compatibleProviders.map((item) => ({
+                              id: item.id,
+                              label: item.name,
+                            }))}
+                            selected={bindingProviderId}
+                            onSelect={setBindingProviderId}
+                          />
+                          <StaticField
+                            label={t('aiSettings.model')}
+                            value={AI_CAPABILITY_DEFAULTS[capability.id].model}
+                          />
+                          {capability.id === 'knowledge_chat' ||
+                          capability.id === 'business_analysis' ? (
+                            <ChoiceRow
+                              options={[
+                                { id: 'off', label: t('aiSettings.thinkingOff') },
+                                { id: 'on', label: t('aiSettings.thinkingOn') },
+                              ]}
+                              selected={bindingThinking ? 'on' : 'off'}
+                              onSelect={(value) => setBindingThinking(value === 'on')}
+                            />
+                          ) : null}
+                          <ActionButton
+                            disabled={busy || !bindingProviderId}
+                            label={t('aiSettings.saveBinding')}
+                            onPress={() => void saveBinding()}
+                          />
+                        </View>
+                      ) : null}
+                    </View>
                   );
                 })}
-                {bindingCapability ? (
-                  <View style={styles.editor}>
-                    <Text style={styles.rowTitle}>{capabilityLabel(bindingCapability, t)}</Text>
-                    <ChoiceRow
-                      options={compatibleProviders.map((item) => ({
-                        id: item.id,
-                        label: item.name,
-                      }))}
-                      selected={bindingProviderId}
-                      onSelect={setBindingProviderId}
-                    />
-                    <Field
-                      label={t('aiSettings.model')}
-                      onChangeText={setBindingModel}
-                      value={bindingModel}
-                    />
-                    {bindingCapability === 'knowledge_chat' ||
-                    bindingCapability === 'business_analysis' ? (
-                      <ChoiceRow
-                        options={[
-                          { id: 'off', label: t('aiSettings.thinkingOff') },
-                          { id: 'on', label: t('aiSettings.thinkingOn') },
-                        ]}
-                        selected={bindingThinking ? 'on' : 'off'}
-                        onSelect={(value) => setBindingThinking(value === 'on')}
-                      />
-                    ) : null}
-                    <ActionButton
-                      disabled={busy || !bindingProviderId || !bindingModel.trim()}
-                      label={t('aiSettings.saveBinding')}
-                      onPress={() => void saveBinding()}
-                    />
-                  </View>
-                ) : null}
               </Section>
               <Section title={t('aiSettings.legacy')}>
                 <Text style={styles.help}>
@@ -557,6 +745,7 @@ function LocalProviderCard({ overview }: { overview: SettingsOverview }) {
 function ProviderEditor({
   draft,
   localAliases,
+  onCancel,
   onChange,
   onSave,
   secretAllowed,
@@ -564,6 +753,7 @@ function ProviderEditor({
 }: {
   draft: ProviderDraft;
   localAliases: SettingsOverview['localCredentials']['credentials'];
+  onCancel: () => void;
   onChange: (value: ProviderDraft) => void;
   onSave: () => void;
   secretAllowed: boolean;
@@ -701,11 +891,7 @@ function ProviderEditor({
         onPress={onSave}
       />
       {draft.editingId ? (
-        <ActionButton
-          label={t('aiSettings.cancelChanges')}
-          onPress={() => onChange(emptyDraft())}
-          secondary
-        />
+        <ActionButton label={t('aiSettings.cancelChanges')} onPress={onCancel} secondary />
       ) : null}
     </View>
   );
@@ -723,6 +909,7 @@ function Section({ children, title }: { children: ReactNode; title: string }) {
 function Field({
   disabled = false,
   label,
+  style,
   ...input
 }: ComponentProps<typeof TextInput> & { label: string; disabled?: boolean }) {
   return (
@@ -734,9 +921,21 @@ function Field({
         autoCorrect={false}
         editable={!disabled}
         importantForAutofill={disabled ? 'noExcludeDescendants' : 'auto'}
-        style={[styles.input, disabled && styles.disabled]}
+        style={[styles.input, style, disabled && styles.disabled]}
         {...input}
       />
+    </View>
+  );
+}
+
+/** 以输入框视觉展示服务端固定模型，避免暗示该值可以自由编辑。 */
+function StaticField({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <View style={styles.staticValue}>
+        <Text style={styles.staticValueText}>{value}</Text>
+      </View>
     </View>
   );
 }
@@ -756,6 +955,7 @@ function ChoiceRow({
       {options.length === 0 ? <Text style={styles.help}>{t('aiSettings.noOptions')}</Text> : null}
       {options.map((option) => (
         <Pressable
+          accessibilityLabel={option.label}
           accessibilityRole="radio"
           accessibilityState={{ checked: selected === option.id, disabled: option.disabled }}
           disabled={option.disabled}
@@ -787,6 +987,7 @@ function ActionButton({
 }) {
   return (
     <Pressable
+      accessibilityLabel={label}
       accessibilityRole="button"
       disabled={disabled}
       onPress={onPress}
@@ -849,7 +1050,22 @@ const styles = StyleSheet.create({
     minHeight: 56,
     paddingVertical: spacing.sm,
   },
+  bindingItem: { gap: spacing.sm },
+  disclosure: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+    justifyContent: 'space-between',
+    minHeight: 44,
+  },
   link: { ...typography.description, color: '#246bfd', fontFamily: fontFamilies.sansBold },
+  defaultPanel: {
+    backgroundColor: colors.background,
+    borderRadius: radii.default,
+    gap: spacing.md,
+    padding: spacing.md,
+  },
+  defaultProviderGroup: { gap: spacing.xs },
   editor: {
     backgroundColor: colors.background,
     borderRadius: radii.default,
@@ -870,15 +1086,37 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     color: textColors.primary,
     fontFamily: fontFamilies.sans,
-    minHeight: 44,
+    height: 44,
+    includeFontPadding: false,
     paddingHorizontal: spacing.base,
-    paddingVertical: spacing.sm,
+    paddingVertical: 0,
+    textAlignVertical: 'center',
+  },
+  staticValue: {
+    backgroundColor: colors.card,
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.base,
+  },
+  staticValueText: {
+    ...typography.body,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sans,
+    includeFontPadding: false,
+  },
+  successText: {
+    ...typography.description,
+    color: colors.success,
+    fontFamily: fontFamilies.sans,
   },
   choices: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   choice: {
     backgroundColor: colors.card,
     borderColor: colors.divider,
-    borderRadius: radii.round,
+    borderRadius: radii.default,
     borderWidth: 1,
     paddingHorizontal: spacing.base,
     paddingVertical: spacing.sm,

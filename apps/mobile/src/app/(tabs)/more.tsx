@@ -31,9 +31,9 @@ export default function MoreScreen() {
   const { t } = useAppLanguage();
   const navigationCards = [
     { key: 'analysis', href: '/analysis' as Href, icon: 'pulse-outline' as const },
-    { key: 'service', href: '/service-status' as Href, icon: 'pulse-outline' as const },
+    { key: 'service', href: '/service-status' as Href, icon: 'options-outline' as const },
     { key: 'general', href: '/general-settings' as Href, icon: 'settings-outline' as const },
-    { key: 'ai', href: '/settings' as Href, icon: 'options-outline' as const },
+    { key: 'ai', href: '/settings' as Href, icon: 'build-outline' as const },
     { key: 'runtime', href: '/audio-runtime' as Href, icon: 'layers-outline' as const },
   ] as const;
 
