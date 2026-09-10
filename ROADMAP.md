@@ -14,7 +14,7 @@
 
 目标是让非开发者能够安装 App、启动自己的 Server，并在遇到配置问题时得到明确诊断。
 
-- 建立可复现的 Android 签名 Release APK、GitHub Release、版本说明与升级/回滚步骤。
+- 已建立可复现的 Android 签名 Release APK、GitHub Release、版本说明与升级/回滚步骤；后续版本持续验证 N-1 Server 兼容窗口。
 - 提供不含真实业务数据的截图、演示视频和端到端首次使用流程。
 - 增强 Server、数据库、FFmpeg、Provider、Credential、OSS 和移动端连通性的自检。
 - 完成重新转写、失败任务专用重跑等已经在界面中明确标记为建设中的操作。

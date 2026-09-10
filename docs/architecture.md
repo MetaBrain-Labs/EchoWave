@@ -166,6 +166,6 @@ STT 的 DashScope 任务提交、Polling 状态查询或 EventBridge 回调，�
 - 数据库 migration 与 LangGraph `setup()` 只由显式 `pnpm --filter @echowave/api migrate` 执行。
 - `apps/mobile/.env` 只提供开发默认值；`EXPO_PUBLIC_*` 会进入客户端 bundle，不得放置密钥。正式包的服务器地址在运行时选择。
 - `/health.capabilities.remotePush` 是客户端通知权限与设备注册的门禁。Self-hosted 默认关闭，启用时仍需原生 Build、EAS/Firebase 或 Apple/APNs 凭据。
-- 唯一 EAS 配置位于 `apps/mobile/eas.json`；Development、内部 APK 和商店 profiles 不在仓库根目录维护第二份配置。
+- 唯一 EAS 配置位于 `apps/mobile/eas.json`；Development、内部 APK 和商店 profiles 不在仓库根目录维护第二份配置。稳定 Tag 发布使用 remote app version source 自动递增正式 APK 的 Android `versionCode`，提交中的用户可见版本仍与 API/Release SemVer 同步。
 - API 默认不记录完整正文、完整模型上下文、provider 原始错误或 reasoning；本地诊断内容只能通过显式开关启用，密钥始终禁止记录。
 - Redis 仍是未来缓存/协调边界，不参与首期 RAG，也不能成为第二业务真相源。

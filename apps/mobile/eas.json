@@ -1,5 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/eas.json",
+  "cli": {
+    "appVersionSource": "remote"
+  },
   "build": {
     "development": {
       "developmentClient": true,
@@ -15,6 +18,7 @@
       }
     },
     "production-apk": {
+      "autoIncrement": true,
       "distribution": "internal",
       "environment": "production",
       "env": {

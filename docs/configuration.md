@@ -66,7 +66,7 @@ Provider 会在文件版本变化时完整重读，只有成功校验后才原�
 
 App 将通过 `GET /health` 验证的规范化服务器根地址写入 AsyncStorage。已保存地址优先；REST、上传、SSE、音频媒体和推送设备登记都在请求发生时读取同一个运行时地址。修改服务器会终止旧连接、清空页面级状态并重新挂载业务导航。
 
-`production-apk` 和 `production` profiles 设置 `EXPO_PUBLIC_REQUIRE_SERVER_SELECTION=true`，因此即使构建环境意外提供了 `EXPO_PUBLIC_API_URL`，Production Build 也会忽略它并要求首次手动连接。
+`production-apk` 和 `production` profiles 设置 `EXPO_PUBLIC_REQUIRE_SERVER_SELECTION=true`，因此即使构建环境意外提供了 `EXPO_PUBLIC_API_URL`，Production Build 也会忽略它并要求首次手动连接。EAS 使用 remote app version source；自动发布只让 `production-apk` 递增 Android `versionCode`，用户可见 `version` 必须在提交中与稳定 Tag 和 Server package 版本保持一致。
 
 地址只接受没有凭据、query、fragment 或业务路径的 HTTP/HTTPS origin。HTTP 仅允许 localhost、私有 IPv4、回环/链路本地 IPv6、共享地址空间和 `.local` 主机；公网地址必须使用 HTTPS。健康响应必须满足共享契约：
 
