@@ -14,7 +14,7 @@ English · [简体中文](./README.md)
 EchoWave helps teams turn interviews, sales calls, meetings, and other recordings into structured, reviewable knowledge. It combines a bilingual Expo client, a self-hosted API, PostgreSQL/pgvector RAG, versioned transcription and confirmation, speaker/emotion analysis, business reports, and auditable AI execution records.
 
 > [!IMPORTANT]
-> EchoWave `v0.1` is a development preview. It currently uses a fixed development tenant and does not yet provide real user accounts, authorization, or a production-grade public-internet security boundary. Deploy it only on a trusted LAN and never expose the API port directly to the internet. After a stable tag has completed publishing, download its signed Android APK and Server bundle from [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases).
+> EchoWave `v0.1` is a development preview. It uses a fixed development tenant and does not yet provide real accounts, authorization, rate limits, or a production-grade public-internet boundary. HTTP is permitted only on localhost or a trusted private network. Any cloud or public App server must use HTTPS, a reverse proxy, and tightly scoped network access while keeping ports 3001 and 5432 off the public internet. These measures still do not make the current release suitable as a public multi-user service. After a stable tag has completed publishing, download its signed Android APK and Server bundle from [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases).
 
 [Quick start](#quick-start) · [Capabilities](#current-capabilities) · [Architecture](#how-it-works) · [Limitations](#current-limitations) · [Future](#future) · [Docs](./docs/README.md) · [Contributing](./CONTRIBUTING.md)
 
@@ -60,6 +60,10 @@ Zod schemas in `packages/contracts` are the shared API/client boundary. PostgreS
 - Self-hosted server: Docker Engine/Desktop with Compose
 - Release app: an Android device; source builds additionally need Android tooling, and iOS development needs macOS with Xcode
 
+The Server can run on Ubuntu 22.04 x86_64 or on Windows 10/11 with Docker Desktop using Linux containers. The [Server deployment guide](./docs/server-deployment.md) contains the verified Ubuntu source path, Windows PowerShell steps, HTTPS, backup, and uninstall instructions.
+
+Choose an audio runtime mode during setup: lightweight local needs no OSS and cleans source audio after processing; the default hybrid mode keeps source audio in the local volume and uses OSS for staging; object storage makes OSS authoritative for source audio. A mode change affects only newly created assets. See [audio runtime modes](./docs/audio-runtime-modes.md).
+
 ### Option A: self-host the server
 
 ```bash
@@ -73,7 +77,7 @@ docker compose up -d
 curl http://localhost:3001/health
 ```
 
-Download the matching Android APK and `EchoWave-server-vX.Y.Z.zip` from [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases), verify their SHA-256 checksums, and follow the bundled README. A phone connects to `http://<SERVER_LAN_IP>:<API_PORT>`, never the server's `localhost`. See the [release guide](./docs/releases.md) for upgrades and rollback, and the [self-hosting guide](./docs/self-hosting.md) for configuration details.
+Download the matching Android APK and `EchoWave-server-vX.Y.Z.zip` from [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases), verify their SHA-256 checksums, and follow the bundled README. On a trusted LAN, a phone connects to `http://<SERVER_LAN_IP>:<API_PORT>`, never the server's `localhost`; a cloud or other public address must use the HTTPS reverse-proxy origin without the internal API port. See the [release guide](./docs/releases.md), [Server deployment guide](./docs/server-deployment.md), and [self-hosting guide](./docs/self-hosting.md).
 
 ### Option B: local development
 
@@ -97,7 +101,7 @@ EXPO_PUBLIC_API_URL=http://<SERVER_LAN_IP>:<API_PORT>
 
 You can also run `pnpm dev:api` and `pnpm dev:mobile -- --lan` in separate terminals. Without a Development Build, `pnpm --filter @echowave/mobile dev:go -- --lan` can preview compatible features, but Expo Go cannot validate the complete remote-push flow.
 
-After startup, open **More → AI Configuration** to create providers, select a Local Credential alias or securely store a Database Credential, and bind capabilities. The complete current pipeline uses DashScope, DeepSeek, and Alibaba Cloud OSS. Provider calls may incur charges and availability depends on your account and region. See the [configuration and credential guide](./docs/configuration.md).
+After startup, open **More → AI Configuration** to create providers, select a Local Credential alias or securely store a Database Credential, and bind capabilities. EchoWave currently centers on Alibaba Cloud Model Studio/Qwen because one Alibaba Cloud account can cover embedding, ASR, multimodal, third-party DeepSeek model access, and OSS. Model Studio API keys and OSS AccessKeys remain separate credentials, and EchoWave still uses separate DashScope, DeepSeek, and OSS logical connections. Lightweight local does not need OSS; hybrid and object-storage modes do. Only the repository's adapted default models are guaranteed today, with more models and providers planned. See the [configuration and credential guide](./docs/configuration.md).
 
 ## Common commands
 
@@ -114,7 +118,7 @@ Android device regression is managed separately under `.maestro/`; see the [mobi
 
 ## Current limitations
 
-- No real accounts, authentication, RBAC, or public-internet production baseline.
+- No real accounts, authentication, RBAC, rate limits, or public-internet production baseline; public testing requires HTTPS and tightly scoped network access.
 - API and workers share one process; local audio paths and in-process SSE wakeups require a single API instance.
 - No automatic data-source sync, PDF/OCR/legacy Office ingestion, re-transcription, cursor pagination, or Redis queue.
 - No iOS Release, QR/mDNS discovery, in-app updater, or hosted cloud service.

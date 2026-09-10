@@ -4,7 +4,7 @@
 
 EchoWave `v0.1` 是开发预览版，尚无稳定发布分支或可下载的正式版本。安全修复只面向默认分支的最新代码；历史提交、Fork 和自行修改的部署不在维护范围内。
 
-当前 API 使用固定开发租户，不具备真实鉴权、RBAC、速率限制和完整公网防护。请仅在可信局域网部署，不要直接将 API 端口暴露到公网。公网实验至少需要由部署者自行提供 HTTPS、反向代理、网络访问控制、备份和监控，但这些措施不能替代项目尚未实现的应用级鉴权。
+当前 API 使用固定开发租户，不具备真实鉴权、RBAC、速率限制和完整公网防护。可信本机和局域网可以使用 HTTP；任何云服务器或公网 App 服务端都必须由部署者提供 HTTPS、反向代理、最小化网络访问控制、备份和监控，并保持 API 3001 与 PostgreSQL 5432 不对公网开放。即使完成这些措施，仍不能替代项目尚未实现的应用级鉴权，也不应把当前版本作为公开多用户服务运行。
 
 ## 报告漏洞
 
@@ -27,9 +27,9 @@ EchoWave `v0.1` 是开发预览版，尚无稳定发布分支或可下载的正�
 - `CONFIGURATION_ADMIN_TOKEN`、Provider API Key、OSS Secret、回调 Token、签名 URL 与音频正文不得出现在 Issue、测试 fixture 或诊断附件中。
 - 移动端的 `EXPO_PUBLIC_*` 会进入公开 bundle，不能存放任何 Secret。
 - AI 执行报告和 ASR 原始响应诊断默认关闭；启用时必须检查脱敏结果并限制目录访问与保留时间。
-- HTTP 仅适用于可信局域网。任何公网地址都必须使用 HTTPS，且当前版本仍不应作为公开多用户服务运行。
+- HTTP 仅适用于 localhost、可信局域网和其他 App 明确接受的私有地址。任何云服务器或公网地址都必须使用 HTTPS；没有域名时可以使用受公众信任的公网 IP 证书，但短周期证书必须自动续期。当前版本仍不应作为公开多用户服务运行。
 
-部署与 Credential 的详细规则见[配置指南](./docs/configuration.md)和[自托管指南](./docs/self-hosting.md)。
+部署与 Credential 的详细规则见[配置指南](./docs/configuration.md)、[Server 部署指南](./docs/server-deployment.md)和[自托管指南](./docs/self-hosting.md)。
 
 ## English summary
 
