@@ -1,5 +1,7 @@
 # Silero VAD v6.2.1 model asset
 
+**English** | [简体中文](./README.zh-CN.md)
+
 - Source: `https://github.com/snakers4/silero-vad/blob/v6.2.1/src/silero_vad/data/silero_vad.onnx`
 - Upstream tag: `v6.2.1`
 - Upstream commit: `7e30209a3e901f9842f81b225f3e93d8199902b1`

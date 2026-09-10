@@ -46,6 +46,38 @@ const REQUIRED_PATHS = [
   'scripts/release/release.test.mjs',
 ];
 
+const ROOT_BILINGUAL_DOCUMENTS = new Set([
+  'README.md',
+  'ROADMAP.md',
+  'CONTRIBUTING.md',
+  'SECURITY.md',
+  'deploy/release/README.md',
+  'apps/mobile/assets/fonts/README.md',
+  'apps/api/assets/silero-vad/v6.2.1/README.md',
+]);
+
+function normalizedRelativePath(rootDirectory, filePath) {
+  return path.relative(rootDirectory, filePath).split(path.sep).join('/');
+}
+
+function isLocalizedDocument(filePath) {
+  return filePath.toLowerCase().endsWith('.zh-cn.md');
+}
+
+function localizedPeerPath(filePath) {
+  return filePath.replace(/\.md$/i, '.zh-CN.md');
+}
+
+function canonicalPeerPath(filePath) {
+  return filePath.replace(/\.zh-cn\.md$/i, '.md');
+}
+
+function requiresBilingualPair(rootDirectory, filePath) {
+  const relativePath = normalizedRelativePath(rootDirectory, filePath);
+  const canonicalPath = relativePath.replace(/\.zh-cn\.md$/i, '.md');
+  return canonicalPath.startsWith('docs/') || ROOT_BILINGUAL_DOCUMENTS.has(canonicalPath);
+}
+
 function collectMarkdownFiles(directory, files = []) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (entry.isDirectory() && IGNORED_DIRECTORIES.has(entry.name)) continue;
@@ -114,7 +146,10 @@ function validateDocumentationIndex(rootDirectory) {
   const topicFiles = readdirSync(docsDirectory, { withFileTypes: true })
     .filter(
       (entry) =>
-        entry.isFile() && entry.name.toLowerCase().endsWith('.md') && entry.name !== 'README.md',
+        entry.isFile() &&
+        entry.name.toLowerCase().endsWith('.md') &&
+        entry.name !== 'README.md' &&
+        !isLocalizedDocument(entry.name),
     )
     .map((entry) => path.normalize(path.join(docsDirectory, entry.name)));
 
@@ -143,11 +178,55 @@ function validateDocumentationGuide(rootDirectory, markdownFiles) {
   return markdownFiles
     .map((markdownFile) => path.normalize(markdownFile))
     .filter((markdownFile) => markdownFile !== path.normalize(guidePath))
+    .filter((markdownFile) => !isLocalizedDocument(markdownFile))
     .filter((markdownFile) => !describedTargets.has(markdownFile))
     .map(
       (markdownFile) =>
         `docs/documentation-guide.md: maintained document is not described: ${path.relative(rootDirectory, markdownFile)}`,
     );
+}
+
+function validateBilingualDocuments(rootDirectory, markdownFiles) {
+  const errors = [];
+  for (const markdownFile of markdownFiles) {
+    if (!requiresBilingualPair(rootDirectory, markdownFile)) continue;
+
+    if (isLocalizedDocument(markdownFile)) {
+      if (!existsSync(canonicalPeerPath(markdownFile))) {
+        errors.push(
+          `${normalizedRelativePath(rootDirectory, markdownFile)}: English canonical document is missing`,
+        );
+      }
+      continue;
+    }
+
+    const localizedPath = localizedPeerPath(markdownFile);
+    if (!existsSync(localizedPath)) {
+      errors.push(
+        `${normalizedRelativePath(rootDirectory, markdownFile)}: Simplified Chinese peer is missing: ${normalizedRelativePath(rootDirectory, localizedPath)}`,
+      );
+      continue;
+    }
+
+    const englishContent = readFileSync(markdownFile, 'utf8');
+    const chineseContent = readFileSync(localizedPath, 'utf8');
+    const englishMarker = englishContent.indexOf('**English**');
+    const englishChineseMarker = englishContent.indexOf('简体中文');
+    if (englishMarker < 0 || englishChineseMarker < 0 || englishMarker > englishChineseMarker) {
+      errors.push(
+        `${normalizedRelativePath(rootDirectory, markdownFile)}: language switcher must list active English before Simplified Chinese`,
+      );
+    }
+
+    const chineseEnglishMarker = chineseContent.indexOf('[English]');
+    const chineseMarker = chineseContent.indexOf('**简体中文**');
+    if (chineseEnglishMarker < 0 || chineseMarker < 0 || chineseEnglishMarker > chineseMarker) {
+      errors.push(
+        `${normalizedRelativePath(rootDirectory, localizedPath)}: language switcher must list English before active Simplified Chinese`,
+      );
+    }
+  }
+  return errors;
 }
 
 function validateCriticalPaths(rootDirectory) {
@@ -197,6 +276,7 @@ export function validateRepositoryDocs(rootDirectory) {
       ...validateRelativeLinks(resolvedRoot, markdownFiles),
       ...validateDocumentationIndex(resolvedRoot),
       ...validateDocumentationGuide(resolvedRoot, markdownFiles),
+      ...validateBilingualDocuments(resolvedRoot, markdownFiles),
       ...validateCriticalPaths(resolvedRoot),
     ],
     markdownFileCount: markdownFiles.length,

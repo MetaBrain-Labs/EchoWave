@@ -1,15 +1,14 @@
 # EchoWave Server v{{VERSION}}
 
-本部署包固定使用镜像 `{{IMAGE_REFERENCE}}`，可在 Linux amd64、Linux arm64 以及支持相应
-Linux 容器的 Docker Desktop 上运行。不要把 Compose 中的 digest 改成 `latest`。
+**English** | [简体中文](./README.zh-CN.md)
 
-## 首次安装
+This bundle pins `{{IMAGE_REFERENCE}}` and runs on Linux amd64, Linux arm64, and Docker Desktop capable of the corresponding Linux containers. Never replace the Compose digest with `latest`.
 
-1. 把 `api.env.example` 复制为 `api.env`，替换数据库密码、`CREDENTIAL_MASTER_KEY` 和
-   `CONFIGURATION_ADMIN_TOKEN`。
-2. 如需 Local Credential Provider，把 `credentials.yaml` 放在
-   `.data/secrets/credentials.yaml`。
-3. 执行：
+## First installation
+
+1. Copy `api.env.example` to `api.env`; replace the database password, `CREDENTIAL_MASTER_KEY`, and `CONFIGURATION_ADMIN_TOKEN`.
+2. For a Local Credential Provider, place `credentials.yaml` at `.data/secrets/credentials.yaml`.
+3. Run:
 
    ```bash
    docker compose config
@@ -18,14 +17,14 @@ Linux 容器的 Docker Desktop 上运行。不要把 Compose 中的 digest 改�
    docker compose ps
    ```
 
-4. 确认 `http://localhost:3001/health` 返回 `version={{VERSION}}` 与 `status=ok`。
-5. 在 App 的“更多 → AI 配置”中创建 DashScope、DeepSeek 逻辑连接；混合/对象存储模式还要配置阿里云 OSS。然后在“更多 → 运行模式”中选择轻量本地、混合或对象存储。
+4. Confirm `http://localhost:3001/health` returns `version={{VERSION}}` and `status=ok`.
+5. Under **More → AI Configuration**, create DashScope and DeepSeek logical connections; hybrid/object-storage modes also require Alibaba Cloud OSS. Select lightweight local, hybrid, or object storage under **More → Runtime Mode**.
 
-可信本机和局域网可以使用 HTTP。任何云服务器或公网 App 服务端必须使用 HTTPS 反向代理，限制 443 来源，并保持 3001/5432 不对公网开放。EchoWave 当前仍是固定开发租户预览版，HTTPS 不能替代尚未实现的鉴权、RBAC 和速率限制。完整 Ubuntu、Windows、证书和运行模式流程见 <https://github.com/MetaBrain-Labs/EchoWave/blob/main/docs/server-deployment.md>。
+HTTP is permitted on localhost and trusted LANs. Every cloud or public App Server requires an HTTPS reverse proxy, restricted 443 access, and no public 3001/5432. EchoWave still uses a fixed development tenant; HTTPS does not replace authentication, RBAC, or rate limits. See the complete [Server Deployment guide](https://github.com/MetaBrain-Labs/EchoWave/blob/main/docs/server-deployment.md).
 
-## 升级前备份
+## Backup before upgrade
 
-在替换 `compose.yaml` 前停止写入并创建 PostgreSQL custom-format 备份：
+Stop writes and create a PostgreSQL custom-format backup before replacing `compose.yaml`:
 
 ```bash
 mkdir -p backups
@@ -35,23 +34,18 @@ docker compose exec -T postgres rm -f /tmp/echowave-backup.dump
 test -s backups/echowave-before-v{{VERSION}}.dump
 ```
 
-PowerShell 用 `New-Item -ItemType Directory -Force backups` 创建目录，并用
-`(Get-Item backups/echowave-before-v{{VERSION}}.dump).Length` 确认文件不是空文件。备份包含
-业务数据与加密后的 Credential；应按敏感数据保护，并同时保留原 `api.env` 中的 master key。
+In PowerShell, create `backups` with `New-Item -ItemType Directory -Force backups` and confirm `(Get-Item backups/echowave-before-v{{VERSION}}.dump).Length` is nonzero. Protect the backup as sensitive data and retain its original `CREDENTIAL_MASTER_KEY`.
 
-备份确认后，把新版本 ZIP 解压到当前安装目录。保留现有 `api.env`、`.data/secrets` 和备份，
-然后执行 `docker compose pull` 与 `docker compose up -d`。
+After verification, extract the new ZIP into the installation directory while preserving `api.env`, `.data/secrets`, and backups, then run `docker compose pull` and `docker compose up -d`.
 
-## 回退
+## Rollback
 
-本版本数据库允许直接回退的最低 Server 版本是 `v{{MINIMUM_DIRECT_ROLLBACK_VERSION}}`。
+The earliest Server version directly compatible with this database is `v{{MINIMUM_DIRECT_ROLLBACK_VERSION}}`.
 
-- 目标版本不低于该版本时，下载目标 Release 的 Server ZIP，保留当前 `api.env` 和
-  `.data/secrets`，用旧包的 `compose.yaml` 替换当前文件，然后执行
-  `docker compose pull && docker compose up -d`。
-- 目标版本更早时，先停止 API，再恢复升级前备份；不要直接让旧 Server 读取新数据库。
+- For a target at or above that version, download its Server ZIP, preserve `api.env` and `.data/secrets`, replace `compose.yaml`, then run `docker compose pull && docker compose up -d`.
+- For an earlier target, stop API and restore the pre-upgrade backup; never let an old Server read a newer incompatible database.
 
-恢复 custom-format 备份会覆盖当前数据库对象，应先确认文件路径和目标安装实例：
+Restoring overwrites current database objects. Verify the path and target instance first:
 
 ```bash
 docker compose stop api
@@ -61,9 +55,8 @@ docker compose exec -T postgres rm -f /tmp/echowave-restore.dump
 docker compose up -d
 ```
 
-恢复后检查 `/health`、`/api/hello`，再从 App 验证分组和知识库。回退数据库会丢弃备份时点
-之后的数据库变更；音频卷不会被自动删除或还原。
+Verify `/health`, `/api/hello`, groups, and knowledge bases. Database restore discards changes after the backup; the audio volume is neither removed nor restored automatically.
 
-## 停用与卸载
+## Stop and uninstall
 
-`docker compose down` 只停用服务并保留数据。只有完成并验证备份、确认不再需要任何数据后，才能运行 `docker compose down -v --remove-orphans`；其中 `-v` 会不可逆地删除 PostgreSQL 和音频 volume。不要使用全局 `docker system prune -a --volumes`，也不要卸载服务器上可能由其他应用共享的 Docker 或反向代理。
+`docker compose down` stops the installation while preserving data. Only after a verified backup and an explicit decision to discard all data may you run `docker compose down -v --remove-orphans`; `-v` irreversibly deletes PostgreSQL and audio volumes. Never run global `docker system prune -a --volumes` or uninstall shared Docker/reverse-proxy services.

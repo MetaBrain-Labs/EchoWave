@@ -1,57 +1,33 @@
-# EchoWave 知识上下文
+# EchoWave Domain Language
 
-EchoWave 将音频及其衍生资料组织为可检索、可追溯的知识，并以原始证据约束回答。这里仅定义项目领域语言，不记录实现方案。
+**English** | [简体中文](./domain-language.zh-CN.md)
+
+EchoWave organizes audio and derived material as searchable, traceable knowledge whose answers are constrained by source evidence. This document defines domain terms only, not implementation.
 
 ## Language
 
-**知识库**：
-承载一组相关资料并限定检索范围的知识集合。
-_Avoid_: 数据库、文件夹
+**Knowledge base**: a collection of related materials that defines a retrieval scope. _Avoid_: database, folder.
 
-**知识文档**：
-用户放入知识库、等待解析并可被追溯引用的原始资料。
-_Avoid_: 文件记录、附件
+**Knowledge document**: source material placed in a knowledge base for parsing and traceable citation. _Avoid_: file record, attachment.
 
-**文档修订版**：
-知识文档一次完整解析和发布形成的内容版本；只有当前生效修订版参与回答。
-_Avoid_: 上传批次、解析任务
+**Document revision**: one complete parsed and published content version of a knowledge document. Only the current revision participates in answers. _Avoid_: upload batch, parsing job.
 
-**文档块**：
-从文档修订版中提取、保留原文定位信息并可独立检索引用的最小证据片段。
-_Avoid_: 段落、向量
+**Document chunk**: the smallest independently retrievable and citable evidence unit extracted from a revision while preserving its source location. _Avoid_: paragraph, vector.
 
-**可信知识回答**：
-只依据当前知识库已检索证据生成、且所有引用均通过本次检索白名单确认的最终回答。
-_Avoid_: 模型回复、聊天消息
+**Trusted knowledge answer**: a final answer generated only from retrieved evidence in the current knowledge base, with every citation validated against that run's evidence allowlist. _Avoid_: model response, chat message.
 
-**问答会话**：
-同一知识库内用于延续多轮问题上下文的有限生命周期对话。
-_Avoid_: 运行、线程
+**Q&A conversation**: a bounded-lifetime dialogue that carries multi-turn question context inside one knowledge base. _Avoid_: run, thread.
 
-**问答运行**：
-一次问题从开始处理到完成或失败的可审计记录。
-_Avoid_: 会话、请求日志
+**Q&A run**: an auditable record of one question from processing start to completion or failure. _Avoid_: conversation, request log.
 
-**分组**：
-组织相关知识库、数据源和音频的租户级工作空间；关联关系决定内容可见范围。
-_Avoid_: 文件夹、用户权限组
+**Group**: a tenant workspace organizing related knowledge bases, data sources, and audio; relationships define content visibility. _Avoid_: folder, user permission group.
 
-**数据源**：
-向分组持续提供音频的业务来源及其分析设置；连接凭据不属于该业务记录。
-_Avoid_: 密钥配置、上传目录
+**Data source**: a business origin that continuously supplies audio to a group together with analysis settings. Connection credentials are not part of this business record. _Avoid_: secret configuration, upload directory.
 
-**音频文件**：
-租户内唯一保存的音频元数据，可由数据源提供或显式分享给多个分组。
-_Avoid_: 分组音频副本、数据库二进制
+**Audio file**: the tenant-unique audio metadata record supplied by a data source or explicitly shared with multiple groups. _Avoid_: per-group audio copy, database binary.
 
-**音频分析修订版**：
-一次转写和分析形成的完整结果版本；只有音频当前生效修订版用于页面展示。
-_Avoid_: 播放状态、临时进度文案
+**Audio analysis revision**: a complete version of transcription and analysis results. Only the audio's current active revision appears in product pages. _Avoid_: playback state, temporary progress copy.
 
-**Raw Transcript**：
-STT 供应商发布的不可变原始分段正文，保留用于质量评估和修正差异统计。
-_Avoid_: 用户确认稿、覆盖更新
+**Raw Transcript**: immutable original segments published by the STT provider and retained for quality evaluation and correction-difference statistics. _Avoid_: user-confirmed copy, in-place overwrite.
 
-**Confirmed Transcript**：
-用户对同一组 Raw 片段逐段审核后发布的完整不可变版本；当前版本是所有后续正文分析的唯一输入。
-_Avoid_: 编辑草稿、自动覆盖 Raw、隐式确认
+**Confirmed Transcript**: a complete immutable version published after the user reviews every segment in one Raw Transcript set. Its current version is the sole input to downstream text analysis. _Avoid_: edit draft, overwritten Raw Transcript, implicit confirmation.

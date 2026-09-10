@@ -1,6 +1,8 @@
-# EchoWave 架构说明
+# EchoWave Architecture
 
-## RAG 纵切片
+**English** | [简体中文](./architecture.zh-CN.md)
+
+## RAG vertical slice
 
 ```text
 Expo mobile ── validated JSON/multipart ──> Hono API
@@ -13,9 +15,9 @@ Expo mobile ── validated JSON/multipart ──> Hono API
                └──── active revision + chunks ──┴──── HNSW ─────────┘
 ```
 
-`@echowave/contracts` 是全部 JSON 网络契约的唯一权威来源。API 生产端和移动端消费端都执行 Zod 运行时解析。客户端从不提交 `tenant_id`；固定开发租户只由 `apps/api/.env` 注入。
+`@echowave/contracts` is the sole authority for JSON wire contracts. API producers and mobile consumers both perform Zod runtime validation. Clients never submit `tenant_id`; the fixed development tenant comes only from `apps/api/.env`.
 
-## 模块与依赖方向
+## Modules and dependency direction
 
 ```text
 apps/mobile/src/app
@@ -30,142 +32,95 @@ apps/api/src/http ───────> knowledge ──> answer / embeddings /
 apps/api/src/http ───────> @echowave/contracts <──── apps/mobile/src/features
 ```
 
-- `apps/mobile/src/app` 只负责路由参数归一化、导航回调和 screen 渲染；业务状态归属 feature，跨 feature 的稳定能力归属 `shared`。
-- 移动端使用 `@/*` 指向 `apps/mobile/src/*`。`shared` 不得反向依赖 `features`，feature 之间也不通过导入另一个 feature 的内部实现来共享基础设施。
-- `apps/api/src/bootstrap` 是组合根；`http` 只处理传输，`knowledge` 负责领域用例，`infrastructure` 只提供 PostgreSQL 连接设施。
-- `ai-observability` 提供框架无关的旁路执行记录；知识模块只依赖 recorder 接口，不依赖 Markdown 文件实现。
-- 知识模块按生命周期形成深模块：可信回答、embedding、入库和持久化。服务、回答模块和 worker 直接依赖所需窄仓储，不设置委托式总仓储。
-- `packages/contracts` 按通用错误、知识库、文档和 RAG 拆分，包根继续作为公共导出兼容面。
+- Mobile `app` routes normalize parameters, bind navigation, and render screens. Features own business state; stable cross-feature facilities belong to `shared`.
+- `@/*` maps to `apps/mobile/src/*`. `shared` never imports `features`, and one feature never shares infrastructure through another feature's internals.
+- API `bootstrap` is the composition root; `http` handles transport, domain modules own use cases, and `infrastructure` exposes PostgreSQL facilities.
+- `ai-observability` is a framework-independent side channel. Domain code depends on recorder ports, not Markdown-file implementations.
+- `packages/contracts` is split by wire domain while its package root remains the compatibility export surface.
 
-## 文件结构与领域所有权
+## Domain ownership
 
-API 采用“领域优先、领域内分层”，顶层目录只表达稳定的技术边界：
+The API is domain-first and layered inside each domain:
 
 ```text
 apps/api/src/
-  bootstrap/       组合根、领域 runtime factory、分领域 seed、启动与统一关闭
-  config/          HTTP、数据库、Redis、模型、音频和报告配置；env.ts 统一加载装配
-  http/            app、错误映射、SSE 基础设施及按领域拆分的 routes
-  ai-runtime/      跨领域结构化输出和模型调用生命周期基础能力
-  notifications/   Expo Push outbox Worker、receipt 收敛与设备失效
+  bootstrap/       composition, runtime factories, seed, startup, shutdown
+  config/          HTTP, database, Redis, model, audio, report configuration
+  http/            app, error mapping, SSE, domain routes
+  ai-runtime/      structured-output and model-call lifecycle primitives
+  notifications/   Expo Push outbox, receipts, device invalidation
   knowledge/
-    catalog/       知识库、文档和块目录
-    retrieval/     检索 port、RetrievalChunk 与向量实现
-    answer/        可信问答 Agent
-    ingestion/     入库 workflow、worker 和生命周期持久化
+    catalog/       knowledge bases, documents, chunks
+    retrieval/     retrieval ports and vector implementation
+    answer/        grounded-answer Agent
+    ingestion/     ingestion workflow, worker, persistence
   workspace/
-    groups/        GroupService 与分组 Repository
-    data-sources/  DataSourceService 与数据源 Repository
+    groups/        GroupService and repository
+    data-sources/  DataSourceService and repository
     audio/
-      core/        播放、分析详情、转写确认与 AudioService
-      transcription/  转写 Repository、供应商适配器、workflow 与 Worker
-      post-analysis/  情绪/角色 Context、Repository、供应商适配器与 Worker
-      business-analysis/  销售复盘 Context、Repository、LangGraph 与 Worker
-      execution/   执行查询 port、PostgreSQL recorder、事件 mapper 与 Repository
+      core/        playback, details, confirmation, AudioService
+      transcription/  repository, provider, workflow, worker
+      post-analysis/  emotion/role context, provider, worker
+      business-analysis/  context, LangGraph, repository, worker
+      execution/   query port, recorder, event mapping, repository
 ```
 
-- `http/app.ts`、`config/env.ts` 和 contracts 根 `index.ts` 是长期组合入口，不放置领域实现。
-- `bootstrap/runtime.ts` 只创建跨领域共享资源并调用 knowledge、workspace、audio runtime factory；`bootstrap/seed.ts` 只维护事务和领域 seed 调用顺序。
-- Route 只能依赖显式 Service port；Service 直接依赖所需的窄 Repository，不通过聚合 Service 或聚合 Repository 转发。
-- Repository 拥有 SQL 与事务，Service 拥有用例协调，Route 拥有网络解析和状态码，Worker 拥有领取、恢复与停止生命周期。
-- LangGraph workflow 使用 `state.ts`、`nodes.ts`、`graph.ts`；`addNode` 只引用有名称的节点函数，依赖经工厂或 runtime context 注入。
-- 每个模型任务就近维护一个 `CONTEXT.ts`，只包含该任务的系统/修复指令和动态 user context builder；schema、请求、重试与持久化不得进入 Context。
-- 文件只按职责、依赖方向和可独立测试边界拆分。大文件需要审查，但不设置行数阈值，也不为几行日期转换、表名生成或简单展示组件制造公共抽象。
+Composition files stay small. Routes depend on explicit service ports; services depend directly on narrow repositories. Repositories own SQL and transactions, services own use-case coordination, routes own network parsing/status, and workers own claim/recovery/shutdown lifecycles. LangGraph workflows use `state.ts`, `nodes.ts`, and `graph.ts`; every node is named and dependencies enter through factories or runtime context. Each model task owns one nearby `CONTEXT.ts` containing only prompts and dynamic context builders.
 
-移动端同样按 feature 拥有状态与展示：Screen 负责页面编排，复杂加载、实时订阅和确认流程进入 feature hook，组件及样式留在所属 feature。`shared/api` 按 groups、data-sources、audio-analysis 等资源拆分，并复用基础请求错误；只有确认存在复杂共享状态机时才进入 `shared/hooks`。
+Mobile features likewise own state and presentation. Screens compose, complex loading/subscription/confirmation behavior belongs in feature hooks, and components/styles remain inside the feature. `shared/api` is resource-oriented and shares only foundational request behavior.
 
-共享契约按 wire domain 拆分，analysis 下区分 transcript、post-analysis、business-analysis，audio 下区分 processing、transcription。拆分不得改变原 schema/type 名称或 JSON 形状。
+### Runtime Server connection
 
-### 运行时服务器连接
+A gate outside business navigation owns the Server connection. Versioned AsyncStorage stores only a health-verified normalized origin and six per-Server onboarding states, never business data. Saved addresses override the Development/Expo Go `EXPO_PUBLIC_API_URL`; Production profiles require runtime selection.
 
-移动端在业务导航外层维护服务器连接门禁。版本化 AsyncStorage 键只保存通过健康检查的规范化服务器根地址和按 Server URL 隔离的六项引导状态，不保存业务数据；PostgreSQL 仍是业务事实的唯一来源。引导注册表由根级 provider 编排，页面只注册可测量目标；页面切换时清除旧坐标，有限重测后仍缺失的目标退化为无高亮说明。只有基础引导自动播放，其他引导仅由引导中心手动启动。已保存地址优先于 Development/Expo Go 的 `EXPO_PUBLIC_API_URL`，Production profiles 通过 `EXPO_PUBLIC_REQUIRE_SERVER_SELECTION=true` 禁用构建默认地址。
+Without a valid origin, business routes are not mounted and send no requests. `GET /health` is parsed through `HealthResponseSchema`. REST, uploads, SSE, media, and push registration resolve the same runtime origin. Switching Server stops old SSE connections, increments a connection revision, and remounts navigation to discard page caches. LAN HTTP is limited to local/private/link-local/`.local` addresses; public origins require HTTPS.
 
-没有可用地址时不挂载业务路由，也不发出业务请求。连接页面使用共享 `HealthResponseSchema` 校验 `GET /health` 的服务身份、语义版本、`apiVersion=1` 和能力字段。REST、上传、SSE、音频媒体和推送设备注册都在发起请求时读取同一个运行时地址，不能捕获构建时常量。
+## Data and publication boundaries
 
-修改服务器会先停止旧 SSE，递增连接 revision 并重新挂载业务导航，从而丢弃页面级缓存和旧服务器状态。地址校验拒绝凭据、query、fragment 和业务路径；局域网 HTTP 只允许本机、私有/链路本地地址或 `.local`，公网必须使用 HTTPS。
+- PostgreSQL is authoritative for knowledge, documents, revisions, chunks, tasks, conversations, audit runs, groups, data sources, audio metadata, runtime/storage bindings, ASR runs, checkpoints, and published analysis.
+- Audio binaries and third-party secrets do not enter business tables. Hybrid stores source audio in `AUDIO_STORAGE_DIR`; object storage uses presigned PUT to authoritative OSS; lightweight local streams into temporary storage and deletes after work completes.
+- Stable tenant-scoped content routes serve playback. Object assets are proxied with Range support; cleaned source returns an explicit unavailable state without affecting published transcripts or analyses.
+- Raw provider transcript text is immutable. Confirmed Transcripts are complete immutable snapshots selected by an active pointer and are the sole downstream text-analysis input.
+- Every publication writes all generated rows before moving the active pointer in the same transaction. Failure leaves the previous revision online.
+- Tenant SQL always includes `tenant_id`; retrieval additionally constrains the knowledge base and active document revision.
+- Workers claim through `FOR UPDATE SKIP LOCKED`, leases, and idempotent keys. PostgreSQL `LISTEN/NOTIFY` accelerates wakeups while 15-second scans recover missed notifications; task tables remain authoritative.
+- Group visibility unions explicit audio shares with linked active data sources. Counts are derived, not writable page fields. Archive operations are soft and preserve historical facts.
+- The starter-template installer writes its marker, two groups, one shared upload source, and relationships in one transaction. Reruns never recreate archived items or overwrite user settings.
+- Business analysis uses durable LangGraph `prepare → plan_retrieval → parallel retrieve_query → deep_agent → validate → publish`. Serializable checkpoints hold workflow state; repositories, models, and recorders enter through runtime context.
+- The current release supports one API instance. PostgreSQL state is durable, but mobile SSE wakeups are still process-local and local audio paths are not multi-instance safe.
 
-## 数据与发布边界
+### Why native PostgreSQL remains
 
-- PostgreSQL 是知识库、文档、revision、chunk、任务、会话和运行记录的权威来源。
-- 当前音频修订的用户可见 AI 执行轨迹同样由 PostgreSQL 承载。四类音频 worker 通过组合报告器同时写入可选本地诊断和始终启用的安全审计；安全审计只保存步骤、模型统计、工具名称、检索查询、知识库名称和命中文档定位，不保存提示词、模型原文、知识块正文或隐藏 reasoning。
-- PostgreSQL 同时保存租户级分组、数据源、音频元数据、运行模式/存储绑定、ASR Run、Checkpoint 和已发布分析结果；音频二进制与第三方凭据不进入业务表。
-- 新音频在创建时固化 `hybrid`、`object_storage` 或 `lightweight_local`。混合模式把原音频持久化到 `AUDIO_STORAGE_DIR`；对象模式通过预签名 PUT 直接进入权威 OSS；轻量模式以流式 API 上传到临时本地目录并在任务完成后删除。上传会话与 SHA-256 指纹支持中断后的确认和重新挂载。
-- 音频播放始终使用租户隔离的稳定内容路由。混合/轻量资产读取受控本地路径，对象资产由 API 代理 OSS Range；客户端只使用音频 ID。源文件清理后路由返回明确不可用状态，已发布 Transcript 和分析结果不受影响。
-- 音频转写使用 `audio_analysis_revisions` 作为 PostgreSQL 队列，并持久化供应商任务、VAD Manifest 与阶段 Checkpoint。`silero_vad` 流式检测并压缩无效区间，生成单个 16kHz 单声道文件，避免把完整音频载入内存或拆散录音级 Speaker ID。混合/对象模式使用临时 OSS，轻量模式使用 DashScope Instant 临时文件区。
-- `transcript_segments.text` 永久保存供应商 Raw Transcript；人工确认通过 `transcript_confirmations` 与 `transcript_confirmation_segments` 保存完整不可变快照，并由 ASR revision 上的 active 指针选择当前 Confirmed Transcript。确认只替换正文快照，不重建片段或修改 Speaker、时间戳和既有分析指针。
-- 情绪分析和角色识别使用 `audio_post_analysis_jobs`。混合/对象模式从已确认 revision 独立创建；轻量模式可在 ASR Run 创建时默认绑定声学情绪，Transcript 发布后用 Raw 时间戳自动生成系统快照并顺序执行情绪与清理。角色识别始终只读 Transcript，因此不受源音频清理影响。
-- 分组通过关联表连接知识库和数据源；分组可见音频由显式分享与关联数据源两条关系合并去重，页面计数不作为可写字段保存。
-- 分组和数据源允许在当前固定租户内创建和软归档；归档数据源会从活动列表、分组统计和数据源继承的音频可见关系中排除它，但不会删除关联、音频事实或本地文件。
-- 显式 migration 在租户建立后调用 workspace 起步模板安装器。目录版本标记与两个分组、共享手动上传数据源及关联在同一事务中写入；后续运行不重新生成、不恢复归档、不覆盖用户设置。
-- 起步模板的分析示例属于服务端代码目录，通过共享契约和只读 API 发布；它们不是数据库业务事实，不创建虚假音频或任务，也不参与分组聚合计数。
-- 知识库保存当前只读的存储、索引、模型和解析模式；概览统计继续由活动文档事实动态聚合。
-- 知识库可通过租户隔离的批量接口关联多个活动分组；批量校验和插入在同一事务内完成，重复关联保持幂等。
-- 新音频修订版只有完整写入本次产生的场景和 Raw Transcript 后才替换当前版本指针，并以待确认状态展示；情绪与角色结果分别写入版本化结果表，并在各自事务的最后切换 revision 上的 active 指针。再次确认正文、后处理失败或重跑都不会覆盖旧分析结果，新 ASR revision 也不会读取旧 revision 的确认或后处理指针。
-- 所有仓储 SQL 都包含 `tenant_id`，检索还同时约束知识库和文档当前生效 revision。
-- `ingestion_jobs` 通过 `FOR UPDATE SKIP LOCKED`、租约和幂等 chunk 唯一键恢复执行。知识入库、音频转写、情绪、角色和业务分析任务在事务提交后统一发送 PostgreSQL `NOTIFY` 失效信号；同进程 worker 立即尝试领取，15 秒安全扫描只负责通知丢失、监听重连或未知写入路径。通知不携带任务正文，也不替代任务表。
-- 分组业务分析使用持久化 LangGraph 表达 `prepare → plan_retrieval → retrieve_query 并行扇出 → deep_agent → validate → publish`。任务表仍是状态、进度和重试的权威来源；Graph 只 checkpoint 可序列化快照，仓储、模型和报告器通过 runtime context 注入。稳定 thread ID 绑定 workflow 版本和 job ID，`sync` durability 保证进入下一节点前 checkpoint 已落库。检索规划使用非思考模型，输出上限 768 tokens、超时 30 秒；主结构化分析使用非思考模型，输出上限 6000 tokens、单次模型超时 60 秒、工作流总超时 120 秒；结构修复使用 4096 tokens、超时 45 秒。
-- 业务分析进程中断时，启动恢复会把遗留 `running` 任务重新排队，使用原 thread 从最后成功节点继续，不消耗错误恢复预算。可重试错误最多在 15 秒和 60 秒后恢复两次；短转写仍在一个分析节点内完成，长转写会按最多 50 个片段或约 6000 个中文字建立窗口并保存窗口结果，窗口级中断只重跑最早未完成窗口，不重跑已 checkpoint 的规划和成功检索分支。
-- 业务分析发布在单事务中写入摘要、标签、证据和 head；同 job 已成功发布且仍为 head 时重复调用视为成功。成功或最终失败后删除 thread checkpoint，删除失败不回滚业务终态，由下次启动扫描补偿。
-- 音频转写通过部分唯一索引阻止同一音频并发任务，并用 `FOR UPDATE SKIP LOCKED` 领取。DashScope 的任务 ID、临时 OSS 对象键和提交时间随修订持久化；提交后进入 `awaiting_result` 并释放 worker。Polling 模式只领取已到数据库截止时间的任务并单次查询状态，进程内定时器按全局最近的查询或六小时超时截止点精确唤醒；EventBridge 模式不查询状态，只等待验签回调。进程重启时只重新排队未完成提交的修订，已有 task ID 的修订从持久化截止点恢复对应发现机制，已持久化终态的修订直接重新领取完成阶段。
-- Qwen Filetrans 适配器要求每个非空句子都有 `speaker_id` 与有序有效毫秒时间戳；Speaker 变化、同 Speaker 间隔达到 1500ms 或合并后超过 240 字软上限时创建新段。缺失 Speaker、时间戳异常或乱序直接以 `INVALID_MODEL_OUTPUT` 失败，不进行模型或分段回退。原始 ASR 只产生正文、Speaker 与时间戳，角色识别和声学情绪由后处理结果覆盖兼容字段；轻量本地在同一 ASR Run 内顺序执行声学情绪并在成功后清理源文件。
-- 情绪 worker 按说话轮次生成最多 5 分钟或 50 个目标片段的窗口，并加入前后各 1 秒上下文。窗口经 FFmpeg 转为音频后暂存到独立 OSS 前缀并交给 Qwen；网络最多重试三次，结构纠正一次，仍无效时递归二分，单片段失败则整项任务失败。
-- 角色 worker 把完整有序转写、每个 `speakerKey`、核心角色和本次数据源角色快照发送给 DeepSeek。输出必须完整覆盖已观察说话人，角色必须在白名单内，证据片段必须属于对应说话人。
-- 转写 worker 将阶段、当前 Chunk/动态总数、音频时间范围、网络尝试和更新时间持久化到当前修订。Polling 和 EventBridge 只负责发现并持久化首个供应商终态，结果下载、结构校验、时间轴恢复、发布与清理由同一完成路径处理；移动端通过单实例进程内事件总线唤醒的 SSE 展示业务进度，REST 仅负责首帧和连接失败后的临时降级。旧修订的结构尝试字段仅作兼容读取。
-- 新 revision 仅在全部向量写入成功后才在单事务中成为 active revision；失败不会使旧内容离线。
-- 原文件使用随机临时路径，发布成功或不可重试失败后删除；超过 24 小时的孤立文件由 worker 清理。
-- 首期只允许单 API 实例。worker 任务唤醒已使用 PostgreSQL `LISTEN/NOTIFY`，但移动端 SSE 仍使用单实例进程内事件总线，PostgreSQL 快照始终是权威状态；扩展到多 API 实例前仍需为 SSE 失效信号引入跨实例分发。对象模式的企业 OSS 是权威原音频存储，`audio_staging` 与 DashScope Instant 仅保存短期中间文件。
+The hot path relies on pgvector `vector(1024)`, cosine HNSW, session-level retrieval parameters, `FOR UPDATE SKIP LOCKED`, partial indexes, dynamic schema qualifiers, and multi-table transactional publication. A second ORM would still require native SQL for these paths and would create two persistence models. EchoWave therefore keeps `pg` and explicit ordered migrations authoritative until ordinary relational CRUD growth clearly justifies that cost.
 
-### 为什么保留原生 PostgreSQL 接口
+## Model and Agent boundaries
 
-- 当前持久化热路径依赖 pgvector `vector(1024)`、cosine HNSW、会话级检索参数、`FOR UPDATE SKIP LOCKED`、部分索引、动态 schema 限定符和多表事务发布。
-- 稳定版 Prisma 无法把上述能力全部表达为普通模型操作；即使引入 Prisma，向量检索、任务领取、索引和关键事务仍需要自定义 migration 与原生 SQL。
-- 当前继续使用 `pg` 与显式 SQL，可让一套 migration 和事务模型保持权威。只有常规关系 CRUD 明显增长、且迁移收益足以覆盖双栈成本时，才重新评估 Prisma。
+- DashScope `qwen3.7-text-embedding` produces fixed 1024-dimensional dense vectors, batches up to 20 documents, and distinguishes document/query input.
+- `qwen-audio-3.0-asr-flash-filetrans` uses `speaker_turn` with explicit `silero_vad` or `whole_file` preprocessing. VAD never silently falls back; manifests, provider task IDs, temporary object keys, and checkpoints support restart-safe completion.
+- Qwen Filetrans output requires non-empty sentences with `speaker_id` and ordered valid millisecond timestamps. Missing/overlapping/invalid output fails as `INVALID_MODEL_OUTPUT`; it is not guessed or silently repaired through another model.
+- `qwen3.5-omni-flash` handles per-segment acoustic emotion through the Beijing OpenAI-compatible endpoint and signed OSS URLs. Results must cover each target and include the fixed emotion enum, confidence, and acoustic cues.
+- `deepseek-v4-flash` performs non-thinking JSON role recognition, grounded answers, speaker review, and business analysis under task-specific schemas.
+- Retrieval uses cosine HNSW with `ef_search=100`, initial top 30, deduplication/document quotas, and at most 8 chunks or 12,000 characters for the Agent.
+- DeepAgent has no filesystem, skills, long-term memory, or subagents. Its only business tool is tenant-scoped `search_knowledge`, with at most four executions per turn.
+- The Server accepts citations only from the current retrieval allowlist. Insufficient evidence returns `grounded=false`; common knowledge cannot fill the gap.
 
-## 模型与 Agent 边界
+### Why knowledge answers are not streamed yet
 
-- DashScope 原生 TextEmbedding 接口使用 `qwen3.7-text-embedding`，固定输出 1024 维密集向量，文档批次最多 20；文档发送 `text_type=document`，查询发送 `text_type=query` 并添加英文检索指令。
-- `qwen-audio-3.0-asr-flash-filetrans` 固定使用 `speaker_turn`，预处理可明确选择 `silero_vad` 或 `whole_file`。Silero 清单与临时 OSS 对象键原子保存，重启恢复终态完成阶段后仍用压缩时长校验供应商结果并把时间戳映射回原录音；跨折叠边界的模糊结果拒绝发布。OSS 或 FFmpeg 缺失时模型保持可见但禁用；EventBridge 配置只在 `eventbridge` 模式要求，Polling 不依赖公网回调。VAD 缺失时整文件模式仍可显式选择，绝不静默降级。
-- `qwen3.5-omni-flash` 仅负责逐片段声学情绪，通过北京地域 OpenAI-compatible Chat Completions 接收签名 OSS URL；Prompt 与 Schema 描述为英文，用户正文保持原文。结果必须逐一覆盖目标片段，并保存固定枚举、置信度及声音线索。
-- `deepseek-v4-flash` 以非思考模式和 JSON Output 识别录音级业务角色。核心角色为“销售、客户、其他、未知”，数据源可在此基础上增加最多 16 个自定义角色。
-- 检索使用 cosine HNSW、`ef_search=100` 和 pgvector iterative scan，初召回 30，去重和文档配额后最多向 Agent 提供 8 块/12000 字符。
-- DeepAgent 使用 DeepSeek `deepseek-v4-flash`、结构化 `{ answer, grounded, citedChunkIds }` 输出和 PostgreSQL checkpointer。
-- 文件系统权限全部拒绝，不配置 skills、长期记忆或子代理；业务工具只有租户范围内的 `search_knowledge`，单轮最多实际执行四次。
-- 销售复盘的外层恢复边界是 LangGraph；DeepAgent 只作为其中一个原子分析节点，保留检索工具白名单、调用次数限制、结构修复和证据安全校验，不配置内部 checkpointer。
-- 模型应选择最多 8 个最有代表性的引用；超出时先执行引用压缩。引用数量属于可纠正的质量约束，压缩仍超限但引用均通过本轮白名单时保留完整证据，不得误降级为“依据不足”。移动端默认展示前 4 条引用，其余来源由用户按需展开。
-- 服务端只接受本次检索白名单中的 chunk ID。依据不足返回 `grounded=false`，不使用常识补答。
-- 第五次及后续检索意图由工具中间件阻止；模型改用本轮已有块生成结果，服务端在完成引用白名单校验后追加“证据可能不完整”的稳定提示。工具限制不能降低引用合法性要求。
-- 多轮检索的服务端总等待窗口为 45 秒，移动端知识问答请求为 50 秒；客户端晚于服务端终止，以便优先接收结构化超时错误。
+The answer boundary completes `DeepAgent invoke → JSON recovery/correction → citation allowlist validation → usage aggregation → run audit` before returning one `RagQueryResponseSchema` JSON response. Streaming would need a product event contract separating provisional text, final citations, usage, cancellation, and failure, including the case where displayed text later fails citation validation. It must not be implemented by simply replacing `invoke` and bypassing trust checks.
 
-### 为什么问知识库暂不流式返回
+The mobile progress card is client interaction feedback, not server telemetry. Only the final result contains verified sources. The read-only recent-history endpoint returns up to six completed summaries from `rag_runs`; it does not revive them as editable conversations.
 
-可信回答模块必须先完成 `DeepAgent invoke → JSON 恢复或纠正 → citation 白名单校验 → usage 汇总 → run 审计完成`，之后 Hono 才返回一个通过 `RagQueryResponseSchema` 校验的 JSON。任何无法直接解析的模型输出都会获得一次禁止继续检索的 JSON-mode 恢复机会；恢复仍失败才降级为稳定拒答。移动端同样在完整 body 到达后统一解析和渲染。
+## AI execution diagnostics
 
-这不是 LangGraph 或 Hono 缺少流式能力，而是当前网络契约只承诺最终已验证结果。逐 token 输出需要新增产品级事件契约，区分临时文本、最终引用、用量、取消和失败，并处理“已展示文本后来被引用校验否决”的一致性问题；该协议应作为独立功能设计，不能通过简单替换 `invoke` 绕过可信性校验。
+Product audit in `ai_execution_runs` and `ai_execution_events` is always enabled but intentionally limited to safe stage, model-statistic, tool-name, retrieval-query, knowledge-base, and source-location facts. It excludes prompts, model output, chunk text, and hidden reasoning. Local Markdown diagnostics are separate, disabled by default, and may contain more development detail only under explicit switches.
 
-移动端等待期间展示的“唤醒 AI、连接知识库、检索知识库、生成结果中”是客户端交互反馈，不是服务端实时遥测。只有完整响应到达后展示的引用来源数量来自服务器已验证结果；进度卡片不会提前展示模型文本，也不会绕过引用白名单与审计落库。
+Optional reports are post-run diagnostics, never the source for progress, HTTP responses, or recovery. Disabled reporters are no-op; write failures emit only redacted warnings and never change business results. The separate raw STT response switch records bounded and redacted provider responses, never request audio, authorization headers, or full response headers. Report directories are Git-ignored and are not automatically cleaned.
 
-当前知识库最近六个已完成问答通过独立只读接口查询。历史数据来自 `rag_runs` 审计记录，只包含已完成的问答摘要，不恢复为可编辑或可续聊的当前会话。
+## Configuration and security
 
-## AI 执行诊断边界
-
-分析详情的“模型详情”从 `ai_execution_runs` 与 `ai_execution_events` 读取当前已发布修订的产品审计轨迹。ASR、情绪、角色运行不依赖分组；业务分析轨迹只在请求分组通过音频访问校验后返回。旧修订和功能启用前的运行不回填，也不会从模型结果反推不存在的执行过程。进程重启时遗留的 `running` 记录收敛为 `interrupted`，重新排队后的工作生成新的运行记录；业务分析每轮 checkpoint 恢复也生成独立运行记录，不覆盖之前的中断或失败轨迹。
-
-产品审计与下面的本地诊断报告是两个明确边界：产品审计始终启用但字段严格受限，本地报告默认关闭且可在受控环境记录更完整的开发诊断。移动端展示的“分析过程”是阶段和决策事实摘要，不是模型隐藏链路推理。
-
-可选执行报告以一次 `rag-answer`、`knowledge-ingestion` 或 worker 阶段为边界，在运行结束后生成一份本地 Markdown。问答报告关联知识库、会话和 `rag_run`；入库报告关联 job、文档和 revision；ASR 按提交与终态完成生成阶段报告，均关联同一 revision 及安全的数据源/导入批次/音频快照。失败时继续记录 `persist-failure` 和失败清理，报告关闭或落盘失败都不能改变转写结果。
-
-该报告不是 PostgreSQL 权威审计的替代品，也不作为客户端进度、HTTP 响应或恢复机制的数据源。客户端实时状态来自修订上的结构化活动字段；报告在执行结束时一次性写入，用于事后诊断。功能关闭时使用 no-op recorder，不创建目录或序列化上下文；写文件失败只产生脱敏 warning，不能改变原始业务结果。
-
-STT 的 DashScope 任务提交、Polling 状态查询或 EventBridge 回调，以及结果获取均记录安全的执行阶段元数据。提交和终态完成分别生成同一 revision 下的阶段报告；修订结束还记录供应商、分段模式、终态来源、身份作用域和最终展示段数。输出经过响应结构、Speaker 与时间边界校验；音频与完整正文不进入错误详情或客户端进度接口。
-
-默认 Markdown 报告只包含安全元数据。独立的 `AI_EXECUTION_REPORT_STT_RAW_RESPONSE_ENABLED=true` 会把 DashScope 的提交响应、Polling `task_status` 响应或 EventBridge 完成回调，以及最终 Qwen 转写 JSON 写入 `stt-raw`，不依赖通用报告开关。成功、非 2xx、无效 JSON 和校验失败响应都保留；正文最多保留 2 MiB，记录原始字节数和 SHA-256，并清除疑似密钥、Bearer、OSS 签名参数、长 base64 与本地路径。请求音频、鉴权头和完整响应头在任何模式下都不得写入。报告目录由 Git 忽略且不自动清理。
-
-## 配置与安全
-
-- `apps/api/.env` 是 API 唯一配置来源，不与系统环境变量合并，也不提供隐式默认值。
-- 数据库 migration 与 LangGraph `setup()` 只由显式 `pnpm --filter @echowave/api migrate` 执行。
-- `apps/mobile/.env` 只提供开发默认值；`EXPO_PUBLIC_*` 会进入客户端 bundle，不得放置密钥。正式包的服务器地址在运行时选择。
-- `/health.capabilities.remotePush` 是客户端通知权限与设备注册的门禁。Self-hosted 默认关闭，启用时仍需原生 Build、EAS/Firebase 或 Apple/APNs 凭据。
-- 唯一 EAS 配置位于 `apps/mobile/eas.json`；Development、内部 APK 和商店 profiles 不在仓库根目录维护第二份配置。稳定 Tag 发布使用 remote app version source 自动递增正式 APK 的 Android `versionCode`，提交中的用户可见版本仍与 API/Release SemVer 同步。
-- API 默认不记录完整正文、完整模型上下文、provider 原始错误或 reasoning；本地诊断内容只能通过显式开关启用，密钥始终禁止记录。
-- Redis 仍是未来缓存/协调边界，不参与首期 RAG，也不能成为第二业务真相源。
+- `apps/api/.env` is the API's sole startup source; migrations and LangGraph setup run only through the explicit migration command.
+- `apps/mobile/.env` contains public development defaults only. Production selects the Server at runtime.
+- `/health.capabilities.remotePush` gates notification permissions and device registration. Self-hosted defaults off and requires a native Build plus EAS/Firebase or Apple/APNs credentials when enabled.
+- The sole EAS configuration is `apps/mobile/eas.json`; user-visible SemVer remains synchronized with API and Release metadata.
+- The API does not log full user text, model context, raw provider errors, or reasoning by default. Secrets are never loggable.
+- Redis remains a future cache/coordination boundary and is not a second source of truth.

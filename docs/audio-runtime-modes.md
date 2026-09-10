@@ -1,53 +1,55 @@
-# 音频运行模式
+# Audio Runtime Modes
 
-EchoWave 以租户为单位提供三种音频运行模式。模式切换只影响切换后创建的 `AudioAsset`；每条资产在创建时固化模式、存储后端、存储绑定 revision 和清理期限，已有资产不会被隐式迁移或删除。
+**English** | [简体中文](./audio-runtime-modes.zh-CN.md)
 
-## 部署时如何选择
+EchoWave provides three tenant-level audio runtime modes. A mode change affects only `AudioAsset` records created afterward. Each asset freezes its mode, storage backend, storage-binding revision, and cleanup deadline; existing assets are never implicitly migrated or deleted.
 
-| 模式                         | 原音频保存位置                                                  | OSS                | 恢复与重跑                                            | 推荐用户                             |
-| ---------------------------- | --------------------------------------------------------------- | ------------------ | ----------------------------------------------------- | ------------------------------------ |
-| 轻量本地 `lightweight_local` | API 临时目录，成功或到期后清理                                  | 不需要             | 清理后重新转写必须重新选择 SHA-256 和大小相同的原文件 | 首次试用、低存储成本、不长期保留音频 |
-| 混合 `hybrid`                | API 的 `AUDIO_STORAGE_DIR`；Docker 中为 `echowave_audio` volume | 仅 `audio_staging` | 原音频存在时可播放并重新执行音频依赖流程              | 默认选择、本地长期保留原音频         |
-| 对象存储 `object_storage`    | `audio_primary_storage` OSS                                     | 主存储和中转都需要 | 保留期内可按 OSS 原件恢复；过期后历史结果仍保留       | 音频量较大、需要对象存储生命周期管理 |
+## Deployment choice
 
-三种模式都需要 PostgreSQL、FFmpeg/VAD 和 DashScope 音频能力。角色、知识问答及业务分析还需要 DeepSeek 逻辑连接。混合与对象存储模式必须先完成相应 OSS 能力绑定；轻量本地可以在没有 OSS 的情况下工作。
+| Mode                                  | Source audio location                                         | OSS requirement             | Recovery and reruns                                                                             | Best fit                                                |
+| ------------------------------------- | ------------------------------------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Lightweight local `lightweight_local` | API temporary directory; removed after success or expiry      | None                        | Re-transcription after cleanup requires reselecting a file with the same SHA-256 and byte count | Trials, low storage cost, no long-term source retention |
+| Hybrid `hybrid`                       | API `AUDIO_STORAGE_DIR`; `echowave_audio` volume under Docker | `audio_staging` only        | Playback and audio-dependent reruns remain available while the source exists                    | Default; long-term local source retention               |
+| Object storage `object_storage`       | `audio_primary_storage` OSS                                   | Primary storage and staging | Recoverable from the OSS original during retention; historical results survive expiry           | Larger audio collections and managed object lifecycles  |
 
-不确定时先选轻量本地进行功能试用，确认需要长期播放或重跑原音频后改为混合；已经有规范 OSS 生命周期和备份策略时再选择对象存储。切换模式不会迁移已有音频，不能把切换当成存储迁移工具。安装与 Provider 配置步骤见[Server 部署指南](./server-deployment.md)。
+All modes require PostgreSQL, FFmpeg/VAD, and DashScope audio capabilities. Role, knowledge-answer, and business-analysis stages also require a DeepSeek logical connection. Hybrid and object-storage modes require their OSS bindings; lightweight local works without OSS.
 
-## 模式
+When unsure, start with lightweight local for a functional trial, switch future assets to hybrid when playback or reruns matter, and choose object storage only with an established OSS lifecycle and backup policy. Mode switching is not a storage-migration tool. See [Server Deployment](./server-deployment.md).
 
-### 混合存储 `hybrid`
+## Modes
 
-默认且兼容原有行为。原音频长期保存在 API 的 `AUDIO_STORAGE_DIR`，FFmpeg/VAD 产物通过 `audio_staging` OSS 短期中转给 DashScope。声学情绪仍由用户在 Transcript 确认后独立启动。
+### Hybrid `hybrid`
 
-### 对象存储 `object_storage`
+This is the default and preserves the original behavior. Source audio remains in API `AUDIO_STORAGE_DIR`; FFmpeg/VAD output is staged briefly through `audio_staging` OSS for DashScope. Acoustic emotion is started separately after transcript confirmation.
 
-移动端通过预签名 PUT 把原音频直接上传到 `audio_primary_storage` OSS。API 只在校验、ASR 预处理和声学窗口生成时流式落入受控临时目录，任务结束后删除，不保存长期本地副本。原音频由租户保留策略决定是否长期保存；到期后历史 Transcript 和情绪结果保留，但不能重新执行声学情绪。`/api/audio-files/:id/content` 使用稳定地址代理 OSS Range。
+### Object storage `object_storage`
 
-### 轻量本地 `lightweight_local`
+The mobile client uploads source audio directly to `audio_primary_storage` OSS using a presigned PUT. The API streams data into controlled temporary paths only for validation, ASR preprocessing, and acoustic windows, then removes those copies. Tenant retention policy controls the authoritative original. Historical transcripts and emotion results remain after expiry, but acoustic emotion cannot be rerun. `/api/audio-files/:id/content` is the stable Range-capable proxy endpoint.
 
-移动端以二进制流把原音频复制到 API 临时音频目录。首次上传和每次手动重转写都提供“同时进行声学情绪分析”开关，默认开启：
+### Lightweight local `lightweight_local`
 
-- 开启：`VAD → ASR → Transcript 发布 → 声学情绪 → 清理`。
-- 关闭：`VAD → ASR → Transcript 发布 → 清理`，该 ASR revision 的情绪状态永久为 `not_requested`，不能稍后补跑。
+The mobile client streams source audio into the API temporary audio directory. Initial upload and every manual re-transcription offer an “also run acoustic emotion analysis” switch, enabled by default:
 
-声学分析必须使用本次 Raw Transcript 的原始时间戳切取音频窗口，因此内部顺序执行，不与 ASR Provider 调用并行。清理后播放器显示“源音频未保留”。若需要创建新 Run，用户必须重新选择原文件；API 以创建资产时保存的 SHA-256 和字节数校验一致性。
+- Enabled: `VAD → ASR → transcript publication → acoustic emotion → cleanup`.
+- Disabled: `VAD → ASR → transcript publication → cleanup`; that ASR revision is permanently `not_requested` for emotion.
 
-## 权威数据与恢复
+Acoustic analysis cuts windows from the current Raw Transcript timestamps, so it runs sequentially and never in parallel with the ASR provider call. After cleanup, the player reports that source audio was not retained. A new run requires reselecting the original file; the API verifies its saved SHA-256 and size.
 
-PostgreSQL 保存 Transcript、VAD Manifest、ASR Run、Provider 任务 ID、Checkpoint、确认版本、情绪/角色结果和业务分析。对象存储和本地目录只保存音频二进制及短期中间文件，不保存重复 Transcript JSON，也不生成 `finish` 音频。
+## Authority and recovery
 
-ASR revision 的 Checkpoint 顺序为：
+PostgreSQL stores transcripts, VAD manifests, ASR runs, provider task IDs, checkpoints, confirmation versions, emotion/role results, and business analyses. Object storage and local directories hold only audio binaries and short-lived intermediates; they do not duplicate transcript JSON or create a `finish` audio file.
+
+ASR revision checkpoints are:
 
 `source_validated → preprocessing_ready → provider_staged → provider_submitted → provider_terminal → transcript_published → acoustic_emotion_completed → cleanup_completed`
 
-Provider 任务 ID 和终态先写入 PostgreSQL，进程恢复时不会重复提交已存在的 Provider 任务。Transcript 已发布时只继续声学情绪或清理。轻量模式最终失败的源文件最多保留至最后失败后 24 小时；服务启动时及每 15 分钟执行一次到期清理补偿。
+Provider task ID and terminal state are persisted before progression, preventing duplicate submission after restart. A published transcript resumes only emotion or cleanup. Lightweight-local source files for terminal failures remain for at most 24 hours after the last failure; startup and 15-minute compensation jobs remove expired files.
 
-## 配置与接口
+## Configuration and API
 
-“更多”页提供“服务状态 / AI 配置 / 运行模式”三个入口。运行模式公开可查看，修改必须提交 `CONFIGURATION_ADMIN_TOKEN`。启用对象模式要求 `audio_primary_storage`、`audio_staging`、DashScope ASR、FFmpeg 和 VAD 就绪；启用轻量模式要求 DashScope ASR/声学情绪、FFmpeg 和 VAD 就绪。
+More contains **Service Status / AI Configuration / Runtime Mode**. Anyone may read the mode; updates require `CONFIGURATION_ADMIN_TOKEN`. Object-storage activation requires `audio_primary_storage`, `audio_staging`, DashScope ASR, FFmpeg, and VAD. Lightweight activation requires DashScope ASR/acoustic emotion, FFmpeg, and VAD.
 
-主要接口：
+Main endpoints:
 
 - `GET /api/audio-runtime`
 - `PUT /api/settings/audio-runtime`
@@ -58,4 +60,4 @@ Provider 任务 ID 和终态先写入 PostgreSQL，进程恢复时不会重复�
 - `PUT /api/audio-files/:id/transcript-selection`
 - `PUT /api/audio-files/:id/source-remount`
 
-手动选择旧 ASR Run 后，后续新 Run 成功不会覆盖选择；恢复 `auto` 后使用最新成功 revision。
+Selecting an older ASR run manually pins that selection; a later successful run does not override it. Returning to `auto` selects the latest successful revision.

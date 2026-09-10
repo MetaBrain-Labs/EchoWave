@@ -1,63 +1,66 @@
-# EchoWave 文档导览
+# EchoWave Documentation Guide
 
-本文介绍仓库中所有人维护的 Markdown 文档，帮助使用者找到正确入口，也帮助维护者判断某次代码变更需要同步更新哪些说明。运行命令和入门流程以根 README 为准；具体技术事实以源码、配置和编号 SQL migration 为准。
+**English** | [简体中文](./documentation-guide.zh-CN.md)
 
-## 首要入口
+This guide maps every human-maintained Markdown document to its audience, authority, and update trigger. English files without a language suffix are the default entry points; each user-facing document has a `.zh-CN.md` Simplified Chinese counterpart. Source, configuration, and ordered SQL migrations remain authoritative for implementation facts.
 
-| 文档                              | 目标读者                | 内容与边界                                                                                              |
-| --------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------- |
-| [`README.md`](../README.md)       | 新用户、贡献者、维护者  | 项目定位、快速启动、Development Build、Self-hosted 入口、常用命令和当前边界。避免长期复制专题实现细节。 |
-| [`README.en.md`](../README.en.md) | 英文用户与贡献者        | 英文项目入口；同步主 README 的稳定定位、快速启动、能力、边界与 Future 摘要，不复制全部中文专题细节。    |
-| [`docs/README.md`](./README.md)   | 所有读者                | 专题文档的短索引。新增或删除 `docs/*.md` 时必须同步维护。                                               |
-| 本文档                            | 所有读者与文档维护者    | 介绍全部文档的读者、事实来源与维护时机；不重复专题正文。                                                |
-| [`AGENTS.md`](../AGENTS.md)       | 工程 Agent 与代码维护者 | 仓库约束、架构边界、编辑规则和验证要求。它是工程执行规则，不是终端用户手册。                            |
+## Primary entry points
 
-## 开源协作与项目治理
+| English / Simplified Chinese                                                    | Audience                           | Boundary                                                                                       |
+| ------------------------------------------------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------- |
+| [README](../README.md) / [中文](../README.zh-CN.md)                             | Users, contributors, maintainers   | Product, quick start, self-hosting entry, commands, boundaries; avoid duplicating topic detail |
+| [Documentation index](./README.md) / [中文](./README.zh-CN.md)                  | Everyone                           | Short topic index; update when topic files change                                              |
+| [This guide](./documentation-guide.md) / [中文](./documentation-guide.zh-CN.md) | Readers and doc maintainers        | Document ownership and maintenance, not topic content                                          |
+| [`AGENTS.md`](../AGENTS.md)                                                     | Engineering agents and maintainers | Internal repository execution rules; intentionally not localized as a user guide               |
 
-| 文档                                                     | 目标读者             | 内容与维护边界                                                                             |
-| -------------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------ |
-| [Future Roadmap](../ROADMAP.md)                          | 用户、贡献者、维护者 | 阶段目标、完成信号与明确非目标；不得把方向性计划描述为已承诺的版本或日期。                 |
-| [贡献指南](../CONTRIBUTING.md)                           | 外部贡献者与维护者   | 开发环境、架构约束、验证漏斗、Issue 与 Pull Request 要求。工具链或贡献流程变化时同步更新。 |
-| [安全策略](../SECURITY.md)                               | 部署者、安全研究者   | 当前支持范围、负责任披露入口和高敏感数据边界；鉴权、部署安全或支持版本变化时同步更新。     |
-| [Pull Request 模板](../.github/PULL_REQUEST_TEMPLATE.md) | 代码贡献者           | 变更说明、验证、风险与 Secret 检查清单；合并门禁变化时同步更新。                           |
+## Governance and contribution
 
-## 架构与数据
+| English / Simplified Chinese                                          | Audience                  | Authority                                                                                  |
+| --------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------ |
+| [Roadmap](../ROADMAP.md) / [中文](../ROADMAP.zh-CN.md)                | Users and maintainers     | Direction, completion signals, non-commitments; no promised dates                          |
+| [Contributing](../CONTRIBUTING.md) / [中文](../CONTRIBUTING.zh-CN.md) | Contributors              | Toolchain, architecture constraints, verification, issues and PRs                          |
+| [Security](../SECURITY.md) / [中文](../SECURITY.zh-CN.md)             | Deployers and researchers | Supported scope, private reporting, sensitive boundaries                                   |
+| [Pull request template](../.github/PULL_REQUEST_TEMPLATE.md)          | Contributors              | GitHub form/template rather than a standalone user document; not localized as a topic pair |
 
-| 文档                               | 目标读者                 | 内容与权威来源                                                                                     |
-| ---------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------- |
-| [架构说明](./architecture.md)      | 后端、移动端与架构维护者 | 模块依赖、数据发布、Agent、运行时服务器连接和安全边界。以当前目录结构与组合根为准。                |
-| [数据库结构](./database-schema.md) | 后端与数据库维护者       | PostgreSQL/pgvector 表、关系、约束和生命周期。以 `apps/api/migrations` 中三位编号 SQL 为权威来源。 |
-| [领域语言](./domain-language.md)   | 产品、设计与工程人员     | 知识库、音频、Transcript 等稳定业务术语；不记录实现方案。                                          |
+## Architecture and data
 
-## 配置、运行与部署
+| English / Simplified Chinese                                                 | Audience                              | Authority                                                         |
+| ---------------------------------------------------------------------------- | ------------------------------------- | ----------------------------------------------------------------- |
+| [Architecture](./architecture.md) / [中文](./architecture.zh-CN.md)          | API, mobile, architecture maintainers | Current module structure, contracts, workflows, safety boundaries |
+| [Database schema](./database-schema.md) / [中文](./database-schema.zh-CN.md) | API/database maintainers              | Ordered migrations are authoritative for exact schema             |
+| [Domain language](./domain-language.md) / [中文](./domain-language.zh-CN.md) | Product, design, engineering          | Stable business terms, not implementation                         |
 
-| 文档                                                    | 目标读者                               | 内容与权威来源                                                                                                          |
-| ------------------------------------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| [配置与 Credential](./configuration.md)                 | 部署者与后端维护者                     | `.env`、Provider/Credential revision、移动端服务器地址和安全规则。以环境模板、Zod 配置解析器和设置 API 为准。           |
-| [音频运行模式](./audio-runtime-modes.md)                | 产品与音频后端维护者                   | 混合、对象存储、轻量本地模式及源文件生命周期。以运行模式契约、migration 和 Service 为准。                               |
-| [Server 部署指南](./server-deployment.md)               | Self-hosted 用户与服务器维护者         | Ubuntu 源码部署、Windows Docker Desktop、HTTPS、备份、停用、卸载和网络排障。以 Compose、环境模板及安全策略为准。        |
-| [一键式音频全流程分析](./audio-analysis-automation.md)  | 产品、移动端与 Worker 维护者           | 批次、定时、恢复、取消、推送和 outbox。以批次契约、Worker 与迁移为准。                                                  |
-| [Android 真机全量回归](./mobile-e2e.md)                 | 移动端、API 与测试维护者               | Maestro 稳定/真实套件、设备前置条件、证据、只读诊断和显式修复门禁。以 `.maestro` 与 E2E 编排器为准。                    |
-| [Android E2E 问题汇总](./mobile-e2e-troubleshooting.md) | 移动端、API 与测试维护者               | 真机回归期间的常见错误、根因、处理结果和证据定位。以 `.artifacts/maestro`、Flow 与 E2E 编排器为准。                     |
-| [自托管与自行构建](./self-hosting.md)                   | Self-hosted 用户、维护者与 Fork 作者   | Server 部署入口、EAS/Firebase、Development/Production Build 和验收步骤。以部署指南、EAS profiles 与 Expo 官方文档为准。 |
-| [GitHub Release 使用手册](./releases.md)                | App 用户、Self-hosted 用户与发布维护者 | Release 下载校验、App/Server 安装、升级、备份、回退、排障和 Tag 发布流程。以发布工作流与 Release manifest 为准。        |
-| [Release Server 包内说明](../deploy/release/README.md)  | 下载 Server ZIP 的部署者               | 随版本注入镜像 digest 与回退下限的安装、备份和恢复命令；模板变量只能由发布脚本替换。                                    |
+## Configuration, runtime, and deployment
 
-## 移动端设计与资源
+| English / Simplified Chinese                                                                                   | Audience                      | Authority                                                     |
+| -------------------------------------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------- |
+| [Configuration and Credentials](./configuration.md) / [中文](./configuration.zh-CN.md)                         | Deployers, API maintainers    | Environment templates, parsers, settings API                  |
+| [Audio Runtime Modes](./audio-runtime-modes.md) / [中文](./audio-runtime-modes.zh-CN.md)                       | Product/audio maintainers     | Contracts, migrations, runtime services                       |
+| [Server Deployment](./server-deployment.md) / [中文](./server-deployment.zh-CN.md)                             | Self-hosted users             | Compose, environment templates, network/security policy       |
+| [Automated Audio Analysis](./audio-analysis-automation.md) / [中文](./audio-analysis-automation.zh-CN.md)      | Product/mobile/workers        | Batch contracts, workers, migrations, push outbox             |
+| [Android Device E2E](./mobile-e2e.md) / [中文](./mobile-e2e.zh-CN.md)                                          | Mobile/API/test maintainers   | `.maestro` and Android orchestration                          |
+| [Android E2E Troubleshooting](./mobile-e2e-troubleshooting.md) / [中文](./mobile-e2e-troubleshooting.zh-CN.md) | Mobile/API/test maintainers   | Preserved run evidence and current runner behavior            |
+| [Self-hosting and App Builds](./self-hosting.md) / [中文](./self-hosting.zh-CN.md)                             | Self-hosted users and forks   | Server entry, EAS/Firebase, Development/Production Builds     |
+| [GitHub Releases](./releases.md) / [中文](./releases.zh-CN.md)                                                 | Users and release maintainers | Release workflow, manifest, upgrade and rollback              |
+| [Bundled Server README](../deploy/release/README.md) / [中文](../deploy/release/README.zh-CN.md)               | Server ZIP users              | Version/digest/template variables injected by release tooling |
 
-| 文档                                                                  | 目标读者                 | 内容与权威来源                                                           |
-| --------------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------ |
-| [设计规范](./design-system.md)                                        | 产品、设计与移动端维护者 | 色彩、字体、排版、间距、圆角和交互规范。以共享主题令牌和已验收页面为准。 |
-| [字体资源说明](../apps/mobile/assets/fonts/README.md)                 | 移动端与许可证维护者     | 字体文件、来源和许可证边界。字体资产变化时更新。                         |
-| [Silero VAD 资源说明](../apps/api/assets/silero-vad/v6.2.1/README.md) | 音频后端与许可证维护者   | 固定 ONNX 模型版本、来源和校验信息。模型文件或版本变化时更新。           |
-| [E2E 知识库 fixture](../.maestro/fixtures/echowave-e2e-knowledge.md)  | Android E2E 维护者       | 真实知识检索 Flow 使用的固定小型 Markdown 文档；验证码与 Flow 同步维护。 |
+## Design and resources
 
-## 文档维护规则
+| English / Simplified Chinese                                                                                                      | Audience                   | Authority                                                               |
+| --------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ----------------------------------------------------------------------- |
+| [Design System](./design-system.md) / [中文](./design-system.zh-CN.md)                                                            | Product/design/mobile      | Shared theme tokens and accepted UI behavior                            |
+| [Font assets](../apps/mobile/assets/fonts/README.md) / [中文](../apps/mobile/assets/fonts/README.zh-CN.md)                        | Mobile/license maintainers | Bundled files, upstream sources, checksums, licenses                    |
+| [Silero VAD asset](../apps/api/assets/silero-vad/v6.2.1/README.md) / [中文](../apps/api/assets/silero-vad/v6.2.1/README.zh-CN.md) | Audio/license maintainers  | Pinned ONNX version, source, checksum, license                          |
+| [E2E knowledge fixture](../.maestro/fixtures/echowave-e2e-knowledge.md)                                                           | Android E2E                | Fixed test content, not a user document and intentionally not localized |
 
-- 用户可执行命令必须能在其注明的工作目录运行；Expo/EAS 命令只从 `apps/mobile` 或移动端 workspace 执行。
-- 端口示例使用 `<API_PORT>`，局域网地址使用 `<SERVER_LAN_IP>`；只有配置模板的默认值可以写死为 3001。
-- “已经发布”“已经构建”“已经验收”等状态必须有当前可验证证据；未来流程使用条件式表述。
-- API、数据库或环境字段变化时，先更新权威契约或 migration，再更新对应专题文档，最后收敛 README 摘要。
-- 新增 `docs/*.md` 后必须加入 `docs/README.md` 和本导览；删除或改名时同步修正所有相对链接。
-- 新增任何人维护的 Markdown（包括根目录和 `.github` 模板）都必须在本导览中说明；新增开源入口时同步更新根 README 与文档索引。
-- 提交前运行 `pnpm docs:check`；完整交付运行 `pnpm check`。
+## Maintenance rules
+
+- Canonical English user documentation uses the unsuffixed `.md` path. Its Simplified Chinese peer uses `.zh-CN.md`. Put `English` first in every language switcher.
+- Keep both language versions in the same change whenever behavior, commands, fields, warnings, or links change.
+- Every executable command must state or imply the correct working directory. Run Expo/EAS only from `apps/mobile` or through the mobile workspace.
+- Use `<API_PORT>` and `<SERVER_LAN_IP>` placeholders in examples unless documenting a template's actual default.
+- Claims such as published, built, or verified require current evidence; describe future flows conditionally.
+- Update authoritative contracts or migrations before explanatory docs, then converge README summaries.
+- Add every new canonical `docs/*.md` topic to the documentation index and this guide. Add its `.zh-CN.md` peer at the same time.
+- Do not localize internal instruction files, GitHub form templates, licenses, or test fixtures merely to satisfy document pairing.
+- Run `pnpm docs:check` before submission and `pnpm check` for a complete delivery.

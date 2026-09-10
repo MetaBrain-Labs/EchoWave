@@ -1,188 +1,98 @@
-# EchoWave 设计规范
+# EchoWave Design System
 
-## 1. 文档定位
+**English** | [简体中文](./design-system.zh-CN.md)
 
-本文档是 EchoWave 后续前端设计与实现的权威设计规范，适用于 iOS、Android 和 Web。
+## 1. Scope
 
-当前版本规定文字颜色、字体、已列出的 `bold` 字重、排版层级、布局间距、圆角、页面表面、通用分页栏和指定卡片布局，不规定其他字重、边框或其他组件视觉属性。未在本文档中定义的视觉规则不得从示例中自行推导。
+This is the authoritative frontend design specification for iOS, Android, and Web. It defines text colors, the listed bold weights, typography, spacing, radii, surfaces, shared tabs, and named card layouts. Do not infer unspecified visual rules from examples. Where code conflicts with this document, align code through an explicitly scoped change.
 
-当现有界面或代码与本文档冲突时，以本文档为准；代码应在相关需求中逐步完成对齐。
+## 2. Text colors
 
-## 2. 文字颜色
+Text may use only these exact values:
 
-所有文字只能使用以下三种颜色。颜色必须使用精确色值，不得使用视觉近似值。
+| Semantic level | Value     | Use                                                          |
+| -------------- | --------- | ------------------------------------------------------------ |
+| Primary        | `#000000` | Body, titles, critical information, active/selected text     |
+| Secondary      | `#5A6472` | Descriptions, supporting information, inactive items/actions |
+| Tertiary       | `#A3A3A3` | Labels, timestamps, and non-critical metadata                |
 
-| 语义层级 | 色值      | 用途                                       | 示例                                   |
-| -------- | --------- | ------------------------------------------ | -------------------------------------- |
-| 重点颜色 | `#000000` | 正文、标题、关键信息、当前激活或选中的文字 | “分析”、已激活的“音频分析”             |
-| 次级颜色 | `#5A6472` | 描述、次要信息、未激活项和辅助操作         | 未激活的“音频分析”、“排序”、“筛选”     |
-| 三级颜色 | `#A3A3A3` | 标签、时间及不影响理解和操作的辅助元数据   | `YYYY-MM-DD HH:mm:ss`、“来自 XXX 分组” |
+Success, warning, error, and processing text still use these colors. Express status through icons, backgrounds, borders, and understandable wording, never color alone. Do not derive text colors through opacity, hard-code local substitutes, or use tertiary text for required actions or error reasons.
 
-### 2.1 状态文字
+## 3. Fonts
 
-成功、警告、错误、处理中等状态文字也必须使用上述三种文字颜色，不得为文字增加绿色、黄色、红色或其他状态色。
+EchoWave uses Source Han Sans CN for ordinary interface text and LXGW WenKai Lite for the KaiTi semantic range used by transcript and emotion content. Emotion page titles, navigation, and controls remain Source Han Sans CN.
 
-需要区分状态时，应通过图标、背景、边框等非文字元素表达；这些非文字元素不受本文档的三色限制。不能只依赖颜色传递状态，还应提供可理解的文字或图标语义。
+- Bundle `SourceHanSansCN-Regular.otf`, `SourceHanSansCN-Bold.otf`, and `LXGWWenKaiLite-Regular.ttf` for iOS, Android, and Web under `apps/mobile/assets/fonts/` with their SIL Open Font License 1.1 notices.
+- Never replace bundled assets with same-named system fonts or depend on device-installed fonts.
+- Show explicit loading/error states and mount the primary UI only after fonts load; never silently fall back.
+- Do not add a weight or font use without an available licensed asset and a corresponding design requirement.
 
-### 2.2 使用限制
+## 4. Typography
 
-- 不得使用近似色替代指定色值。
-- 不得通过透明度从指定颜色派生新的文字颜色。
-- 不得在组件内硬编码文字色；后续实现应统一引用语义化的主题令牌。
-- `#A3A3A3` 只能用于非关键元数据，不得承载关键操作、错误原因、状态结论或用户必须读取的信息。
-- 交互控件的可用、禁用、选中等状态不能仅通过文字颜色区分，还应提供形态、图标或其他可感知提示。
+| Level         | Size   | Line height | Use                                                              |
+| ------------- | ------ | ----------- | ---------------------------------------------------------------- |
+| Group name    | `40px` | `60px`      | Group-page name only                                             |
+| Display title | `32px` | `48px`      | Analysis results, AI labels, knowledge details, document preview |
+| Heading 1     | `18px` | `26px`      | Top navigation of standalone pages                               |
+| Heading 2     | `16px` | `24px`      | Large card title                                                 |
+| Heading 3     | `14px` | `20px`      | File or small-card title                                         |
+| Heading 4     | `12px` | `18px`      | Selected tab                                                     |
+| Heading 5     | `10px` | `14px`      | Unselected tab or option-menu title                              |
+| Body          | `14px` | `20px`      | Primary prose                                                    |
+| Supporting    | `12px` | `18px`      | Description and secondary explanation                            |
+| Label         | `10px` | `14px`      | Tags and compact metadata                                        |
 
-## 3. 字体
+Group names, display titles, tab titles, analysis titles, card titles, and count headings such as “X audio files” are bold. Use `fontWeight: 'bold'`, not numeric weights. An icon or spinner sharing one semantic line with text uses the adjacent token's `lineHeight` as a square size and aligns centrally. `px` means React Native logical pixels on native and CSS pixels on Web.
 
-EchoWave 使用 Source Han Sans CN 和 KaiTi 两套字体语义。KaiTi 语义在应用中由开源楷体风格字体 LXGW WenKai Lite（霞鹜文楷 Lite）实现，以满足跨平台打包和合法分发要求。
+## 5. Spacing
 
-| 字体                      | 使用范围                                                   |
-| ------------------------- | ---------------------------------------------------------- |
-| Source Han Sans CN        | 页面标题、导航、按钮、筛选、排序、元数据及其他常规界面文字 |
-| KaiTi（LXGW WenKai Lite） | 转写正文，以及情绪名称、情绪标签、情绪描述和情绪摘要       |
+All layout spacing—`margin`, `padding`, `gap`, and screen-edge inset—is a multiple of `4px`. Typical values are `8px` between analysis cards and `16px` at screen edges and inside the Audio Analysis, Linked Knowledge, and Connected Data Sources pages. This rule does not constrain type, line height, component dimensions, or icon dimensions.
 
-情绪模块的页面标题、导航和操作控件仍使用 Source Han Sans CN。仅内容本身及其情绪语义标签使用 KaiTi。
+## 6. Radii
 
-### 3.1 字体资源与加载
+Ordinary components use `4px`. Explicit designs override it. Circles, avatars, badges, and pills may use full rounding. Do not invent `8px`, `12px`, or other radii for ordinary components.
 
-- 两套字体都必须以具有合法使用和分发授权的字体资源随应用打包，并覆盖 iOS、Android 和 Web。
-- Source Han Sans CN 使用 `SourceHanSansCN-Regular.otf` 和 `SourceHanSansCN-Bold.otf`；KaiTi 语义使用 `LXGWWenKaiLite-Regular.ttf`。不得用同名系统字体替换这些应用资源。
-- 字体及其许可证分别保存在 `apps/mobile/assets/fonts/` 和 `apps/mobile/assets/fonts/licenses/`；两套字体均依据 SIL Open Font License 1.1 分发。
-- 不得依赖设备预装字体，也不得以平台系统字体作为主界面的回退方案。
-- 应在两套字体加载完成后再展示主界面，避免系统字体与目标字体切换造成闪烁、重排或视觉不一致。
-- 字体加载中和加载失败必须提供明确、可读取的界面状态；不得在字体加载失败时悄然使用系统字体继续展示主界面。
-- 除本文档已规定的 `bold` 之外，新增字体文件或字重须先获得合法字体资源或新增设计要求，不得由实现者自行假定。字号与行高必须遵循本文档的排版层级。
+## 7. Peer-page gestures
 
-## 4. 排版层级
+Ordered analysis peer tabs support both tab presses and horizontal swipes. Swiping left advances and swiping right returns without wrapping at the ends. Horizontal recognition must not steal vertical scroll or gestures owned by players/timelines. Bottom-level navigation is not peer content and does not gain swipe navigation from this rule.
 
-排版只能使用下表定义的层级。每个层级的字号、行高和使用场景都是固定规则，不得为视觉接近而创建近似值。
+## 8. Side-panel animation
 
-| 排版层级     | 字号   | 行高   | 使用场景                                            |
-| ------------ | ------ | ------ | --------------------------------------------------- |
-| 分组名称     | `40px` | `60px` | 仅用于分组页面的分组名称，不得复用于其他标题        |
-| 内容展示标题 | `32px` | `48px` | 用于分析结果、AI 标签、知识库详情和文档预览的主标题 |
-| 一级标题     | `18px` | `26px` | 仅用于独立页面的顶部导航栏                          |
-| 二级标题     | `16px` | `24px` | 大卡片标题                                          |
-| 三级标题     | `14px` | `20px` | 文件名称或小卡片标题                                |
-| 四级标题     | `12px` | `18px` | 被选中的分页栏                                      |
-| 五级标题     | `10px` | `14px` | 未被选中的分页栏或选项菜单标题                      |
-| 正文         | `14px` | `20px` | 主要内容正文                                        |
-| 辅助描述     | `12px` | `18px` | 描述和次要说明                                      |
-| 标签         | `10px` | `14px` | 标签及紧凑型辅助信息                                |
+A side panel slides in from its edge and exits along the same path; it stays mounted until the exit animation completes. Close button, backdrop, system back, item switch, and successful action all share that exit path. Group panels use 220 ms enter and 200 ms exit translation, no modal fade. Ignore repeated close actions during exit.
 
-排版层级与文字颜色应分别按语义选择：标题、正文和关键信息默认使用重点颜色；描述和次要信息使用次级颜色；标签、时间等辅助信息使用三级颜色。选中项使用重点颜色，未选中项使用次级颜色。
+## 9. Single-line input alignment
 
-### 4.1 字重
+Fixed-height inputs use explicit `height`, `paddingVertical: 0`, and `textAlignVertical: 'center'`; Android also uses `includeFontPadding: false`. Do not substitute `minHeight`. Placeholder and value share font, size, line height, and alignment. The group-name field is `44px`; the current-group search wrapper is `48px` and its input is `46px`.
 
-- 分组名称、内容展示标题、分页标题、分析标题、卡片标题和“共 X 份音频”等数量统计标题必须加粗。
-- 其他已经明确需要强调的按钮或状态标签可以保留加粗。
-- 所有加粗文字必须直接使用 `fontWeight: 'bold'`，暂时不得使用 `700` 等具体数值字重。
+## 10. Surfaces
 
-### 4.2 相邻图标
+- `colors.background` and `colors.canvas` are `#F9F9F9`.
+- `colors.card` and `colors.white` are `#FFFFFF`.
+- `colors.black` is `#171717` for dark controls/surfaces, never primary text.
+- `PageHeader` matches the base background.
+- Knowledge detail uses base background for its header and white for tabs/linked groups, with `16px` before overview content.
+- Document detail safe areas are white; generic placeholder safe areas use base background with white content cards.
 
-- 图标或加载指示器与文字在同一行表达同一语义时，图标必须与相邻文字的行高一致。
-- 图标尺寸以相邻文字排版令牌的 `lineHeight` 作为正方形尺寸。例如标签字号为 `10px`、行高为 `14px` 时，相邻图标必须为 `14px × 14px`。
-- 图标与相邻文字需要确保两者为水平居中对齐。
-- 独立图标、无可见相邻文字的图标按钮及底部导航图标不受此规则约束，按各自组件设计执行。
+Use semantic tokens rather than repeated local hex values.
 
-### 4.3 跨平台单位
+## 11. Shared tabs
 
-本文档中的 `px` 是设计单位。在 React Native 的 iOS 和 Android 实现中，对应无单位的逻辑像素值；在 Web 实现中，对应 CSS 像素。
+Peer content uses compact `PageTabs`, left-aligned at content width instead of equally stretched. Minimum height is `34px`, horizontal inset `16px`, and label gap `24px`. Labels and active underline align to the bottom. Presses and swipes update one active state.
 
-## 5. 布局间距
+## 12. Empty descriptions and linked-group cards
 
-所有布局间距必须是 `4px` 的倍数，包括 `margin`、`padding`、`gap` 和内容距离屏幕边缘的留白。不得使用 `6px`、`10px` 等非 `4px` 倍数作为布局间距。
+Empty knowledge descriptions show “No description”. List cards and the detail header reserve at least two body lines (`40px`) to prevent vertical jumps. Linked-group cards use `#F9F9F9`, `4px` radius, `16px` horizontal padding, `12px` vertical padding, and `24px` between main content. Height remains content-driven.
 
-典型示例：
+## 13. Top-level headers and shared cards
 
-- 分析卡片与分析卡片之间的间距为 `8px`。
-- 内容距离屏幕左右边缘的间距为 `16px`。
-- “音频分析”、“关联知识库”和“连接数据源”三个分页中的内容卡片，内部水平和垂直边距均为 `16px`。
+Bottom-navigation pages use a fixed header after the top safe area. Standard insets are `16px` horizontal and `24px` top/bottom; title/action rows are at least `44px`. Actions have `8px` gaps and `44×44px` touch targets. The text New action uses a white surface, divider border, `4px` radius, and plus icon with one consistent label.
 
-该规则不约束字号、行高、组件宽高和图标尺寸；这些数值应遵循各自的设计要求。
+Shared content cards use white, a thin divider border, `4px` radius, `16px` padding, and `8px` gaps, without platform shadows or filler minimum heights. Body areas use `16px` horizontal padding and at least `40px` bottom space.
 
-## 6. 圆角
+## 14. Current implementation
 
-- 普通组件默认使用 `4px` 圆角。
-- 用户需求或设计稿明确指定其他圆角时，以指定值为准。
-- 圆形按钮、头像、徽标和胶囊标签等具有明确几何语义的常见形态，可以直接使用完整圆角，不需要逐项声明例外。
-- 除上述常见形态外，实现者不得自行选择 `8px`、`12px` 或其他圆角值。
+Theme `textColors`, `colors.ink`, `colors.secondary`, and `colors.muted` match the required text values. Spacing, radius, and typography tokens are aligned. Bundled fonts and licenses exist and root layout gates the UI on successful loading. Transcript and emotion content use the KaiTi token. Group and analysis-detail tabs support press and swipe. Side panels, fixed-height inputs, surfaces, shared headers/tabs/cards, empty descriptions, and linked-group cards are implemented through the shared tokens and components.
 
-## 7. 分析页面分页交互
+## 15. Change boundary
 
-- 当分析相关页面包含按阅读顺序排列的同级分页，且用户在逻辑上应当能够前后浏览这些分页时，除点击分页标题外，还必须支持左右滑动切换。
-- 分页顺序必须与分页标题的视觉顺序一致：向左滑动进入下一页，向右滑动返回上一页；位于首尾分页时不得越界跳转。
-- 横向分页手势必须与页面内的纵向滚动意图区分，不得拦截正常的上下滚动，也不得覆盖播放器、时间轴等自身需要手势的交互控件。
-- 底部一级导航不属于同级内容分页，不得仅依据本规则增加跨一级导航的左右滑动行为。
-
-## 8. 侧边栏进入与退出动画
-
-- 从屏幕侧边进入的侧边栏，打开时必须从对应屏幕边缘滑入，关闭时必须沿原路径滑出，不得使用渐隐代替收起动画。
-- 侧边栏关闭时应先保持弹层和内容挂载并播放退出动画，退出动画完成后再卸载弹层。父页面不得在收到关闭操作时立即隐藏或卸载侧边栏，否则用户只能看到弹层渐隐或瞬间消失。
-- 关闭按钮、点击遮罩、系统返回键、切换项目、操作成功等所有关闭入口必须复用同一退出流程，避免不同入口出现不一致的动画。
-- 分组侧边栏的进入动画时长为 `220ms`，退出动画时长为 `200ms`。弹层容器本身不使用 `fade` 动画；侧边栏通过水平位移动画完成展开和收起。
-- 退出动画期间应拦截重复关闭操作，避免重复回调、重复导航或后续操作执行多次。
-
-## 9. 单行输入框垂直对齐
-
-- 固定高度的单行输入框必须同时为占位文字和用户输入内容提供稳定的垂直居中效果，不得只依赖平台默认的字体内边距。
-- React Native 实现应使用明确的 `height`、`paddingVertical: 0` 和 `textAlignVertical: 'center'`；Android 还应设置 `includeFontPadding: false`，避免字体额外留白造成文字上下偏移。
-- 固定高度输入框不得仅使用 `minHeight` 代替内容高度约束。输入框的行高必须小于可用内容高度，并与本文档定义的排版层级一致。
-- 分组侧边栏的“分组名称”输入框高度为 `44px`。当前分组搜索框的外层高度为 `48px`，内部文本输入区域高度为 `46px`。
-- 占位文字与实际输入文字必须使用相同的字体、字号、行高和垂直对齐规则；不得通过仅针对占位文字的偏移量进行视觉修补。
-
-## 10. 页面背景与内容表面
-
-- `colors.background` 和 `colors.canvas` 固定为 `#F9F9F9`，分别表达应用基础背景和浅色内容画布；不得使用视觉近似值替代。
-- `colors.card` 和 `colors.white` 固定为 `#FFFFFF`，用于需要与基础背景形成层级的白色内容表面。
-- `PageHeader` 必须与页面基础背景保持一致，避免安全区、导航栏和正文顶部出现无设计依据的色块分层。
-- `colors.black` 固定为 `#171717`，仅用于深色控件或背景表面，不得替代主文字使用的 `#000000`。
-- 知识库详情头部使用基础背景；分页栏和关联分组列表使用白色内容表面；概览内容与分页栏之间保留 `16px` 顶部间距。
-- 文档详情页的安全区使用纯白背景。通用占位页面的安全区使用基础背景，内部内容卡片仍使用白色表面。
-- 页面和组件必须引用上述语义化主题令牌，不得在局部样式中复制同义的硬编码色值。
-
-## 11. 通用分页栏
-
-- 同级内容分页统一复用紧凑型 `PageTabs`，标签按内容宽度左对齐，不得平均拉伸占满整行。
-- 分页栏最小高度为 `34px`，水平内边距为 `16px`，标签间距为 `24px`。
-- 标签内容与活动下划线必须在分页栏底部对齐；选中和未选中状态继续遵循本文档的字号、颜色与加粗规则。
-- 页面使用横向滑动分页时，点击标签和滑动手势必须同步更新同一个活动分页状态。
-
-## 12. 描述占位与关联分组卡片
-
-- 知识库描述为空时统一展示“暂无描述”，不得保留无语义的空白区域。
-- 知识库列表卡片和知识库详情头部的描述区域至少保留两行正文高度，即 `40px`，避免文档数量等后续内容因描述有无而上下跳动。
-- 知识库详情和数据源详情中的关联分组卡片使用 `#F9F9F9` 浅色背景与 `4px` 圆角。
-- 关联分组卡片的水平内边距为 `16px`，垂直内边距为 `12px`，卡片内部主要内容间距为 `24px`。
-- 关联分组卡片高度由内容决定，不得设置仅用于填补版面的固定最小高度。
-
-## 13. 一级页面页头与公共卡片
-
-- 底部导航对应的一级页面在顶部安全区之后使用固定页头；页头不随正文列表滚动。
-- 标准一级页头的水平内边距为 `16px`，顶部和底部内边距均为 `24px`，标题与操作所在行的最小高度为 `44px`。
-- 一级页头标题使用一级标题排版。右侧多个操作之间保持 `8px` 间距，所有操作的最小触控区域为 `44px × 44px`。
-- 带文字的“新建”操作统一使用白色表面、分隔线色细描边、`4px` 圆角和“加号 + 新建”文案，不得在同级页面混用“新增”等其他可见文案。
-- 页头说明文字与标题行之间保持 `8px` 间距，并与标题和操作一起固定。
-- 分组页保留可折叠分组名称和专属操作结构，但安全区后的顶部与底部内边距、水平边距、操作间距和触控区域遵循上述一级页头尺寸。
-- 一级页面的公共内容卡片统一使用白色表面、分隔线色细描边、`4px` 圆角和 `16px` 内边距；相邻卡片间距为 `8px`，不得使用平台阴影或仅用于填补版面的固定最小高度。
-- 一级页面正文区域水平内边距为 `16px`，滚动内容底部至少保留 `40px` 空间。
-
-## 14. 当前实现状态
-
-当前主题中的 `textColors`，以及 `colors.ink`、`colors.secondary` 和 `colors.muted` 的映射，已经分别对齐 `#000000`、`#5A6472` 和 `#A3A3A3`。
-
-当前 `spacing`、`radii` 和 `typography` 令牌已经对齐本文档的间距、圆角和排版规则，现有页面也统一通过这些语义令牌引用对应值。同行图标尺寸通过相邻文字排版令牌的 `lineHeight` 获取。
-
-当前仓库已经包含 Source Han Sans CN Regular/Bold 和 LXGW WenKai Lite Regular 字体资源及对应许可证。移动端根布局通过 `expo-font` 同时加载三份资源；加载完成前显示明确的加载状态，加载失败时显示错误状态，只有加载成功后才展示主界面。
-
-现有界面文字已按常规或加粗语义分别使用 Source Han Sans CN Regular/Bold。分析详情页的转写正文和情绪内容统一通过 KaiTi 语义令牌使用 LXGW WenKai Lite，不使用系统字体。
-
-分组页的内容分页，以及分析详情页的“转写分析 / 分析总结”分页，均同时支持点击分页标题和左右滑动切换；横向分页容器内的内容继续独立支持纵向滚动。
-
-分组侧边栏已统一使用水平位移动画完成进入和退出，并在退出动画结束后卸载。添加分组与当前分组搜索输入框已按单行输入框规范固定高度并处理跨平台字体内边距。
-
-主题令牌中的基础背景、内容画布、白色表面和深色表面值已经与本文档一致。`PageHeader`、`TopLevelPageHeader`、`PageTabs`、通用占位页、知识库列表与详情页、文档详情页和数据源详情页已经按页面表面、一级页头、紧凑分页栏、描述占位及关联分组卡片规则完成对齐。
-
-## 15. 变更边界
-
-本文档不授权自行扩展字体、文字颜色、排版层级、字重、图标尺寸、间距、圆角或其他视觉规则。新增文字语义、状态色文字、字体用途、排版层级或例外值前，应先更新本文档并完成设计确认。
+This document does not authorize additional fonts, text colors, typography levels, weights, icon sizes, spacing, radii, or visual exceptions. Update this specification and complete design review before introducing a new semantic rule.
