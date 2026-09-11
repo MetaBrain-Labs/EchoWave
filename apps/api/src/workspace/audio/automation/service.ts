@@ -60,7 +60,12 @@ export class AudioAutomationService {
         try {
           const session = await this.uploads.create(
             input.dataSourceId,
-            { ...item, includeAcousticEmotion: input.pipeline.includeEmotion },
+            {
+              filename: item.filename,
+              mimeType: item.mimeType,
+              sizeBytes: item.sizeBytes,
+              includeAcousticEmotion: input.pipeline.includeEmotion,
+            },
             task.id,
             runtimeMode,
           );

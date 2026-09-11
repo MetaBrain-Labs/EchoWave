@@ -43,6 +43,7 @@ import {
 } from '@/shared/api/dataSourcesApi';
 import { getGroupSettings } from '@/shared/api/groupsApi';
 import { getAudioRuntime } from '@/shared/api/audioRuntimeApi';
+import { pickDocumentAsync } from '@/shared/files/documentPicker';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import { colors, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
@@ -211,12 +212,16 @@ export function AnalysisBatchCreateScreen() {
   );
 
   async function pickFiles() {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: 'audio/*',
-      multiple: true,
-      copyToCacheDirectory: false,
-    });
-    if (!result.canceled) setAssets(result.assets.slice(0, 20));
+    try {
+      const result = await pickDocumentAsync({
+        type: 'audio/*',
+        multiple: true,
+        copyToCacheDirectory: false,
+      });
+      if (result && !result.canceled) setAssets(result.assets.slice(0, 20));
+    } catch (error) {
+      Alert.alert('选择音频失败', error instanceof Error ? error.message : '请稍后重试。');
+    }
   }
 
   function selectSource(id: string) {

@@ -39,6 +39,7 @@ import { useSwipePager } from '@/shared/hooks/useSwipePager';
 import { useGroupAssociationEditor } from '@/shared/hooks/useGroupAssociationEditor';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useAudioPlayback } from '@/shared/audio/useAudioPlayback';
+import { pickDocumentAsync } from '@/shared/files/documentPicker';
 import {
   colors,
   fontFamilies,
@@ -339,40 +340,44 @@ export function DataSourceDetailScreen({
 
   const pickAndUpload = async () => {
     if (uploading) return;
-    const selection = await DocumentPicker.getDocumentAsync({
-      type: ['audio/*'],
-      copyToCacheDirectory: true,
-      multiple: true,
-    });
-    if (selection.canceled) return;
-    const assets = selection.assets;
-    const allowedExtensions = new Set(['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'webm']);
-    if (assets.length > 20) {
-      setOperationError(t('sourceDetail.batchLimit'));
-      return;
+    try {
+      const selection = await pickDocumentAsync({
+        type: ['audio/*'],
+        copyToCacheDirectory: true,
+        multiple: true,
+      });
+      if (!selection || selection.canceled) return;
+      const assets = selection.assets;
+      const allowedExtensions = new Set(['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'webm']);
+      if (assets.length > 20) {
+        setOperationError(t('sourceDetail.batchLimit'));
+        return;
+      }
+      if (
+        assets.some(
+          (asset) => !allowedExtensions.has(asset.name.split('.').pop()?.toLowerCase() ?? ''),
+        )
+      ) {
+        setOperationError(t('sourceDetail.formatLimit'));
+        return;
+      }
+      const totalBytes = assets.reduce((total, asset) => total + (asset.size ?? 0), 0);
+      if (
+        assets.some((asset) => (asset.size ?? 0) > 200 * 1024 * 1024) ||
+        totalBytes > 200 * 1024 * 1024
+      ) {
+        setOperationError(t('sourceDetail.sizeLimit'));
+        return;
+      }
+      if (audioRuntimeMode === 'lightweight_local') {
+        setUploadIncludeAcousticEmotion(true);
+        setPendingUploadAssets(assets);
+        return;
+      }
+      await performUpload(assets, false);
+    } catch (reason) {
+      setOperationError(reason instanceof Error ? reason.message : t('sourceDetail.uploadFailed'));
     }
-    if (
-      assets.some(
-        (asset) => !allowedExtensions.has(asset.name.split('.').pop()?.toLowerCase() ?? ''),
-      )
-    ) {
-      setOperationError(t('sourceDetail.formatLimit'));
-      return;
-    }
-    const totalBytes = assets.reduce((total, asset) => total + (asset.size ?? 0), 0);
-    if (
-      assets.some((asset) => (asset.size ?? 0) > 200 * 1024 * 1024) ||
-      totalBytes > 200 * 1024 * 1024
-    ) {
-      setOperationError(t('sourceDetail.sizeLimit'));
-      return;
-    }
-    if (audioRuntimeMode === 'lightweight_local') {
-      setUploadIncludeAcousticEmotion(true);
-      setPendingUploadAssets(assets);
-      return;
-    }
-    await performUpload(assets, false);
   };
 
   const confirmArchiveSource = async () => {
@@ -415,12 +420,12 @@ export function DataSourceDetailScreen({
     setOperationError('');
     try {
       if (target.sourceRecoveryState === 'required') {
-        const selection = await DocumentPicker.getDocumentAsync({
+        const selection = await pickDocumentAsync({
           type: ['audio/*'],
           copyToCacheDirectory: true,
           multiple: false,
         });
-        if (selection.canceled) return;
+        if (!selection || selection.canceled) return;
         await remountAudioSource(target.id, selection.assets[0]!);
       }
       await startAudioTranscription(target.id, {

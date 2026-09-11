@@ -9,7 +9,6 @@
  * - 执行恢复、取消并在命令完成后刷新最新状态。
  */
 import type { AudioAnalysisBatch, AudioAnalysisTask } from '@echowave/contracts';
-import * as DocumentPicker from 'expo-document-picker';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
@@ -31,6 +30,7 @@ import {
   resumeAudioAnalysisTask,
 } from '@/shared/api/audioAutomationApi';
 import { remountAudioSource } from '@/shared/api/audioAnalysisApi';
+import { pickDocumentAsync } from '@/shared/files/documentPicker';
 import { streamAudioAnalysisBatch } from '@/shared/api/liveUpdateStreams';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { localizeRequestError } from '@/shared/i18n/errorLocalization';
@@ -244,12 +244,12 @@ export function AnalysisBatchDetailScreen({
               onRemount={() =>
                 command(async () => {
                   if (!task.audioFileId) throw new Error(t('batchDetail.taskUnbound'));
-                  const selection = await DocumentPicker.getDocumentAsync({
+                  const selection = await pickDocumentAsync({
                     type: 'audio/*',
                     multiple: false,
                     copyToCacheDirectory: false,
                   });
-                  if (selection.canceled) return;
+                  if (!selection || selection.canceled) return;
                   await remountAudioSource(task.audioFileId, selection.assets[0]!);
                 }, t('batchDetail.remounted'))
               }

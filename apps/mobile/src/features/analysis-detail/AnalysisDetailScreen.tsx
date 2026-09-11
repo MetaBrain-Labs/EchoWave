@@ -19,7 +19,6 @@ import type {
   SupportedLanguage,
 } from '@echowave/contracts';
 import { DEFAULT_AUDIO_TRANSCRIPTION_MODEL } from '@echowave/contracts';
-import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -38,6 +37,7 @@ import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useAudioPlayback } from '@/shared/audio/useAudioPlayback';
 import { streamAudioExecutionTrace } from '@/shared/api/audioExecutionStream';
 import { streamAudioAnalysisStatus } from '@/shared/api/liveUpdateStreams';
+import { pickDocumentAsync } from '@/shared/files/documentPicker';
 import {
   confirmAudioTranscript,
   getAudioAnalysis,
@@ -703,13 +703,13 @@ export function AnalysisDetailScreen({
   };
 
   const reselectSourceAndTranscribe = async () => {
-    const selection = await DocumentPicker.getDocumentAsync({
-      copyToCacheDirectory: true,
-      multiple: false,
-      type: ['audio/*'],
-    });
-    if (selection.canceled) return;
     try {
+      const selection = await pickDocumentAsync({
+        copyToCacheDirectory: true,
+        multiple: false,
+        type: ['audio/*'],
+      });
+      if (!selection || selection.canceled) return;
       await remountAudioSource(detailId, selection.assets[0]!);
       await startAudioTranscription(detailId, {
         model: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
