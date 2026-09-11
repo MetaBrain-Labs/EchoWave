@@ -79,8 +79,8 @@ test('showcase suite is explicit, ordered, and excluded from the ordinary full r
 test('showcase names are public-friendly and do not expose a run ID', () => {
   const names = showcaseNames(new Date('2026-09-08T08:00:00.000Z'));
   assert.deepEqual(names, {
-    audioTitle: 'EchoWave Product Interview',
-    deviceAudioName: 'EchoWave Product Interview.mp3',
+    audioTitle: 'EchoWave-E2E',
+    deviceAudioName: 'EchoWave-E2E.mp3',
     deviceKnowledgeName: 'EchoWave-Product-Brief.md',
     groupName: '产品访谈 · 0908',
     dataSourceName: '用户研究录音 · 0908',

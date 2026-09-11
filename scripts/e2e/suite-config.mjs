@@ -44,13 +44,21 @@ export function suiteFlows(suite, fromFlow) {
 export function showcaseNames(now = new Date()) {
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const day = String(now.getDate()).padStart(2, '0');
-  const date = `${month}${day}`;
+  const hour = String(now.getHours()).padStart(2, '0');
+  const minute = String(now.getMinutes()).padStart(2, '0');
+  const second = String(now.getSeconds()).padStart(2, '0');
+
+  const timestamp = `${month}${day}-${hour}${minute}${second}`;
+
   return {
-    audioTitle: 'EchoWave Product Interview',
-    deviceAudioName: 'EchoWave Product Interview.mp3',
+    audioTitle: `EchoWave-E2E`,
+
+    // 这两个如果对应设备上真实存在的测试文件，建议保持固定
+    deviceAudioName: 'EchoWave-E2E.mp3',
     deviceKnowledgeName: 'EchoWave-Product-Brief.md',
-    groupName: `产品访谈 · ${date}`,
-    dataSourceName: `用户研究录音 · ${date}`,
-    knowledgeBaseName: `产品研究知识库 · ${date}`,
+
+    groupName: `产品访谈 · ${timestamp}`,
+    dataSourceName: `用户研究录音 · ${timestamp}`,
+    knowledgeBaseName: `产品研究知识库 · ${timestamp}`,
   };
 }

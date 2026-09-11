@@ -30,7 +30,7 @@ tags:
 - tapOn: '上传文档'
 - runFlow: ../../subflows/select-knowledge-file.yaml
 - extendedWaitUntil:
-    visible: '解析完成'
+    visible: '${DEVICE_KNOWLEDGE_NAME}:ready'
     timeout: 600000
 - takeScreenshot: 'showcase/03-document-ready'
 - tapOn: '问知识库'
@@ -39,11 +39,11 @@ tags:
 - hideKeyboard
 - tapOn: '发送问题'
 - extendedWaitUntil:
-    visible: 'ECHO-4827'
+    visible: '.*ECHO-4827.*'
     timeout: 300000
 - assertVisible: '.*条引用来源'
 - takeScreenshot: 'showcase/03-answer-with-citation'
 - tapOn: "\\[1\\] EchoWave-Product-Brief.md"
-- assertVisible: '原文'
+- assertVisible: '块详情'
 - takeScreenshot: 'showcase/03-citation-open'
 - stopRecording
