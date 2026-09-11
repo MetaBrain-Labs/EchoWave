@@ -10,7 +10,7 @@
  * Notes:
  * - 英文指令保持模型可读，业务数据通过显式边界标签注入。
  */
-import type { SupportedLanguage } from '@echowave/contracts';
+import { BUSINESS_ANALYSIS_MAX_LIMITATIONS, type SupportedLanguage } from '@echowave/contracts';
 
 import type { RetrievalChunk } from '../../../knowledge/retrieval/types.ts';
 import type { ClaimedBusinessAnalysisJob } from './repository.ts';
@@ -33,6 +33,7 @@ export function salesAnalysisContext(
     `Return all human-readable report prose in ${outputLanguage}. Keep stable section and category enum values in English. Keep configured custom labels exactly as supplied.`,
     'Keep criticism constructive and recommendations actionable.',
     `Return no more than ${maxTags} tags. Count the complete tags array before returning and distribute tags across the relevant categories. Each tag may contain no more than 3 concise detail strings.`,
+    `Return no more than ${BUSINESS_ANALYSIS_MAX_LIMITATIONS} limitations. Keep only the most relevant limitations when several apply.`,
     'Keep each summary section under 900 characters, each tag summary under 420 characters, each detail under 260 characters, and keep the complete JSON under 6000 characters.',
     'confidence must be an integer percentage from 0 to 100, never a 0-1 decimal.',
     'Return ONLY one JSON object with this shape:',
@@ -83,6 +84,7 @@ export function salesAnalysisRepairContext(
     'Use only the authoritative input and previous output below. Do not add outside facts.',
     'Return exactly five summarySections: overall, strengths, improvements, risks, actions.',
     `Return no more than ${maxTags} tags. Count the complete tags array before returning, distribute tags across the relevant categories, and use no more than 3 concise details per tag.`,
+    `Return no more than ${BUSINESS_ANALYSIS_MAX_LIMITATIONS} limitations. Keep only the most relevant limitations when several apply.`,
     'Every tag must cite real evidenceSegmentIds. citedChunkIds must come from the supplied knowledge chunks.',
     'confidence must be an integer percentage from 0 to 100.',
     `Keep all human-readable prose in ${outputLanguage}; preserve stable English enum values and configured custom labels verbatim.`,

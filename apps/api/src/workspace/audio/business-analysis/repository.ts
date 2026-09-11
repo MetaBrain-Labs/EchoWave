@@ -17,6 +17,7 @@ import { createHash } from 'node:crypto';
 import {
   AudioBusinessAnalysisStartResponseSchema,
   AudioBusinessAnalysisStateSchema,
+  BUSINESS_ANALYSIS_MAX_LIMITATIONS,
   DEFAULT_GROUP_ANALYSIS_FOCUS,
   DEFAULT_GROUP_ANALYSIS_TONE,
   SupportedLanguageSchema,
@@ -874,7 +875,10 @@ export class BusinessAnalysisRepository {
          WHERE citation.tenant_id = $1 AND citation.job_id = $2`,
         [this.tenantId, published.id],
       );
-      const limitations = safeArray(published.limitations);
+      const limitations = safeArray(published.limitations).slice(
+        0,
+        BUSINESS_ANALYSIS_MAX_LIMITATIONS,
+      );
       result = {
         jobId: published.id,
         groupId,

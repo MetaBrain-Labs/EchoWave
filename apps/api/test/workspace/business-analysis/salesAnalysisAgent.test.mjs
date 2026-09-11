@@ -14,6 +14,10 @@ import {
   parseSalesAnalysisResult,
   SalesAnalysisAgent,
 } from '../../../dist/workspace/audio/business-analysis/salesAnalysisAgent.js';
+import {
+  salesAnalysisContext,
+  salesAnalysisRepairContext,
+} from '../../../dist/workspace/audio/business-analysis/CONTEXT.js';
 
 const segmentId = '11111111-1111-4111-8111-111111111111';
 
@@ -185,6 +189,22 @@ describe('SalesAnalysisAgent', () => {
       ['overall', 'strengths', 'improvements', 'risks', 'actions'],
     );
     assert.equal(parsed.data.tags[0].confidence, 90);
+  });
+
+  it('uses the public eight-item limitations cap in validation and repair prompts', () => {
+    const accepted = parseSalesAnalysisResult({
+      ...validResult(),
+      limitations: Array.from({ length: 8 }, (_, index) => `限制 ${index + 1}`),
+    });
+    const rejected = parseSalesAnalysisResult({
+      ...validResult(),
+      limitations: Array.from({ length: 9 }, (_, index) => `限制 ${index + 1}`),
+    });
+
+    assert.equal(accepted.success, true);
+    assert.equal(rejected.success, false);
+    assert.match(salesAnalysisContext(12), /no more than 8 limitations/);
+    assert.match(salesAnalysisRepairContext(12), /no more than 8 limitations/);
   });
 
   it('balances over-limit tags across categories while preserving selected source order', () => {

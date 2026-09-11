@@ -231,6 +231,7 @@ export {
   AudioTranscriptConfirmationSegmentInputSchema,
   AudioTranscriptConfirmationStateSchema,
   BusinessRoleKindSchema,
+  BUSINESS_ANALYSIS_MAX_LIMITATIONS,
   BusinessAnalysisCitationSchema,
   BusinessAnalysisResultSchema,
   BusinessAnalysisTagCategorySchema,

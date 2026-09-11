@@ -11,6 +11,7 @@
  * - 节点名称、错误语义和发布事务保持现有行为。
  */
 import { Send } from '@langchain/langgraph';
+import { BUSINESS_ANALYSIS_MAX_LIMITATIONS } from '@echowave/contracts';
 
 import {
   beginAiModelCall,
@@ -219,7 +220,7 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
     if (job.knowledgeBaseIds.length === 0) limitations.push('本次分析未使用知识库。');
     return {
       ...draft,
-      limitations: [...new Set(limitations)],
+      limitations: [...new Set(limitations)].slice(0, BUSINESS_ANALYSIS_MAX_LIMITATIONS),
       summarySections: draft.summarySections.map((section) => ({
         ...section,
         title: localizeCoreSummaryTitle(section.title),

@@ -185,15 +185,26 @@ export function parseEasBuildResult(content) {
 /** 校验 Buildx 生成的 OCI manifest 同时包含两种受支持架构。 */
 export function validateImageManifest(content) {
   const manifest = typeof content === 'string' ? JSON.parse(content) : content;
+
   const available = new Set(
-    (manifest.manifests ?? []).map(
-      (entry) => `${entry.platform?.os}/${entry.platform?.architecture}`,
-    ),
+    (manifest.manifests ?? [])
+      .filter(
+        (entry) =>
+          entry.platform?.os &&
+          entry.platform?.architecture &&
+          entry.platform.os !== 'unknown' &&
+          entry.platform.architecture !== 'unknown',
+      )
+      .map((entry) => `${entry.platform.os}/${entry.platform.architecture}`),
   );
+
   const missing = REQUIRED_IMAGE_PLATFORMS.filter((platform) => !available.has(platform));
-  if (missing.length > 0)
+
+  if (missing.length > 0) {
     throw new Error(`Container image is missing platforms: ${missing.join(', ')}.`);
-  return [...available].sort();
+  }
+
+  return REQUIRED_IMAGE_PLATFORMS;
 }
 
 /** 计算文件的 SHA-256。 */
