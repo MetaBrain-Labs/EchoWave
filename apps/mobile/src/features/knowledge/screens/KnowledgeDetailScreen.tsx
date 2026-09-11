@@ -13,7 +13,6 @@
  * - 知识库配置当前只读；实际解析仍由服务端全局配置驱动。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -34,6 +33,7 @@ import type {
 } from '@echowave/contracts';
 
 import { linkKnowledgeBaseGroups, listKnowledgeBaseGroups } from '@/shared/api/knowledgeBasesApi';
+import { pickDocumentAsync } from '@/shared/files/documentPicker';
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
 import { useGroupAssociationEditor } from '@/shared/hooks/useGroupAssociationEditor';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
@@ -430,32 +430,36 @@ export function KnowledgeDetailScreen({
   };
 
   const pickAndUpload = async () => {
-    const selection = await DocumentPicker.getDocumentAsync({
-      type: [
-        'text/markdown',
-        'text/plain',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      ],
-      copyToCacheDirectory: true,
-      multiple: false,
-    });
-    if (selection.canceled) return;
-    const asset = selection.assets[0];
-    if (!asset) return;
-    setUploading(true);
-    setError('');
     try {
-      const uploaded = await uploadDocument(knowledgeId, asset);
-      setDocuments((items) => [
-        uploaded.document,
-        ...items.filter((item) => item.id !== uploaded.document.id),
-      ]);
-      setKnowledge(await getKnowledgeBase(knowledgeId));
+      const selection = await pickDocumentAsync({
+        type: [
+          'text/markdown',
+          'text/plain',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (!selection || selection.canceled) return;
+      const asset = selection.assets[0];
+      if (!asset) return;
+      setUploading(true);
+      setError('');
+      try {
+        const uploaded = await uploadDocument(knowledgeId, asset);
+        setDocuments((items) => [
+          uploaded.document,
+          ...items.filter((item) => item.id !== uploaded.document.id),
+        ]);
+        setKnowledge(await getKnowledgeBase(knowledgeId));
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : t('knowledgeDetail.uploadFailed'));
+      } finally {
+        setUploading(false);
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t('knowledgeDetail.uploadFailed'));
-    } finally {
-      setUploading(false);
     }
   };
 
