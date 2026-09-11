@@ -19,6 +19,8 @@ permissions:
 env:
   EAS_CLI_VERSION: '24.0.0'
   IMAGE_REPOSITORY: ghcr.io/metabrain-labs/echowave-api
+  # 临时使用已构建好的 Expo Build
+  REUSED_EAS_BUILD_ID: 'f1c44b60-3875-4011-ac89-f54d5f124282'
 
 jobs:
   release:
@@ -73,16 +75,26 @@ jobs:
           eas-version: ${{ env.EAS_CLI_VERSION }}
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Build signed production APK on EAS
+      # - name: Build signed production APK on EAS
+      #   working-directory: apps/mobile
+      #   run: |
+      #     mkdir -p ../../dist/release
+      #     eas build \
+      #       --platform android \
+      #       --profile production-apk \
+      #       --non-interactive \
+      #       --wait \
+      #       --json > ../../dist/release/eas-build.json
+
+      # 临时使用已构建好的 Expo Build
+      - name: Reuse signed production APK from EAS
         working-directory: apps/mobile
         run: |
           mkdir -p ../../dist/release
-          eas build \
-            --platform android \
-            --profile production-apk \
-            --non-interactive \
-            --wait \
-            --json > ../../dist/release/eas-build.json
+
+          eas build:view "$REUSED_EAS_BUILD_ID" \
+            --json \
+            > ../../dist/release/eas-build.json
 
       - name: Extract EAS build result
         id: eas_build
