@@ -30,13 +30,13 @@ tags:
 - tapOn: '修改服务器'
 - tapOn:
     id: '服务器地址'
-- eraseText
+- eraseText: 100
 - inputText: 'http://127.0.0.1:39999'
 - hideKeyboard
 - tapOn:
     id: '测试连接'
 - extendedWaitUntil:
-    visible: '无法连接服务器.*'
+    visible: '无法连接服务器.*|服务器地址必须是有效的完整 URL。'
     timeout: 15000
 - takeScreenshot: 'showcase/04-invalid-server'
 - tapOn:

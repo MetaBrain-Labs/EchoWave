@@ -245,7 +245,10 @@ export function KnowledgeQueryScreen({
                 </View>
               ) : null}
               {turn.status === 'completed' ? (
-                <View style={styles.answerCard}>
+                <View
+                  accessibilityLabel={turn.response.citations.length + '条引用来源'}
+                  style={styles.answerCard}
+                >
                   <Text selectable style={styles.answerText}>
                     {turn.response.answer}
                   </Text>

@@ -77,7 +77,10 @@ export function DocumentStatusView({ document }: { document: KnowledgeDocument }
   switch (document.status.kind) {
     case 'ready':
       return (
-        <Text style={styles.statusText}>
+        <Text
+          accessibilityLabel={document.title + ':' + document.status.kind}
+          style={styles.statusText}
+        >
           {t('documentUi.blocks', { count: formatNumber(document.vectorCount) })}
         </Text>
       );

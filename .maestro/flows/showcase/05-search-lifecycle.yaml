@@ -12,6 +12,7 @@ tags:
 - scrollUntilVisible:
     element: '打开数据源：${SHOWCASE_SOURCE_NAME}'
     direction: DOWN
+    centerElement: true
 - tapOn: '打开数据源：${SHOWCASE_SOURCE_NAME}'
 - tapOn: '搜索数据源内容'
 - tapOn: '输入数据源内容搜索关键词'
@@ -58,11 +59,20 @@ tags:
 - extendedWaitUntil:
     visible: '数据源'
     timeout: 30000
-- assertNotVisible: '${SHOWCASE_SOURCE_NAME}'
+- tapOn: '搜索数据源'
+- inputText: '${SHOWCASE_SOURCE_NAME}'
+- tapOn: '执行搜索'
+- extendedWaitUntil:
+    notVisible: '${SHOWCASE_SOURCE_NAME}'
+    timeout: 10000
 - takeScreenshot: 'showcase/05-source-archived'
 - tapOn:
     id: 'e2e-tab-groups'
 - tapOn: '菜单'
+- scrollUntilVisible:
+    element:
+      text: '切换到分组：${SHOWCASE_GROUP_NAME}'
+    direction: DOWN
 - tapOn: '切换到分组：${SHOWCASE_GROUP_NAME}'
 - tapOn: '分组设置'
 - tapOn: '基本设置'
