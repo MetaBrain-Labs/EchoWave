@@ -27,7 +27,9 @@
 | 混合 `hybrid`                | `AUDIO_STORAGE_DIR`，Docker 中为 `echowave_audio` volume | `audio_staging` 必需                              | 默认模式；希望本地长期保留原音频           | 当前仍要求单 API 实例；必须备份本地持久卷                                             |
 | 对象存储 `object_storage`    | `audio_primary_storage` OSS                              | `audio_primary_storage` 和 `audio_staging` 都必需 | 原音频较多、希望交给对象存储管理           | 需要正确配置 Bucket、Credential 和保留策略；当前 API 仍是单实例                       |
 
-在 App 的“更多 → 运行模式”中查看和修改模式。修改时需要 `CONFIGURATION_ADMIN_TOKEN`，并且只影响修改后创建的音频资产；已有资产不会被迁移或删除。详细生命周期见[音频运行模式](./audio-runtime-modes.md)。
+三种模式都支持完成上传并成功创建/提交服务端任务后关闭 App，由服务端继续后台处理。轻量本地是“异步处理 + 临时本地存储”，成本最低但恢复能力最低；混合模式是“异步处理 + 持久本地存储 + OSS 中转”，作为默认方案平衡成本与可靠性；对象存储是“异步处理 + OSS 持久存储”，适合云部署和大规模音频，恢复能力最好。上传未完成时直接杀掉 App 不代表服务端已经接管。
+
+在 App 的“更多 → 运行模式”中查看和修改模式。修改时需要 `CONFIGURATION_ADMIN_TOKEN`，并且只影响修改后创建的音频资产；已有资产不会被迁移或删除。详细生命周期见[音频运行模式](./audio-runtime-modes.zh-CN.md)。
 
 ## 3. Ubuntu 22.04 x86_64 源码部署
 

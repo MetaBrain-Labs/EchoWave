@@ -248,13 +248,39 @@ export function AnalysisBatchCreateScreen() {
       );
       return;
     }
+
+    let plannedFor: string | null;
+    try {
+      plannedFor = scheduledFor();
+    } catch (error) {
+      Alert.alert(
+        t('analysisBatch.unableCreate'),
+        error instanceof Error ? error.message : t('analysisBatch.tryAgain'),
+      );
+      return;
+    }
+
+    Alert.alert(
+      t('analysisBatch.backgroundConfirmTitle'),
+      t('analysisBatch.backgroundConfirmBody'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('analysisBatch.backgroundConfirmContinue'),
+          onPress: () => void startSubmission(plannedFor),
+        },
+      ],
+    );
+  }
+
+  async function startSubmission(plannedFor: string | null) {
     setSubmitting(true);
     try {
       const common = {
         dataSourceId: sourceId,
         groupId,
         language: analysisLanguage,
-        scheduledFor: scheduledFor(),
+        scheduledFor: plannedFor,
         pipeline,
       };
       const batch =
@@ -430,6 +456,17 @@ export function AnalysisBatchCreateScreen() {
             })}
           </Text>
         </Section>
+        <View accessibilityRole="summary" style={styles.backgroundNotice}>
+          <Ionicons color={colors.secondary} name="information-circle-outline" size={22} />
+          <View style={styles.backgroundNoticeCopy}>
+            <Text style={styles.backgroundNoticeTitle}>
+              {t('analysisBatch.backgroundNoticeTitle')}
+            </Text>
+            <Text style={styles.backgroundNoticeBody}>
+              {t('analysisBatch.backgroundNoticeBody')}
+            </Text>
+          </View>
+        </View>
         <Section title={t('analysisBatch.previewStep')}>
           <Text style={styles.preview}>{preview}</Text>
           <Text style={styles.hint}>{t('analysisBatch.previewHint')}</Text>
@@ -644,6 +681,17 @@ const styles = StyleSheet.create({
     padding: spacing.base,
   },
   hint: { ...typography.description, color: textColors.secondary },
+  backgroundNotice: {
+    alignItems: 'flex-start',
+    backgroundColor: colors.background,
+    borderRadius: radii.default,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  backgroundNoticeCopy: { flex: 1, gap: spacing.xs },
+  backgroundNoticeTitle: { ...typography.body, color: textColors.primary, fontWeight: 'bold' },
+  backgroundNoticeBody: { ...typography.description, color: textColors.secondary },
   preview: { ...typography.description, color: textColors.primary },
   danger: { ...typography.description, color: colors.danger },
   primaryButton: {

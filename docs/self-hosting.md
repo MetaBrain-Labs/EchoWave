@@ -6,7 +6,7 @@ EchoWave supports two open-source paths. After a stable tag is published, ordina
 
 The current API uses a fixed development tenant and has no real authentication, RBAC, or rate limiting. Trusted localhost/LAN deployments may use HTTP. Every public or cloud Server requires an HTTPS reverse proxy, restricted 443 access, and no public 3001/5432; even then, this preview is not a public multi-user service.
 
-Choose an audio mode before use: lightweight local requires no OSS and cleans source audio; default hybrid keeps source audio in a local volume and uses OSS for staging; object storage makes OSS authoritative. Changes affect new assets only. See [Audio Runtime Modes](./audio-runtime-modes.md).
+Choose an audio mode before use: all three modes support closing the App after the upload completes and the server task is successfully created/submitted; the Server then continues in the background. Lightweight local uses temporary local storage for the lowest cost but lowest recovery capability; default hybrid uses persistent local storage plus OSS staging for balanced cost and reliability; object storage uses persistent OSS storage for cloud deployment, large scale, and best recovery. Killing the App before upload completes does not mean the Server has taken over. Changes affect new assets only. See [Audio Runtime Modes](./audio-runtime-modes.md).
 
 ## Docker self-hosted Server
 

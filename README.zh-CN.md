@@ -62,7 +62,7 @@ flowchart LR
 
 Server 可以运行在 Ubuntu 22.04 x86_64，或运行在使用 Linux containers 的 Windows 10/11 Docker Desktop。完整的源码部署、Windows PowerShell、HTTPS、备份和卸载步骤见 [Server 部署指南](./docs/server-deployment.zh-CN.md)。
 
-部署时还要选择音频运行模式：轻量本地无需 OSS、处理后清理源音频；默认混合模式把原音频保存在本地 volume 并使用 OSS 中转；对象存储模式把 OSS 作为权威原音频存储。模式只影响之后创建的音频，详细差异见[音频运行模式](./docs/audio-runtime-modes.zh-CN.md)。
+部署时还要选择音频运行模式：三种模式都支持完成上传并成功创建/提交服务端任务后关闭 App，由服务端继续后台处理；轻量本地使用临时本地存储，成本最低但恢复能力最低；默认混合模式使用持久本地存储和 OSS 中转，平衡成本与可靠性；对象存储模式使用 OSS 持久存储，适合云部署、大规模音频且恢复能力最好。上传未完成时杀掉 App 不代表服务端已接管，模式只影响之后创建的音频，详细差异见[音频运行模式](./docs/audio-runtime-modes.zh-CN.md)。
 
 ### 路径 A：启动自托管 Server
 

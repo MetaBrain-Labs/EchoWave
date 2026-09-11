@@ -62,7 +62,7 @@ Zod schemas in `packages/contracts` are the shared API/client boundary. PostgreS
 
 The Server can run on Ubuntu 22.04 x86_64 or on Windows 10/11 with Docker Desktop using Linux containers. The [Server deployment guide](./docs/server-deployment.md) contains the verified Ubuntu source path, Windows PowerShell steps, HTTPS, backup, and uninstall instructions.
 
-Choose an audio runtime mode during setup: lightweight local needs no OSS and cleans source audio after processing; the default hybrid mode keeps source audio in the local volume and uses OSS for staging; object storage makes OSS authoritative for source audio. A mode change affects only newly created assets. See [audio runtime modes](./docs/audio-runtime-modes.md).
+Choose an audio runtime mode during setup: all three modes support closing the App after the upload completes and the server task is successfully created/submitted; the Server then continues in the background. Lightweight local uses temporary local storage for the lowest cost but lowest recovery capability; default hybrid uses persistent local storage plus OSS staging for balanced cost and reliability; object storage uses persistent OSS storage for cloud deployment, large scale, and best recovery. Killing the App before upload completes does not mean the Server has taken over. A mode change affects only newly created assets. See [audio runtime modes](./docs/audio-runtime-modes.md).
 
 ### Option A: self-host the server
 

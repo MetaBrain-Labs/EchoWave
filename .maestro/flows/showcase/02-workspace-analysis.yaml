@@ -58,6 +58,7 @@ tags:
       text: '上传并开始全流程'
     direction: DOWN
 - tapOn: '上传并开始全流程'
+- tapOn: '确认并开始'
 - assertVisible: '分析批次'
 - takeScreenshot: 'showcase/02-analysis-processing'
 - extendedWaitUntil:
