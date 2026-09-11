@@ -15,7 +15,7 @@ services:
       - echowave_postgres:/var/lib/postgresql/data
 
   migrate:
-    image: { { IMAGE_REFERENCE } }
+    image: '{{IMAGE_REFERENCE}}'
     command: ['node', 'dist/bootstrap/migrate.js']
     restart: 'no'
     depends_on:
@@ -26,7 +26,7 @@ services:
       - ./.data/secrets:/app/.data/secrets:ro
 
   api:
-    image: { { IMAGE_REFERENCE } }
+    image: '{{IMAGE_REFERENCE}}'
     restart: unless-stopped
     depends_on:
       migrate:
