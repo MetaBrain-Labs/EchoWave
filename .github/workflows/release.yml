@@ -145,16 +145,64 @@ jobs:
           subject-digest: ${{ steps.server_image.outputs.digest }}
           push-to-registry: true
 
+      # - name: Verify image platforms and native runtime
+      #   env:
+      #     IMAGE_DIGEST: ${{ steps.server_image.outputs.digest }}
+      #   run: |
+      #     docker buildx imagetools inspect --raw "$IMAGE_REPOSITORY@$IMAGE_DIGEST" \
+      #       > dist/release/image-manifest.json
+      #     node scripts/release/verify-image-manifest.mjs dist/release/image-manifest.json
+      #     for platform in linux/amd64 linux/arm64; do
+      #       docker run --rm --platform "$platform" --entrypoint sh \
+      #         "$IMAGE_REPOSITORY@$IMAGE_DIGEST" -ec \
+      #         "node -e \"import('onnxruntime-node')\" && ffmpeg -version >/dev/null"
+      #     done
+
       - name: Verify image platforms and native runtime
         env:
           IMAGE_DIGEST: ${{ steps.server_image.outputs.digest }}
         run: |
           docker buildx imagetools inspect --raw "$IMAGE_REPOSITORY@$IMAGE_DIGEST" \
             > dist/release/image-manifest.json
-          node scripts/release/verify-image-manifest.mjs dist/release/image-manifest.json
+
+          node scripts/release/verify-image-manifest.mjs \
+            dist/release/image-manifest.json
+
           for platform in linux/amd64 linux/arm64; do
-            docker run --rm --platform "$platform" --entrypoint sh \
-              "$IMAGE_REPOSITORY@$IMAGE_DIGEST" -ec \
+            os="${platform%/*}"
+            arch="${platform#*/}"
+
+            platform_digest=$(
+              node -e '
+                const fs = require("fs");
+                const manifest = JSON.parse(
+                  fs.readFileSync("dist/release/image-manifest.json", "utf8")
+                );
+
+                const entry = manifest.manifests.find(
+                  item =>
+                    item.platform?.os === process.argv[1] &&
+                    item.platform?.architecture === process.argv[2]
+                );
+
+                if (!entry?.digest) {
+                  console.error(
+                    `Unable to resolve image digest for ${process.argv[1]}/${process.argv[2]}`
+                  );
+                  process.exit(1);
+                }
+
+                process.stdout.write(entry.digest);
+              ' "$os" "$arch"
+            )
+
+            echo "Verifying $platform using $platform_digest"
+
+            docker run --rm \
+              --platform "$platform" \
+              --entrypoint sh \
+              "$IMAGE_REPOSITORY@$platform_digest" \
+              -ec \
               "node -e \"import('onnxruntime-node')\" && ffmpeg -version >/dev/null"
           done
 
