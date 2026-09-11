@@ -13,6 +13,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
+import { BUSINESS_ANALYSIS_MAX_LIMITATIONS } from '@echowave/contracts';
 import type { AIMessageChunk } from '@langchain/core/messages';
 import { tool } from '@langchain/core/tools';
 import { concat } from '@langchain/core/utils/stream';
@@ -86,7 +87,7 @@ const AgentTagSchema = z
 
 const AgentResultSchema = z
   .object({
-    limitations: z.array(z.string().trim().min(1).max(320)).max(4),
+    limitations: z.array(z.string().trim().min(1).max(320)).max(BUSINESS_ANALYSIS_MAX_LIMITATIONS),
     summarySections: z
       .array(
         z.object({
@@ -910,7 +911,10 @@ export class SalesAnalysisAgent {
     }
     const titles = ['overall', 'strengths', 'improvements', 'risks', 'actions'];
     return {
-      limitations: [...new Set(windows.flatMap((window) => window.result.limitations))].slice(0, 4),
+      limitations: [...new Set(windows.flatMap((window) => window.result.limitations))].slice(
+        0,
+        BUSINESS_ANALYSIS_MAX_LIMITATIONS,
+      ),
       summarySections: titles.map((title) => ({
         title,
         body:

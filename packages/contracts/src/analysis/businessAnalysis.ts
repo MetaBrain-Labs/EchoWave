@@ -12,6 +12,9 @@ import { z } from 'zod';
 import { EntityIdSchema, SupportedLanguageSchema } from '../common.ts';
 import { SourceLocatorSchema } from '../document.ts';
 
+/** 业务分析结果允许返回的限制说明数量上限。 */
+export const BUSINESS_ANALYSIS_MAX_LIMITATIONS = 8;
+
 export const BusinessAnalysisTagCategorySchema = z.enum([
   'strength',
   'improvement',
@@ -71,7 +74,7 @@ export const BusinessAnalysisResultSchema = z
     generatedAt: z.string().datetime(),
     knowledgeBaseIds: z.array(EntityIdSchema),
     knowledgeStatus: z.enum(['not_linked', 'linked_not_used', 'used']),
-    limitations: z.array(z.string().trim().min(1).max(500)).max(8),
+    limitations: z.array(z.string().trim().min(1).max(500)).max(BUSINESS_ANALYSIS_MAX_LIMITATIONS),
     summarySections: z.array(
       z.object({
         id: EntityIdSchema,

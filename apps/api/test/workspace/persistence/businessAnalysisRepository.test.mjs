@@ -12,6 +12,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { BUSINESS_ANALYSIS_MAX_LIMITATIONS } from '@echowave/contracts';
+
 import { BusinessAnalysisRepository } from '../../../dist/workspace/audio/business-analysis/repository.js';
 
 const tenantId = '00000000-0000-4000-8000-000000000001';
@@ -122,7 +124,10 @@ describe('BusinessAnalysisRepository', () => {
                   tone: '正式、专业',
                   customTags: ['需求探索'],
                 },
-                limitations: [],
+                limitations: Array.from(
+                  { length: BUSINESS_ANALYSIS_MAX_LIMITATIONS + 1 },
+                  (_, index) => `历史限制 ${index + 1}`,
+                ),
               },
             ],
           };
@@ -171,6 +176,7 @@ describe('BusinessAnalysisRepository', () => {
     const repository = new BusinessAnalysisRepository(pool, 'echowave', tenantId);
 
     const state = await repository.getState(audioId, groupId);
+    assert.equal(state.result.limitations.length, BUSINESS_ANALYSIS_MAX_LIMITATIONS);
     const excerpt = state.result.tags[0].citations[0].excerpt;
     assert.equal(excerpt.length, 240);
     assert.doesNotMatch(excerpt, /\s{2,}/);

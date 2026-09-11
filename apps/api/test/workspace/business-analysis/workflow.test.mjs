@@ -259,4 +259,33 @@ describe('BusinessAnalysisWorkflow', () => {
     assert.deepEqual(published.tags[0].citedChunkIds, []);
     assert.match(published.limitations.join(' '), /知识引用/);
   });
+
+  it('keeps generated and diagnostic limitations within the public contract cap', async () => {
+    let published;
+    const workflow = new BusinessAnalysisWorkflow({
+      repository: {
+        updateProgress: async () => {},
+        publish: async (_job, result) => {
+          published = result;
+        },
+      },
+      checkpointer: new MemorySaver(),
+      embeddings: { embedQuery: async () => assert.fail('zero-KB analysis must not embed') },
+      embeddingModel: 'text-embedding-v4',
+      knowledgeRepository: {
+        searchMany: async () => assert.fail('zero-KB analysis must not search'),
+      },
+      agent: {
+        planRetrievalQueries: async () => [],
+        analyze: async () => ({
+          ...publication(),
+          limitations: Array.from({ length: 8 }, (_, index) => `模型限制 ${index + 1}`),
+        }),
+      },
+    });
+
+    await workflow.run(makeJob({ knowledgeBaseIds: [], knowledgeBases: [] }), recorder(), () => {});
+    assert.equal(published.limitations.length, 8);
+    assert.deepEqual(published.limitations.at(-1), '模型限制 8');
+  });
 });

@@ -13,6 +13,8 @@ import {
   AudioAnalysisDetailSchema,
   AudioBusinessAnalysisStartRequestSchema,
   AudioBusinessAnalysisStateSchema,
+  BUSINESS_ANALYSIS_MAX_LIMITATIONS,
+  BusinessAnalysisResultSchema,
   AudioPostAnalysisStartRequestSchema,
   AudioFileSummarySchema,
   AudioTranscriptionCapabilitiesResponseSchema,
@@ -169,6 +171,26 @@ describe('workspace contracts', () => {
         },
       ],
     };
+    assert.equal(BUSINESS_ANALYSIS_MAX_LIMITATIONS, 8);
+    assert.equal(
+      BusinessAnalysisResultSchema.parse({
+        ...result,
+        limitations: Array.from(
+          { length: BUSINESS_ANALYSIS_MAX_LIMITATIONS },
+          (_, index) => `限制 ${index + 1}`,
+        ),
+      }).limitations.length,
+      BUSINESS_ANALYSIS_MAX_LIMITATIONS,
+    );
+    assert.throws(() =>
+      BusinessAnalysisResultSchema.parse({
+        ...result,
+        limitations: Array.from(
+          { length: BUSINESS_ANALYSIS_MAX_LIMITATIONS + 1 },
+          (_, index) => `限制 ${index + 1}`,
+        ),
+      }),
+    );
     const state = AudioBusinessAnalysisStateSchema.parse({
       state: 'ready',
       groupId: secondId,
