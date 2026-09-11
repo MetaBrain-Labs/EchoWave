@@ -1,4 +1,6 @@
 {
-  "CFBundleDisplayName": "EchoWave",
-  "NSLocalNetworkUsageDescription": "EchoWave needs to connect to your self-hosted server on the local network."
+  "ios": {
+    "CFBundleDisplayName": "EchoWave",
+    "NSLocalNetworkUsageDescription": "EchoWave needs to connect to your self-hosted server on the local network."
+  }
 }
