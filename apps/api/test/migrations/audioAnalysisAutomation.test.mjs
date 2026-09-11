@@ -27,6 +27,10 @@ const bilingualLanguageSupport = await readFile(
   new URL('../../migrations/034_bilingual_language_support.sql', import.meta.url),
   'utf8',
 );
+const unboundTerminalTasks = await readFile(
+  new URL('../../migrations/035_allow_unbound_terminal_audio_tasks.sql', import.meta.url),
+  'utf8',
+);
 
 describe('audio analysis automation migrations', () => {
   it('defines the authoritative batch and task state machine', () => {
@@ -81,5 +85,13 @@ describe('audio analysis automation migrations', () => {
     assert.match(bilingualLanguageSupport, /UPDATE audio_business_analysis_jobs/);
     assert.doesNotMatch(bilingualLanguageSupport, /\bgroup_business_analysis_jobs\b/);
     assert.match(bilingualLanguageSupport, /UPDATE audio_analysis_batches/);
+  });
+
+  it('allows unbound upload tasks to fail or be canceled safely', () => {
+    assert.match(unboundTerminalTasks, /DROP CONSTRAINT audio_analysis_tasks_check1/);
+    assert.match(
+      unboundTerminalTasks,
+      /audio_file_id IS NOT NULL\s+OR status IN \('awaiting_upload', 'failed', 'canceled'\)/,
+    );
   });
 });
