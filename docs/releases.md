@@ -233,6 +233,19 @@ pnpm check
 
 `RELEASE_MAIN_REF=HEAD` is local-only; the workflow requires the tag commit in remote `origin/main` history.
 
+Additional information:
+If you are concerned about issues during the Expo Build process, you can use the following code to perform a pre-build check.
+
+```powershell
+# 1. First, quickly use lintVitalRelease.
+.\gradlew.bat :app:lintVitalRelease
+
+# 2. After approval, further local confirmation is required.
+.\gradlew.bat :app:assembleRelease
+
+# 3. Everything is fine, let's continue.
+```
+
 ### 9.3 Tag
 
 After the version commit is merged to `main` and CI passes:

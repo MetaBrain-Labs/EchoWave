@@ -382,6 +382,18 @@ pnpm check
 本地 `RELEASE_MAIN_REF=HEAD` 只用于验证当前版本提交。正式工作流仍会强制检查 Tag 提交属于
 远端 `origin/main` 历史。
 
+补充：如果担心 Expo Build 过程中出问题，可以使用下述代码进行预Build检查
+
+```powershell
+# 1. 先快速lintVitalRelease
+.\gradlew.bat :app:lintVitalRelease
+
+# 2. 通过后，进一步本地确认
+.\gradlew.bat :app:assembleRelease
+
+# 3. 都没问题，再重新继续
+```
+
 ### 9.3 合并并推送 Tag
 
 版本变更合并到 `main` 且 CI 通过后：
