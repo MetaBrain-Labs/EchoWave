@@ -53,6 +53,8 @@
 | [Silero VAD 资源说明](../apps/api/assets/silero-vad/v6.2.1/README.md) | 音频后端与许可证维护者   | 固定 ONNX 模型版本、来源和校验信息。模型文件或版本变化时更新。           |
 | [E2E 知识库 fixture](../.maestro/fixtures/echowave-e2e-knowledge.md)  | Android E2E 维护者       | 真实知识检索 Flow 使用的固定小型 Markdown 文档；验证码与 Flow 同步维护。 |
 
+[宣传片补录说明](../.maestro/flows/showcase-retake/README.md) 面向补录与剪辑维护者，说明独立只读 Flow、已有结果前置条件、参数、命令和素材交回方式。这是内部制作说明，不加入默认回归套件。
+
 ## 文档维护规则
 
 - 用户文档的无后缀 `.md` 为英文默认版本，简体中文版本为 `.zh-CN.md`；每个语言切换栏都先展示 English。

@@ -43,8 +43,7 @@ export function SummaryContent({
   const [limitationsState, setLimitationsState] = useState({ detailId: '', expanded: false });
   const businessResult = detail.businessAnalysis.result;
   const displayLimitations = limitations ?? businessResult?.limitations ?? [];
-  const limitationsExpanded =
-    limitationsState.detailId === detail.id && limitationsState.expanded;
+  const limitationsExpanded = limitationsState.detailId === detail.id && limitationsState.expanded;
   const knowledgeStatusLabel = businessResult
     ? businessResult.knowledgeStatus === 'used'
       ? t('analysis.knowledgeUsed', { count: businessResult.knowledgeBaseIds.length })

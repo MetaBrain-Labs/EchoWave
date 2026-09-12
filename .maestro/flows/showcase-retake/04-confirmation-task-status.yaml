@@ -1,0 +1,56 @@
+appId: com.echowave.app
+name: retake-confirmation-task-status
+tags:
+  - showcase-retake
+---
+- runFlow: ../../subflows/open-retake-audio.yaml
+- assertTrue: ${typeof RETAKE_CONFIRMED_VERSION !== 'undefined' && /^[1-9][0-9]*$/.test(RETAKE_CONFIRMED_VERSION)}
+- assertTrue: ${typeof RETAKE_COMPLETED_TASK_TEXT !== 'undefined' && (RETAKE_COMPLETED_TASK_TEXT.indexOf('已完成') >= 0 || RETAKE_COMPLETED_TASK_TEXT.indexOf('已在转写时完成声学情绪分析') >= 0)}
+- scrollUntilVisible:
+    element: '已确认转写 v${RETAKE_CONFIRMED_VERSION}|轻量本地已自动确认 v${RETAKE_CONFIRMED_VERSION}'
+    direction: UP
+    timeout: 15000
+- startRecording:
+    path: 'retake-04-confirmation-task-status'
+- assertVisible: '当前确认版'
+- takeScreenshot: 'retake/04-confirmed-version'
+# 仅切换只读视图，不点击“继续修正”或“确认整份转写”。
+- tapOn: '原始转写'
+- assertVisible:
+    text: '原始转写'
+    selected: true
+- takeScreenshot: 'retake/04-original-version'
+- tapOn: '当前确认版'
+- assertVisible:
+    text: '当前确认版'
+    selected: true
+- tapOn: '分析任务'
+- assertVisible: 'ASR 版本'
+- takeScreenshot: 'retake/04-existing-asr-status'
+- scrollUntilVisible:
+    element: '情绪分析与角色识别'
+    direction: DOWN
+    timeout: 20000
+- runFlow:
+    when:
+      visible: '展开情绪分析与角色识别'
+    commands:
+      - tapOn: '展开情绪分析与角色识别'
+- scrollUntilVisible:
+    element: '${RETAKE_COMPLETED_TASK_TEXT}'
+    direction: DOWN
+    centerElement: true
+    timeout: 20000
+- takeScreenshot: 'retake/04-completed-task-status'
+- scrollUntilVisible:
+    element: '分析总结'
+    direction: UP
+    timeout: 20000
+- tapOn: '分析总结'
+- scrollUntilVisible:
+    element: '${RETAKE_REPORT_TEXT}'
+    direction: DOWN
+    centerElement: true
+    timeout: 20000
+- takeScreenshot: 'retake/04-completed-report'
+- stopRecording

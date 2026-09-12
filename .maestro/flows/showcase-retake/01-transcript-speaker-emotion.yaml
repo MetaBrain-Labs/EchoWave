@@ -1,0 +1,64 @@
+appId: com.echowave.app
+name: retake-transcript-speaker-emotion
+tags:
+  - showcase-retake
+---
+- runFlow: ../../subflows/open-retake-audio.yaml
+- assertTrue: ${RETAKE_SEGMENT_A_ID !== RETAKE_SEGMENT_B_ID && RETAKE_SPEAKER_A_TEXT !== RETAKE_SPEAKER_B_TEXT}
+- startRecording:
+    path: 'retake-01-transcript-speaker-emotion'
+- scrollUntilVisible:
+    element:
+      id: 'transcript-time-${RETAKE_SEGMENT_A_ID}'
+    direction: DOWN
+    centerElement: false
+    timeout: 20000
+- assertVisible:
+    id: 'transcript-identity-primary-${RETAKE_SEGMENT_A_ID}'
+    text: '${RETAKE_ROLE_A_TEXT}'
+- assertVisible:
+    id: 'transcript-identity-secondary-${RETAKE_SEGMENT_A_ID}'
+    text: '${RETAKE_SPEAKER_A_TEXT}'
+- assertVisible:
+    id: 'transcript-time-${RETAKE_SEGMENT_A_ID}'
+    text: '${RETAKE_TIME_A_TEXT}'
+- assertVisible:
+    id: 'transcript-emotion-${RETAKE_SEGMENT_A_ID}'
+    text: '查看情绪分析详情'
+    enabled: true
+- takeScreenshot: 'retake/01-speaker-a-role-time'
+- tapOn:
+    id: 'transcript-emotion-${RETAKE_SEGMENT_A_ID}'
+    enabled: true
+- assertVisible: '情绪分析详情'
+- assertVisible: '${RETAKE_EMOTION_A_TEXT}'
+- takeScreenshot: 'retake/01-emotion-a-details'
+- tapOn: '关闭'
+- scrollUntilVisible:
+    element:
+      id: 'transcript-time-${RETAKE_SEGMENT_B_ID}'
+    direction: DOWN
+    centerElement: false
+    timeout: 20000
+- assertVisible:
+    id: 'transcript-identity-primary-${RETAKE_SEGMENT_B_ID}'
+    text: '${RETAKE_ROLE_B_TEXT}'
+- assertVisible:
+    id: 'transcript-identity-secondary-${RETAKE_SEGMENT_B_ID}'
+    text: '${RETAKE_SPEAKER_B_TEXT}'
+- assertVisible:
+    id: 'transcript-time-${RETAKE_SEGMENT_B_ID}'
+    text: '${RETAKE_TIME_B_TEXT}'
+- assertVisible:
+    id: 'transcript-emotion-${RETAKE_SEGMENT_B_ID}'
+    text: '查看情绪分析详情'
+    enabled: true
+- takeScreenshot: 'retake/01-speaker-b-role-time'
+- tapOn:
+    id: 'transcript-emotion-${RETAKE_SEGMENT_B_ID}'
+    enabled: true
+- assertVisible: '情绪分析详情'
+- assertVisible: '${RETAKE_EMOTION_B_TEXT}'
+- takeScreenshot: 'retake/01-emotion-b-details'
+- tapOn: '关闭'
+- stopRecording

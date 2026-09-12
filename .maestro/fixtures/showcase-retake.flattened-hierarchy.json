@@ -1,0 +1,76 @@
+{
+  "children": [
+    {
+      "attributes": { "resource-id": "transcript-timeline-item-segment-segment-a" },
+      "children": null
+    },
+    {
+      "attributes": { "resource-id": "transcript-identity-primary-segment-a", "text": "客户" },
+      "children": null
+    },
+    {
+      "attributes": {
+        "resource-id": "transcript-identity-secondary-segment-a",
+        "text": "Speaker 0 · 角色置信度 95%"
+      },
+      "children": null
+    },
+    {
+      "attributes": {
+        "resource-id": "transcript-emotion-segment-a",
+        "accessibilityText": "查看情绪分析详情",
+        "enabled": "true",
+        "clickable": "true"
+      },
+      "children": null
+    },
+    {
+      "attributes": { "resource-id": "transcript-content-segment-a", "text": "结构测试正文 A" },
+      "children": null
+    },
+    {
+      "attributes": {
+        "resource-id": "transcript-time-segment-a",
+        "text": "00:00 – 00:09",
+        "accessibilityText": "00:00to00:09"
+      },
+      "children": null
+    },
+    {
+      "attributes": { "resource-id": "transcript-timeline-item-segment-segment-b" },
+      "children": null
+    },
+    {
+      "attributes": { "resource-id": "transcript-identity-primary-segment-b", "text": "客户" },
+      "children": null
+    },
+    {
+      "attributes": {
+        "resource-id": "transcript-identity-secondary-segment-b",
+        "text": "Speaker 1 · 角色置信度 95%"
+      },
+      "children": null
+    },
+    {
+      "attributes": {
+        "resource-id": "transcript-emotion-segment-b",
+        "accessibilityText": "查看情绪分析详情",
+        "enabled": "true",
+        "clickable": "true"
+      },
+      "children": null
+    },
+    {
+      "attributes": { "resource-id": "transcript-content-segment-b", "text": "结构测试正文 B" },
+      "children": null
+    },
+    {
+      "attributes": {
+        "resource-id": "transcript-time-segment-b",
+        "text": "00:09 – 00:18",
+        "accessibilityText": "00:09to00:18"
+      },
+      "children": null
+    }
+  ]
+}
