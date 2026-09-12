@@ -183,8 +183,17 @@ function SegmentView({
     <View style={styles.segment} testID={`transcript-timeline-item-segment-${segment.id}`}>
       <View style={styles.segmentMain}>
         <View style={styles.speakerRow}>
-          <Text style={[styles.speakerName, dimmed && styles.dimmedText]}>{primaryIdentity}</Text>
-          <Text style={[styles.businessRole, dimmed && styles.dimmedText]}>
+          {/* 原生无障碍树可能拍平布局节点，片段标识直接挂在实际内容节点上。 */}
+          <Text
+            style={[styles.speakerName, dimmed && styles.dimmedText]}
+            testID={`transcript-identity-primary-${segment.id}`}
+          >
+            {primaryIdentity}
+          </Text>
+          <Text
+            style={[styles.businessRole, dimmed && styles.dimmedText]}
+            testID={`transcript-identity-secondary-${segment.id}`}
+          >
             {secondaryIdentity}
           </Text>
         </View>
@@ -225,6 +234,7 @@ function SegmentView({
           disabled={!segment.emotionAnalysis}
           onPress={() => onOpenEmotion(segment)}
           style={styles.emotionRow}
+          testID={`transcript-emotion-${segment.id}`}
         >
           <Ionicons
             color={dimmed ? colors.muted : colors.secondary}
@@ -277,12 +287,19 @@ function SegmentView({
               value={draftText ?? segment.text}
             />
           ) : (
-            <Text style={[styles.transcriptText, dimmed && styles.dimmedText]}>
+            <Text
+              style={[styles.transcriptText, dimmed && styles.dimmedText]}
+              testID={`transcript-content-${segment.id}`}
+            >
               {displayMode === 'raw' ? segment.rawText : segment.text}
             </Text>
           )}
         </View>
-        <Text style={styles.segmentTime}>
+        <Text
+          accessibilityLabel={`${formatTime(segment.startSeconds)}to${formatTime(segment.endSeconds)}`}
+          style={styles.segmentTime}
+          testID={`transcript-time-${segment.id}`}
+        >
           {formatTime(segment.startSeconds)} – {formatTime(segment.endSeconds)}
         </Text>
         {primaryReviewFinding

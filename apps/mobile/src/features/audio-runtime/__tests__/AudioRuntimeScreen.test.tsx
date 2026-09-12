@@ -38,6 +38,10 @@ describe('AudioRuntimeScreen', () => {
 
   it('loads publicly and saves a newly selected mode with the administrator token', async () => {
     const screen = render(<AudioRuntimeScreen onBack={jest.fn()} />);
+    expect(screen.getByText(/三种模式都支持/)).toBeTruthy();
+    expect(await screen.findByText(/异步处理 \+ 持久本地存储 \+ OSS 中转/)).toBeTruthy();
+    expect(await screen.findByText(/异步处理 \+ OSS 持久存储/)).toBeTruthy();
+    expect(await screen.findByText(/异步处理 \+ 临时本地存储/)).toBeTruthy();
     const lightweight = await screen.findByRole('radio', {
       name: '轻量本地模式',
     });

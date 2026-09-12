@@ -1,0 +1,29 @@
+appId: com.echowave.app
+---
+- runFlow: attach-retake-session.yaml
+- assertTrue: ${typeof RETAKE_GROUP_NAME !== 'undefined' && RETAKE_GROUP_NAME.trim().length > 0}
+- assertTrue: ${typeof RETAKE_AUDIO_TITLE !== 'undefined' && RETAKE_AUDIO_TITLE.trim().length > 0}
+- tapOn:
+    id: 'e2e-tab-groups'
+- tapOn: '菜单'
+- scrollUntilVisible:
+    element: '切换到分组：${RETAKE_GROUP_NAME}'
+    direction: DOWN
+    timeout: 15000
+- tapOn: '切换到分组：${RETAKE_GROUP_NAME}'
+- scrollUntilVisible:
+    element: '${RETAKE_AUDIO_TITLE}'
+    direction: DOWN
+    timeout: 15000
+- tapOn: '${RETAKE_AUDIO_TITLE}'
+- extendedWaitUntil:
+    visible: '转写分析'
+    timeout: 30000
+# 打开已有确认转写但没有业务分析时，App 会弹出检查；只取消，不提交。
+- runFlow:
+    when:
+      visible: '分析前检查'
+    commands:
+      - tapOn: '取消'
+- assertNotVisible: '分析前检查'
+- tapOn: '转写分析'

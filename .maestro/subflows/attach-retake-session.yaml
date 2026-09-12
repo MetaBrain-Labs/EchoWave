@@ -1,0 +1,7 @@
+appId: com.echowave.app
+---
+# 手动打开并连接 App 后再执行，不重启，以保留当前问答的内存状态。
+- extendedWaitUntil:
+    visible:
+      id: 'echowave-ready'
+    timeout: 15000

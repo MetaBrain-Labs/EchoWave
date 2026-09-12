@@ -1,15 +1,15 @@
 /**
  * 分析详情总结内容。
  *
- * 呈现 AI 总结标题、生成时间与分段内容，不持有页面状态。
+ * 呈现 AI 总结标题、生成时间与分段内容，并处理限制列表的局部展开交互。
  *
  * Responsibilities:
- * - 封装稳定的展示职责与局部交互。
+ * - 封装稳定的展示职责与限制列表局部交互。
  * - 页面级状态和导航仍由 AnalysisDetailScreen 统一协调。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { ReactNode } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useState, type ReactNode } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { colors, fontFamilies, spacing, textColors, typography } from '@/shared/theme/tokens';
@@ -40,8 +40,10 @@ export function SummaryContent({
   refreshing = false,
 }: SummaryContentProps) {
   const { t } = useAppLanguage();
+  const [limitationsState, setLimitationsState] = useState({ detailId: '', expanded: false });
   const businessResult = detail.businessAnalysis.result;
   const displayLimitations = limitations ?? businessResult?.limitations ?? [];
+  const limitationsExpanded = limitationsState.detailId === detail.id && limitationsState.expanded;
   const knowledgeStatusLabel = businessResult
     ? businessResult.knowledgeStatus === 'used'
       ? t('analysis.knowledgeUsed', { count: businessResult.knowledgeBaseIds.length })
@@ -83,15 +85,34 @@ export function SummaryContent({
       ) : null}
       <View style={styles.summaryDivider} />
       {displayLimitations.length ? (
-        <View accessibilityRole="alert" style={styles.limitations}>
-          <Text style={styles.limitationsTitle}>
-            {limitationsTitle ?? t('analysis.limitations')}
-          </Text>
-          {displayLimitations.map((limitation) => (
-            <Text key={limitation} style={styles.limitationsBody}>
-              • {limitation}
+        <View accessibilityRole="summary" style={styles.limitations}>
+          <Pressable
+            accessibilityLabel={t(
+              limitationsExpanded ? 'analysis.limitationsCollapse' : 'analysis.limitationsExpand',
+            )}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: limitationsExpanded }}
+            onPress={() =>
+              setLimitationsState({ detailId: detail.id, expanded: !limitationsExpanded })
+            }
+            style={styles.limitationsHeader}
+          >
+            <Text style={styles.limitationsTitle}>
+              {limitationsTitle ?? t('analysis.limitations')}
             </Text>
-          ))}
+            <Ionicons
+              color={textColors.primary}
+              name={limitationsExpanded ? 'chevron-up' : 'chevron-down'}
+              size={20}
+            />
+          </Pressable>
+          {limitationsExpanded
+            ? displayLimitations.map((limitation) => (
+                <Text key={limitation} style={styles.limitationsBody}>
+                  • {limitation}
+                </Text>
+              ))
+            : null}
         </View>
       ) : null}
       {detail.summarySections.map((section) => (
@@ -170,6 +191,12 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     marginBottom: spacing.xl,
     padding: spacing.md,
+  },
+  limitationsHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'space-between',
   },
   limitationsTitle: {
     ...typography.body,

@@ -27,6 +27,8 @@ Every mode stores transcripts, analyses, job state, and configuration revisions 
 | Hybrid `hybrid`                       | `AUDIO_STORAGE_DIR`; `echowave_audio` Docker volume    | `audio_staging`     | Default, long-term local source retention | Single API instance; back up the local volume                                                                             |
 | Object storage `object_storage`       | `audio_primary_storage` OSS                            | Primary and staging | Larger or longer-lived managed audio      | Requires correct bucket, credential, and lifecycle configuration; API is still single-instance                            |
 
+All three modes support closing the App after the upload completes and the server task is successfully created/submitted; the Server then continues in the background. Lightweight local is asynchronous processing plus temporary local storage for the lowest cost but lowest recovery capability; hybrid is asynchronous processing plus persistent local storage and OSS staging for the default balance of cost and reliability; object storage is asynchronous processing plus persistent OSS storage for cloud deployment, large scale, and best recovery. Killing the App before upload completes does not mean the Server has taken over.
+
 Configure **More → Runtime Mode** with `CONFIGURATION_ADMIN_TOKEN`. A change affects only assets created afterward and never migrates or deletes existing assets. See [Audio Runtime Modes](./audio-runtime-modes.md).
 
 ## 3. Ubuntu 22.04 x86_64 source deployment

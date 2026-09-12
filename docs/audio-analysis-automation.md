@@ -6,9 +6,11 @@ The Create page can place 1–20 new files or existing audio assets in one batch
 
 ## Runtime-mode boundaries
 
-- Object storage supports immediate, batch, scheduled, and fully resumable execution through presigned PUT uploads.
-- Hybrid supports the same behavior but requires persistent `AUDIO_STORAGE_DIR` and currently a single API instance.
-- Lightweight local supports immediate batches but rejects future schedules. A source blocked by an audio-dependent stage is retained for 24 hours; after expiry, the user must select a file with the same SHA-256 and byte count.
+All three modes support “close the App after upload completes; the Server continues in the background.” The difference is not whether processing is asynchronous, but where the original audio is stored and how much can be recovered after a server failure, restart, or migration. App and background-task lifecycles are decoupled only after the audio upload completes and the server task is successfully created/submitted; killing the App while upload is still in progress does not mean the Server has taken over.
+
+- Lightweight local = asynchronous processing + temporary local storage = lowest cost / lowest recovery capability. It supports immediate batches but rejects future schedules. A source blocked by an audio-dependent stage is retained for 24 hours; after expiry, the user must select a file with the same SHA-256 and byte count.
+- Hybrid = asynchronous processing + persistent local storage + OSS staging = default / balanced cost and reliability. It supports immediate, batch, scheduled, and resumable execution but requires persistent `AUDIO_STORAGE_DIR` and currently a single API instance.
+- Object storage = asynchronous processing + persistent OSS storage = cloud deployment / large scale / best recovery capability. It supports immediate, batch, scheduled, and resumable execution through presigned PUT uploads.
 
 PostgreSQL `audio_analysis_batches` and `audio_analysis_tasks` are the only authoritative state. Workers use `FOR UPDATE SKIP LOCKED`, `LISTEN/NOTIFY`, and a 15-second compensation scan to advance `ASR → system_raw_snapshot → emotion and role → business analysis`. Permanent emotion or role failures become report limitations and yield `completed_with_warnings`; permanent ASR or business-analysis failures never publish a false success.
 

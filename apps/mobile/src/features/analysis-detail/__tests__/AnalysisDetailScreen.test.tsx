@@ -648,6 +648,81 @@ describe('AnalysisDetailScreen', () => {
     expect(screen.getByText(/breathing becomes faster/)).toBeTruthy();
   });
 
+  it('binds repeated identity text and emotion actions to their own segment IDs', async () => {
+    const segments = analysisFixture.scenes[0].segments.slice(0, 2).map((segment, index) => ({
+      ...segment,
+      speakerKey: `Speaker ${index}`,
+      speakerLabel: '客户',
+      businessRole: '客户',
+      roleAnalysis: {
+        kind: 'customer' as const,
+        label: '客户',
+        confidence: 0.95,
+        evidenceSegmentIds: [segment.id],
+        model: 'deepseek-v4-flash',
+      },
+      emotion: 'anxious',
+      emotionAnalysis: {
+        label: 'anxious' as const,
+        confidence: index === 0 ? 0.88 : 0.74,
+        attitude: 'hesitant' as const,
+        arousal: 'high' as const,
+        pace: 'fast' as const,
+        volumeTrend: 'rising' as const,
+        pitchVariation: 'high' as const,
+        pausePattern: 'frequent' as const,
+        vocalCues: [`segment ${index} acoustic evidence`],
+        model: 'qwen3.5-omni-flash',
+      },
+    }));
+    jest.mocked(workspaceApi.getAudioAnalysis).mockResolvedValueOnce({
+      ...analysisFixture,
+      scenes: [{ ...analysisFixture.scenes[0], segments }],
+    });
+    const screen = await renderAnalysis();
+
+    for (const [index, segment] of segments.entries()) {
+      // 同名角色、同种情绪不能靠全局文字或布局父节点区分。
+      const primary = screen.getByTestId(`transcript-identity-primary-${segment.id}`);
+      const secondary = screen.getByTestId(`transcript-identity-secondary-${segment.id}`);
+      const content = screen.getByTestId(`transcript-content-${segment.id}`);
+      const time = screen.getByTestId(`transcript-time-${segment.id}`);
+      const emotion = screen.getByTestId(`transcript-emotion-${segment.id}`);
+      expect(primary.type).toBe('Text');
+      expect(primary.props.children).toBe('客户');
+      expect(secondary.props.children).toBe(`Speaker ${index} · 角色置信度 95%`);
+      expect(content.type).toBe('Text');
+      expect(content.props.children).toBe(segment.confirmedText);
+      expect(time.type).toBe('Text');
+      expect(time.props.accessibilityLabel).toMatch(/^\d{2}:\d{2}to\d{2}:\d{2}$/);
+      expect(emotion.props.accessibilityLabel).toBe('查看情绪分析详情');
+    }
+
+    fireEvent.press(screen.getByTestId(`transcript-emotion-${segments[1].id}`));
+    expect(screen.getByText('情绪分析详情')).toBeTruthy();
+    expect(screen.getByText('74%')).toBeTruthy();
+    expect(screen.getByText(/segment 1 acoustic evidence/)).toBeTruthy();
+    expect(screen.queryByText(/segment 0 acoustic evidence/)).toBeNull();
+    expect(workspaceApi.startAudioEmotionAnalysis).not.toHaveBeenCalled();
+  });
+
+  it('keeps identity and disabled emotion IDs when analysis is unavailable', async () => {
+    const screen = await renderAnalysis();
+    const segment = analysisFixture.scenes[0].segments[0];
+    expect(screen.getByTestId(`transcript-identity-primary-${segment.id}`).props.children).toBe(
+      'host',
+    );
+    expect(screen.getByTestId(`transcript-identity-secondary-${segment.id}`).props.children).toBe(
+      '主持人',
+    );
+    const emotion = screen.getByTestId(`transcript-emotion-${segment.id}`);
+    expect(emotion.props.accessibilityLabel).toBe('情绪尚未分析');
+    expect(emotion.props.accessibilityState).toEqual(expect.objectContaining({ disabled: true }));
+    fireEvent.press(emotion);
+    expect(screen.queryByText('情绪分析详情')).toBeNull();
+    expect(workspaceApi.startAudioEmotionAnalysis).not.toHaveBeenCalled();
+  });
+
   it('adapts the detail page after lightweight source cleanup', async () => {
     const finding = {
       id: '71000000-0000-4000-8000-000000000010',

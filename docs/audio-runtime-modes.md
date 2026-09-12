@@ -12,6 +12,16 @@ EchoWave provides three tenant-level audio runtime modes. A mode change affects 
 | Hybrid `hybrid`                       | API `AUDIO_STORAGE_DIR`; `echowave_audio` volume under Docker | `audio_staging` only        | Playback and audio-dependent reruns remain available while the source exists                    | Default; long-term local source retention               |
 | Object storage `object_storage`       | `audio_primary_storage` OSS                                   | Primary storage and staging | Recoverable from the OSS original during retention; historical results survive expiry           | Larger audio collections and managed object lifecycles  |
 
+All three modes support asynchronous processing: users can close the App and let the Server continue in the background only after the upload completes and the server task is successfully created/submitted. The difference is not whether processing is asynchronous, but where the original audio is stored and how much can be recovered after a server failure, restart, or migration.
+
+Their cost and recovery positioning is:
+
+- Lightweight local = asynchronous processing + temporary local storage = lowest cost / lowest recovery capability.
+- Hybrid = asynchronous processing + persistent local storage + OSS staging = default / balanced cost and reliability.
+- Object storage = asynchronous processing + persistent OSS storage = cloud deployment / large scale / best recovery capability.
+
+The only important boundary is that killing the App while audio is still uploading does not mean the Server has taken over in any mode. App and background-task lifecycles are decoupled only after the upload completes and the server task is successfully created/submitted.
+
 All modes require PostgreSQL, FFmpeg/VAD, and DashScope audio capabilities. Role, knowledge-answer, and business-analysis stages also require a DeepSeek logical connection. Hybrid and object-storage modes require their OSS bindings; lightweight local works without OSS.
 
 When unsure, start with lightweight local for a functional trial, switch future assets to hybrid when playback or reruns matter, and choose object storage only with an established OSS lifecycle and backup policy. Mode switching is not a storage-migration tool. See [Server Deployment](./server-deployment.md).
@@ -38,6 +48,8 @@ Acoustic analysis cuts windows from the current Raw Transcript timestamps, so it
 ## Authority and recovery
 
 PostgreSQL stores transcripts, VAD manifests, ASR runs, provider task IDs, checkpoints, confirmation versions, emotion/role results, and business analyses. Object storage and local directories hold only audio binaries and short-lived intermediates; they do not duplicate transcript JSON or create a `finish` audio file.
+
+After a server restart, PostgreSQL batch state, task state, and checkpoints continue to drive background work; recovery of audio-dependent stages depends on the original audio still being available. If lightweight-local temporary storage is lost or expires, published results remain but audio-dependent stages require remounting the original file. Hybrid recovery across restarts or host migration requires preserving and remounting `AUDIO_STORAGE_DIR`. Object storage is best for cross-host migration and large-scale recovery when PostgreSQL, OSS bindings, and retained originals remain accessible.
 
 ASR revision checkpoints are:
 

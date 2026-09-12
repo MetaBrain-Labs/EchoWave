@@ -1,0 +1,82 @@
+appId: com.echowave.app
+name: retake-business-insights-evidence
+tags:
+  - showcase-retake
+---
+- runFlow: ../../subflows/open-retake-audio.yaml
+- startRecording:
+    path: 'retake-02-business-insights-evidence'
+- tapOn: '分析总结'
+- scrollUntilVisible:
+    element: '话术优点'
+    direction: DOWN
+    centerElement: true
+    timeout: 20000
+- takeScreenshot: 'retake/02-strengths-summary'
+- scrollUntilVisible:
+    element: '待改进点'
+    direction: DOWN
+    centerElement: true
+    timeout: 20000
+- takeScreenshot: 'retake/02-improvements-summary'
+- scrollUntilVisible:
+    element: '转写分析'
+    direction: UP
+    timeout: 20000
+- tapOn: '转写分析'
+- scrollUntilVisible:
+    element:
+      text: '查看 AI 标签：${RETAKE_STRENGTH_TAG_TITLE}'
+      index: 0
+    direction: DOWN
+    centerElement: true
+    timeout: 20000
+- tapOn:
+    text: '查看 AI 标签：${RETAKE_STRENGTH_TAG_TITLE}'
+    index: 0
+- assertVisible:
+    id: 'ai-tag-sheet'
+- assertVisible: '分析结论'
+- assertVisible: '${RETAKE_STRENGTH_CONCLUSION_TEXT}'
+- assertVisible:
+    id: 'ai-tag-fixed-header'
+- takeScreenshot: 'retake/02-strength-explanation-ranges'
+- tapOn: '收起 AI 标签面板'
+- scrollUntilVisible:
+    element:
+      id: 'transcript-content-${RETAKE_STRENGTH_SEGMENT_ID}'
+    direction: UP
+    centerElement: false
+    timeout: 20000
+- assertVisible:
+    id: 'transcript-content-${RETAKE_STRENGTH_SEGMENT_ID}'
+    text: '${RETAKE_STRENGTH_EVIDENCE_TEXT}'
+- takeScreenshot: 'retake/02-strength-transcript-evidence'
+- scrollUntilVisible:
+    element:
+      text: '查看 AI 标签：${RETAKE_IMPROVEMENT_TAG_TITLE}'
+      index: 0
+    direction: DOWN
+    centerElement: true
+    timeout: 30000
+- tapOn:
+    text: '查看 AI 标签：${RETAKE_IMPROVEMENT_TAG_TITLE}'
+    index: 0
+- assertVisible:
+    id: 'ai-tag-sheet'
+- assertVisible: '${RETAKE_IMPROVEMENT_CONCLUSION_TEXT}'
+- assertVisible:
+    id: 'ai-tag-fixed-header'
+- takeScreenshot: 'retake/02-improvement-explanation-ranges'
+- tapOn: '收起 AI 标签面板'
+- scrollUntilVisible:
+    element:
+      id: 'transcript-content-${RETAKE_IMPROVEMENT_SEGMENT_ID}'
+    direction: UP
+    centerElement: false
+    timeout: 20000
+- assertVisible:
+    id: 'transcript-content-${RETAKE_IMPROVEMENT_SEGMENT_ID}'
+    text: '${RETAKE_IMPROVEMENT_EVIDENCE_TEXT}'
+- takeScreenshot: 'retake/02-improvement-transcript-evidence'
+- stopRecording

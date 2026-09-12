@@ -53,6 +53,8 @@ This guide maps every human-maintained Markdown document to its audience, author
 | [Silero VAD asset](../apps/api/assets/silero-vad/v6.2.1/README.md) / [中文](../apps/api/assets/silero-vad/v6.2.1/README.zh-CN.md) | Audio/license maintainers  | Pinned ONNX version, source, checksum, license                          |
 | [E2E knowledge fixture](../.maestro/fixtures/echowave-e2e-knowledge.md)                                                           | Android E2E                | Fixed test content, not a user document and intentionally not localized |
 
+[Showcase retake recording guide (Chinese)](../.maestro/flows/showcase-retake/README.md) describes the independent, read-only manual recording flows, required existing results, parameters, and footage handoff. It is an internal production guide, not a default regression suite.
+
 ## Maintenance rules
 
 - Canonical English user documentation uses the unsuffixed `.md` path. Its Simplified Chinese peer uses `.zh-CN.md`. Put `English` first in every language switcher.

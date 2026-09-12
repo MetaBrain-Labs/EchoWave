@@ -91,6 +91,13 @@ export const zhCN = {
   'analysisBatch.schedulePlaceholder': '本地时间：2026-09-05 09:30',
   'analysisBatch.runtimeFrozen':
     '本批次冻结模式：%{mode}。文件上传与校验立即进行，模型阶段在计划时间后开始。',
+  'analysisBatch.backgroundNoticeTitle': '上传完成后可关闭 App',
+  'analysisBatch.backgroundNoticeBody':
+    '三种模式都支持上传完成并成功创建/提交服务端任务后关闭 App，由服务端继续后台处理。区别不在能不能异步，而在原音频保存在哪里，以及服务器异常、重启、迁移后能恢复到什么程度。上传未完成时直接杀掉 App，不代表服务端已经接管。',
+  'analysisBatch.backgroundConfirmTitle': '确认开始分析',
+  'analysisBatch.backgroundConfirmBody':
+    '请先确保理解：只有上传完成并成功创建/提交服务端任务后，关闭 App 才不会影响后台处理。上传未完成时杀掉 App，服务端可能尚未接管。现在开始上传并创建任务吗？',
+  'analysisBatch.backgroundConfirmContinue': '确认并开始',
   'analysisBatch.unknown': '未知',
   'analysisBatch.previewHint':
     '知识库、模型能力绑定和阶段开关会随批次保存；后续设置变化不影响已入队任务。',
@@ -191,6 +198,8 @@ export const zhCN = {
   'analysis.generatedAt': '生成时间：%{date}',
   'analysis.confirmedVersion': '%{model} · 确认转写 v%{version}',
   'analysis.limitations': '本次分析限制',
+  'analysis.limitationsExpand': '展开本次分析限制',
+  'analysis.limitationsCollapse': '收起本次分析限制',
   'analysis.recommendations': '改进建议',
   'analysis.knowledgeUsed': '已使用 %{count} 个关联知识库',
   'analysis.knowledgeLinkedNotUsed': '已限定 %{count} 个关联知识库，本次未引用知识块',
@@ -574,13 +583,17 @@ export const zhCN = {
   'pushCard.retryable': '可重试',
   'pushCard.failed': '失败',
   'runtime.title': '运行模式',
-  'runtime.notice': '模式和期限修改只影响之后上传的音频，不迁移或删除已有资产。',
+  'runtime.notice':
+    '三种模式都支持：上传完成并成功创建/提交服务端任务后关闭 App，由服务端继续后台处理。区别不在能不能异步，而在原音频保存在哪里，以及服务器异常、重启、迁移后能恢复到什么程度。上传未完成时直接杀掉 App，不代表服务端已经接管。模式和期限修改只影响之后上传的音频，不迁移或删除已有资产。',
   'runtime.hybrid': '混合存储模式（默认）',
-  'runtime.hybridDescription': '原音频保存在 API 本地目录，OSS 仅用于模型临时中转。',
+  'runtime.hybridDescription':
+    '异步处理 + 持久本地存储 + OSS 中转；原音频保存在 API 持久目录，默认方案，成本和可靠性平衡。',
   'runtime.objectStorage': '对象存储模式',
-  'runtime.objectStorageDescription': '原音频直接进入企业 OSS，APP 退出后由服务端继续处理。',
+  'runtime.objectStorageDescription':
+    '异步处理 + OSS 持久存储；原音频直接进入企业 OSS，适合云部署和大规模音频，恢复能力最好。',
   'runtime.lightweight': '轻量本地模式',
-  'runtime.lightweightDescription': 'API 仅临时保存音频，ASR 和可选声学情绪完成后自动清理。',
+  'runtime.lightweightDescription':
+    '异步处理 + 临时本地存储；原音频由 API 临时保存，成本最低，但服务器异常、重启或迁移后的恢复能力最低。',
   'runtime.operationFailed': '运行模式操作失败，请稍后重试。',
   'runtime.lifecycle': '对象生命周期',
   'runtime.originalDays': '原音频保留天数（留空表示永久）',
@@ -1461,6 +1474,13 @@ export const en = {
   'analysisBatch.schedulePlaceholder': 'Local time: 2026-09-05 09:30',
   'analysisBatch.runtimeFrozen':
     'Frozen runtime mode: %{mode}. Upload and validation start immediately; model stages start after the scheduled time.',
+  'analysisBatch.backgroundNoticeTitle': 'You can close the App after upload completes',
+  'analysisBatch.backgroundNoticeBody':
+    'All three modes support closing the App after the upload completes and the server task is successfully created/submitted; the server continues processing in the background. The difference is not whether processing is asynchronous, but where the original audio is stored and how much can be recovered after a server failure, restart, or migration. Killing the App before upload completes does not mean the server has taken over.',
+  'analysisBatch.backgroundConfirmTitle': 'Confirm analysis start',
+  'analysisBatch.backgroundConfirmBody':
+    'Please note: closing the App is safe for background processing only after the upload completes and the server task is successfully created/submitted. Killing the App during upload may happen before the server takes over. Start uploading and create the task now?',
+  'analysisBatch.backgroundConfirmContinue': 'Confirm and start',
   'analysisBatch.unknown': 'Unknown',
   'analysisBatch.previewHint':
     'Knowledge bases, model capability bindings, and stage switches are saved with the batch. Later setting changes do not affect queued tasks.',
@@ -1564,6 +1584,8 @@ export const en = {
   'analysis.generatedAt': 'Generated: %{date}',
   'analysis.confirmedVersion': '%{model} · Confirmed transcript v%{version}',
   'analysis.limitations': 'Analysis limitations',
+  'analysis.limitationsExpand': 'Expand analysis limitations',
+  'analysis.limitationsCollapse': 'Collapse analysis limitations',
   'analysis.recommendations': 'Improvement suggestions',
   'analysis.knowledgeUsed': 'Used %{count} linked knowledge bases',
   'analysis.knowledgeLinkedNotUsed':
@@ -1979,16 +2001,16 @@ export const en = {
   'pushCard.failed': 'Failed',
   'runtime.title': 'Runtime mode',
   'runtime.notice':
-    'Mode and retention changes affect only future uploads. Existing assets are not migrated or deleted.',
+    'All three modes support closing the App after the upload completes and the server task is successfully created/submitted; the server continues processing in the background. The difference is not whether processing is asynchronous, but where the original audio is stored and how much can be recovered after a server failure, restart, or migration. Killing the App before upload completes does not mean the server has taken over. Mode and retention changes affect only future uploads; existing assets are not migrated or deleted.',
   'runtime.hybrid': 'Hybrid storage (default)',
   'runtime.hybridDescription':
-    'Original audio stays in the local API directory; OSS is used only for temporary model transfer.',
+    'Asynchronous processing + persistent local storage + OSS staging; original audio stays in the persistent API directory. Default balance of cost and reliability.',
   'runtime.objectStorage': 'Object storage',
   'runtime.objectStorageDescription':
-    'Original audio is uploaded directly to enterprise OSS so the server can continue after the app closes.',
+    'Asynchronous processing + persistent OSS storage; original audio goes directly to enterprise OSS. Best for cloud deployment, large collections, and recovery.',
   'runtime.lightweight': 'Lightweight local',
   'runtime.lightweightDescription':
-    'The API stores audio temporarily and removes it after ASR and optional acoustic emotion analysis.',
+    'Asynchronous processing + temporary local storage; the API keeps original audio temporarily. Lowest cost, but lowest recovery after server failure, restart, or migration.',
   'runtime.operationFailed': 'The runtime mode operation failed. Please try again later.',
   'runtime.lifecycle': 'Object lifecycle',
   'runtime.originalDays': 'Original audio retention in days (blank means forever)',

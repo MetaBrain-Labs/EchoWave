@@ -28,6 +28,7 @@
     "e2e:android": "node scripts/e2e/android-e2e.mjs stable",
     "e2e:android:real": "node scripts/e2e/android-e2e.mjs real",
     "e2e:android:showcase": "node scripts/e2e/android-e2e.mjs showcase",
+    "e2e:android:showcase-retake": "node scripts/e2e/showcase-retake.mjs",
     "e2e:android:full": "node scripts/e2e/android-e2e.mjs full",
     "e2e:android:triage": "node scripts/e2e/android-e2e.mjs triage",
     "e2e:android:repair": "node scripts/e2e/android-e2e.mjs repair",

@@ -199,12 +199,14 @@ test('triage markdown renders the fixed diagnostic contract', () => {
   assert.match(markdown, /pnpm e2e:android/u);
 });
 
-test('every top-level Maestro flow normalizes the app through the shared bootstrap', () => {
+test('every top-level Maestro flow uses its shared bootstrap or read-only retake session', () => {
   const flowRoot = join(repoRoot, '.maestro', 'flows');
   for (const path of filesBelow(flowRoot, '.yaml')) {
     assert.match(
       readFileSync(path, 'utf8'),
-      /runFlow: \.\.\/\.\.\/subflows\/prepare-e2e-app\.yaml/u,
+      path.includes(join('flows', 'showcase-retake'))
+        ? /runFlow: \.\.\/\.\.\/subflows\/(open-retake-audio|attach-retake-session)\.yaml/u
+        : /runFlow: \.\.\/\.\.\/subflows\/prepare-e2e-app\.yaml/u,
       `${path} must use the shared app bootstrap`,
     );
   }
