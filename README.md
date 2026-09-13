@@ -13,9 +13,9 @@
 ![Platform](https://img.shields.io/badge/platform-Android%20%7C%20iOS%20%7C%20Web-3ddc84?logo=android&logoColor=white)
 </div>
 
-<p align="center">
+<!-- <p align="center">
   <img src="./docs/assets/demo.gif" alt="EchoWave: audio upload, speaker and emotion review, business analysis, and a knowledge-base answer with citations" width="640" />
-</p>
+</p> -->
 
 **Open-source, self-hosted workspace connecting audio, business analysis, and team knowledge.** Audio → ASR → Speaker/emotion → Human review → Business analysis → Knowledge/RAG → Auditable result.
 
