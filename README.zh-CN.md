@@ -13,9 +13,9 @@
 ![Platform](https://img.shields.io/badge/platform-Android%20%7C%20iOS%20%7C%20Web-3ddc84?logo=android&logoColor=white)
 </div>
 
-<p align="center">
+<!-- <p align="center">
   <img src="./docs/assets/demo.gif" alt="EchoWave 界面演示：音频上传、说话人与情绪复核、业务分析，以及带引用的知识库回答" width="640" />
-</p>
+</p> -->
 
 **把音频、业务分析与团队知识库连接起来的开源自托管工作台。** 音频 → ASR → 说话人/情绪 → 人工确认 → 业务分析 → 知识库/RAG → 可审计结果。
 
