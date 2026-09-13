@@ -4,7 +4,7 @@
 
 ## Supported state
 
-EchoWave `v0.1` is a development preview with no stable release branch or downloadable production release yet. Security fixes target only the latest code on the default branch; historical commits, forks, and locally modified deployments are outside the supported scope.
+EchoWave `v0.1.x` is an early development release. Signed Android APKs and self-hosted Server bundles are available through [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases), but the project does not yet provide authentication, RBAC, rate limiting, or a production-grade public multi-user security boundary. Security fixes target only the latest code on the default branch; historical commits, forks, and locally modified deployments are outside the supported scope.
 
 The API uses a fixed development tenant and does not provide real authentication, RBAC, rate limiting, or a complete public-internet boundary. HTTP is permitted on localhost and trusted private networks. Every cloud-hosted or public App server must use HTTPS, a reverse proxy, narrowly scoped network access, backups, and monitoring, while keeping API port 3001 and PostgreSQL port 5432 off the public internet. These measures do not replace missing application-level authorization and do not make this preview suitable as a public multi-user service.
 

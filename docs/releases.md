@@ -207,6 +207,8 @@ Repository administrators must:
 4. Make `ghcr.io/metabrain-labs/echowave-api` public.
 5. Retain every tag/digest referenced by a Release.
 6. Enable immutable Releases and prohibit deleting, moving, or reusing published stable tags.
+7. Protect `main` with a ruleset that requires a pull request, requires the `CI / Repository verification` status check, blocks force pushes, and blocks deletions. The `CI` workflow runs on every pull request and on pushes to `main`; keep it as the required check instead of relying on the tag-only Release workflow.
+8. Enable GitHub Discussions with Q&A, Ideas, Show and tell, and General categories so usage and deployment questions stay out of Issues.
 
 The first GHCR package may be private. Anonymous-access gates intentionally stop publication until an administrator makes it permanently public and reruns the failed workflow.
 
@@ -262,6 +264,8 @@ Do not tag a feature branch or publish prerelease/`latest` tags through the stab
 ### 9.4 Workflow result
 
 The Release workflow validates metadata, runs `pnpm check`, builds and verifies a signed APK, publishes amd64/arm64 immutable GHCR images, verifies runtime dependencies and anonymous pulls, creates the Server ZIP/manifest/checksums, runs current and N-1 integration smoke tests, then publishes a complete draft. Failure before completion publishes nothing. Never rebuild an existing public Release; issue a new patch version.
+
+Release notes are rendered from the public manifest in a fixed user-facing order: Highlights, Downloads, What's new, Breaking changes, Known limitations, and Upgrade, followed by collapsed `Database migrations` and `Full changelog` details blocks. Before publishing the draft, add this version's user-visible highlights and move each change under the Audio, Analysis, Knowledge, or Deployment heading; the generated PR list stays in the collapsed changelog.
 
 ## 10. Troubleshooting
 

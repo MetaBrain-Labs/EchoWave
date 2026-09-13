@@ -4,7 +4,7 @@
 
 ## 当前支持状态
 
-EchoWave `v0.1` 是开发预览版，尚无稳定发布分支或可下载的正式版本。安全修复只面向默认分支的最新代码；历史提交、Fork 和自行修改的部署不在维护范围内。
+EchoWave `v0.1.x` 是早期开发版本：签名 Android APK 与自托管 Server 包已可从 [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases) 下载，但项目尚未提供鉴权、RBAC、速率限制或面向公网的生产级多用户安全边界。安全修复只面向默认分支的最新代码；历史提交、Fork 和自行修改的部署不在维护范围内。
 
 当前 API 使用固定开发租户，不具备真实鉴权、RBAC、速率限制和完整公网防护。可信本机和局域网可以使用 HTTP；任何云服务器或公网 App 服务端都必须由部署者提供 HTTPS、反向代理、最小化网络访问控制、备份和监控，并保持 API 3001 与 PostgreSQL 5432 不对公网开放。即使完成这些措施，仍不能替代项目尚未实现的应用级鉴权，也不应把当前版本作为公开多用户服务运行。
 
@@ -35,6 +35,6 @@ EchoWave `v0.1` 是开发预览版，尚无稳定发布分支或可下载的正�
 
 ## English summary
 
-EchoWave `v0.1` is a development preview supported only from the latest default-branch code. It has no real authentication or production public-internet boundary. Use it on a trusted LAN only.
+EchoWave `v0.1.x` is an early development release supported only from the latest default-branch code. Signed Android APKs and Server bundles are published through GitHub Releases, but the project still has no authentication, authorization, or production public-internet boundary. Use it on a trusted LAN only.
 
 Report vulnerabilities privately through GitHub **Security → Report a vulnerability**. If private reporting is unavailable, open a public issue titled `[Security] Request private contact` with no exploit details, secrets, personal data, or raw audio. Never place secrets in `EXPO_PUBLIC_*` variables, repository files, logs, screenshots, or public reports.

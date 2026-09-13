@@ -54,7 +54,7 @@ git clone https://github.com/MetaBrain-Labs/EchoWave.git /opt/echowave
 cd /opt/echowave
 ```
 
-For long-lived instances, use a verified tag after stable releases exist or use the Release Server ZIP. Do not treat `main` as immutable production input.
+For long-lived instances, use a verified Release tag such as `v0.1.0` or the Release Server ZIP. Do not treat `main` as immutable production input.
 
 ### 3.3 Configure the Server
 

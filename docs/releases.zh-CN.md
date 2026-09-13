@@ -335,6 +335,8 @@ docker compose ps
 4. 将 `ghcr.io/metabrain-labs/echowave-api` 设置为 public。
 5. 配置 GHCR 保留规则，不得删除仍被 GitHub Release 引用的 Tag 或 digest。
 6. 在仓库设置中启用 immutable releases，并禁止删除、移动或复用已发布的稳定 Tag。
+7. 为 `main` 建立 Ruleset：要求先创建 Pull Request、要求 `CI / Repository verification` 状态检查通过、禁止强推、禁止删除分支。`CI` 工作流在每次 Pull Request 和推送 `main` 时运行，应作为必需检查，不能只依赖仅响应 Tag 的 Release 工作流。
+8. 打开 GitHub Discussions，并创建 Q&A、Ideas、Show and tell、General 分区，让使用与部署问题不堆积在 Issues 中。
 
 GHCR 容器包第一次创建时可能仍是 private。此时发布工作流会在创建 GitHub Release 前被匿名
 访问门禁拦截。管理员把 Package 永久设为 public 后，重新运行失败的 Actions workflow。
@@ -422,6 +424,11 @@ git push origin vX.Y.Z
 
 任何步骤失败都不会公开不完整 Release。已公开的 Release 不允许覆盖或重建；修复发布问题后
 应创建新的 Patch 版本，而不是复用旧 Tag。
+
+Release 说明由公开 manifest 渲染，并固定为用户优先的顺序：Highlights、Downloads、What's
+new、Breaking changes、Known limitations、Upgrade，最后是折叠的 `Database migrations` 与
+`Full changelog`。公开 Draft 前，请补上本版本的用户可见重点，并把变更分别归入 Audio、
+Analysis、Knowledge、Deployment 小节；自动生成的 PR 列表保留在折叠的 changelog 中。
 
 ## 10. 常见问题
 

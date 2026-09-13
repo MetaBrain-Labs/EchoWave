@@ -37,6 +37,7 @@ function createFixture(testContext) {
     'docs/topic.zh-CN.md',
     '# 主题\n\n[English](./topic.md) | **简体中文**',
   );
+  writeFixtureFile(rootDirectory, '.github/workflows/ci.yml');
   writeFixtureFile(rootDirectory, '.github/workflows/release.yml');
   writeFixtureFile(rootDirectory, 'apps/api/.env.example');
   writeFixtureFile(rootDirectory, 'apps/api/Dockerfile');
@@ -195,6 +196,16 @@ test('rejects a missing critical repository path', (testContext) => {
   rmSync(path.join(rootDirectory, 'compose.yaml'));
   assert.ok(
     validateRepositoryDocs(rootDirectory).errors.some((error) => error.includes('compose.yaml')),
+  );
+});
+
+test('rejects a missing pull request CI workflow', (testContext) => {
+  const rootDirectory = createFixture(testContext);
+  rmSync(path.join(rootDirectory, '.github/workflows/ci.yml'));
+  assert.ok(
+    validateRepositoryDocs(rootDirectory).errors.some((error) =>
+      error.includes('required repository path is missing: .github/workflows/ci.yml'),
+    ),
   );
 });
 
