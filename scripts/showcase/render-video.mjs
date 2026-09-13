@@ -1,733 +1,570 @@
+/**
+ * 真实录屏宣传片渲染入口。
+ * 统一 Node / PowerShell 路径，生成独立产物与可追溯剪辑清单；不更改原始素材。
+ */
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
+  closeSync,
   existsSync,
   mkdirSync,
-  mkdtempSync,
+  openSync,
   readFileSync,
   readdirSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { basename, delimiter, dirname, extname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-
-import { assertValidRunId, parseArgs } from '../e2e/lib.mjs';
 import {
+  cacheFingerprint,
+  FPS,
   SHOWCASE_DURATION_SECONDS,
-  SHOWCASE_SCRIPT,
-  extractCommandTimeline,
-  renderShowcaseAss,
-  renderShowcaseScriptMarkdown,
-  resolveSectionVisuals,
+  renderShotAss,
+  resolveFootage,
+  TOTAL_FRAMES,
   validateShowcaseMediaProbe,
-  validateShowcaseScript,
+  validateTimeline,
 } from '../e2e/showcase-video-lib.mjs';
+import { createTimeline, SELECTED_FILES, SOURCE_ROOTS } from './timeline.mjs';
+import { cameraFrames } from './camera.mjs';
+import { homedir } from 'node:os';
 
-const scriptDirectory = dirname(fileURLToPath(import.meta.url));
-const repoRoot = resolve(scriptDirectory, '..', '..');
-const maestroArtifactsRoot = join(repoRoot, '.artifacts', 'maestro');
-const videoArtifactsRoot = join(repoRoot, '.artifacts', 'showcase-video');
-const toolsRoot = join(repoRoot, '.artifacts', 'tools');
-const pythonLauncher = join(scriptDirectory, 'invoke-python.ps1');
-const logoPath = join(repoRoot, 'apps', 'mobile', 'assets', 'img', 'icon.png');
-const regularFont = join(
-  repoRoot,
-  'apps',
-  'mobile',
-  'assets',
-  'fonts',
-  'SourceHanSansCN-Regular.otf',
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const args = process.argv.slice(2).filter((arg) => arg !== '--');
+const option = (key) => {
+  const index = args.indexOf(key);
+  return index < 0 ? null : args[index + 1];
+};
+const output = resolve(
+  root,
+  option('--output') ?? '.artifacts/showcase-video/LAUNCH_REFINED_20260913',
 );
-const mediaToolsPackageRoot = join(toolsRoot, 'ffmpeg-npm');
+const cache = join(output, '.cache');
+const python =
+  option('--python') ??
+  join(homedir(), '.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe');
+const musicConfigPath = option('--music-config');
+const musicConfig = musicConfigPath
+  ? JSON.parse(readFileSync(resolve(root, musicConfigPath), 'utf8').replace(/^\uFEFF/u, ''))
+  : null;
+const fontDir = join(root, 'apps/mobile/assets/fonts');
+const logo = join(root, 'apps/mobile/assets/img/icon.png');
+const json = (path, value) => writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+const filterPath = (path) =>
+  path.replaceAll('\\', '/').replace(':', '\\:').replaceAll("'", "'\\''");
 
-function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
-    cwd: options.cwd ?? repoRoot,
-    encoding: 'utf8',
-    env: { ...process.env, ...options.env },
-    maxBuffer: 64 * 1024 * 1024,
-    stdio: options.inherit ? 'inherit' : 'pipe',
-  });
-  if (result.error) throw result.error;
-  if (result.status !== 0 && !options.allowFailure) {
-    throw new Error(
-      `命令失败 (${result.status})：${basename(command)} ${args.join(' ')}\n${[result.stdout, result.stderr].filter(Boolean).join('\n').trim()}`,
-    );
-  }
-  return result;
-}
-
-function runPython(python, args, options = {}) {
-  if (process.platform !== 'win32') return run(python, args, options);
-  return run(
-    'powershell.exe',
-    [
-      '-NoLogo',
-      '-NoProfile',
-      '-NonInteractive',
-      '-ExecutionPolicy',
-      'Bypass',
-      '-File',
-      pythonLauncher,
-      python,
-      ...args,
-    ],
-    options,
+function filesBelow(dir, name) {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+    entry.isDirectory()
+      ? filesBelow(join(dir, entry.name), name)
+      : entry.name === name
+        ? [join(dir, entry.name)]
+        : [],
   );
 }
+const ffmpeg = option('--ffmpeg') ?? filesBelow(join(root, '.artifacts/tools'), 'ffmpeg.exe')[0];
+const ffprobe = option('--ffprobe') ?? filesBelow(join(root, '.artifacts/tools'), 'ffprobe.exe')[0];
 
-function findFiles(directory, fileName) {
-  if (!existsSync(directory)) return [];
-  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const path = join(directory, entry.name);
-    return entry.isDirectory() ? findFiles(path, fileName) : entry.name === fileName ? [path] : [];
-  });
-}
-
-function findOnPath(name) {
-  const extensions = extname(name) ? [''] : ['', '.exe', '.cmd', '.bat'];
-  for (const directory of String(process.env.PATH ?? '').split(delimiter)) {
-    if (!directory) continue;
-    for (const extension of extensions) {
-      const candidate = join(directory, `${name}${extension}`);
-      if (existsSync(candidate)) return candidate;
-    }
+/** 使用参数数组执行媒体命令，完整诊断保存本地，避免 shell 路径转义问题。 */
+function run(command, commandArgs, logName = 'media') {
+  // Windows 受限环境不允许子进程匿名管道，直接写文件仍使用同一执行边界。
+  const stdoutPath = join(cache, `${logName}.stdout.log`);
+  const stderrPath = join(cache, `${logName}.log`);
+  const outFd = openSync(stdoutPath, 'w'),
+    errFd = openSync(stderrPath, 'w');
+  let result;
+  try {
+    result = spawnSync(command, commandArgs, {
+      cwd: root,
+      stdio: ['ignore', outFd, errFd],
+      windowsHide: true,
+    });
+  } finally {
+    closeSync(outFd);
+    closeSync(errFd);
   }
-  return null;
+  const stdout = readFileSync(stdoutPath, 'utf8'),
+    stderr = readFileSync(stderrPath, 'utf8');
+  if (result.error || result.status !== 0)
+    throw new Error(`${logName} 失败：${result.error?.message ?? stderr.slice(-2500)}`);
+  return `${stdout}\n${stderr}`;
 }
-
-function installPlatformMediaTools() {
-  const pnpm = findOnPath(process.platform === 'win32' ? 'pnpm.ps1' : 'pnpm');
-  if (!pnpm) throw new Error('未找到 pnpm，无法准备 FFmpeg 平台包。');
-  mkdirSync(mediaToolsPackageRoot, { recursive: true });
-  const packagePath = join(mediaToolsPackageRoot, 'package.json');
-  if (!existsSync(packagePath)) {
-    writeFileSync(packagePath, '{"name":"echowave-showcase-media-tools","private":true}\n');
-  }
-  const pnpmArguments = [
-    'add',
-    '--ignore-workspace',
-    '--save-exact',
-    '@ffmpeg-installer/ffmpeg@1.1.0',
-    '@ffprobe-installer/ffprobe@2.1.2',
-  ];
-  if (process.platform === 'win32') {
+function probe(path) {
+  return JSON.parse(
     run(
-      'powershell.exe',
-      [
-        '-NoLogo',
-        '-NoProfile',
-        '-NonInteractive',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-File',
-        pnpm,
-        ...pnpmArguments,
-      ],
-      { cwd: mediaToolsPackageRoot, inherit: true },
-    );
-    return;
-  }
-  run(pnpm, pnpmArguments, { cwd: mediaToolsPackageRoot, inherit: true });
-}
-
-function ensureFfmpeg(options) {
-  const explicit = options.ffmpeg ? resolve(String(options.ffmpeg)) : null;
-  const fromPath = findOnPath('ffmpeg.exe') ?? findOnPath('ffmpeg');
-  const localCandidates = findFiles(toolsRoot, 'ffmpeg.exe');
-  let ffmpeg = [explicit, fromPath, ...localCandidates].find((path) => path && existsSync(path));
-  if (!ffmpeg && !options['prepare-tools']) {
-    throw new Error('未找到 FFmpeg。请增加 --prepare-tools，将工具安装到 .artifacts/tools。');
-  }
-  if (!ffmpeg) {
-    installPlatformMediaTools();
-    ffmpeg = findFiles(mediaToolsPackageRoot, 'ffmpeg.exe')[0];
-  }
-  if (!ffmpeg) throw new Error('FFmpeg 平台包安装完成后仍未找到 ffmpeg.exe。');
-  const adjacentFfprobe = join(dirname(ffmpeg), 'ffprobe.exe');
-  const ffprobe = existsSync(adjacentFfprobe)
-    ? adjacentFfprobe
-    : findFiles(toolsRoot, 'ffprobe.exe')[0];
-  if (!ffprobe) throw new Error('缺少 FFprobe；请使用 --prepare-tools 安装完整媒体工具。');
-  return { ffmpeg, ffprobe };
-}
-
-function resolvePython(options) {
-  const explicit = options.python ? resolve(String(options.python)) : null;
-  const candidates = [explicit, findOnPath('python.exe'), findOnPath('python')];
-  const python = candidates.find((path) => path && existsSync(path));
-  if (!python) throw new Error('未找到 Python；请通过 --python 指定解释器。');
-  return python;
-}
-
-function ensureEdgeTts(python, options) {
-  const moduleRoot = join(toolsRoot, 'edge-tts');
-  mkdirSync(moduleRoot, { recursive: true });
-  const env = {
-    PYTHONPATH: [moduleRoot, process.env.PYTHONPATH].filter(Boolean).join(';'),
-  };
-  let check = runPython(python, ['-c', 'import edge_tts'], { allowFailure: true, env });
-  if (check.status !== 0 && options['prepare-tools']) {
-    runPython(
-      python,
-      ['-m', 'pip', 'install', '--disable-pip-version-check', '--target', moduleRoot, 'edge-tts'],
-      { inherit: true },
-    );
-    check = runPython(python, ['-c', 'import edge_tts'], { allowFailure: true, env });
-  }
-  if (check.status !== 0) {
-    throw new Error('未找到 edge-tts。请增加 --prepare-tools 生成神经 TTS 草稿。');
-  }
-  return env;
-}
-
-function newestRunId() {
-  if (!existsSync(maestroArtifactsRoot)) throw new Error('不存在 Maestro 产物目录。');
-  const candidates = readdirSync(maestroArtifactsRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && /^E2E_/u.test(entry.name))
-    .map((entry) => entry.name)
-    .sort()
-    .reverse();
-  const runId = candidates.find((candidate) =>
-    existsSync(join(maestroArtifactsRoot, candidate, 'summary.json')),
+      ffprobe,
+      ['-v', 'error', '-show_format', '-show_streams', '-of', 'json', path],
+      'probe',
+    ).trim(),
   );
-  if (!runId) throw new Error('没有包含 summary.json 的 Maestro 运行产物。');
-  return runId;
 }
+const hashFile = (path) => createHash('sha256').update(readFileSync(path)).digest('hex');
 
-function writePcmWave(path, durationSeconds = SHOWCASE_DURATION_SECONDS) {
-  const sampleRate = 48_000;
-  const channels = 2;
-  const bytesPerSample = 2;
-  const frames = Math.round(durationSeconds * sampleRate);
-  const dataSize = frames * channels * bytesPerSample;
-  const buffer = Buffer.allocUnsafe(44 + dataSize);
-  buffer.write('RIFF', 0);
-  buffer.writeUInt32LE(36 + dataSize, 4);
-  buffer.write('WAVEfmt ', 8);
-  buffer.writeUInt32LE(16, 16);
-  buffer.writeUInt16LE(1, 20);
-  buffer.writeUInt16LE(channels, 22);
-  buffer.writeUInt32LE(sampleRate, 24);
-  buffer.writeUInt32LE(sampleRate * channels * bytesPerSample, 28);
-  buffer.writeUInt16LE(channels * bytesPerSample, 32);
-  buffer.writeUInt16LE(16, 34);
-  buffer.write('data', 36);
-  buffer.writeUInt32LE(dataSize, 40);
-
-  const boundaries = SHOWCASE_SCRIPT.slice(1).map((section) => section.start);
-  let randomState = 0x56f2c6;
-  const random = () => {
-    randomState ^= randomState << 13;
-    randomState ^= randomState >>> 17;
-    randomState ^= randomState << 5;
-    return ((randomState >>> 0) / 0xffffffff) * 2 - 1;
-  };
-  for (let frame = 0; frame < frames; frame += 1) {
-    const time = frame / sampleRate;
-    const beat = time % (60 / 90);
-    const pad =
-      Math.sin(2 * Math.PI * 110 * time) * 0.026 +
-      Math.sin(2 * Math.PI * 164.81 * time + 0.4) * 0.018 +
-      Math.sin(2 * Math.PI * 220 * time + Math.sin(time * 0.22) * 0.7) * 0.012;
-    const pulse = Math.exp(-beat * 7) * Math.sin(2 * Math.PI * 55 * time) * 0.018;
-    let transition = 0;
-    for (const boundary of boundaries) {
-      const delta = time - boundary;
-      if (delta >= -0.25 && delta <= 0.45) {
-        const envelope = 1 - Math.abs((delta + 0.25) / 0.7 - 0.5) * 2;
-        transition += random() * Math.max(0, envelope) * 0.014;
-      }
+/** 渐变在大画布上生成，渲染时轻微平移，避免重复静态背景。 */
+function background(path) {
+  const width = 2080,
+    height = 1200;
+  const pixels = Buffer.alloc(width * height * 3);
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      const blue = Math.exp(-((x - 500) ** 2 / 700000 + (y - 380) ** 2 / 240000));
+      const violet = Math.exp(-((x - 1720) ** 2 / 350000 + (y - 900) ** 2 / 280000));
+      const index = (y * width + x) * 3;
+      pixels[index] = Math.round(3 + 6 * blue + 17 * violet);
+      pixels[index + 1] = Math.round(8 + 17 * blue + 4 * violet);
+      pixels[index + 2] = Math.round(22 + 28 * blue + 25 * violet);
     }
-    const fade = Math.min(1, time / 2, (durationSeconds - time) / 3);
-    const left = Math.max(-1, Math.min(1, (pad + pulse + transition) * Math.max(0, fade)));
-    const right = Math.max(
-      -1,
-      Math.min(1, (pad * 0.96 + pulse * 0.9 - transition * 0.7) * Math.max(0, fade)),
-    );
-    const offset = 44 + frame * 4;
-    buffer.writeInt16LE(Math.round(left * 32767), offset);
-    buffer.writeInt16LE(Math.round(right * 32767), offset + 2);
-  }
-  writeFileSync(path, buffer);
+  writeFileSync(path, Buffer.concat([Buffer.from(`P6\n${width} ${height}\n255\n`), pixels]));
 }
-
-function ffmpegFilterPath(path) {
-  return path
-    .replaceAll('\\', '/')
-    .replace(/^([A-Za-z]):/u, '$1\\:')
-    .replaceAll("'", "'\\''");
-}
-
-function renderShot(ffmpeg, shot, path, maskOverlay) {
-  const duration = shot.duration.toFixed(3);
-  const fadeOut = Math.max(0, shot.duration - 0.28).toFixed(3);
-  const common = [
-    '-y',
-    '-r',
-    '30',
-    '-t',
-    duration,
-    '-an',
-    '-c:v',
-    'libx264',
-    '-preset',
-    'medium',
-    '-crf',
-    '19',
-    '-pix_fmt',
-    'yuv420p',
-    '-movflags',
-    '+faststart',
-    path,
+/** 单镜头保持源时间戳，通过镜头关键帧引导视线，不重绘界面。 */
+function renderShot(shot, plan, signature, bgPath) {
+  const key = cacheFingerprint({ signature, shot, source: plan.hashes[shot.source] });
+  const target = join(cache, `${shot.id}-${key.slice(0, 16)}.mp4`);
+  if (existsSync(target) && Number(probe(target).streams[0].nb_frames) === shot.frames)
+    return target;
+  const ass = join(cache, `${shot.id}.ass`);
+  writeFileSync(ass, renderShotAss(shot));
+  const input = ['-loop', '1', '-framerate', '30', '-i', bgPath];
+  const filters = [
+    `[0:v]crop=1920:1080:x='80+35*sin(t*0.24+${shot.startFrame / FPS})':y='60+22*cos(t*0.2)',setsar=1[bg]`,
   ];
-
-  if (shot.image) {
-    const sourceFilter = maskOverlay
-      ? 'delogo=x=890:y=1090:w=180:h=220:show=0,format=rgba'
-      : 'format=rgba';
-    const filter = [
-      `[0:v]${sourceFilter},split=2[bgsrc][fgsrc]`,
-      '[bgsrc]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,gblur=sigma=42,eq=brightness=-0.62:saturation=0.72[blurred]',
-      `color=c=0x030D2B:s=1920x1080:r=30:d=${duration}[base]`,
-      '[base][blurred]blend=all_mode=screen:all_opacity=0.16[backdrop]',
-      "[fgsrc]scale=432:960:force_original_aspect_ratio=decrease,pad=432:960:-1:-1:color=white,zoompan=z='min(zoom+0.00018,1.055)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=432x960:fps=30[phone]",
-      '[backdrop]drawbox=x=1314:y=45:w=464:h=990:color=black@0.38:t=fill[shadow]',
-      `[shadow][phone]overlay=x=1330:y=60:format=auto,drawbox=x='mod(t*95,1920)':y=0:w=2:h=1080:color=0x16D9FF@0.10:t=fill,fade=t=in:st=0:d=0.28,fade=t=out:st=${fadeOut}:d=0.28,format=yuv420p[out]`,
-    ].join(';');
-    run(
+  if (shot.source) {
+    const configPath = join(cache, `${shot.id}-camera.json`);
+    json(configPath, {
+      shot,
+      poses: cameraFrames(shot),
       ffmpeg,
-      [
-        '-y',
-        '-loop',
-        '1',
-        '-i',
-        shot.image,
-        '-filter_complex',
-        filter,
-        '-map',
-        '[out]',
-        ...common.slice(1),
-      ],
-      {
-        inherit: true,
-      },
-    );
-    return;
-  }
-
-  const logoScale = shot.sectionIndex === 8 ? 310 : 430;
-  const logoX = shot.sectionIndex === 8 ? '1430' : '(W-w)/2';
-  const logoY = shot.sectionIndex === 8 ? '(H-h)/2' : '(H-h)/2-20';
-  const filter = [
-    `color=c=0x030D2B:s=1920x1080:r=30:d=${duration}[base]`,
-    `[0:v]scale=${logoScale}:-1,format=rgba,fade=t=in:st=0:d=0.9:alpha=1[logo]`,
-    `[base][logo]overlay=x=${logoX}:y=${logoY}:format=auto,drawbox=x='mod(t*105,1920)':y=160:w=220:h=2:color=0x16D9FF@0.35:t=fill,fade=t=in:st=0:d=0.35,fade=t=out:st=${fadeOut}:d=0.28,format=yuv420p[out]`,
-  ].join(';');
+      source: plan.selected[shot.source],
+      target,
+      ass,
+      fonts: fontDir,
+      background: bgPath,
+      logo,
+    });
+    console.log(`渲染交互镜头 ${shot.id} (${shot.frames} 帧)`);
+    run(python, [join(root, 'scripts/showcase/composite.py'), configPath], shot.id);
+    if (Number(probe(target).streams[0].nb_frames) !== shot.frames)
+      throw new Error(`镜头帧数不足：${shot.id}`);
+    return target;
+  } else if (shot.kind === 'brand') {
+    input.push('-loop', '1', '-framerate', '30', '-i', logo);
+    filters.push('[1:v]scale=320:320:flags=lanczos,format=rgba[logo]');
+    filters.push('[bg][logo]overlay=x=800:y=150[visual]');
+  } else filters.push('[bg]null[visual]');
+  filters.push(
+    `[visual]ass='${filterPath(ass)}':fontsdir='${filterPath(fontDir)}',format=yuv420p[out]`,
+  );
+  const graph = join(cache, `${shot.id}.filter`);
+  writeFileSync(graph, filters.join(';\n'));
+  console.log(`渲染 ${shot.id} (${shot.frames} 帧)`);
   run(
     ffmpeg,
     [
       '-y',
-      '-loop',
-      '1',
-      '-i',
-      logoPath,
-      '-filter_complex',
-      filter,
+      '-hide_banner',
+      '-loglevel',
+      'warning',
+      '-filter_complex_threads',
+      '2',
+      ...input,
+      '-filter_complex_script',
+      graph,
       '-map',
       '[out]',
-      ...common.slice(1),
-    ],
-    {
-      inherit: true,
-    },
-  );
-}
-
-function buildShotSchedule(resolvedSections) {
-  return resolvedSections.flatMap((section, sectionIndex) => {
-    const images = section.selected.length ? section.selected : [null];
-    const total = section.end - section.start;
-    return images.map((image, imageIndex) => {
-      const start = section.start + (total * imageIndex) / images.length;
-      const end = section.start + (total * (imageIndex + 1)) / images.length;
-      return { sectionIndex, image, start, end, duration: end - start };
-    });
-  });
-}
-
-function generateNarration({ ffmpeg, python, pythonEnv, workDirectory, outputPath, voice }) {
-  const inputs = [];
-  for (const [index, section] of SHOWCASE_SCRIPT.entries()) {
-    const path = join(workDirectory, `narration-${String(index + 1).padStart(2, '0')}.mp3`);
-    runPython(
-      python,
-      [
-        '-m',
-        'edge_tts',
-        '--voice',
-        voice,
-        '--rate=+5%',
-        '--text',
-        section.narrationZh,
-        '--write-media',
-        path,
-      ],
-      { env: pythonEnv, inherit: true },
-    );
-    inputs.push(path);
-  }
-
-  const filterParts = inputs.map(
-    (_, index) =>
-      `[${index}:a]aresample=48000,volume=1,adelay=${Math.round(SHOWCASE_SCRIPT[index].start * 1000)}|${Math.round(SHOWCASE_SCRIPT[index].start * 1000)}[voice${index}]`,
-  );
-  filterParts.push(
-    `${inputs.map((_, index) => `[voice${index}]`).join('')}amix=inputs=${inputs.length}:duration=longest:dropout_transition=0,apad,atrim=0:${SHOWCASE_DURATION_SECONDS}[narration]`,
-  );
-  run(
-    ffmpeg,
-    [
-      '-y',
-      ...inputs.flatMap((path) => ['-i', path]),
-      '-filter_complex',
-      filterParts.join(';'),
-      '-map',
-      '[narration]',
-      '-c:a',
-      'pcm_s16le',
-      outputPath,
-    ],
-    { inherit: true },
-  );
-}
-
-function probeMedia(ffprobe, path) {
-  const result = run(ffprobe, [
-    '-v',
-    'error',
-    '-show_entries',
-    'format=duration,size:stream=index,codec_type,codec_name,width,height,sample_rate,channels',
-    '-of',
-    'json',
-    path,
-  ]);
-  return JSON.parse(result.stdout);
-}
-
-function analyzeAudioLevels(ffmpeg, path) {
-  const sink = process.platform === 'win32' ? 'NUL' : '/dev/null';
-  const result = run(
-    ffmpeg,
-    [
-      '-hide_banner',
-      '-nostats',
-      '-i',
-      path,
-      '-filter_complex',
-      'ebur128=peak=true',
-      '-f',
-      'null',
-      sink,
-    ],
-    { allowFailure: true },
-  );
-  const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
-  const integrated = [...output.matchAll(/\bI:\s+(-?\d+(?:\.\d+)?) LUFS/gmu)].at(-1);
-  const peak = [...output.matchAll(/\bPeak:\s+(-?\d+(?:\.\d+)?) dBFS/gmu)].at(-1);
-  return {
-    integratedLufs: integrated ? Number(integrated[1]) : null,
-    truePeakDbtp: peak ? Number(peak[1]) : null,
-    passed: Boolean(peak) && Number(peak[1]) <= -1,
-  };
-}
-
-async function main() {
-  validateShowcaseScript();
-  const { options } = parseArgs(process.argv.slice(2));
-  const runId = assertValidRunId(options.run ? String(options.run) : newestRunId());
-  const runDirectory = join(maestroArtifactsRoot, runId);
-  if (!existsSync(runDirectory)) throw new Error(`找不到 Maestro 运行：${runDirectory}`);
-  if (!existsSync(logoPath) || !existsSync(regularFont)) {
-    throw new Error('缺少 EchoWave Logo 或 Source Han Sans CN 字体。');
-  }
-
-  const outputDirectory = options.output
-    ? resolve(String(options.output))
-    : join(videoArtifactsRoot, runId);
-  mkdirSync(outputDirectory, { recursive: true });
-  const workDirectory = mkdtempSync(join(outputDirectory, '.work-'));
-  const voice = String(options.voice ?? 'zh-CN-YunyangNeural');
-  const maskOverlay = Boolean(options['mask-overlay']);
-
-  const resolvedSections = resolveSectionVisuals(runDirectory);
-  const missingSections = resolvedSections
-    .filter((section) => section.visuals.length > 0 && section.selected.length === 0)
-    .map((section) => section.titleZh);
-  if (missingSections.length) {
-    throw new Error(`以下章节没有可用截图：${missingSections.join('、')}`);
-  }
-
-  const assPath = join(outputDirectory, 'subtitles-zh-en.ass');
-  const scriptPath = join(outputDirectory, 'video-script.md');
-  const timelinePath = join(outputDirectory, 'command-timeline.json');
-  const musicPath = join(outputDirectory, 'music-and-sfx.wav');
-  const narrationPath = join(outputDirectory, 'narration-zh.wav');
-  writeFileSync(assPath, renderShowcaseAss());
-  writeFileSync(scriptPath, renderShowcaseScriptMarkdown());
-  writeFileSync(timelinePath, `${JSON.stringify(extractCommandTimeline(runDirectory), null, 2)}\n`);
-  writePcmWave(musicPath);
-
-  const shots = buildShotSchedule(resolvedSections);
-  const renderPlanPath = join(outputDirectory, 'render-plan.json');
-  writeFileSync(
-    renderPlanPath,
-    `${JSON.stringify(
-      {
-        runId,
-        outputDirectory,
-        workDirectory,
-        logoPath,
-        regularFont,
-        voice,
-        maskOverlay,
-        shots,
-      },
-      null,
-      2,
-    )}\n`,
-  );
-  if (options['prepare-assets']) {
-    console.log(`Showcase 渲染计划已生成：${renderPlanPath}`);
-    return;
-  }
-
-  const { ffmpeg, ffprobe } = await ensureFfmpeg(options);
-  const python = resolvePython(options);
-  const pythonEnv = ensureEdgeTts(python, options);
-  const shotFiles = [];
-  for (const [index, shot] of shots.entries()) {
-    const path = join(workDirectory, `shot-${String(index + 1).padStart(2, '0')}.mp4`);
-    renderShot(ffmpeg, shot, path, maskOverlay);
-    shotFiles.push(path);
-  }
-
-  const concatPath = join(workDirectory, 'shots.txt');
-  writeFileSync(
-    concatPath,
-    shotFiles
-      .map((path) => `file '${path.replaceAll('\\', '/').replaceAll("'", "'\\''")}'`)
-      .join('\n'),
-  );
-  const visualBasePath = join(workDirectory, 'visual-base.mp4');
-  run(
-    ffmpeg,
-    [
-      '-y',
-      '-f',
-      'concat',
-      '-safe',
-      '0',
-      '-i',
-      concatPath,
-      '-t',
-      String(SHOWCASE_DURATION_SECONDS),
-      '-c',
-      'copy',
-      visualBasePath,
-    ],
-    { inherit: true },
-  );
-
-  const titledVisualPath = join(workDirectory, 'visual-titled.mp4');
-  run(
-    ffmpeg,
-    [
-      '-y',
-      '-i',
-      visualBasePath,
-      '-vf',
-      `ass='${ffmpegFilterPath(assPath)}':fontsdir='${ffmpegFilterPath(dirname(regularFont))}'`,
-      '-t',
-      String(SHOWCASE_DURATION_SECONDS),
+      '-an',
+      '-frames:v',
+      String(shot.frames),
+      '-r',
+      '30',
       '-c:v',
       'libx264',
+      '-threads',
+      '4',
+      '-preset',
+      'fast',
+      '-crf',
+      '14',
+      '-pix_fmt',
+      'yuv420p',
+      target,
+    ],
+    shot.id,
+  );
+  if (Number(probe(target).streams[0].nb_frames) !== shot.frames)
+    throw new Error(`镜头帧数不足：${shot.id}`);
+  return target;
+}
+
+/** 两输入 blend 兼容本机旧版 FFmpeg；重叠的头尾不再进入主体。 */
+function assemble(shots, paths, target) {
+  const filters = [],
+    order = [];
+  shots.forEach((shot, i) => {
+    const head = i > 0 ? shots[i - 1].overlap : 0;
+    const branches = ['body', ...(head ? ['head'] : []), ...(shot.overlap ? ['tail'] : [])];
+    filters.push(
+      `[${i}:v]split=${branches.length}${branches.map((part) => `[s${i}${part}]`).join('')}`,
+    );
+    filters.push(
+      `[s${i}body]trim=start_frame=${head}:end_frame=${shot.frames - shot.overlap},setpts=PTS-STARTPTS[b${i}]`,
+    );
+    if (head) {
+      filters.push(`[s${i}head]trim=end_frame=${head},setpts=PTS-STARTPTS[h${i}]`);
+      filters.push(
+        `[t${i - 1}][h${i}]blend=all_expr='${shots[i - 1].transition === 'wipe' ? `if(lte(X,W*(N/${head})*(N/${head})*(3-2*N/${head})),B,A)` : `A*(1-min(N/${head},1))+B*min(N/${head},1)`}':shortest=1[x${i}]`,
+      );
+      order.push(`[x${i}]`);
+    }
+    order.push(`[b${i}]`);
+    if (shot.overlap)
+      filters.push(
+        `[s${i}tail]trim=start_frame=${shot.frames - shot.overlap},setpts=PTS-STARTPTS[t${i}]`,
+      );
+  });
+  filters.push(`${order.join('')}concat=n=${order.length}:v=1:a=0,format=yuv420p[out]`);
+  const graph = join(cache, `${basename(target)}.filter`);
+  writeFileSync(graph, filters.join(';\n'));
+  run(
+    ffmpeg,
+    [
+      '-y',
+      '-hide_banner',
+      '-loglevel',
+      'warning',
+      '-filter_complex_threads',
+      '2',
+      ...paths.flatMap((path) => ['-threads', '1', '-i', path]),
+      '-filter_complex_script',
+      graph,
+      '-map',
+      '[out]',
+      '-an',
+      '-r',
+      '30',
+      '-c:v',
+      'libx264',
+      '-threads',
+      '4',
       '-preset',
       'medium',
       '-crf',
       '18',
       '-pix_fmt',
       'yuv420p',
-      '-an',
-      titledVisualPath,
-    ],
-    { inherit: true },
-  );
-
-  generateNarration({
-    ffmpeg,
-    python,
-    pythonEnv,
-    workDirectory,
-    outputPath: narrationPath,
-    voice,
-  });
-
-  const masterPath = join(outputDirectory, 'EchoWave-demo-zh-en-1080p.mp4');
-  run(
-    ffmpeg,
-    [
-      '-y',
-      '-i',
-      titledVisualPath,
-      '-i',
-      narrationPath,
-      '-i',
-      musicPath,
-      '-filter_complex',
-      '[1:a]volume=1.0[voice];[2:a]volume=0.50[music];[voice][music]amix=inputs=2:duration=longest:dropout_transition=0,loudnorm=I=-14:TP=-1.5:LRA=11[audio]',
-      '-map',
-      '0:v:0',
-      '-map',
-      '[audio]',
-      '-t',
-      String(SHOWCASE_DURATION_SECONDS),
-      '-c:v',
-      'copy',
-      '-c:a',
-      'aac',
-      '-b:a',
-      '256k',
       '-movflags',
       '+faststart',
-      masterPath,
+      target,
     ],
-    { inherit: true },
+    `assemble-${basename(target)}`,
   );
-
-  const cleanPath = join(outputDirectory, 'EchoWave-demo-clean-1080p.mp4');
-  run(
-    ffmpeg,
-    [
-      '-y',
-      '-i',
-      titledVisualPath,
-      '-i',
-      musicPath,
-      '-filter_complex',
-      '[1:a]volume=0.72,loudnorm=I=-18:TP=-1.5:LRA=11[audio]',
-      '-map',
-      '0:v:0',
-      '-map',
-      '[audio]',
-      '-t',
-      String(SHOWCASE_DURATION_SECONDS),
-      '-c:v',
-      'copy',
-      '-c:a',
-      'aac',
-      '-b:a',
-      '256k',
-      '-movflags',
-      '+faststart',
-      cleanPath,
-    ],
-    { inherit: true },
-  );
-
-  const thumbnailPath = join(outputDirectory, 'thumbnail.png');
-  run(ffmpeg, ['-y', '-ss', '82', '-i', masterPath, '-frames:v', '1', thumbnailPath], {
-    inherit: true,
-  });
-
-  const summary = JSON.parse(readFileSync(join(runDirectory, 'summary.json'), 'utf8'));
-  const masterProbe = probeMedia(ffprobe, masterPath);
-  const cleanProbe = probeMedia(ffprobe, cleanPath);
-  validateShowcaseMediaProbe(masterProbe);
-  validateShowcaseMediaProbe(cleanProbe);
-  const audioLevels = analyzeAudioLevels(ffmpeg, masterPath);
-  const videoStream = masterProbe.streams.find((stream) => stream.codec_type === 'video');
-  const audioStream = masterProbe.streams.find((stream) => stream.codec_type === 'audio');
-  const fallbackCount = resolvedSections.reduce(
-    (total, section) => total + section.fallbacks.length,
-    0,
-  );
-  const qa = {
-    runId,
-    generatedAt: new Date().toISOString(),
-    status: 'completed',
-    checks: {
-      duration: {
-        expectedSeconds: SHOWCASE_DURATION_SECONDS,
-        actualSeconds: Number(masterProbe.format.duration),
-        passed: Math.abs(Number(masterProbe.format.duration) - SHOWCASE_DURATION_SECONDS) <= 0.25,
-      },
-      dimensions: {
-        expected: '1920x1080',
-        actual: `${videoStream?.width}x${videoStream?.height}`,
-        passed: videoStream?.width === 1920 && videoStream?.height === 1080,
-      },
-      audio: { passed: Boolean(audioStream), codec: audioStream?.codec_name ?? null },
-      audioLevels,
-      sourceFlows: {
-        suite: summary.suite,
-        flowStatus: summary.flowStatus ?? null,
-        overallStatus: summary.status,
-        passed: summary.flows?.every((flow) => flow.status === 'passed') ?? false,
-      },
-      showcaseFootage: {
-        fallbackCount,
-        passed: summary.suite === 'showcase' && fallbackCount === 0,
-      },
-      manualVisualReview: {
-        passed: false,
-        required: true,
-        note: '发布前必须完整播放，确认无调试覆盖物、敏感信息、字幕遮挡、黑帧或超过 1.5 秒的无意义静止。',
-      },
-    },
-    publishReady: false,
-    note:
-      summary.suite === 'showcase' && fallbackCount === 0
-        ? '媒体技术检查完成；通过人工视觉复核后可发布。'
-        : '这是使用 stable 降级素材生成的审阅版；真实 ASR/RAG Showcase 重录后才能标记为公开发布版。',
-    probes: { master: masterProbe, clean: cleanProbe },
-  };
-  writeFileSync(join(outputDirectory, 'qa-report.json'), `${JSON.stringify(qa, null, 2)}\n`);
-
-  const manifest = {
-    runId,
-    generatedAt: new Date().toISOString(),
-    sourceDirectory: runDirectory,
-    voice,
-    durationSeconds: SHOWCASE_DURATION_SECONDS,
-    maskOverlay,
-    sections: resolvedSections.map((section) => ({
-      start: section.start,
-      end: section.end,
-      titleZh: section.titleZh,
-      sources: section.selected,
-      fallbacks: section.fallbacks,
-    })),
-    outputs: {
-      master: masterPath,
-      clean: cleanPath,
-      narration: narrationPath,
-      musicAndSfx: musicPath,
-      subtitles: assPath,
-      script: scriptPath,
-      thumbnail: thumbnailPath,
-      commandTimeline: timelinePath,
-    },
-  };
-  writeFileSync(
-    join(outputDirectory, 'render-manifest.json'),
-    `${JSON.stringify(manifest, null, 2)}\n`,
-  );
-  console.log(`Showcase 视频已生成：${masterPath}`);
-  console.log(`QA 报告：${join(outputDirectory, 'qa-report.json')}`);
 }
 
+function measure(path, name) {
+  const outputText = run(
+    ffmpeg,
+    [
+      '-hide_banner',
+      '-nostats',
+      '-i',
+      path,
+      '-af',
+      'loudnorm=I=-16:TP=-1.5:LRA=9:print_format=json',
+      '-f',
+      'null',
+      'NUL',
+    ],
+    name,
+  );
+  return JSON.parse(outputText.slice(outputText.lastIndexOf('{'), outputText.lastIndexOf('}') + 1));
+}
+
+async function main() {
+  if (args.includes('--help')) {
+    console.log(
+      'pnpm showcase:video -- [--output directory] [--prepare-assets | --heroes | --qa-only] [--ffmpeg path --ffprobe path]',
+    );
+    return;
+  }
+  if (args.some((arg) => ['--run', '--voice', '--mask-overlay', '--prepare-tools'].includes(arg)))
+    throw new Error('旧版自动截图/TTS 参数已退役，请使用 --help 查看显式剪辑入口。');
+  if (!ffmpeg || !ffprobe)
+    throw new Error('缺少 FFmpeg/FFprobe，请通过 --ffmpeg 与 --ffprobe 指定现有工具。');
+  mkdirSync(cache, { recursive: true });
+  const library = resolveFootage(
+    SOURCE_ROOTS.map((name) => join(root, '.artifacts/maestro', name)),
+    SELECTED_FILES,
+  );
+  const shots = createTimeline();
+  const probes = Object.fromEntries(
+    Object.entries(library.selected).map(([id, path]) => [id, probe(path)]),
+  );
+  validateTimeline(shots, probes);
+  const hashes = Object.fromEntries(
+    Object.entries(library.selected).map(([id, path]) => [id, hashFile(path)]),
+  );
+  const signature = cacheFingerprint({
+    code: ['render-video.mjs', 'camera.mjs', 'composite.py'].map((name) =>
+      hashFile(join(root, 'scripts/showcase', name)),
+    ),
+    lib: hashFile(join(root, 'scripts/e2e/showcase-video-lib.mjs')),
+    fonts: ['SourceHanSansCN-Regular.otf', 'SourceHanSansCN-Bold.otf'].map((name) =>
+      hashFile(join(fontDir, name)),
+    ),
+    logo: hashFile(logo),
+    ffmpeg: hashFile(ffmpeg),
+  });
+  const plan = {
+    version: 3,
+    signature,
+    fps: FPS,
+    frames: TOTAL_FRAMES,
+    durationSeconds: SHOWCASE_DURATION_SECONDS,
+    selected: library.selected,
+    hashes,
+    shots,
+    sound: musicConfig,
+    soundEvents: [],
+    continuousPlaybackReview: 'not performed; only sequence-frame review is available',
+  };
+  json(join(output, 'render-plan.json'), plan);
+  json(
+    join(output, 'footage-library.json'),
+    library.files.map((file) => ({
+      ...file,
+      selected: Object.values(library.selected).includes(file.path),
+      reason: Object.values(library.selected).includes(file.path)
+        ? '人工选择窗口，见 shot-list'
+        : '不进入主剪：导航、配置、归档、测试/调试覆盖物或重复内容',
+    })),
+  );
+  writeFileSync(
+    join(output, 'shot-list.md'),
+    `# EchoWave / From Voice to Insight\n\n76 秒 · 1920×1080 · 30fps · 无连续旁白\n\n| 成片时间 | 镜头 | 来源 | 源入点–出点 | 速度 | 帧数 / 尾部重叠 |\n| --- | --- | --- | --- | --- | --- |\n${shots.map((shot) => `| ${(shot.startFrame / FPS).toFixed(2)}–${((shot.startFrame + shot.frames - shot.overlap) / FPS).toFixed(2)} | ${shot.title ?? shot.kind} | ${shot.source ?? '品牌资产'} | ${shot.source ? `${shot.in}–${shot.out}` : '—'} | ${shot.speed.toFixed(3)}× | ${shot.frames} / ${shot.overlap} |`).join('\n')}\n\n素材保留原 UI、提示、置信度与状态。来源之间的剪切不表示同一次实时任务。连续播放与主观听感审片尚未完成。\n`,
+  );
+  if (args.includes('--prepare-assets')) {
+    console.log(`计划已校验：${output}`);
+    return;
+  }
+  const bgPath = join(cache, 'background.ppm');
+  background(bgPath);
+  const master = join(
+    output,
+    musicConfig ? 'EchoWave-launch-zh-en-1080p.mp4' : 'EchoWave-launch-visual-preview-1080p.mp4',
+  );
+  if (!args.includes('--qa-only')) {
+    const subset = args.includes('--heroes') ? shots.filter((shot) => shot.hero) : shots;
+    const rendered = new Map(
+      subset.map((shot) => [shot.id, renderShot(shot, plan, signature, bgPath)]),
+    );
+    if (args.includes('--heroes')) {
+      for (const [name, ids] of [
+        ['hero-1', ['06-transcript']],
+        ['hero-2', ['07-positive', '08-improve']],
+        ['hero-3', ['09-knowledge']],
+      ]) {
+        const group = ids.map((id) => ({ ...shots.find((shot) => shot.id === id) }));
+        // 预览末镜头保留完整尾部，不引用未渲染的下一镜头。
+        group[group.length - 1].overlap = 0;
+        assemble(
+          group,
+          ids.map((id) => rendered.get(id)),
+          join(output, `${name}-1080p.mp4`),
+        );
+      }
+      console.log(`三个 Hero 审阅片已输出：${output}`);
+      return;
+    }
+    const editHash = cacheFingerprint({ signature, shots, hashes });
+    const visual = join(cache, `visual-${editHash.slice(0, 16)}.mp4`);
+    if (!existsSync(visual))
+      assemble(
+        shots,
+        shots.map((shot) => rendered.get(shot.id)),
+        visual,
+      );
+    const music = join(output, 'music-and-sfx.wav');
+    if (!musicConfig) {
+      run(
+        ffmpeg,
+        ['-y', '-v', 'error', '-i', visual, '-c', 'copy', '-movflags', '+faststart', master],
+        'silent-preview',
+      );
+      json(join(output, 'render-manifest.json'), {
+        signature,
+        master,
+        frames: TOTAL_FRAMES,
+        durationSeconds: SHOWCASE_DURATION_SECONDS,
+        music: 'missing licensed source; silent visual preview only',
+      });
+    } else {
+      if (
+        !musicConfig.file ||
+        !musicConfig.title ||
+        !musicConfig.artist ||
+        !musicConfig.license ||
+        !musicConfig.source
+      )
+        throw new Error('音乐配置必须包含 file/title/artist/license/source');
+      const musicSource = resolve(root, musicConfig.file);
+      const musicProbe = probe(musicSource);
+      if (!musicProbe.streams.some((stream) => stream.codec_type === 'audio'))
+        throw new Error('音乐没有音轨');
+      if (Number(musicProbe.format.duration) < (musicConfig.start ?? 0) + SHOWCASE_DURATION_SECONDS)
+        throw new Error('音乐区间不足');
+      run(
+        ffmpeg,
+        [
+          '-y',
+          '-v',
+          'error',
+          '-ss',
+          String(musicConfig.start ?? 0),
+          '-i',
+          musicSource,
+          '-t',
+          String(SHOWCASE_DURATION_SECONDS),
+          '-af',
+          'afade=t=in:d=0.6,afade=t=out:st=73:d=3',
+          '-ar',
+          '48000',
+          '-ac',
+          '2',
+          music,
+        ],
+        'licensed-music',
+      );
+      json(join(output, 'music-license.json'), {
+        ...musicConfig,
+        sha256: hashFile(musicSource),
+        edits: 'excerpt, fade in/out, loudness normalization',
+      });
+      const levels = measure(music, 'music-measure');
+      const norm = `loudnorm=I=-16:TP=-1.5:LRA=9:measured_I=${levels.input_i}:measured_TP=${levels.input_tp}:measured_LRA=${levels.input_lra}:measured_thresh=${levels.input_thresh}:offset=${levels.target_offset}:linear=true`;
+      run(
+        ffmpeg,
+        [
+          '-y',
+          '-hide_banner',
+          '-i',
+          visual,
+          '-i',
+          music,
+          '-map',
+          '0:v:0',
+          '-map',
+          '1:a:0',
+          '-af',
+          norm,
+          '-c:v',
+          'copy',
+          '-c:a',
+          'aac',
+          '-b:a',
+          '256k',
+          '-ar',
+          '48000',
+          '-t',
+          String(SHOWCASE_DURATION_SECONDS),
+          '-movflags',
+          '+faststart',
+          master,
+        ],
+        'master',
+      );
+    }
+  }
+  const media = probe(master);
+  validateShowcaseMediaProbe(media, SHOWCASE_DURATION_SECONDS, Boolean(musicConfig));
+  const levels = musicConfig ? measure(master, 'master-levels') : null;
+  const scan = run(
+    ffmpeg,
+    [
+      '-hide_banner',
+      '-nostats',
+      '-xerror',
+      '-i',
+      master,
+      '-vf',
+      'blackdetect=d=0.033:pix_th=0.05:pic_th=0.98,freezedetect=n=-50dB:d=2',
+      '-an',
+      '-f',
+      'null',
+      'NUL',
+    ],
+    'visual-qa',
+  );
+  const black = scan.split('\n').filter((line) => line.includes('black_start:'));
+  const freezes = scan.split('\n').filter((line) => /freeze_(start|end|duration):/u.test(line));
+  run(
+    ffmpeg,
+    [
+      '-y',
+      '-v',
+      'error',
+      '-ss',
+      '38',
+      '-i',
+      master,
+      '-frames:v',
+      '1',
+      join(output, 'thumbnail.png'),
+    ],
+    'thumbnail',
+  );
+  run(
+    ffmpeg,
+    [
+      '-y',
+      '-v',
+      'error',
+      '-i',
+      master,
+      '-vf',
+      'fps=1/3,scale=480:270,tile=4x8',
+      '-frames:v',
+      '1',
+      join(output, 'review-contact-sheet.jpg'),
+    ],
+    'contact-sheet',
+  );
+  const qa = {
+    generatedAt: new Date().toISOString(),
+    media,
+    audio: levels
+      ? {
+          integratedLufs: Number(levels.input_i),
+          truePeakDbtp: Number(levels.input_tp),
+          passed: Math.abs(Number(levels.input_i) + 16) < 1 && Number(levels.input_tp) <= -1.5,
+        }
+      : { passed: false, reason: 'Missing licensed audio; visual preview only' },
+    blackFrames: { passed: black.length === 0, events: black },
+    freezeCandidates: freezes,
+    decodedWithoutError: true,
+    manualSequenceReview: { status: 'pending', notes: [] },
+    continuousPlaybackAndListening: {
+      passed: false,
+      note: '未进行连续完整播放及主观听感检查；不以抽帧和响度检测代替。',
+    },
+    publishReady: false,
+  };
+  json(join(output, 'qa-report.json'), qa);
+  json(join(output, 'render-manifest.json'), {
+    signature,
+    frames: TOTAL_FRAMES,
+    durationSeconds: SHOWCASE_DURATION_SECONDS,
+    master,
+    plan: join(output, 'render-plan.json'),
+    thumbnail: join(output, 'thumbnail.png'),
+    qa: join(output, 'qa-report.json'),
+  });
+  if ((musicConfig && !qa.audio.passed) || black.length)
+    throw new Error('成片 QA 存在音频或黑帧问题，查看 qa-report.json');
+  console.log(
+    `${musicConfig ? '有声成片技术检查通过' : '无声画面审阅版检查通过；授权音源待提供'}：${master}`,
+  );
+}
 main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
+  console.error(error.message);
   process.exitCode = 1;
 });

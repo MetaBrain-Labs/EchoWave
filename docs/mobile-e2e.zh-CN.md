@@ -73,13 +73,17 @@ Showcase Flow 位于 `.maestro/flows/showcase`，将同一组核心能力组织�
 
 ## Showcase 视频渲染
 
-Showcase 或既有 stable 运行完成后，可以生成 150 秒、1920×1080、30fps 的中英双语审阅版：
+宣传片使用显式选片表生成 76 秒、1920×1080、30fps 的中英双语版本，无连续旁白：
 
 ```powershell
-pnpm showcase:video -- --run E2E_20260906T010203Z_A1B2C3 --prepare-tools
+pnpm showcase:video -- --prepare-assets
+pnpm showcase:video -- --heroes
+pnpm showcase:video
 ```
 
-渲染器从 `commands.json` 生成剪辑时间参考，优先选择 Showcase 截图并在缺失时标记 stable 降级素材；它输出主成片、无旁白 clean 版、中文神经 TTS、独立音乐与音效、ASS 字幕、视频脚本、缩略图、manifest 和 QA 报告到 `.artifacts/showcase-video/<run-id>/`。Windows 受限环境可以先生成计划，再使用 `scripts/showcase/render-video-from-plan.ps1` 渲染；`--mask-overlay` / `-MaskOverlay` 只用于现有素材的已知浮动调试按钮，正式 Showcase 录制仍应在预览检查时关闭覆盖物。
+选片表位于 [`scripts/showcase/timeline.mjs`](../scripts/showcase/timeline.mjs)，从 `SHOWCASE_FINISH`、`STABLE_FINISH`、`SHOWCASE_RETAKE_FINISH` 素材库显式选取录屏区间；新素材不会自动进入成片，当前主剪不使用 Stable。先检查源区间、裁切和重叠帧，再输出三个 Hero 审阅片，最后渲染主片。依赖现有 `.artifacts/tools` 中的 FFmpeg/FFprobe，或通过 `--ffmpeg`、`--ffprobe` 指定路径；不安装工具或生成 TTS。
+
+默认输出目录为 `.artifacts/showcase-video/LAUNCH_REFINED_20260913/`，可用 `--output` 指定新目录。产物包括主片、授权音乐/音效、逐镜头 ASS、shot list、素材库、渲染计划、封面、manifest 与 QA；旧版及原素材保持不变。Windows 可运行 `scripts/showcase/render-video-from-plan.ps1`，该入口委托相同 Node 渲染器。`--qa-only` 重查成片技术指标。连续完整播放和主观听感必须单独记录，序列帧检查不代表该项已通过。
 
 ## 报告、诊断与修复门禁
 
@@ -117,3 +121,5 @@ repair 必须保留脏工作树，只修复已确认的最小根因，先重跑�
 - [`addMedia` 支持格式](https://docs.maestro.dev/reference/commands-available/addmedia)（不含音频，因此本方案使用 `adb push`）
 - [测试报告与 artifacts](https://docs.maestro.dev/troubleshooting/debug-output)
 - [Codex 非交互模式](https://learn.chatgpt.com/docs/non-interactive-mode)
+
+视频镜头、Python/Pillow 依赖和授权音乐配置见 [宣传片工程说明](../scripts/showcase/README.md)。缺少授权音源时只输出无声画面审阅版，不生成最终有声成片。

@@ -60,13 +60,17 @@ Showcase flows organize the same capabilities into five public stories and captu
 
 ## Showcase video
 
-Generate a 150-second, 1920×1080, 30fps bilingual review video from a Showcase or stable run:
+Generate an 76-second, 1920×1080, 30fps bilingual launch video from an explicit edit list, without continuous narration:
 
 ```powershell
-pnpm showcase:video -- --run E2E_20260906T010203Z_A1B2C3 --prepare-tools
+pnpm showcase:video -- --prepare-assets
+pnpm showcase:video -- --heroes
+pnpm showcase:video
 ```
 
-Output under `.artifacts/showcase-video/<run-id>/` includes the main and clean videos, Chinese neural narration, music/effects, ASS subtitles, script, thumbnail, manifest, and QA report. Restricted Windows environments may render an existing plan with `scripts/showcase/render-video-from-plan.ps1`. Mask overlays are for known floating debug controls only; disable overlays in the actual Showcase preview.
+The edit list in [`scripts/showcase/timeline.mjs`](../scripts/showcase/timeline.mjs) explicitly selects recording ranges from `SHOWCASE_FINISH`, `STABLE_FINISH`, and `SHOWCASE_RETAKE_FINISH`. New footage is never automatically included; the current cut excludes Stable. Validate source bounds, crops and overlap frames, review the three Hero previews, then render the master. Use existing FFmpeg/FFprobe under `.artifacts/tools`, or specify `--ffmpeg` and `--ffprobe`; the renderer does not install tools or generate TTS.
+
+The default output is `.artifacts/showcase-video/LAUNCH_REFINED_20260913/`; use `--output` for another directory. Deliverables include the master, licensed music excerpt and attribution, per-shot ASS, shot list, footage library, render plan, thumbnail, manifest and QA report. Original footage and the first version are preserved. `scripts/showcase/render-video-from-plan.ps1` delegates to the same Node renderer. `--qa-only` reruns technical checks. Continuous playback and subjective listening remain separately recorded checks; sequence-frame inspection does not count as playback approval.
 
 ## Evidence, triage, and repair gate
 
@@ -92,3 +96,5 @@ For a new device or Android version:
 - Verify the exact-ID repair gate on a dedicated test defect.
 
 Official references: [Maestro installation](https://docs.maestro.dev/maestro-cli/how-to-install-maestro-cli), [React Native](https://docs.maestro.dev/platform-support/react-native), [`addMedia`](https://docs.maestro.dev/reference/commands-available/addmedia), [debug artifacts](https://docs.maestro.dev/troubleshooting/debug-output), and [Codex non-interactive mode](https://learn.chatgpt.com/docs/non-interactive-mode).
+
+See the [film renderer guide](../scripts/showcase/README.md) for camera editing, Python/Pillow requirements and licensed music configuration. Without a licensed source, only a silent visual preview is produced.
