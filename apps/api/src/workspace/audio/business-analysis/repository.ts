@@ -29,6 +29,7 @@ import type { PoolClient } from 'pg';
 import { quoteIdentifier, type DatabasePool } from '../../../infrastructure/postgres.ts';
 import type { RetrievalChunk } from '../../../knowledge/retrieval/types.ts';
 import { WorkspaceRepositoryError } from '../../errors.ts';
+import { resolveCitationSources } from '../../../knowledge/persistence/citationSources.ts';
 import { buildBusinessAnalysisWindows } from './windowing.ts';
 
 export const BUSINESS_ANALYSIS_WORKFLOW_VERSION = 'langgraph-v1';
@@ -45,6 +46,16 @@ export class BusinessAnalysisCanceledError extends Error {
   }
 }
 
+/** 知识已变化必须新建分析输入，不恢复旧 checkpoint。 */
+export class BusinessAnalysisKnowledgeChangedError extends Error {
+  readonly code = 'KNOWLEDGE_CHANGED';
+  readonly retryable = true;
+  constructor() {
+    super('知识来源已更新，请重新发起分析。');
+  }
+}
+/** 知识库检索内容的单调版本快照。 */
+type KnowledgeVersionSnapshot = { id: string; version: number }[];
 export type BusinessAnalysisSegment = {
   id: string;
   speakerKey: string;
@@ -79,6 +90,7 @@ export type ClaimedBusinessAnalysisJob = {
   embeddingBindingRevisionId: string | null;
   knowledgeBaseIds: string[];
   knowledgeBases: { id: string; name: string }[];
+  knowledgeVersionSnapshot?: KnowledgeVersionSnapshot;
   settings: BusinessAnalysisSettingsSnapshot;
   segments: BusinessAnalysisSegment[];
   /** 已完成的窗口结果，供重试时跳过已成功的模型调用。 */
@@ -120,6 +132,7 @@ type SourceSnapshot = {
   roleJobId: string | null;
   settings: BusinessAnalysisSettingsSnapshot;
   fingerprint: string;
+  knowledgeVersionSnapshot: KnowledgeVersionSnapshot;
 };
 
 function iso(value: Date | string): string {
@@ -167,6 +180,37 @@ export class BusinessAnalysisRepository {
 
   private table(name: string): string {
     return `${this.schema}.${quoteIdentifier(name)}`;
+  }
+
+  /** 获取检索白名单的版本；发布时共享锁与知识修改事务互斥。 */
+  private async knowledgeVersions(
+    ids: string[],
+    client: DatabasePool | PoolClient = this.pool,
+    lock = false,
+  ): Promise<KnowledgeVersionSnapshot> {
+    if (!ids.length) return [];
+    const result = await client.query(
+      `SELECT id,content_version FROM ${this.table('knowledge_bases')}
+      WHERE tenant_id=$1 AND id=ANY($2::uuid[]) AND deleted_at IS NULL ORDER BY id ${lock ? 'FOR SHARE' : ''}`,
+      [this.tenantId, ids],
+    );
+    return result.rows.map((row) => ({
+      id: String(row.id),
+      version: Number(row.content_version ?? 0),
+    }));
+  }
+  /** 检索和恢复前检查冻结输入，知识变化时禁止使用旧窗口和检索证据。 */
+  async assertKnowledgeCurrent(
+    job: ClaimedBusinessAnalysisJob,
+    client: DatabasePool | PoolClient = this.pool,
+    lock = false,
+  ): Promise<void> {
+    const current = await this.knowledgeVersions(job.knowledgeBaseIds, client, lock);
+    if (
+      current.length !== new Set(job.knowledgeBaseIds).size ||
+      JSON.stringify(current) !== JSON.stringify(job.knowledgeVersionSnapshot ?? [])
+    )
+      throw new BusinessAnalysisKnowledgeChangedError();
   }
 
   private async sourceSnapshot(
@@ -236,7 +280,7 @@ export class BusinessAnalysisRepository {
       );
     }
     const links = await client.query(
-      `SELECT gkb.knowledge_base_id
+      `SELECT gkb.knowledge_base_id,kb.content_version
        FROM ${this.table('group_knowledge_bases')} gkb
        JOIN ${this.table('knowledge_bases')} kb
          ON kb.tenant_id = gkb.tenant_id AND kb.id = gkb.knowledge_base_id
@@ -246,6 +290,10 @@ export class BusinessAnalysisRepository {
       [this.tenantId, groupId],
     );
     const knowledgeBaseIds = links.rows.map((item) => String(item.knowledge_base_id));
+    const knowledgeVersionSnapshot = links.rows.map((item) => ({
+      id: String(item.knowledge_base_id),
+      version: Number(item.content_version ?? 0),
+    }));
     const settings: BusinessAnalysisSettingsSnapshot = {
       language,
       timing: row.analysis_timing,
@@ -260,6 +308,7 @@ export class BusinessAnalysisRepository {
           confirmationId: row.confirmation_id,
           emotionJobId: row.emotion_job_id ?? null,
           knowledgeBaseIds,
+          knowledgeVersionSnapshot,
           language,
           roleJobId: row.role_job_id ?? null,
           settings: comparableSettings(settings),
@@ -277,6 +326,7 @@ export class BusinessAnalysisRepository {
       roleJobId: row.role_job_id ?? null,
       settings,
       fingerprint,
+      knowledgeVersionSnapshot,
     };
   }
 
@@ -303,6 +353,10 @@ export class BusinessAnalysisRepository {
       await client.query('BEGIN');
       snapshot = await this.sourceSnapshot(audioFileId, groupId, client, language);
       if (frozenInput) {
+        const frozenKnowledgeVersions = await this.knowledgeVersions(
+          frozenInput.knowledgeBaseIds,
+          client,
+        );
         const settings: BusinessAnalysisSettingsSnapshot = {
           language,
           timing: frozenInput.analysisTiming,
@@ -317,6 +371,7 @@ export class BusinessAnalysisRepository {
               confirmationId: snapshot.confirmationId,
               emotionJobId: snapshot.emotionJobId,
               knowledgeBaseIds: frozenInput.knowledgeBaseIds,
+              knowledgeVersionSnapshot: frozenKnowledgeVersions,
               language,
               roleJobId: snapshot.roleJobId,
               settings: comparableSettings(settings),
@@ -325,6 +380,7 @@ export class BusinessAnalysisRepository {
           .digest('hex');
         snapshot = {
           ...snapshot,
+          knowledgeVersionSnapshot: frozenKnowledgeVersions,
           settings,
           knowledgeBaseIds: [...frozenInput.knowledgeBaseIds],
           fingerprint,
@@ -354,9 +410,9 @@ export class BusinessAnalysisRepository {
            (tenant_id, group_id, audio_file_id, analysis_revision_id,
             transcript_confirmation_id, confirmation_version, model, input_fingerprint,
             settings_snapshot, knowledge_base_ids, emotion_job_id, role_job_id, status, progress,
-            workflow_version, chat_binding_revision_id, embedding_binding_revision_id)
+            workflow_version, chat_binding_revision_id, embedding_binding_revision_id,knowledge_version_snapshot)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::uuid[], $11, $12,
-                 'queued', 0, $13, $14, $15)
+                 'queued', 0, $13, $14, $15,$16::jsonb)
          RETURNING id`,
         [
           this.tenantId,
@@ -374,6 +430,7 @@ export class BusinessAnalysisRepository {
           BUSINESS_ANALYSIS_WORKFLOW_VERSION,
           chatBindingRevisionId,
           embeddingBindingRevisionId,
+          JSON.stringify(snapshot.knowledgeVersionSnapshot),
         ],
       );
       await client.query('COMMIT');
@@ -526,6 +583,7 @@ export class BusinessAnalysisRepository {
       chatBindingRevisionId: row.chat_binding_revision_id ?? null,
       embeddingBindingRevisionId: row.embedding_binding_revision_id ?? null,
       knowledgeBaseIds,
+      knowledgeVersionSnapshot: row.knowledge_version_snapshot ?? [],
       knowledgeBases: knowledgeBases.rows.map((item) => ({
         id: String(item.id),
         name: String(item.name),
@@ -661,6 +719,7 @@ export class BusinessAnalysisRepository {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      await this.assertKnowledgeCurrent(job, client, true);
       const current = await client.query(
         `SELECT job.status, head.active_job_id, job.cancel_requested
          FROM ${this.table('audio_business_analysis_jobs')} job
@@ -736,8 +795,8 @@ export class BusinessAnalysisRepository {
           await client.query(
             `INSERT INTO ${this.table('business_analysis_citations')}
                (tenant_id, job_id, tag_id, chunk_id, knowledge_base_id, document_id,
-                document_title, locator)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+                document_title, locator,revision_id,quote_snapshot)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb,$9,$10)`,
             [
               this.tenantId,
               job.id,
@@ -747,6 +806,8 @@ export class BusinessAnalysisRepository {
               chunk.documentId,
               chunk.documentTitle,
               JSON.stringify(chunk.locator),
+              chunk.revisionId ?? null,
+              chunk.content,
             ],
           );
         }
@@ -835,7 +896,7 @@ export class BusinessAnalysisRepository {
     const head = await this.pool.query(
       `SELECT job.id, job.model, job.published_at, job.input_fingerprint,
               job.confirmation_version, job.knowledge_base_ids,
-              job.settings_snapshot, job.limitations
+              job.settings_snapshot, job.limitations,job.knowledge_version_snapshot
        FROM ${this.table('audio_group_business_analysis_heads')} head
        JOIN ${this.table('audio_business_analysis_jobs')} job
          ON job.tenant_id = head.tenant_id AND job.id = head.active_job_id
@@ -868,12 +929,21 @@ export class BusinessAnalysisRepository {
       ]);
       const citations = await this.pool.query(
         `SELECT citation.tag_id, citation.chunk_id, citation.knowledge_base_id,
-                citation.document_id, citation.document_title, citation.locator, chunk.content
+                citation.document_id, citation.document_title, citation.locator,citation.revision_id,citation.quote_snapshot
          FROM ${this.table('business_analysis_citations')} citation
-         JOIN ${this.table('document_chunks')} chunk
-           ON chunk.tenant_id = citation.tenant_id AND chunk.id = citation.chunk_id
          WHERE citation.tenant_id = $1 AND citation.job_id = $2`,
         [this.tenantId, published.id],
+      );
+      const citationSnapshots = await resolveCitationSources(
+        this.pool,
+        this.schema.replaceAll('"', ''),
+        this.tenantId,
+        citations.rows.map((citation) => ({
+          ...citation,
+          documentId: citation.document_id,
+          knowledgeBaseId: citation.knowledge_base_id,
+          revisionId: citation.revision_id,
+        })),
       );
       const limitations = safeArray(published.limitations).slice(
         0,
@@ -908,14 +978,20 @@ export class BusinessAnalysisRepository {
           details: safeArray(tag.details),
           confidence: Number(tag.confidence),
           evidenceSegmentIds: safeArray(tag.segment_ids),
-          citations: citations.rows
+          citations: citationSnapshots
             .filter((citation) => citation.tag_id === tag.id)
             .map((citation) => ({
               chunkId: citation.chunk_id,
               knowledgeBaseId: citation.knowledge_base_id,
               documentId: citation.document_id,
               documentTitle: citation.document_title,
-              excerpt: String(citation.content).replace(/\s+/g, ' ').trim().slice(0, 240),
+              excerpt: String(citation.quote_snapshot ?? '')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .slice(0, 240),
+              quoteSnapshot: String(citation.quote_snapshot ?? ''),
+              revisionId: citation.revision_id ?? null,
+              sourceStatus: citation.quote_snapshot ? citation.sourceStatus : 'unavailable',
               locator: citation.locator,
             })),
         })),
@@ -941,8 +1017,10 @@ export class BusinessAnalysisRepository {
           JSON.stringify(comparableSettings(current.settings)),
       knowledgeCurrent:
         !result ||
-        JSON.stringify([...result.knowledgeBaseIds].sort()) ===
-          JSON.stringify([...current.knowledgeBaseIds].sort()),
+        (JSON.stringify([...result.knowledgeBaseIds].sort()) ===
+          JSON.stringify([...current.knowledgeBaseIds].sort()) &&
+          JSON.stringify(published?.knowledge_version_snapshot ?? []) ===
+            JSON.stringify(current.knowledgeVersionSnapshot)),
       error:
         job?.status === 'failed'
           ? {

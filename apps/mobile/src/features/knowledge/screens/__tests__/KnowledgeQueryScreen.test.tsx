@@ -12,10 +12,15 @@ import { KeyboardAvoidingView, Platform, Text as MockText } from 'react-native';
 
 import { KnowledgeQueryScreen } from '../KnowledgeQueryScreen';
 import { listQueryHistory, queryKnowledge } from '../../apiClient';
+import { getKnowledgeCitationSource } from '@/shared/api/knowledgeBasesApi';
 import { document, knowledge } from '../../testing/fixtures';
 
 jest.mock('expo-router', () => ({ useFocusEffect: jest.fn() }));
 jest.mock('../../apiClient');
+jest.mock('@/shared/api/knowledgeBasesApi', () => ({
+  ...jest.requireActual('@/shared/api/knowledgeBasesApi'),
+  getKnowledgeCitationSource: jest.fn(),
+}));
 jest.mock('../../components/AnswerProgressCard', () => {
   return {
     AnswerProgressCard: ({ sourceCount }: { sourceCount?: number }) => (
@@ -33,6 +38,9 @@ const response = {
   citations: [
     {
       number: 1,
+      knowledgeBaseId: knowledge.id,
+      revisionId: '66666666-6666-4666-8666-666666666666',
+      quoteSnapshot: document.chunks[0]!.content,
       documentId: document.id,
       documentTitle: document.title,
       chunkId: document.chunks[0]!.id,
@@ -52,6 +60,7 @@ describe('KnowledgeQueryScreen', () => {
     setPlatform('android');
     jest.useFakeTimers();
     jest.mocked(listQueryHistory).mockResolvedValue({ items: [] });
+    jest.mocked(getKnowledgeCitationSource).mockResolvedValue({ status: 'active' });
   });
 
   afterEach(() => {
@@ -110,6 +119,8 @@ describe('KnowledgeQueryScreen', () => {
     expect(screen.getByText('回答需要关联原始证据。[1]')).toBeTruthy();
 
     fireEvent.press(screen.getByText(`[1] ${document.title}`));
+    expect(onOpenCitation).not.toHaveBeenCalled();
+    fireEvent.press(await screen.findByText('查看当前原文'));
     expect(onOpenCitation).toHaveBeenCalledWith(document.id, document.chunks[0]?.id);
   });
 
@@ -149,15 +160,17 @@ describe('KnowledgeQueryScreen', () => {
           answer: '历史回答',
           grounded: true,
           citationCount: 2,
+          citations: response.citations,
           createdAt: '2026-08-20T12:00:00.000Z',
         },
       ],
     });
+    const onOpenCitation = jest.fn();
     const screen = render(
       <KnowledgeQueryScreen
         knowledgeId={knowledge.id}
         onBack={jest.fn()}
-        onOpenCitation={jest.fn()}
+        onOpenCitation={onOpenCitation}
       />,
     );
 
@@ -168,5 +181,9 @@ describe('KnowledgeQueryScreen', () => {
     expect(screen.getByText('2 条引用来源')).toBeTruthy();
     expect(screen.queryByText('重新发送')).toBeNull();
     expect(listQueryHistory).toHaveBeenCalledWith(knowledge.id);
+    fireEvent.press(screen.getByText(`[1] ${document.title}`));
+    fireEvent.press(await screen.findByText('查看当前原文'));
+    expect(onOpenCitation).toHaveBeenCalledWith(document.id, document.chunks[0]?.id);
+    expect(screen.queryByText('历史问题')).toBeNull();
   });
 });

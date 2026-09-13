@@ -10,7 +10,7 @@
  * Notes:
  * - 节点依赖由工厂显式注入，不从组合根或全局配置读取。
  */
-import { readFile, unlink } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 
 import { runReportedStep } from '../../../ai-runtime/reportedStep.ts';
 import type { DashScopeEmbeddings } from '../../embeddings/dashScopeEmbeddings.ts';
@@ -33,6 +33,7 @@ export function createIngestionNodes(options: IngestionNodeOptions) {
       'validate',
       async () => {
         await options.repository.setJobStage(job, 'validate', 'validating');
+        if (job.rebuildSnapshot) return Buffer.alloc(0);
         const value = await readFile(job.stagedPath);
         if (value.byteLength !== job.sizeBytes || value.byteLength > MAX_FILE_BYTES) {
           throw new DocumentParseError('DOCUMENT_TOO_LARGE', '文件超过 20 MB 或上传内容不完整。');
@@ -50,7 +51,7 @@ export function createIngestionNodes(options: IngestionNodeOptions) {
       'parse',
       async () => {
         await options.repository.setJobStage(job, 'parse', 'parsing');
-        return parseKnowledgeDocument(source, job.format, job.title);
+        return job.rebuildSnapshot ?? parseKnowledgeDocument(source, job.format, job.title);
       },
       (value) => ({
         chunkCount: value.chunks.length,
@@ -180,23 +181,12 @@ export function createIngestionNodes(options: IngestionNodeOptions) {
     return {};
   }
 
+  /** 原文件由版本清理任务持有，不在成功解析后删除。 */
   async function cleanupNode({ job, report }: any) {
     await runReportedStep(
       report,
       'cleanup',
-      async () =>
-        unlink(job.stagedPath).then(
-          () => ({ removed: true }),
-          (error: NodeJS.ErrnoException) => {
-            if (error.code !== 'ENOENT') {
-              console.warn('Failed to remove staged upload', { jobId: job.id });
-            }
-            return {
-              removed: false,
-              reason: error.code === 'ENOENT' ? 'already-missing' : 'unlink-failed',
-            };
-          },
-        ),
+      async () => ({ retained: true, revisionId: job.revisionId }),
       (result) => result,
     );
     return {};

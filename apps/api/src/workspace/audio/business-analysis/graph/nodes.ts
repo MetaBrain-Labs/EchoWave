@@ -95,6 +95,7 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
     attempt: number,
     report: AiExecutionRecorder,
   ): Promise<RetrievalChunk[]> {
+    await options.repository.assertKnowledgeCurrent(job);
     if (job.knowledgeBaseIds.length === 0) return [];
     const embeddingStartedAt = Date.now();
     const embeddingCall = beginAiModelCall(report, {
@@ -135,11 +136,13 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
       summary: { audit: { query, knowledgeBases: job.knowledgeBases, hitCount: 0, hits: [] } },
     });
     try {
+      await options.repository.assertKnowledgeCurrent(job);
       const chunks = await options.knowledgeRepository.searchMany(
         job.knowledgeBaseIds,
         embedding,
         options.embeddingModel,
       );
+      await options.repository.assertKnowledgeCurrent(job);
       searchCall.finish({
         status: 'completed',
         durationMs: Date.now() - searchStartedAt,
@@ -229,6 +232,7 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
   }
 
   async function prepareNode({ job }: any) {
+    await options.repository.assertKnowledgeCurrent(job);
     if (job.segments.length === 0) {
       throw new BusinessAnalysisProviderError(
         'INVALID_MODEL_OUTPUT',
@@ -273,6 +277,7 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
 
   async function deepAgentNode({ job, queries, retrievedChunks }: any, graphRuntime: any) {
     const context = runtime(graphRuntime.context);
+    await options.repository.assertKnowledgeCurrent(job);
     context.report.recordStep({
       name: 'analysis-generation',
       status: 'started',

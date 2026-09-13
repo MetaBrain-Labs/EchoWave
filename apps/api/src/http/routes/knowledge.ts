@@ -12,6 +12,8 @@
  */
 import {
   KnowledgeBaseCreateRequestSchema,
+  DocumentRenameRequestSchema,
+  DocumentReplacementRequestSchema,
   KnowledgeBaseUpdateRequestSchema,
   KnowledgeDocumentStreamEventSchema,
   RagQueryRequestSchema,
@@ -143,6 +145,52 @@ export function registerKnowledgeRoutes(
         entityId(context.req.param('documentId')),
       ),
     ),
+  );
+  app.patch('/api/knowledge-bases/:knowledgeBaseId/documents/:documentId', async (context) => {
+    const input = DocumentRenameRequestSchema.parse(await context.req.json());
+    return context.json(
+      await service.renameDocument(
+        entityId(context.req.param('knowledgeBaseId')),
+        entityId(context.req.param('documentId')),
+        input,
+      ),
+      202,
+    );
+  });
+  app.post(
+    '/api/knowledge-bases/:knowledgeBaseId/documents/:documentId/revisions',
+    async (context) => {
+      if (Number(context.req.header('content-length') ?? 0) > 21 * 1024 * 1024)
+        return context.json(errorBody('DOCUMENT_TOO_LARGE', '单个文件不能超过 20 MB。'), 413);
+      const form = await context.req.formData();
+      const file = form.get('file');
+      if (!(file instanceof File))
+        return context.json(errorBody('BAD_REQUEST', '缺少文件字段 file。'), 400);
+      const input = DocumentReplacementRequestSchema.parse({
+        expectedVersion: form.get('expectedVersion') ?? undefined,
+        ...(form.has('title') ? { title: form.get('title') } : {}),
+      });
+      return context.json(
+        await service.replaceDocument(
+          entityId(context.req.param('knowledgeBaseId')),
+          entityId(context.req.param('documentId')),
+          file,
+          input,
+        ),
+        202,
+      );
+    },
+  );
+  app.get(
+    '/api/knowledge-bases/:knowledgeBaseId/documents/:documentId/revisions/:revisionId/source-status',
+    async (context) =>
+      context.json(
+        await service.getCitationSource(
+          entityId(context.req.param('knowledgeBaseId')),
+          entityId(context.req.param('documentId')),
+          entityId(context.req.param('revisionId')),
+        ),
+      ),
   );
   app.delete('/api/knowledge-bases/:knowledgeBaseId/documents/:documentId', async (context) => {
     await service.deleteDocument(

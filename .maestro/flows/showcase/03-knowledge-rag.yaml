@@ -44,6 +44,11 @@ tags:
 - assertVisible: '.*条引用来源'
 - takeScreenshot: 'showcase/03-answer-with-citation'
 - tapOn: "\\[1\\] EchoWave-Product-Brief.md"
+- extendedWaitUntil:
+    visible: '查看当前原文'
+    timeout: 30000
+- assertVisible: '当前知识版本'
+- tapOn: '查看当前原文'
 - assertVisible: '块详情'
 - takeScreenshot: 'showcase/03-citation-open'
 - stopRecording

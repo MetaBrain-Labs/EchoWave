@@ -10,9 +10,8 @@
  * Notes:
  * - 服务端请求由 feature 级 mock 控制。
  */
-import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
+import { fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import type { ComponentProps } from 'react';
-import { Alert } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 
 import { KnowledgeDetailScreen } from '../KnowledgeDetailScreen';
@@ -136,7 +135,6 @@ describe('KnowledgeDetailScreen', () => {
       },
     };
     jest.mocked(listDocuments).mockResolvedValue({ items: [failedDocument] });
-    const alert = jest.spyOn(Alert, 'alert');
     const screen = await renderDetail();
 
     fireEvent.press(screen.getAllByLabelText(`${document.title}更多操作`)[0]);
@@ -144,11 +142,7 @@ describe('KnowledgeDetailScreen', () => {
     expect(retryDocument).not.toHaveBeenCalled();
     fireEvent.press(screen.getByText('重新解析'));
     expect(retryDocument).not.toHaveBeenCalled();
-    const buttons = alert.mock.calls.at(-1)?.[2];
-    await act(async () => {
-      buttons?.find((button) => button.text === '重新解析')?.onPress?.();
-      await Promise.resolve();
-    });
+    fireEvent.press(screen.getByText('确认'));
 
     await waitFor(() => expect(retryDocument).toHaveBeenCalledWith(knowledge.id, document.id));
   });
@@ -170,17 +164,12 @@ describe('KnowledgeDetailScreen', () => {
     jest
       .mocked(DocumentPicker.getDocumentAsync)
       .mockResolvedValue({ canceled: true, assets: null });
-    const alert = jest.spyOn(Alert, 'alert');
     const screen = await renderDetail();
 
     fireEvent.press(screen.getAllByLabelText(`${document.title}更多操作`)[0]);
     fireEvent.press(screen.getByText('重新上传文件'));
     expect(DocumentPicker.getDocumentAsync).not.toHaveBeenCalled();
-    const buttons = alert.mock.calls.at(-1)?.[2];
-    await act(async () => {
-      buttons?.find((button) => button.text === '选择文件')?.onPress?.();
-      await Promise.resolve();
-    });
+    fireEvent.press(screen.getByText('确认'));
 
     await waitFor(() => expect(DocumentPicker.getDocumentAsync).toHaveBeenCalledTimes(1));
   });

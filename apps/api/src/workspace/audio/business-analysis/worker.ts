@@ -22,6 +22,7 @@ import type { BusinessAnalysisRepository, ClaimedBusinessAnalysisJob } from './r
 import {
   BUSINESS_ANALYSIS_MAX_RECOVERY_ATTEMPTS,
   BusinessAnalysisCanceledError,
+  BusinessAnalysisKnowledgeChangedError,
 } from './repository.ts';
 import { BusinessAnalysisProviderError } from './salesAnalysisAgent.ts';
 import type { BusinessAnalysisWorkflow } from './workflow.ts';
@@ -139,6 +140,7 @@ export class BusinessAnalysisWorker {
       const workflow = this.options.createWorkflow
         ? await this.options.createWorkflow(job)
         : this.options.workflow;
+      await this.options.repository.assertKnowledgeCurrent(job);
       const result = await workflow.run(job, report, () => this.notify(job, false));
       this.notify(job, true);
       report.recordOutput(result.publication);
@@ -168,15 +170,20 @@ export class BusinessAnalysisWorker {
         await this.cleanupCheckpoint(job);
         return;
       }
-      const known = error instanceof BusinessAnalysisProviderError;
+      const changed = error instanceof BusinessAnalysisKnowledgeChangedError;
+      const known = error instanceof BusinessAnalysisProviderError || changed;
       const code = known ? error.code : 'INTERNAL_ERROR';
       const retryable = known ? error.retryable : true;
-      const reason = known ? error.reason : 'other';
+      const reason = error instanceof BusinessAnalysisProviderError ? error.reason : 'other';
       const message = known ? error.message : '销售复盘失败，请稍后重试。';
       let willRetry = false;
       let failurePersistenceError: unknown;
       try {
-        if (retryable && job.recoveryAttempts < BUSINESS_ANALYSIS_MAX_RECOVERY_ATTEMPTS) {
+        if (
+          !changed &&
+          retryable &&
+          job.recoveryAttempts < BUSINESS_ANALYSIS_MAX_RECOVERY_ATTEMPTS
+        ) {
           const delayMs = RECOVERY_DELAYS_MS[job.recoveryAttempts] ?? RECOVERY_DELAYS_MS[1];
           willRetry = await this.options.repository.scheduleRecovery(
             job.id,

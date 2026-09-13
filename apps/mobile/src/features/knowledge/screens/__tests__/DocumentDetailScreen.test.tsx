@@ -10,7 +10,6 @@
  * - 使用符合共享契约的固定数据。
  */
 import { fireEvent, render } from '@testing-library/react-native';
-import { Alert } from 'react-native';
 
 import { clearImportantBlocksForTests } from '../../importantBlocks';
 import { DocumentDetailScreen } from '../DocumentDetailScreen';
@@ -24,7 +23,6 @@ describe('DocumentDetailScreen', () => {
   beforeEach(() => {
     clearImportantBlocksForTests();
     jest.mocked(getDocument).mockResolvedValue(document);
-    jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
   });
 
   afterEach(() => jest.restoreAllMocks());
@@ -82,7 +80,7 @@ describe('DocumentDetailScreen', () => {
     expect(screen.getByLabelText('返回')).toBeTruthy();
   });
 
-  it('shares important state and keeps reparse as explicit feedback', async () => {
+  it('shares important state and opens explicit version actions', async () => {
     const screen = render(
       <DocumentDetailScreen
         documentId={document.id}
@@ -97,10 +95,41 @@ describe('DocumentDetailScreen', () => {
     expect(screen.getByLabelText('取消重点：研究背景')).toBeTruthy();
 
     fireEvent.press(screen.getAllByText('重新解析')[0]!);
-    expect(Alert.alert).toHaveBeenCalledWith(
-      '功能建设中',
-      expect.stringContaining('成功文档重新解析'),
-    );
+    expect(screen.getByText('修改文件名')).toBeTruthy();
+    expect(screen.getByText('替换文件')).toBeTruthy();
+    expect(screen.getByText('删除文件')).toBeTruthy();
     expect(screen.getAllByTestId('document-fixed-action')).toHaveLength(2);
+  });
+
+  it('shows the latest failure while retaining the active document content', async () => {
+    const message = '新版向量生成失败，旧版仍可用。';
+    jest.mocked(getDocument).mockResolvedValueOnce({
+      ...document,
+      version: 2,
+      activeRevisionId: '77777777-7777-4777-8777-777777777777',
+      latestRevision: {
+        id: '88888888-8888-4888-8888-888888888888',
+        version: 2,
+        title: '待发布的新文件.md',
+        status: 'failed',
+        stage: 'embed',
+        progress: 50,
+        error: { code: 'UPSTREAM', message, retryable: true },
+      },
+    });
+    const screen = render(
+      <DocumentDetailScreen
+        documentId={document.id}
+        knowledgeId={knowledge.id}
+        onBack={jest.fn()}
+        onOpenBlock={jest.fn()}
+      />,
+    );
+    expect(await screen.findByText(/新版向量生成失败/)).toBeTruthy();
+    expect(screen.getByText('块 1 · 研究背景')).toBeTruthy();
+    fireEvent.press(screen.getAllByText('重新解析')[0]!);
+    expect(screen.getByText('查看失败原因')).toBeTruthy();
+    fireEvent.press(screen.getByText('查看失败原因'));
+    expect(screen.getByText(message)).toBeTruthy();
   });
 });

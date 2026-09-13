@@ -164,3 +164,5 @@ Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request. Use [Gi
 `main` is protected, so every change lands through a pull request and the `CI` workflow must pass before merge. Maintainers keep the branch ruleset, CI requirement, and discussion channels enabled in the repository settings.
 
 EchoWave is licensed under the [Apache License 2.0](./LICENSE). Contributions are submitted under the same license.
+
+Knowledge file updates now preserve the previous active revision until parsing and embedding succeed. Configure the required `KNOWLEDGE_STORAGE_DIR` before starting or migrating the API; see [configuration](./docs/configuration.md) and [database upgrade instructions](./docs/database-schema.md).

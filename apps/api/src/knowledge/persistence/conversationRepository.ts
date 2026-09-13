@@ -12,8 +12,13 @@
  * - checkpoint 必须由可信回答模块先删除。
  */
 import { quoteIdentifier, type DatabasePool } from '../../infrastructure/postgres.ts';
-import { RagHistoryResponseSchema, type RagHistoryResponse } from '@echowave/contracts';
+import {
+  RagHistoryResponseSchema,
+  type RagHistoryResponse,
+  type RagQueryResponse,
+} from '@echowave/contracts';
 
+import { resolveCitationSources } from './citationSources.ts';
 import { RagRepositoryError } from './errors.ts';
 
 /** 隐藏问答会话和运行审计 SQL 的 PostgreSQL 仓储。 */
@@ -36,7 +41,7 @@ export class ConversationRepository {
   async listRecentRuns(knowledgeBaseId: string): Promise<RagHistoryResponse> {
     const result = await this.pool.query(
       `SELECT id, conversation_id, question, answer, grounded,
-              jsonb_array_length(cited_chunk_ids) AS citation_count, created_at
+              jsonb_array_length(cited_chunk_ids) AS citation_count, citation_snapshots, created_at
        FROM ${this.table('rag_runs')}
        WHERE tenant_id = $1 AND knowledge_base_id = $2
          AND status = 'completed' AND answer IS NOT NULL
@@ -45,16 +50,24 @@ export class ConversationRepository {
       [this.tenantId, knowledgeBaseId],
     );
     return RagHistoryResponseSchema.parse({
-      items: result.rows.map((row) => ({
-        id: row.id,
-        conversationId: row.conversation_id,
-        question: row.question,
-        answer: row.answer,
-        grounded: row.grounded,
-        citationCount: Number(row.citation_count),
-        createdAt:
-          row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
-      })),
+      items: await Promise.all(
+        result.rows.map(async (row) => ({
+          id: row.id,
+          conversationId: row.conversation_id,
+          question: row.question,
+          answer: row.answer,
+          grounded: row.grounded,
+          citationCount: Number(row.citation_count),
+          citations: await resolveCitationSources(
+            this.pool,
+            this.schema.replaceAll('"', ''),
+            this.tenantId,
+            row.citation_snapshots ?? [],
+          ),
+          createdAt:
+            row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+        })),
+      ),
     });
   }
 
@@ -122,6 +135,7 @@ export class ConversationRepository {
       answer: string;
       grounded: boolean;
       citedChunkIds: string[];
+      citations?: RagQueryResponse['citations'];
       embeddingTokens: number;
       inputTokens: number;
       outputTokens: number;
@@ -131,7 +145,7 @@ export class ConversationRepository {
     await this.pool.query(
       `UPDATE ${this.table('rag_runs')}
        SET answer=$3, grounded=$4, cited_chunk_ids=$5::jsonb, embedding_tokens=$6,
-           input_tokens=$7, output_tokens=$8, duration_ms=$9, status='completed', completed_at=now()
+           input_tokens=$7, output_tokens=$8, duration_ms=$9, status='completed', completed_at=now(), citation_snapshots=$10::jsonb
        WHERE tenant_id=$1 AND id=$2`,
       [
         this.tenantId,
@@ -143,6 +157,7 @@ export class ConversationRepository {
         input.inputTokens,
         input.outputTokens,
         input.durationMs,
+        JSON.stringify(input.citations ?? []),
       ],
     );
   }

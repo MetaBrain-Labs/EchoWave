@@ -47,6 +47,12 @@ export {
   type SourceLocator,
 } from './document.ts';
 export {
+  CitationSourceStatusSchema,
+  CitationSourceResponseSchema,
+  DocumentRenameRequestSchema,
+  DocumentReplacementRequestSchema,
+} from './document.ts';
+export {
   KnowledgeBaseCreateRequestSchema,
   KnowledgeBaseDetailSchema,
   KnowledgeBaseGroupLinkRequestSchema,

@@ -84,7 +84,7 @@ function queueClient({ existing = undefined } = {}) {
 }
 
 describe('BusinessAnalysisRepository', () => {
-  it('hydrates historical citation excerpts from current knowledge chunks', async () => {
+  it('reads historical citation snapshots after source chunks are gone', async () => {
     const tagId = '77777777-7777-4777-8777-777777777777';
     const chunkId = '88888888-8888-4888-8888-888888888888';
     const documentId = '99999999-9999-4999-8999-999999999999';
@@ -150,7 +150,7 @@ describe('BusinessAnalysisRepository', () => {
           };
         }
         if (/business_analysis_citations/.test(sql)) {
-          assert.match(sql, /JOIN .*document_chunks/);
+          assert.doesNotMatch(sql, /JOIN .*document_chunks/);
           return {
             rows: [
               {
@@ -159,7 +159,8 @@ describe('BusinessAnalysisRepository', () => {
                 knowledge_base_id: knowledgeBaseId,
                 document_id: documentId,
                 document_title: '销售异议处理手册',
-                content: chunkContent,
+                quote_snapshot: chunkContent,
+                revision_id: revisionId,
                 locator: {
                   kind: 'markdown',
                   headingPath: ['异议处理'],
@@ -170,6 +171,17 @@ describe('BusinessAnalysisRepository', () => {
             ],
           };
         }
+        if (/FROM .*documents/.test(sql))
+          return {
+            rows: [
+              {
+                id: documentId,
+                knowledge_base_id: knowledgeBaseId,
+                deleted_at: new Date(),
+                revision_id: revisionId,
+              },
+            ],
+          };
         assert.fail(`unexpected SQL: ${sql}`);
       },
     };
@@ -181,6 +193,9 @@ describe('BusinessAnalysisRepository', () => {
     assert.equal(excerpt.length, 240);
     assert.doesNotMatch(excerpt, /\s{2,}/);
     assert.match(excerpt, /^先确认客户顾虑。/);
+    assert.equal(state.result.tags[0].citations[0].sourceStatus, 'deleted');
+    assert.equal(state.knowledgeCurrent, false);
+    assert.equal(state.result.tags[0].citations[0].quoteSnapshot, chunkContent);
   });
 
   it('reuses the same completed snapshot unless force is requested', async () => {

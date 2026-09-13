@@ -288,6 +288,8 @@ export function KnowledgeQueryScreen({
         </View>
       </KeyboardAvoidingView>
       <QueryHistoryModal
+        knowledgeId={knowledgeId}
+        onOpenCitation={onOpenCitation}
         error={historyError}
         items={historyItems}
         loading={historyLoading}

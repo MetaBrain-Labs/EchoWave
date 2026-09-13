@@ -124,3 +124,11 @@ Optional reports are post-run diagnostics, never the source for progress, HTTP r
 - The sole EAS configuration is `apps/mobile/eas.json`; user-visible SemVer remains synchronized with API and Release metadata.
 - The API does not log full user text, model context, raw provider errors, or reasoning by default. Secrets are never loggable.
 - Redis remains a future cache/coordination boundary and is not a second source of truth.
+
+## Knowledge document updates and deletion
+
+Document writes allocate a monotonic version and immutable revision input. The latest requested revision may publish only while its ingestion lease remains valid and both the document and knowledge base are live. Replacements and title changes retain the previous active revision until all chunks and embeddings are ready. Titles remain part of embedding input.
+
+Deletion commits the document tombstone and durable cleanup tasks together. Retrieval checks tenant, knowledge-base ownership, document lifecycle, active revision and embedding model. PostgreSQL chunks include vectors; the cleanup worker removes them and the version's local original file with retries. Historical document/revision records and AI results remain.
+
+RAG runs and business analyses persist title, quote and locator snapshots. Citation reads use those snapshots and derive source status from document/revision audit records, so cleanup cannot erase historical evidence. Business-analysis fingerprints include knowledge content versions; knowledge changes mark historical results stale and require a new analysis input instead of resuming old evidence.

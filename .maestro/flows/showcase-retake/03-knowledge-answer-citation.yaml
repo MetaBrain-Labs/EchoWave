@@ -3,7 +3,7 @@ name: retake-knowledge-answer-citation
 tags:
   - showcase-retake
 ---
-# 必须预先打开正确知识库的已完成问答；历史弹层没有引用跳转入口。
+# 必须预先打开正确知识库的已完成问答；先校验引用快照，再进入当前有效原文。
 - runFlow: ../../subflows/attach-retake-session.yaml
 - assertTrue: ${typeof RETAKE_KB_NAME !== 'undefined' && RETAKE_KB_NAME.trim().length > 0}
 - assertVisible: '问知识库'
@@ -30,6 +30,11 @@ tags:
     timeout: 20000
 - takeScreenshot: 'retake/03-citation-source'
 - tapOn: '${RETAKE_CITATION_TEXT}'
+- extendedWaitUntil:
+    visible: '查看当前原文'
+    timeout: 30000
+- assertVisible: '当前知识版本'
+- tapOn: '查看当前原文'
 - extendedWaitUntil:
     visible: '块详情'
     timeout: 30000

@@ -16,6 +16,7 @@ export type RetrievalChunk = {
   id: string;
   knowledgeBaseId: string;
   documentId: string;
+  revisionId?: string;
   documentTitle: string;
   content: string;
   locator: SourceLocator;

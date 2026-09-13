@@ -11,6 +11,27 @@
  * - 用户内容、文件名、供应商、模型和自定义标签不得进入此目录。
  */
 export const zhCN = {
+  'knowledgeEdit.retryHint': '确认重新处理文档？上一成功版本仍可检索。',
+  'knowledgeEdit.rename': '修改文件名',
+  'knowledgeEdit.replace': '替换文件',
+  'knowledgeEdit.delete': '删除文件',
+  'knowledgeEdit.renameHint': '文件名参与向量生成。修改成功前继续使用当前版本。',
+  'knowledgeEdit.fileName': '文件名',
+  'knowledgeEdit.deleteHint': '删除《%{title}》后将立即停止检索，历史分析及引用快照保留。',
+  'knowledgeEdit.oldActive': '修改尚未生效，当前仍使用旧版本。',
+  'knowledgeEdit.conflict': '文档版本已变化，已刷新服务器状态，请重新确认。',
+  'knowledgeEdit.uncertain': '请求结果尚未确认，请刷新服务器状态后确认，避免重复提交。',
+  'knowledgeEdit.base': '编辑知识库',
+  'knowledgeEdit.baseName': '知识库名称',
+  'knowledgeEdit.description': '描述',
+  'knowledgeEdit.source.active': '当前知识版本',
+  'knowledgeEdit.source.superseded': '源知识已更新，以下为当时引用快照。',
+  'knowledgeEdit.source.deleted': '源知识已删除，以下为当时引用快照。',
+  'knowledgeEdit.source.unavailable': '来源不可用，仅展示已保存的引用。',
+  'knowledgeEdit.sourceFailed': '无法确认来源状态，请重试。',
+  'knowledgeEdit.openCurrent': '查看当前原文',
+  'knowledgeEdit.noQuote': '未保存引文快照。',
+
   'common.cancel': '取消',
   'common.confirm': '确认',
   'common.retry': '重试',
@@ -1393,6 +1414,34 @@ export const zhCN = {
 export type TranslationKey = keyof typeof zhCN;
 
 export const en = {
+  'knowledgeEdit.retryHint':
+    'Process this document again? Its previous successful version remains searchable.',
+  'knowledgeEdit.rename': 'Rename file',
+  'knowledgeEdit.replace': 'Replace file',
+  'knowledgeEdit.delete': 'Delete file',
+  'knowledgeEdit.renameHint':
+    'The file name affects embeddings. The current version remains available until processing succeeds.',
+  'knowledgeEdit.fileName': 'File name',
+  'knowledgeEdit.deleteHint':
+    'Deleting “%{title}” immediately excludes it from search. Historical analyses and citation snapshots remain.',
+  'knowledgeEdit.oldActive': 'The update is not active; the previous version remains in use.',
+  'knowledgeEdit.conflict':
+    'The document changed. Server state has been refreshed; review it before trying again.',
+  'knowledgeEdit.uncertain':
+    'The request outcome is unconfirmed. Refresh server state before trying again.',
+  'knowledgeEdit.base': 'Edit knowledge base',
+  'knowledgeEdit.baseName': 'Knowledge base name',
+  'knowledgeEdit.description': 'Description',
+  'knowledgeEdit.source.active': 'Current knowledge version',
+  'knowledgeEdit.source.superseded':
+    'The source was updated. This is the original citation snapshot.',
+  'knowledgeEdit.source.deleted': 'The source was deleted. This is the original citation snapshot.',
+  'knowledgeEdit.source.unavailable':
+    'The source is unavailable. Only the saved citation is shown.',
+  'knowledgeEdit.sourceFailed': 'Unable to verify source status. Try again.',
+  'knowledgeEdit.openCurrent': 'Open current source',
+  'knowledgeEdit.noQuote': 'No quote snapshot was saved.',
+
   'common.cancel': 'Cancel',
   'common.confirm': 'Confirm',
   'common.retry': 'Retry',

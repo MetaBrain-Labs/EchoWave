@@ -66,6 +66,7 @@ export class BusinessAnalysisWorkflow {
     report: AiExecutionRecorder,
     notifyProgress: () => void,
   ): Promise<BusinessAnalysisWorkflowResult> {
+    await this.options.repository.assertKnowledgeCurrent(job);
     const config = { configurable: { thread_id: businessAnalysisThreadId(job) } };
     const resumed = Boolean(await this.options.checkpointer.getTuple(config));
     report.recordStep({

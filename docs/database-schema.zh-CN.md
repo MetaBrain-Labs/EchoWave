@@ -601,3 +601,19 @@ ASR 确认后的情绪分析和角色识别任务。每条任务固化 `analysis
 - 音频“来自某分组”和统一处理状态文案。
 
 这些值通过 `COUNT(DISTINCT ...)`、`SUM(duration_ms)`、关联查询以及上传/分析状态组合得到，避免计数字段与事实数据失去同步。
+
+## 知识生命周期迁移
+
+`036_knowledge_document_lifecycle.sql` 增加 latest/active revision 归属约束、不可变版本元信息和本地存储键、入库租约标识、可恢复清理任务、引文快照及知识内容版本。迁移先回填证据，再解除销售复盘 citation 对 chunk 的外键依赖。旧存储未保存的历史标题无法准确恢复，回填采用仍可读取的记录。
+
+升级前停止旧 worker，配置并挂载 `KNOWLEDGE_STORAGE_DIR`，备份 PostgreSQL 及原文件，应用有序迁移后再启动新版 API/worker。升级不级联删除历史 AI 分析。
+
+构建 contracts 和 API 后，可在仓库根目录运行隔离的真实 PostgreSQL 回归：
+
+```powershell
+$env:ECHOWAVE_LIVE_KNOWLEDGE_TEST = '1'
+pnpm --filter @echowave/api exec node --test --test-isolation=none test/knowledge/persistence/documentLifecycle.integration.test.mjs
+Remove-Item Env:ECHOWAVE_LIVE_KNOWLEDGE_TEST
+```
+
+测试只读取 API `.env`，要求数据库已安装 pgvector，仅创建及删除随机测试 schema；普通检查默认跳过此显式启用的集成测试。

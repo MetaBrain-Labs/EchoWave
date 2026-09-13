@@ -40,7 +40,7 @@ export function useKnowledgeDocumentUpdates({
   setKnowledge,
 }: KnowledgeDocumentUpdatesOptions): void {
   useEffect(() => {
-    if (!hasProcessingDocuments || !active) return undefined;
+    if (!active) return undefined;
     let disposed = false;
     let controller: AbortController | undefined;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -76,6 +76,7 @@ export function useKnowledgeDocumentUpdates({
             }
             if (event.type !== 'document') return;
             setError('');
+            if (!event.item) void load(false);
             setDocuments((items) => {
               if (!event.item) return items;
               const next = event.item;

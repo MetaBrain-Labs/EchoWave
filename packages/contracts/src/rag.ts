@@ -13,7 +13,7 @@
 import { z } from 'zod';
 
 import { EntityIdSchema } from './common.ts';
-import { SourceLocatorSchema } from './document.ts';
+import { CitationSnapshotFields, SourceLocatorSchema } from './document.ts';
 
 /** 用户提交知识库问题的最终 JSON 请求 schema。 */
 export const RagQueryRequestSchema = z.object({
@@ -22,6 +22,8 @@ export const RagQueryRequestSchema = z.object({
 });
 /** 可信回答中一个已验证引用的 schema。 */
 export const RagCitationSchema = z.object({
+  ...CitationSnapshotFields,
+  knowledgeBaseId: EntityIdSchema.optional(),
   number: z.number().int().positive(),
   documentId: EntityIdSchema,
   documentTitle: z.string(),
@@ -52,6 +54,7 @@ export const RagHistoryItemSchema = z.object({
   answer: z.string(),
   grounded: z.boolean(),
   citationCount: z.number().int().nonnegative(),
+  citations: z.array(RagCitationSchema).optional(),
   createdAt: z.string().datetime(),
 });
 

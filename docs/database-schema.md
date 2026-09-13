@@ -217,3 +217,19 @@ Create immutable work, validate completeness, then move one active pointer in th
 ### Dynamic aggregation
 
 UI totals, visible audio, document counts, sizes, and status summaries are derived from authoritative rows and relationships. Page mock fields are never persisted as competing counters.
+
+## Knowledge lifecycle migration
+
+Migration `036_knowledge_document_lifecycle.sql` adds latest/active revision ownership, immutable revision metadata and local storage keys, ingestion lease tokens, resumable cleanup tasks, citation quote snapshots and knowledge content versions. It backfills citation evidence before removing the business-citation chunk foreign key. Historical titles absent from old storage cannot be reconstructed exactly; backfill uses available records.
+
+Stop old workers before migrating, configure and mount `KNOWLEDGE_STORAGE_DIR`, back up PostgreSQL and originals, apply ordered migrations, then start the updated API/workers. This schema upgrade does not cascade-delete AI results.
+
+For isolated live PostgreSQL regression, run from the repository root after building contracts and API:
+
+```powershell
+$env:ECHOWAVE_LIVE_KNOWLEDGE_TEST = '1'
+pnpm --filter @echowave/api exec node --test --test-isolation=none test/knowledge/persistence/documentLifecycle.integration.test.mjs
+Remove-Item Env:ECHOWAVE_LIVE_KNOWLEDGE_TEST
+```
+
+The test reads API `.env`, requires existing pgvector, and creates/removes only its random test schema. Ordinary checks skip this opt-in integration.

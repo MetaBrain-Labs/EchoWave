@@ -139,3 +139,9 @@ Changing a secret creates an immutable Credential version. Changing a connection
 During upgrade, legacy `DASHSCOPE_*`, `DEEPSEEK_*`, and `ALIYUN_OSS_*` variables may temporarily remain. The page exposes only detected variable names and completeness, not values. **Import legacy Server `.env`** reads secrets internally, encrypts them into PostgreSQL, never overwrites current database configuration, and is idempotent per tenant.
 
 Remote HTTP may trigger this import because its request body carries no secret. A successful import makes the database authoritative and disables legacy fallback for the tenant. Remove old provider variables, restart, and verify capabilities afterward. Startup-level fields remain. Alternatively, create `credentials.yaml` and configure Local aliases without importing old secrets.
+
+## Persistent knowledge originals
+
+`KNOWLEDGE_STORAGE_DIR` is required in the API `.env`; the templates use `.data/knowledge`. Paths resolve relative to the API directory. Compose persists it in `echowave_knowledge`. Back up this volume together with PostgreSQL.
+
+Knowledge originals are immutable per revision. Successful ingestion retains them; deletion and version retirement enqueue resumable cleanup. `UPLOAD_TEMP_DIR` remains for legacy staged inputs. Age alone never authorizes removing a database-referenced file.

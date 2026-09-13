@@ -147,3 +147,9 @@ Database Credential 使用随机 12 字节 IV、AES-256-GCM 认证标签以及�
 导入可以在远程 HTTP 下触发，因为请求体不携带 Secret。导入成功后数据库立即优先并关闭该租户的 legacy fallback。随后删除旧供应商变量并重启，确认对应能力仍可运行；启动级字段继续保留。
 
 如果不迁移旧 Secret，可先在服务器创建 `credentials.yaml`，然后通过配置页以 Local alias 建立连接。
+
+## 知识原文件持久目录
+
+API `.env` 必须配置 `KNOWLEDGE_STORAGE_DIR`，示例值为 `.data/knowledge`，相对路径从 API 目录解析。Compose 使用 `echowave_knowledge` 持久卷；备份时应与 PostgreSQL 一并备份。
+
+原文件按 revision 独立保存，解析成功后不再删除。文档删除及版本淘汰由可恢复任务清理。`UPLOAD_TEMP_DIR` 继续兼容旧暂存输入；数据库仍引用的文件不得仅因时间较长而删除。

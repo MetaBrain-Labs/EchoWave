@@ -8,7 +8,7 @@
  * - 保留不同格式可追溯的原文定位。
  *
  * Notes:
- * - 向量和 revision 内部字段不进入网络契约。
+ * - 公开版本标识及任务状态，向量和物理存储键保持内部。
  */
 import { z } from 'zod';
 
@@ -31,6 +31,7 @@ export const DocumentStatusSchema = z.discriminatedUnion('kind', [
     retryable: z.boolean(),
   }),
   z.object({ kind: z.literal('deleting') }),
+  z.object({ kind: z.literal('deleted') }),
 ]);
 
 export const MarkdownLocatorSchema = z.object({
@@ -58,6 +59,36 @@ export const SourceLocatorSchema = z.discriminatedUnion('kind', [
   SpreadsheetLocatorSchema,
 ]);
 
+/** 引用来源当前生命周期；快照本身不会随原文变化。 */
+export const CitationSourceStatusSchema = z.enum([
+  'active',
+  'superseded',
+  'deleted',
+  'unavailable',
+]);
+/** 引用快照的兼容扩展，旧客户端可以继续使用 excerpt。 */
+export const CitationSnapshotFields = {
+  revisionId: EntityIdSchema.nullable().optional(),
+  quoteSnapshot: z.string().optional(),
+  sourceStatus: CitationSourceStatusSchema.optional(),
+};
+/** 查询来源状态的响应，不提供已删除正文。 */
+export const CitationSourceResponseSchema = z.object({ status: CitationSourceStatusSchema });
+/** 文档改名必须声明读取时的版本，避免覆盖其他请求。 */
+export const DocumentRenameRequestSchema = z
+  .object({
+    title: z.string().trim().min(1).max(255),
+    expectedVersion: z.number().int().nonnegative(),
+  })
+  .strict();
+/** 替换文件的 multipart 元信息。 */
+export const DocumentReplacementRequestSchema = z.object({
+  expectedVersion: z
+    .union([z.number(), z.string().regex(/^\d+$/).transform(Number)])
+    .pipe(z.number().int().nonnegative()),
+  title: z.string().trim().min(1).max(255).optional(),
+});
+
 /** 可独立检索和引用的文档块 schema。 */
 export const DocumentChunkSchema = z.object({
   id: EntityIdSchema,
@@ -79,6 +110,20 @@ export const KnowledgeDocumentSchema = z.object({
   status: DocumentStatusSchema,
   vectorCount: z.number().int().nonnegative(),
   updatedAt: z.string().datetime(),
+  version: z.number().int().nonnegative().optional(),
+  activeRevisionId: EntityIdSchema.nullable().optional(),
+  latestRevision: z
+    .object({
+      id: EntityIdSchema,
+      version: z.number().int().positive(),
+      title: z.string(),
+      status: z.enum(['queued', 'running', 'completed', 'failed', 'cancelled']),
+      stage: z.string(),
+      progress: z.number().min(0).max(100),
+      error: z.object({ code: z.string(), message: z.string(), retryable: z.boolean() }).nullable(),
+    })
+    .nullable()
+    .optional(),
 });
 export const KnowledgeDocumentDetailSchema = KnowledgeDocumentSchema.extend({
   chunks: z.array(DocumentChunkSchema),

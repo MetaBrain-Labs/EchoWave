@@ -62,6 +62,7 @@ try {
     await ragRuntime.workerWakeup.start();
     await ragRuntime.startSourceCleanup();
     ragRuntime.worker.start();
+    ragRuntime.knowledgeCleanupWorker.start();
     await ragRuntime.transcriptionWorker.start();
     await Promise.all([
       ragRuntime.emotionWorker.start(),

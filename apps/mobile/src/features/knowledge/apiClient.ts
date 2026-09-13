@@ -15,6 +15,7 @@ import { Platform } from 'react-native';
 
 import {
   ApiErrorResponseSchema,
+  CitationSourceResponseSchema,
   DocumentChunkListResponseSchema,
   DocumentChunkSchema,
   DocumentUploadResponseSchema,
@@ -26,6 +27,7 @@ import {
   RagQueryResponseSchema,
 } from '@echowave/contracts';
 
+import { request as workspaceRequest } from '@/shared/api/request';
 import { getApiUrl } from '@/shared/api/apiUrl';
 import { resolveUploadFile } from '@/shared/api/uploadFile';
 import { localizeRequestError } from '@/shared/i18n/errorLocalization';
@@ -126,8 +128,16 @@ export const getChunk = (knowledgeId: string, documentId: string, chunkId: strin
     DocumentChunkSchema,
   );
 
-export async function uploadDocument(knowledgeId: string, asset: DocumentPickerAsset) {
+export async function uploadDocument(
+  knowledgeId: string,
+  asset: DocumentPickerAsset,
+  replacement?: { documentId: string; expectedVersion: number; title?: string },
+) {
   const form = new FormData();
+  if (replacement) {
+    form.append('expectedVersion', String(replacement.expectedVersion));
+    if (replacement.title) form.append('title', replacement.title);
+  }
   if (Platform.OS === 'web' && asset.file) {
     form.append('file', asset.file);
   } else {
@@ -141,7 +151,9 @@ export async function uploadDocument(knowledgeId: string, asset: DocumentPickerA
     form.append('file', file);
   }
   return request(
-    `/api/knowledge-bases/${knowledgeId}/documents`,
+    replacement
+      ? `/api/knowledge-bases/${knowledgeId}/documents/${replacement.documentId}/revisions`
+      : `/api/knowledge-bases/${knowledgeId}/documents`,
     DocumentUploadResponseSchema,
     { method: 'POST', body: form },
     30_000,
@@ -171,3 +183,38 @@ export const queryKnowledge = (knowledgeId: string, question: string, conversati
 /** 读取当前知识库最近六个已完成问答。 */
 export const listQueryHistory = (knowledgeId: string) =>
   request(`/api/knowledge-bases/${knowledgeId}/query-history`, RagHistoryResponseSchema);
+
+/** 更新知识库已有元信息，不重建向量。 */
+export const updateKnowledgeBase = (knowledgeId: string, name: string, description: string) =>
+  request(`/api/knowledge-bases/${knowledgeId}`, KnowledgeBaseDetailSchema, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, description }),
+  });
+/** 文件名参与 embedding，改名返回新版本处理任务。 */
+export const renameDocument = (
+  knowledgeId: string,
+  documentId: string,
+  title: string,
+  expectedVersion: number,
+) =>
+  request(
+    `/api/knowledge-bases/${knowledgeId}/documents/${documentId}`,
+    DocumentUploadResponseSchema,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, expectedVersion }),
+    },
+  );
+/** 删除成功后原文立即退出检索，清理由服务器任务执行。 */
+export const deleteDocument = (knowledgeId: string, documentId: string) =>
+  workspaceRequest(`/api/knowledge-bases/${knowledgeId}/documents/${documentId}`, null, {
+    method: 'DELETE',
+  });
+/** 引用打开时重新读取来源状态，防止已打开页面使用过期状态。 */
+export const getCitationSource = (knowledgeId: string, documentId: string, revisionId: string) =>
+  workspaceRequest(
+    `/api/knowledge-bases/${knowledgeId}/documents/${documentId}/revisions/${revisionId}/source-status`,
+    CitationSourceResponseSchema,
+  );

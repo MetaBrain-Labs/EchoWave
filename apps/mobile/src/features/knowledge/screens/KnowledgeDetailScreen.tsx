@@ -16,7 +16,6 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   AppState,
   Pressable,
   ScrollView,
@@ -52,7 +51,8 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 import { DocumentFormatIcon, DocumentStatusView } from '../components/DocumentUi';
-import { KnowledgeDocumentActions } from '../components/KnowledgeDocumentActions';
+import { KnowledgeDocumentEditor } from '../components/KnowledgeDocumentEditor';
+import { KnowledgeBaseEditor } from '../components/KnowledgeBaseEditor';
 import { EmptyState } from '../components/EmptyState';
 import {
   KnowledgeGroupPicker,
@@ -60,7 +60,7 @@ import {
 } from '../components/KnowledgeGroupDialogs';
 import { SearchAndFilter } from '../components/SearchAndFilter';
 import { showComingSoon } from '../components/feedback';
-import { getKnowledgeBase, listDocuments, retryDocument, uploadDocument } from '../apiClient';
+import { getKnowledgeBase, listDocuments, uploadDocument } from '../apiClient';
 import { useKnowledgeDocumentUpdates } from '../hooks/useKnowledgeDocumentUpdates';
 
 const detailTabs = [
@@ -92,6 +92,7 @@ function statusLabel(status: DocumentStatus, t: ReturnType<typeof useAppLanguage
       return t('knowledgeDetail.embedding', { progress: status.progress });
     case 'failed':
       return t('knowledgeDetail.failed');
+    case 'deleted':
     case 'deleting':
       return t('knowledgeDetail.deleting');
   }
@@ -168,6 +169,9 @@ function DocumentRow({
         <Text style={styles.documentUpdated}>
           {t('knowledge.updated', { date: formatDateTime(document.updatedAt) })}
         </Text>
+        {document.latestRevision?.error ? (
+          <Text style={styles.failureReason}>{document.latestRevision.error.message}</Text>
+        ) : null}
         {document.status.kind === 'failed' ? (
           <Text numberOfLines={2} style={styles.failureReason}>
             {document.status.message}
@@ -314,8 +318,8 @@ export function KnowledgeDetailScreen({
   const [query, setQuery] = useState('');
   const [searchVisible, setSearchVisible] = useState(false);
   const [switchTarget, setSwitchTarget] = useState<GroupSummary>();
+  const [editingBase, setEditingBase] = useState(false);
   const [actionDocument, setActionDocument] = useState<KnowledgeDocument>();
-  const [pendingDocumentId, setPendingDocumentId] = useState<string>();
   const runInitialRequest = useInitialRequestLoading();
   const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } = useSwipePager({
     activeTab,
@@ -358,8 +362,10 @@ export function KnowledgeDetailScreen({
     return () => subscription.remove();
   }, []);
 
-  const processingDocuments = documents.some((document) =>
-    ['queued', 'validating', 'parsing', 'chunking', 'embedding'].includes(document.status.kind),
+  const processingDocuments = documents.some(
+    (document) =>
+      ['queued', 'validating', 'parsing', 'chunking', 'embedding'].includes(document.status.kind) ||
+      ['queued', 'running'].includes(document.latestRevision?.status ?? ''),
   );
   useKnowledgeDocumentUpdates({
     active: appActive,
@@ -414,21 +420,6 @@ export function KnowledgeDetailScreen({
     toggleGroup,
   } = useGroupAssociationEditor({ linkGroups: linkSelectedGroups });
 
-  const retry = async (document: KnowledgeDocument) => {
-    if (pendingDocumentId) return;
-    setPendingDocumentId(document.id);
-    setError('');
-    try {
-      const current = await retryDocument(knowledgeId, document.id);
-      setDocuments((items) => items.map((item) => (item.id === current.id ? current : item)));
-      setActionDocument(undefined);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : t('knowledgeDetail.retryFailed'));
-    } finally {
-      setPendingDocumentId(undefined);
-    }
-  };
-
   const pickAndUpload = async () => {
     try {
       const selection = await pickDocumentAsync({
@@ -461,33 +452,6 @@ export function KnowledgeDetailScreen({
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t('knowledgeDetail.uploadFailed'));
     }
-  };
-
-  const confirmRetry = (document: KnowledgeDocument) => {
-    Alert.alert(
-      t('knowledgeDetail.confirmRetry'),
-      t('knowledgeDetail.confirmRetryBody', { title: document.title }),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        { text: t('knowledgeDetail.retryParsing'), onPress: () => void retry(document) },
-      ],
-    );
-  };
-  const confirmReupload = (document: KnowledgeDocument) => {
-    Alert.alert(
-      t('knowledgeDetail.confirmReupload'),
-      t('knowledgeDetail.confirmReuploadBody', { title: document.title }),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('knowledgeDetail.selectFile'),
-          onPress: () => {
-            setActionDocument(undefined);
-            void pickAndUpload();
-          },
-        },
-      ],
-    );
   };
 
   if (loading && !knowledge) {
@@ -645,38 +609,26 @@ export function KnowledgeDetailScreen({
           if (target) onSwitchGroup?.(target.id);
         }}
       />
-      <KnowledgeDocumentActions
+      <KnowledgeDocumentEditor
         document={actionDocument}
-        onClose={() => {
-          if (!pendingDocumentId) setActionDocument(undefined);
-        }}
+        knowledgeId={knowledgeId}
+        onClose={() => setActionDocument(undefined)}
+        onChanged={() => load()}
         onOpen={() => {
           const target = actionDocument;
           setActionDocument(undefined);
           if (target) onOpenDocument(target.id);
         }}
-        onReupload={() => {
-          if (actionDocument) confirmReupload(actionDocument);
-        }}
-        onRetry={() => {
-          if (actionDocument) confirmRetry(actionDocument);
-        }}
-        onShowFailure={() => {
-          if (actionDocument?.status.kind === 'failed') {
-            Alert.alert(
-              t('knowledgeDetail.failureReason'),
-              t('knowledgeDetail.errorCode', {
-                message: actionDocument.status.message,
-                code: actionDocument.status.code,
-              }),
-            );
-          }
-        }}
-        pending={pendingDocumentId === actionDocument?.id || uploading}
+      />
+      <KnowledgeBaseEditor
+        knowledge={knowledge}
+        visible={editingBase}
+        onClose={() => setEditingBase(false)}
+        onSaved={() => load()}
       />
       <PageHeader
         onBack={onBack}
-        onMore={() => showComingSoon(t('knowledgeDetail.moreActions'))}
+        onMore={() => setEditingBase(true)}
         onSearch={() => setSearchVisible(true)}
         searchLabel={t('knowledgeDetail.searchTitle')}
         title={knowledge.name}

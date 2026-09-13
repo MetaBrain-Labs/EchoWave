@@ -63,7 +63,9 @@ services:
       - ./deploy/self-hosted/api.env:/app/.env:ro
       - ./deploy/self-hosted/.data/secrets:/app/.data/secrets:ro
       - echowave_audio:/app/.data/audio
+      - echowave_knowledge:/app/.data/knowledge
 
 volumes:
   echowave_audio:
+  echowave_knowledge:
   echowave_postgres:

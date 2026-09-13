@@ -24,6 +24,7 @@ import {
 } from '@echowave/contracts';
 
 import { quoteIdentifier, type DatabasePool } from '../../infrastructure/postgres.ts';
+import { resolveCitationSources } from '../persistence/citationSources.ts';
 import { RagRepositoryError } from '../persistence/errors.ts';
 
 function iso(value: Date | string): string {
@@ -47,7 +48,8 @@ function documentStatus(row: Record<string, unknown>) {
     kind === 'validating' ||
     kind === 'parsing' ||
     kind === 'chunking' ||
-    kind === 'deleting'
+    kind === 'deleting' ||
+    kind === 'deleted'
   ) {
     return { kind } as const;
   }
@@ -56,6 +58,9 @@ function documentStatus(row: Record<string, unknown>) {
 
 function mapDocument(row: Record<string, unknown>): KnowledgeDocument {
   return KnowledgeDocumentSchema.parse({
+    version: Number(row.version ?? 0),
+    activeRevisionId: row.active_revision_id ?? null,
+    latestRevision: row.latest_revision ?? null,
     id: row.id,
     knowledgeBaseId: row.knowledge_base_id,
     title: row.title,
@@ -81,6 +86,17 @@ export class KnowledgeRepository {
 
   private table(name: string): string {
     return `${this.schema}.${quoteIdentifier(name)}`;
+  }
+
+  /** 对历史来源只解析状态，使用可信租户并保留知识库归属校验。 */
+  async getCitationSource(knowledgeBaseId: string, documentId: string, revisionId: string) {
+    const result = await resolveCitationSources(
+      this.pool,
+      this.schema.replaceAll('"', ''),
+      this.tenantId,
+      [{ knowledgeBaseId, documentId, revisionId }],
+    );
+    return { status: result[0]!.sourceStatus };
   }
 
   async listKnowledgeBases() {
@@ -194,32 +210,80 @@ export class KnowledgeRepository {
     return this.getKnowledgeBase(id);
   }
 
+  /** 原子标记删除、撤销任务并安排全部版本清理。 */
   async deleteKnowledgeBase(id: string): Promise<void> {
-    const result = await this.pool.query(
-      `UPDATE ${this.table('knowledge_bases')} SET deleted_at = now(), updated_at = now()
-       WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
-      [this.tenantId, id],
-    );
-    if (!result.rowCount) throw new RagRepositoryError('NOT_FOUND', '知识库不存在。');
-    await this.pool.query(
-      `UPDATE ${this.table('documents')}
-       SET deleted_at = now(), status = 'deleting', updated_at = now()
-       WHERE tenant_id = $1 AND knowledge_base_id = $2 AND deleted_at IS NULL`,
-      [this.tenantId, id],
-    );
+    await this.deleteKnowledge(id);
+  }
+
+  /** 删除按知识库先加锁，清理不级联历史结果。 */
+  private async deleteKnowledge(knowledgeBaseId: string, documentId?: string): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const kb = await client.query(
+        `SELECT 1 FROM ${this.table('knowledge_bases')}
+        WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL FOR UPDATE`,
+        [this.tenantId, knowledgeBaseId],
+      );
+      if (!kb.rowCount) throw new RagRepositoryError('NOT_FOUND', '知识库不存在。');
+      const deleted = await client.query(
+        `UPDATE ${this.table('documents')} SET deleted_at=now(),
+        status='deleted',updated_at=now() WHERE tenant_id=$1 AND knowledge_base_id=$2
+        AND ($3::uuid IS NULL OR id=$3) AND deleted_at IS NULL RETURNING id`,
+        [this.tenantId, knowledgeBaseId, documentId ?? null],
+      );
+      if (documentId && !deleted.rowCount)
+        throw new RagRepositoryError('NOT_FOUND', '文档不存在。');
+      await client.query(
+        `UPDATE ${this.table('ingestion_jobs')} SET status='cancelled',lease_token=NULL,
+        lease_until=NULL,updated_at=now() WHERE tenant_id=$1 AND knowledge_base_id=$2
+        AND ($3::uuid IS NULL OR document_id=$3) AND status IN ('queued','running','failed')`,
+        [this.tenantId, knowledgeBaseId, documentId ?? null],
+      );
+      await client.query(
+        `INSERT INTO ${this.table('knowledge_cleanup_jobs')}
+        (tenant_id,knowledge_base_id,document_id,revision_id,storage_key,staged_path)
+        SELECT r.tenant_id,d.knowledge_base_id,d.id,r.id,r.storage_key,j.staged_path
+        FROM ${this.table('documents')} d JOIN ${this.table('document_revisions')} r
+          ON r.tenant_id=d.tenant_id AND r.document_id=d.id
+        LEFT JOIN ${this.table('ingestion_jobs')} j ON j.tenant_id=r.tenant_id AND j.revision_id=r.id
+        WHERE d.tenant_id=$1 AND d.knowledge_base_id=$2 AND ($3::uuid IS NULL OR d.id=$3)
+          AND d.deleted_at IS NOT NULL ON CONFLICT DO NOTHING`,
+        [this.tenantId, knowledgeBaseId, documentId ?? null],
+      );
+      await client.query(
+        `UPDATE ${this.table('knowledge_bases')} SET content_version=content_version+1,
+        updated_at=now(),deleted_at=CASE WHEN $3::uuid IS NULL THEN now() ELSE deleted_at END
+        WHERE tenant_id=$1 AND id=$2`,
+        [this.tenantId, knowledgeBaseId, documentId ?? null],
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async listDocuments(knowledgeBaseId: string) {
     await this.getKnowledgeBase(knowledgeBaseId);
     const result = await this.pool.query(
-      `SELECT d.*, r.published_at, count(c.id)::int AS vector_count
+      `SELECT d.*, r.published_at, (SELECT jsonb_build_object('id',lr.id,'version',lr.version,'title',lr.title,
+          'status',j.status,'stage',j.stage,'progress',j.progress,
+          'error',CASE WHEN j.status='failed' THEN jsonb_build_object('code',j.error_code,
+            'message',j.error_message,'retryable',coalesce(j.error_retryable,false)) ELSE NULL END)
+          FROM ${this.table('document_revisions')} lr JOIN ${this.table('ingestion_jobs')} j
+            ON j.tenant_id=lr.tenant_id AND j.revision_id=lr.id
+          WHERE lr.tenant_id=d.tenant_id AND lr.document_id=d.id AND lr.id=d.latest_revision_id
+          LIMIT 1) AS latest_revision, count(c.id)::int AS vector_count
        FROM ${this.table('documents')} d
        JOIN ${this.table('knowledge_bases')} kb
          ON kb.tenant_id = d.tenant_id AND kb.id = d.knowledge_base_id AND kb.deleted_at IS NULL
        LEFT JOIN ${this.table('document_revisions')} r
-         ON r.tenant_id = d.tenant_id AND r.id = d.active_revision_id
+         ON r.tenant_id = d.tenant_id AND r.id = d.active_revision_id AND r.document_id = d.id
        LEFT JOIN ${this.table('document_chunks')} c
-         ON c.tenant_id = d.tenant_id AND c.revision_id = d.active_revision_id
+         ON c.tenant_id = d.tenant_id AND c.revision_id = d.active_revision_id AND c.document_id=d.id AND c.knowledge_base_id=d.knowledge_base_id
        WHERE d.tenant_id = $1 AND d.knowledge_base_id = $2 AND d.deleted_at IS NULL
        GROUP BY d.id, r.published_at
        ORDER BY d.updated_at DESC`,
@@ -230,14 +294,21 @@ export class KnowledgeRepository {
 
   async getDocument(knowledgeBaseId: string, documentId: string) {
     const result = await this.pool.query(
-      `SELECT d.*, r.published_at, r.preview_text, count(c.id)::int AS vector_count
+      `SELECT d.*, r.published_at, r.preview_text, (SELECT jsonb_build_object('id',lr.id,'version',lr.version,'title',lr.title,
+          'status',j.status,'stage',j.stage,'progress',j.progress,
+          'error',CASE WHEN j.status='failed' THEN jsonb_build_object('code',j.error_code,
+            'message',j.error_message,'retryable',coalesce(j.error_retryable,false)) ELSE NULL END)
+          FROM ${this.table('document_revisions')} lr JOIN ${this.table('ingestion_jobs')} j
+            ON j.tenant_id=lr.tenant_id AND j.revision_id=lr.id
+          WHERE lr.tenant_id=d.tenant_id AND lr.document_id=d.id AND lr.id=d.latest_revision_id
+          LIMIT 1) AS latest_revision, count(c.id)::int AS vector_count
        FROM ${this.table('documents')} d
        JOIN ${this.table('knowledge_bases')} kb
          ON kb.tenant_id = d.tenant_id AND kb.id = d.knowledge_base_id AND kb.deleted_at IS NULL
        LEFT JOIN ${this.table('document_revisions')} r
-         ON r.tenant_id = d.tenant_id AND r.id = d.active_revision_id
+         ON r.tenant_id = d.tenant_id AND r.id = d.active_revision_id AND r.document_id = d.id
        LEFT JOIN ${this.table('document_chunks')} c
-         ON c.tenant_id = d.tenant_id AND c.revision_id = d.active_revision_id
+         ON c.tenant_id = d.tenant_id AND c.revision_id = d.active_revision_id AND c.document_id=d.id AND c.knowledge_base_id=d.knowledge_base_id
        WHERE d.tenant_id = $1 AND d.knowledge_base_id = $2 AND d.id = $3 AND d.deleted_at IS NULL
        GROUP BY d.id, r.published_at, r.preview_text`,
       [this.tenantId, knowledgeBaseId, documentId],
@@ -257,11 +328,13 @@ export class KnowledgeRepository {
       `SELECT c.id, c.chunk_index, c.title, c.content, c.locator
        FROM ${this.table('document_chunks')} c
        JOIN ${this.table('documents')} d
-         ON d.tenant_id = c.tenant_id AND d.id = c.document_id AND d.active_revision_id = c.revision_id
+         ON d.tenant_id = c.tenant_id AND d.id = c.document_id AND d.knowledge_base_id=c.knowledge_base_id AND d.active_revision_id = c.revision_id
        JOIN ${this.table('knowledge_bases')} kb
          ON kb.tenant_id = c.tenant_id AND kb.id = c.knowledge_base_id AND kb.deleted_at IS NULL
+       JOIN ${this.table('document_revisions')} r ON r.tenant_id=c.tenant_id AND r.document_id=d.id
+         AND r.id=c.revision_id AND r.status='ready' AND r.embedding_model=c.embedding_model
        WHERE c.tenant_id = $1 AND c.knowledge_base_id = $2 AND c.document_id = $3
-         AND d.deleted_at IS NULL
+         AND d.deleted_at IS NULL AND d.status NOT IN ('deleted','deleting')
        ORDER BY c.chunk_index`,
       [this.tenantId, knowledgeBaseId, documentId],
     );
@@ -288,13 +361,8 @@ export class KnowledgeRepository {
     return chunk;
   }
 
+  /** 删除后立即排除检索，底层数据由持久任务清理。 */
   async deleteDocument(knowledgeBaseId: string, documentId: string): Promise<void> {
-    const result = await this.pool.query(
-      `UPDATE ${this.table('documents')}
-       SET deleted_at = now(), status = 'deleting', updated_at = now()
-       WHERE tenant_id = $1 AND knowledge_base_id = $2 AND id = $3 AND deleted_at IS NULL`,
-      [this.tenantId, knowledgeBaseId, documentId],
-    );
-    if (!result.rowCount) throw new RagRepositoryError('NOT_FOUND', '文档不存在。');
+    await this.deleteKnowledge(knowledgeBaseId, documentId);
   }
 }
