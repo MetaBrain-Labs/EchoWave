@@ -43,6 +43,7 @@ const completeValues = {
   DEEPSEEK_ENABLE_THINKING: 'false',
   LANGGRAPH_SCHEMA: 'echowave_graph',
   UPLOAD_TEMP_DIR: '.tmp/uploads',
+  KNOWLEDGE_STORAGE_DIR: '.data/knowledge',
   AUDIO_STORAGE_DIR: '.data/audio',
   AUDIO_TRANSCRIPTION_MODEL: 'qwen-audio-3.0-asr-flash-filetrans',
   AUDIO_EMOTION_MODEL: 'qwen3.5-omni-flash',

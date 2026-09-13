@@ -27,6 +27,7 @@ export const WorkspaceEnvironmentSchema = z.object({
     .optional(),
   LANGGRAPH_SCHEMA: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
   UPLOAD_TEMP_DIR: z.string().min(1),
+  KNOWLEDGE_STORAGE_DIR: z.string().min(1),
   AUDIO_STORAGE_DIR: z.string().min(1),
   AUDIO_TRANSCRIPTION_MODEL: AudioTranscriptionModelSchema.optional(),
   AUDIO_EMOTION_MODEL: z.literal('qwen3.5-omni-flash').optional(),
@@ -46,6 +47,7 @@ export type RagConfig = {
   enableThinking: boolean;
   langGraphSchema: string;
   uploadTempDir: string;
+  knowledgeStorageDir: string;
   audioStorageDir: string;
   audioTranscriptionModel: AudioTranscriptionModel;
   audioEmotionModel: 'qwen3.5-omni-flash';
@@ -73,6 +75,7 @@ export function createRagConfig(
     enableThinking: providers.deepSeek.enableThinking,
     langGraphSchema: values.LANGGRAPH_SCHEMA,
     uploadTempDir: resolvePath(values.UPLOAD_TEMP_DIR),
+    knowledgeStorageDir: resolvePath(values.KNOWLEDGE_STORAGE_DIR),
     audioStorageDir: resolvePath(values.AUDIO_STORAGE_DIR),
     audioTranscriptionModel:
       values.AUDIO_TRANSCRIPTION_MODEL ?? 'qwen-audio-3.0-asr-flash-filetrans',

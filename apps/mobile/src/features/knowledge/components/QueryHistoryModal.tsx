@@ -27,6 +27,7 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import { CitationList } from './CitationList';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 /** 渲染最近问答的只读弹层。 */
@@ -37,6 +38,8 @@ export function QueryHistoryModal({
   onClose,
   onRetry,
   visible,
+  knowledgeId,
+  onOpenCitation,
 }: {
   error: string;
   items: RagHistoryItem[];
@@ -44,6 +47,8 @@ export function QueryHistoryModal({
   onClose: () => void;
   onRetry: () => void;
   visible: boolean;
+  knowledgeId?: string;
+  onOpenCitation?: (documentId: string, chunkId: string) => void;
 }) {
   const { formatDateTime, formatNumber, t } = useAppLanguage();
 
@@ -101,6 +106,17 @@ export function QueryHistoryModal({
                   <Text selectable style={styles.answer}>
                     {item.answer}
                   </Text>
+                  <CitationList
+                    citations={item.citations ?? []}
+                    knowledgeId={knowledgeId}
+                    onOpenCitation={(documentId, chunkId) => {
+                      onClose();
+                      onOpenCitation?.(documentId, chunkId);
+                    }}
+                  />
+                  {item.citationCount > (item.citations?.length ?? 0) ? (
+                    <Text style={styles.meta}>{t('knowledgeEdit.source.unavailable')}</Text>
+                  ) : null}
                   <Text style={styles.meta}>
                     {item.citationCount > 0
                       ? t('queryHistory.citations', {

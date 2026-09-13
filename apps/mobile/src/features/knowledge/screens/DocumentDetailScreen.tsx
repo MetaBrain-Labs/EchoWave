@@ -34,6 +34,7 @@ import {
 } from '@/shared/theme/tokens';
 import { getDocument } from '../apiClient';
 import { ActionButton, DocumentFormatIcon } from '../components/DocumentUi';
+import { KnowledgeDocumentEditor } from '../components/KnowledgeDocumentEditor';
 import { EmptyState } from '../components/EmptyState';
 import { SearchAndFilter } from '../components/SearchAndFilter';
 import { showComingSoon } from '../components/feedback';
@@ -73,6 +74,7 @@ export function DocumentDetailScreen({
     { key: 'parsed', label: t('documentDetail.parsedTab') },
     { key: 'original', label: t('documentDetail.originalTab') },
   ] as const;
+  const [editingDocument, setEditingDocument] = useState(false);
   const [document, setDocument] = useState<KnowledgeDocumentDetail>();
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const [previewMode, setPreviewMode] = useState<PreviewMode>('preview');
@@ -102,6 +104,12 @@ export function DocumentDetailScreen({
     void runInitialRequest(load);
   }, [load, runInitialRequest]);
 
+  useEffect(() => {
+    if (!['queued', 'running'].includes(document?.latestRevision?.status ?? '')) return;
+    const timer = setInterval(() => void load(), 5_000);
+    return () => clearInterval(timer);
+  }, [document?.latestRevision?.status, load]);
+
   const chunks = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
     if (!normalized) return document?.chunks ?? [];
@@ -117,7 +125,7 @@ export function DocumentDetailScreen({
       <SafeAreaView style={styles.safeArea}>
         <PageHeader
           onBack={onBack}
-          onMore={() => showComingSoon(t('common.moreActions'))}
+          onMore={() => setEditingDocument(true)}
           title={t('documentDetail.title')}
         />
         <ScrollView
@@ -153,13 +161,30 @@ export function DocumentDetailScreen({
 
   const parsedAt = document.status.kind === 'ready' ? document.status.parsedAt : document.updatedAt;
   const totalCharacters = document.chunks.reduce((sum, chunk) => sum + chunk.charCount, 0);
-  const reparse = () => showComingSoon(t('documentDetail.reparseSuccess'));
+  const reparse = () => setEditingDocument(true);
 
   return (
     <SafeAreaView style={styles.safeAreaWhite}>
+      <KnowledgeDocumentEditor
+        document={editingDocument ? document : undefined}
+        knowledgeId={knowledgeId}
+        onClose={() => setEditingDocument(false)}
+        onOpen={() => setEditingDocument(false)}
+        onChanged={load}
+        onDeleted={onBack}
+      />
+      {document.activeRevisionId &&
+      document.latestRevision &&
+      document.activeRevisionId !== document.latestRevision.id ? (
+        <Text style={styles.revisionNotice}>
+          {t('knowledgeEdit.oldActive')} {document.latestRevision.title} ·{' '}
+          {document.latestRevision.progress}%
+          {document.latestRevision.error ? ` · ${document.latestRevision.error.message}` : ''}
+        </Text>
+      ) : null}
       <PageHeader
         leading={<DocumentFormatIcon format={document.format} size={28} />}
-        onMore={() => showComingSoon(t('common.moreActions'))}
+        onMore={() => setEditingDocument(true)}
         onBack={onBack}
         onSearch={() => {
           if (activeTab === 'parsed') searchInputRef.current?.focus();
@@ -507,6 +532,7 @@ const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.card, flex: 1 },
   safeAreaWhite: { backgroundColor: colors.white, flex: 1 },
   emptyRefreshContent: { flexGrow: 1 },
+  revisionNotice: { ...typography.body, color: textColors.secondary, padding: spacing.md },
   pager: { flex: 1 },
   page: { flex: 1, height: '100%' },
   pageContent: { paddingBottom: spacing.lg },

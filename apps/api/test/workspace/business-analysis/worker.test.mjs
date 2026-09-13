@@ -90,6 +90,7 @@ function reporter(records) {
 function repositoryFor(job, overrides = {}) {
   let claimed = false;
   return {
+    assertKnowledgeCurrent: async () => {},
     resetInterrupted: async () => {},
     listCheckpointCleanupCandidates: async () => [],
     markCheckpointCleaned: async () => {},

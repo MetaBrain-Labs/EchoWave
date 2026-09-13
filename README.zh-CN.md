@@ -206,3 +206,5 @@ Android 真机回归由 `.maestro/` 和 `scripts/e2e/android-e2e.mjs` 管理，�
 ## 许可证
 
 EchoWave 使用 [Apache License 2.0](./LICENSE)。提交贡献即表示你同意按照该许可证提供贡献内容。
+
+知识文档改名及替换文件在解析和 embedding 全部成功前保留旧 active 版本。启动或迁移 API 前须配置 `KNOWLEDGE_STORAGE_DIR`；详见[配置说明](./docs/configuration.zh-CN.md)及[数据库升级说明](./docs/database-schema.zh-CN.md)。

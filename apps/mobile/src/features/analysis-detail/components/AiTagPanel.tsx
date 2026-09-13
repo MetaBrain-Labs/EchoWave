@@ -10,6 +10,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { CitationSnapshotModal, type CitationSnapshot } from '@/shared/ui/CitationSnapshotModal';
+import { useState } from 'react';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import {
   colors,
@@ -68,6 +70,7 @@ export function AiTagPanel({
   segments: readonly TranscriptSegment[];
 }) {
   const { t } = useAppLanguage();
+  const [selectedCitation, setSelectedCitation] = useState<CitationSnapshot>();
   if (!analysis) {
     return null;
   }
@@ -110,6 +113,22 @@ export function AiTagPanel({
           </View>
         ) : null}
       </View>
+      <CitationSnapshotModal
+        citation={selectedCitation}
+        onClose={() => setSelectedCitation(undefined)}
+        onOpenCurrent={
+          onOpenCitation
+            ? () => {
+                if (selectedCitation?.knowledgeBaseId)
+                  onOpenCitation(
+                    selectedCitation.knowledgeBaseId,
+                    selectedCitation.documentId,
+                    selectedCitation.chunkId,
+                  );
+              }
+            : undefined
+        }
+      />
       <ScrollView
         contentContainerStyle={styles.sheetContent}
         showsVerticalScrollIndicator={false}
@@ -140,10 +159,8 @@ export function AiTagPanel({
                 key={citation.chunkId}
                 accessibilityLabel={t('analysis.openEvidence', { title: citation.documentTitle })}
                 accessibilityRole="link"
-                disabled={!onOpenCitation}
-                onPress={() =>
-                  onOpenCitation?.(citation.knowledgeBaseId, citation.documentId, citation.chunkId)
-                }
+                disabled={false}
+                onPress={() => setSelectedCitation(citation)}
                 style={({ pressed }) => [styles.citationCard, pressed && styles.pressed]}
               >
                 <Text style={styles.citationExcerpt}>{citation.excerpt}</Text>

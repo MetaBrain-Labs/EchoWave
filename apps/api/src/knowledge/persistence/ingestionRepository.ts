@@ -1,27 +1,31 @@
 /**
  * 知识文档入库持久层。
  *
- * 集中创建入库任务、领取租约、推进阶段并原子发布文档 revision 的 PostgreSQL 事务。
+ * 管理不可变版本输入、任务租约和原子发布，旧 active 版本在修改完成前始终有效。
  *
  * Responsibilities:
- * - 管理入库任务与文档处理状态。
- * - 通过 `SKIP LOCKED` 支持 worker 安全领取。
- * - 原子发布文档块、revision 和 active 指针。
+ * - 串行分配文档版本并取消被替代任务。
+ * - 对阶段、失败、重试和发布执行租约与最新版本校验。
+ * - 提交后通知客户端并创建持久清理任务。
  *
  * Notes:
- * - PostgreSQL 专用能力保留为显式 SQL。
+ * - 文件读写由应用服务负责，向量发布仍使用显式 SQL。
  */
+import type { PoolClient } from 'pg';
 import { toSql } from 'pgvector';
-
 import type { DocumentFormat } from '@echowave/contracts';
-
-import type { DatabasePool } from '../../infrastructure/postgres.ts';
-import { quoteIdentifier } from '../../infrastructure/postgres.ts';
+import { quoteIdentifier, type DatabasePool } from '../../infrastructure/postgres.ts';
 import type { LiveUpdateBroker } from '../../infrastructure/liveUpdateBroker.ts';
-import type { ParsedChunkDraft } from '../ingestion/documentParser.ts';
+import type { ParsedChunkDraft, ParsedDocument } from '../ingestion/documentParser.ts';
 import { RagRepositoryError } from './errors.ts';
 
-/** worker 已持有租约、可以安全执行的入库任务快照。 */
+/** 失效租约只能收敛自身执行，不能写回已更新文档。 */
+export class IngestionLeaseLostError extends Error {
+  constructor() {
+    super('Ingestion lease or revision is no longer current.');
+  }
+}
+/** worker 所持有的不可变版本和租约快照。 */
 export type ClaimedIngestionJob = {
   id: string;
   tenantId: string;
@@ -33,10 +37,29 @@ export type ClaimedIngestionJob = {
   format: DocumentFormat;
   sizeBytes: number;
   attempts: number;
+  leaseToken: string;
+  storageKey: string | null;
+  rebuildSnapshot: ParsedDocument | null;
   embeddingBindingRevisionId: string | null;
   embeddingModel: string;
 };
-
+/** 已持久写入的版本输入；替换操作必须声明预期版本。 */
+export type CreateIngestionInput = {
+  knowledgeBaseId: string;
+  documentId?: string;
+  expectedVersion?: number;
+  title: string;
+  format: DocumentFormat;
+  sizeBytes: number;
+  sourceSha256: string;
+  stagedPath: string;
+  storageKey?: string;
+  rebuildSnapshot?: ParsedDocument;
+  parserVersion: string;
+  embeddingModel: string;
+  embeddingBindingRevisionId: string | null;
+};
+/** 全量分块与向量发布输入，任何不完整批次均不得切换 active 指针。 */
 type PublishInput = {
   job: ClaimedIngestionJob;
   chunks: ParsedChunkDraft[];
@@ -48,24 +71,17 @@ type PublishInput = {
   estimatedCost: { amount: number; currency: 'CNY' | 'USD' };
   embeddingModel: string;
 };
-
-/** 隐藏入库任务与 revision 发布事务的 PostgreSQL 仓储。 */
+/** 知识版本及任务的事务仓储。 */
 export class IngestionRepository {
-  private readonly schema: string;
-
   constructor(
     private readonly pool: DatabasePool,
-    schema: string,
+    private readonly schema: string,
     private readonly tenantId: string,
     private readonly liveUpdates?: LiveUpdateBroker,
-  ) {
-    this.schema = quoteIdentifier(schema);
-  }
-
+  ) {}
   private table(name: string): string {
-    return `${this.schema}.${quoteIdentifier(name)}`;
+    return `${quoteIdentifier(this.schema)}.${quoteIdentifier(name)}`;
   }
-
   private notify(knowledgeBaseId: string, documentId: string, terminal: boolean): void {
     this.liveUpdates?.publish({
       kind: 'knowledge-document',
@@ -74,64 +90,101 @@ export class IngestionRepository {
       terminal,
     });
   }
-
-  /** 在单个事务中创建文档、处理中 revision 与待领取任务。 */
-  async createIngestion(input: {
-    knowledgeBaseId: string;
-    title: string;
-    format: DocumentFormat;
-    sizeBytes: number;
-    sourceSha256: string;
-    stagedPath: string;
-    parserVersion: string;
-    embeddingModel: string;
-    embeddingBindingRevisionId: string | null;
-  }) {
+  /** 固定按知识库、文档、任务顺序加锁，避免删除与发布形成反向锁依赖。 */
+  private async lockDocument(client: PoolClient, knowledgeBaseId: string, documentId: string) {
+    const kb = await client.query(
+      `SELECT 1 FROM ${this.table('knowledge_bases')}
+      WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL FOR UPDATE`,
+      [this.tenantId, knowledgeBaseId],
+    );
+    if (!kb.rowCount) throw new RagRepositoryError('NOT_FOUND', '知识库不存在。');
+    const result = await client.query(
+      `SELECT * FROM ${this.table('documents')}
+      WHERE tenant_id=$1 AND knowledge_base_id=$2 AND id=$3 AND deleted_at IS NULL FOR UPDATE`,
+      [this.tenantId, knowledgeBaseId, documentId],
+    );
+    if (!result.rows[0]) throw new RagRepositoryError('NOT_FOUND', '文档不存在。');
+    return result.rows[0];
+  }
+  /** 锁定并检查当前执行的租约；超时或被替代的 worker 无权续写。 */
+  private async ownedJob(client: PoolClient, job: ClaimedIngestionJob) {
+    const document = await this.lockDocument(client, job.knowledgeBaseId, job.documentId);
+    if (document.latest_revision_id !== job.revisionId) throw new IngestionLeaseLostError();
+    const result = await client.query(
+      `SELECT * FROM ${this.table('ingestion_jobs')}
+      WHERE tenant_id=$1 AND id=$2 AND document_id=$3 AND revision_id=$4
+        AND status='running' AND lease_token=$5 AND lease_until>now() FOR UPDATE`,
+      [this.tenantId, job.id, job.documentId, job.revisionId, job.leaseToken],
+    );
+    if (!result.rowCount) throw new IngestionLeaseLostError();
+    return document;
+  }
+  /** 创建或替换版本；相同文件的新版本允许重复哈希。 */
+  async createIngestion(input: CreateIngestionInput) {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      const knowledgeBase = await client.query(
+      const kb = await client.query(
         `SELECT 1 FROM ${this.table('knowledge_bases')}
-         WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+        WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL FOR UPDATE`,
         [this.tenantId, input.knowledgeBaseId],
       );
-      if (!knowledgeBase.rowCount) throw new RagRepositoryError('NOT_FOUND', '知识库不存在。');
-      const duplicate = await client.query(
-        `SELECT d.id, d.error_code FROM ${this.table('document_revisions')} r
-         JOIN ${this.table('documents')} d ON d.tenant_id = r.tenant_id AND d.id = r.document_id
-         WHERE r.tenant_id = $1 AND d.knowledge_base_id = $2 AND r.source_sha256 = $3
-           AND d.deleted_at IS NULL
-         ORDER BY d.updated_at DESC LIMIT 1 FOR UPDATE OF d`,
-        [this.tenantId, input.knowledgeBaseId, input.sourceSha256],
-      );
-      const staleDocument = duplicate.rows[0];
-      if (staleDocument && staleDocument.error_code !== 'EMBEDDING_MODEL_MIGRATION_REQUIRED') {
-        throw new RagRepositoryError('DUPLICATE_DOCUMENT', '该文件已上传到此知识库。');
+      if (!kb.rowCount) throw new RagRepositoryError('NOT_FOUND', '知识库不存在。');
+      let documentId = input.documentId;
+      let version = 1;
+      if (!documentId) {
+        const duplicate = await client.query(
+          `SELECT d.id, d.error_code FROM ${this.table('document_revisions')} r
+          JOIN ${this.table('documents')} d ON d.tenant_id=r.tenant_id AND d.id=r.document_id
+          WHERE r.tenant_id=$1 AND d.knowledge_base_id=$2 AND r.source_sha256=$3 AND d.deleted_at IS NULL
+          ORDER BY d.updated_at DESC LIMIT 1 FOR UPDATE OF d`,
+          [this.tenantId, input.knowledgeBaseId, input.sourceSha256],
+        );
+        const stale = duplicate.rows[0];
+        if (stale && stale.error_code !== 'EMBEDDING_MODEL_MIGRATION_REQUIRED')
+          throw new RagRepositoryError('DUPLICATE_DOCUMENT', '该文件已上传到此知识库。');
+        documentId = stale?.id;
       }
-      let documentId: string;
-      if (staleDocument) {
-        documentId = staleDocument.id as string;
+      if (documentId) {
+        const document = await this.lockDocument(client, input.knowledgeBaseId, documentId);
+        if (input.documentId && Number(document.version) !== input.expectedVersion)
+          throw new RagRepositoryError('CONFLICT', '文档版本已变化，请刷新后重试。');
+        version = Number(document.version) + 1;
         await client.query(
-          `UPDATE ${this.table('documents')}
-           SET title = $3, format = $4, size_bytes = $5, status = 'queued', progress = 0,
-               error_code = NULL, error_message = NULL, error_retryable = NULL, updated_at = now()
-           WHERE tenant_id = $1 AND id = $2`,
-          [this.tenantId, documentId, input.title, input.format, input.sizeBytes],
+          `UPDATE ${this.table('ingestion_jobs')} SET status='cancelled',
+          lease_token=NULL, lease_until=NULL, updated_at=now()
+          WHERE tenant_id=$1 AND document_id=$2 AND status IN ('queued','running','failed')`,
+          [this.tenantId, documentId],
+        );
+        await client.query(
+          `UPDATE ${this.table('document_revisions')} SET status='superseded'
+          WHERE tenant_id=$1 AND document_id=$2 AND id IS DISTINCT FROM $3 AND status IN ('processing','failed')`,
+          [this.tenantId, documentId, document.active_revision_id],
+        );
+        await client.query(
+          `INSERT INTO ${this.table('knowledge_cleanup_jobs')}
+          (tenant_id,knowledge_base_id,document_id,revision_id,storage_key,staged_path)
+          SELECT r.tenant_id,$3,r.document_id,r.id,r.storage_key,j.staged_path
+          FROM ${this.table('document_revisions')} r LEFT JOIN ${this.table('ingestion_jobs')} j
+            ON j.tenant_id=r.tenant_id AND j.revision_id=r.id
+          WHERE r.tenant_id=$1 AND r.document_id=$2 AND r.id IS DISTINCT FROM $4
+          ON CONFLICT DO NOTHING`,
+          [this.tenantId, documentId, input.knowledgeBaseId, document.active_revision_id],
         );
       } else {
         const document = await client.query(
           `INSERT INTO ${this.table('documents')}
-             (tenant_id, knowledge_base_id, title, format, size_bytes, status)
-           VALUES ($1, $2, $3, $4, $5, 'queued') RETURNING id`,
+          (tenant_id,knowledge_base_id,title,format,size_bytes,status)
+          VALUES($1,$2,$3,$4,$5,'queued') RETURNING id`,
           [this.tenantId, input.knowledgeBaseId, input.title, input.format, input.sizeBytes],
         );
         documentId = document.rows[0].id as string;
       }
       const revision = await client.query(
         `INSERT INTO ${this.table('document_revisions')}
-           (tenant_id, document_id, source_sha256, parser_version, embedding_model,
-            embedding_dimensions, embedding_binding_revision_id, status)
-         VALUES ($1, $2, $3, $4, $5, 1024, $6, 'processing') RETURNING id`,
+        (tenant_id,document_id,source_sha256,parser_version,embedding_model,embedding_dimensions,
+         embedding_binding_revision_id,status,version,title,format,size_bytes,storage_key,rebuild_snapshot)
+        VALUES($1,$2,$3,$4,$5,1024,$6,'processing',$7,$8,$9,$10,$11,$12::jsonb) RETURNING id`,
         [
           this.tenantId,
           documentId,
@@ -139,14 +192,27 @@ export class IngestionRepository {
           input.parserVersion,
           input.embeddingModel,
           input.embeddingBindingRevisionId,
+          version,
+          input.title,
+          input.format,
+          input.sizeBytes,
+          input.storageKey ?? null,
+          input.rebuildSnapshot ? JSON.stringify(input.rebuildSnapshot) : null,
         ],
       );
       const revisionId = revision.rows[0].id as string;
       const job = await client.query(
         `INSERT INTO ${this.table('ingestion_jobs')}
-           (tenant_id, knowledge_base_id, document_id, revision_id, staged_path, status)
-         VALUES ($1, $2, $3, $4, $5, 'queued') RETURNING id`,
-        [this.tenantId, input.knowledgeBaseId, documentId, revisionId, input.stagedPath],
+        (tenant_id,knowledge_base_id,document_id,revision_id,staged_path,status)
+        VALUES($1,$2,$3,$4,$5,'queued') RETURNING id`,
+        [this.tenantId, input.knowledgeBaseId, documentId, revisionId, input.stagedPath || null],
+      );
+      await client.query(
+        `UPDATE ${this.table('documents')} SET version=$3,latest_revision_id=$4,
+        status=CASE WHEN active_revision_id IS NULL THEN 'queued' ELSE 'ready' END,
+        progress=0,error_code=NULL,error_message=NULL,error_retryable=NULL,updated_at=now()
+        WHERE tenant_id=$1 AND id=$2`,
+        [this.tenantId, documentId, version, revisionId],
       );
       await client.query('COMMIT');
       this.notify(input.knowledgeBaseId, documentId, false);
@@ -158,83 +224,166 @@ export class IngestionRepository {
       client.release();
     }
   }
-
-  /** 通过 `SKIP LOCKED` 领取最早可执行或租约已过期的任务。 */
+  /** 读取改名输入，包括尚未完成的最新文件；返回后仍由 expectedVersion 防覆盖。 */
+  async getRevisionSource(knowledgeBaseId: string, documentId: string) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const document = await this.lockDocument(client, knowledgeBaseId, documentId);
+      const revisions = await client.query(
+        `SELECT r.*,j.staged_path FROM ${this.table('document_revisions')} r
+        LEFT JOIN ${this.table('ingestion_jobs')} j ON j.tenant_id=r.tenant_id AND j.revision_id=r.id
+        WHERE r.tenant_id=$1 AND r.document_id=$2 AND r.id=$3`,
+        [this.tenantId, documentId, document.latest_revision_id],
+      );
+      const revision = revisions.rows[0];
+      if (!revision)
+        throw new RagRepositoryError('CONFLICT', '文档没有可修改的版本，请替换上传文件。');
+      let rebuildSnapshot = revision.rebuild_snapshot as ParsedDocument | null;
+      if (!revision.storage_key && !revision.staged_path && !rebuildSnapshot) {
+        const chunks = await client.query(
+          `SELECT * FROM ${this.table('document_chunks')}
+          WHERE tenant_id=$1 AND knowledge_base_id=$2 AND document_id=$3 AND revision_id=$4 ORDER BY chunk_index`,
+          [this.tenantId, knowledgeBaseId, documentId, document.active_revision_id],
+        );
+        if (!chunks.rows.length)
+          throw new RagRepositoryError('CONFLICT', '原文件已不可用，请替换上传文件。');
+        rebuildSnapshot = {
+          previewText: chunks.rows
+            .map((row) => row.content)
+            .join('\n\n')
+            .slice(0, 100_000),
+          warnings: revision.warnings,
+          chunks: chunks.rows.map((row) => ({
+            index: row.chunk_index,
+            title: row.title,
+            headingPath: row.heading_path,
+            content: row.content,
+            embeddingText: row.embedding_text,
+            contentSha256: row.content_sha256,
+            locator: row.locator,
+          })),
+        };
+      }
+      await client.query('COMMIT');
+      return { version: Number(document.version), revision, rebuildSnapshot };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  /** 领取最新有效任务，生成新的租约标识，支持过期接管。 */
   async claimIngestionJob(): Promise<ClaimedIngestionJob | undefined> {
     const result = await this.pool.query(
       `WITH candidate AS (
-         SELECT id FROM ${this.table('ingestion_jobs')}
-         WHERE tenant_id = $1 AND (status = 'queued' OR (status = 'running' AND lease_until < now()))
-         ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1
-       )
-       UPDATE ${this.table('ingestion_jobs')} j
-       SET status = 'running', attempts = attempts + 1,
-           lease_until = now() + interval '2 minutes', updated_at = now()
-       FROM candidate, ${this.table('documents')} d, ${this.table('document_revisions')} revision
-       WHERE j.id = candidate.id AND d.tenant_id = j.tenant_id AND d.id = j.document_id
-         AND revision.tenant_id = j.tenant_id AND revision.id = j.revision_id
-       RETURNING j.*, d.title, d.format, d.size_bytes, revision.embedding_model,
-                 revision.embedding_binding_revision_id`,
+      SELECT j.id FROM ${this.table('ingestion_jobs')} j
+      JOIN ${this.table('documents')} d ON d.tenant_id=j.tenant_id AND d.id=j.document_id
+        AND d.knowledge_base_id=j.knowledge_base_id AND d.latest_revision_id=j.revision_id
+      JOIN ${this.table('knowledge_bases')} kb ON kb.tenant_id=j.tenant_id AND kb.id=j.knowledge_base_id
+      WHERE j.tenant_id=$1 AND d.deleted_at IS NULL AND kb.deleted_at IS NULL
+        AND (j.status='queued' OR (j.status='running' AND j.lease_until<now()))
+      ORDER BY j.created_at FOR UPDATE OF j SKIP LOCKED LIMIT 1)
+      UPDATE ${this.table('ingestion_jobs')} j SET status='running',attempts=j.attempts+1,
+        lease_token=gen_random_uuid(),lease_until=now()+interval '2 minutes',updated_at=now()
+      FROM candidate,${this.table('document_revisions')} r
+      WHERE j.id=candidate.id AND r.tenant_id=j.tenant_id AND r.document_id=j.document_id AND r.id=j.revision_id
+      RETURNING j.*,r.title,r.format,r.size_bytes,r.storage_key,r.rebuild_snapshot,
+        r.embedding_model,r.embedding_binding_revision_id`,
       [this.tenantId],
     );
     const row = result.rows[0];
-    if (!row || !row.staged_path) return undefined;
+    if (!row) return undefined;
     return {
       id: row.id,
       tenantId: row.tenant_id,
       knowledgeBaseId: row.knowledge_base_id,
       documentId: row.document_id,
       revisionId: row.revision_id,
-      stagedPath: row.staged_path,
+      stagedPath: row.staged_path ?? '',
       title: row.title,
       format: row.format,
       sizeBytes: Number(row.size_bytes),
       attempts: row.attempts,
+      leaseToken: row.lease_token,
+      storageKey: row.storage_key,
+      rebuildSnapshot: row.rebuild_snapshot,
       embeddingBindingRevisionId: row.embedding_binding_revision_id ?? null,
       embeddingModel: row.embedding_model,
     };
   }
-
-  /** 推进入库阶段并续租，同时同步文档对外可见状态。 */
+  /** 续租不延长已过期租约，不触及 active 内容或被替代版本状态。 */
+  async heartbeat(job: ClaimedIngestionJob): Promise<void> {
+    const result = await this.pool.query(
+      `UPDATE ${this.table('ingestion_jobs')} j
+      SET lease_until=now()+interval '2 minutes'
+      FROM ${this.table('documents')} d,${this.table('knowledge_bases')} kb
+      WHERE j.tenant_id=$1 AND j.id=$2 AND j.lease_token=$3 AND j.status='running' AND j.lease_until>now()
+        AND d.tenant_id=j.tenant_id AND d.id=j.document_id AND d.latest_revision_id=j.revision_id AND d.deleted_at IS NULL
+        AND kb.tenant_id=j.tenant_id AND kb.id=j.knowledge_base_id AND kb.deleted_at IS NULL`,
+      [this.tenantId, job.id, job.leaseToken],
+    );
+    if (!result.rowCount) throw new IngestionLeaseLostError();
+  }
+  /** 在事务中推进最新任务；修改期间保持旧版本 ready。 */
   async setJobStage(
     job: ClaimedIngestionJob,
     stage: string,
     status: string,
     progress = 0,
   ): Promise<void> {
-    await this.pool.query(
-      `UPDATE ${this.table('ingestion_jobs')} SET stage = $3, lease_until = now() + interval '2 minutes', updated_at = now()
-       WHERE tenant_id = $1 AND id = $2`,
-      [this.tenantId, job.id, stage],
-    );
-    await this.pool.query(
-      `UPDATE ${this.table('documents')} SET status = $3, progress = $4, updated_at = now()
-       WHERE tenant_id = $1 AND id = $2`,
-      [this.tenantId, job.documentId, status, progress],
-    );
-    this.notify(job.knowledgeBaseId, job.documentId, false);
-  }
-
-  /** 原子写入全部文档块并发布 revision，提交前旧 active revision 始终可检索。 */
-  async publishRevision(input: PublishInput): Promise<void> {
-    if (input.chunks.length !== input.vectors.length)
-      throw new Error('Chunk/vector count mismatch.');
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      await this.ownedJob(client, job);
       await client.query(
-        `DELETE FROM ${this.table('document_chunks')} WHERE tenant_id = $1 AND revision_id = $2`,
+        `UPDATE ${this.table('ingestion_jobs')} SET stage=$3,progress=$4,
+        lease_until=now()+interval '2 minutes',updated_at=now() WHERE tenant_id=$1 AND id=$2`,
+        [this.tenantId, job.id, stage, progress],
+      );
+      await client.query(
+        `UPDATE ${this.table('documents')} SET
+        status=CASE WHEN active_revision_id IS NULL THEN $3 ELSE 'ready' END,progress=$4,updated_at=now()
+        WHERE tenant_id=$1 AND id=$2`,
+        [this.tenantId, job.documentId, status, progress],
+      );
+      await client.query('COMMIT');
+      this.notify(job.knowledgeBaseId, job.documentId, false);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  /** 全部向量准备完成后，原子切换 active 版本并排队清理旧数据。 */
+  async publishRevision(input: PublishInput): Promise<void> {
+    if (
+      input.embeddingModel !== input.job.embeddingModel ||
+      !input.chunks.length ||
+      input.chunks.length !== input.vectors.length ||
+      input.vectors.some(
+        (vector) => vector.length !== 1024 || vector.some((value) => !Number.isFinite(value)),
+      )
+    )
+      throw new Error('Invalid chunk/vector batch.');
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const document = await this.ownedJob(client, input.job);
+      await client.query(
+        `DELETE FROM ${this.table('document_chunks')} WHERE tenant_id=$1 AND revision_id=$2`,
         [this.tenantId, input.job.revisionId],
       );
       for (let index = 0; index < input.chunks.length; index += 1) {
-        const chunk = input.chunks[index];
-        const vector = input.vectors[index];
-        if (!chunk || !vector) throw new Error('Chunk/vector count mismatch.');
+        const chunk = input.chunks[index]!;
+        const vector = input.vectors[index]!;
         await client.query(
           `INSERT INTO ${this.table('document_chunks')}
-             (tenant_id, knowledge_base_id, document_id, revision_id, chunk_index, title,
-              heading_path, content, embedding_text, content_sha256, locator, embedding_model, embedding)
-           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11::jsonb, $12, $13::vector)`,
+          (tenant_id,knowledge_base_id,document_id,revision_id,chunk_index,title,heading_path,content,
+           embedding_text,content_sha256,locator,embedding_model,embedding)
+          VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11::jsonb,$12,$13::vector)`,
           [
             this.tenantId,
             input.job.knowledgeBaseId,
@@ -253,11 +402,9 @@ export class IngestionRepository {
         );
       }
       await client.query(
-        `UPDATE ${this.table('document_revisions')}
-         SET status = 'ready', preview_text = $3, warnings = $4::jsonb, published_at = now(),
-             embedding_provider = $5, embedding_tokens = $6, embedding_cost_amount = $7,
-             embedding_cost_currency = $8
-         WHERE tenant_id = $1 AND id = $2`,
+        `UPDATE ${this.table('document_revisions')} SET status='ready',preview_text=$3,
+        warnings=$4::jsonb,published_at=now(),embedding_provider=$5,embedding_tokens=$6,
+        embedding_cost_amount=$7,embedding_cost_currency=$8 WHERE tenant_id=$1 AND id=$2`,
         [
           this.tenantId,
           input.job.revisionId,
@@ -270,17 +417,43 @@ export class IngestionRepository {
         ],
       );
       await client.query(
-        `UPDATE ${this.table('documents')}
-         SET active_revision_id = $3, status = 'ready', progress = 100, error_code = NULL,
-             error_message = NULL, error_retryable = NULL, updated_at = now()
-         WHERE tenant_id = $1 AND id = $2`,
-        [this.tenantId, input.job.documentId, input.job.revisionId],
+        `UPDATE ${this.table('documents')} SET active_revision_id=$3,status='ready',
+        title=$4,format=$5,size_bytes=$6,progress=100,error_code=NULL,error_message=NULL,
+        error_retryable=NULL,updated_at=now() WHERE tenant_id=$1 AND id=$2`,
+        [
+          this.tenantId,
+          input.job.documentId,
+          input.job.revisionId,
+          input.job.title,
+          input.job.format,
+          input.job.sizeBytes,
+        ],
       );
       await client.query(
-        `UPDATE ${this.table('ingestion_jobs')}
-         SET status = 'completed', stage = 'cleanup', lease_until = NULL, staged_path = NULL, updated_at = now()
-         WHERE tenant_id = $1 AND id = $2`,
+        `UPDATE ${this.table('ingestion_jobs')} SET status='completed',progress=100,
+        stage='cleanup',lease_until=NULL,lease_token=NULL,updated_at=now() WHERE tenant_id=$1 AND id=$2`,
         [this.tenantId, input.job.id],
+      );
+      if (document.active_revision_id && document.active_revision_id !== input.job.revisionId) {
+        await client.query(
+          `UPDATE ${this.table('document_revisions')} SET status='inactive'
+          WHERE tenant_id=$1 AND id=$2`,
+          [this.tenantId, document.active_revision_id],
+        );
+        await client.query(
+          `INSERT INTO ${this.table('knowledge_cleanup_jobs')}
+          (tenant_id,knowledge_base_id,document_id,revision_id,storage_key,staged_path)
+          SELECT r.tenant_id,$3,r.document_id,r.id,r.storage_key,j.staged_path
+          FROM ${this.table('document_revisions')} r LEFT JOIN ${this.table('ingestion_jobs')} j
+            ON j.tenant_id=r.tenant_id AND j.revision_id=r.id WHERE r.tenant_id=$1 AND r.id=$2
+          ON CONFLICT DO NOTHING`,
+          [this.tenantId, document.active_revision_id, input.job.knowledgeBaseId],
+        );
+      }
+      await client.query(
+        `UPDATE ${this.table('knowledge_bases')} SET content_version=content_version+1,
+        updated_at=now() WHERE tenant_id=$1 AND id=$2`,
+        [this.tenantId, input.job.knowledgeBaseId],
       );
       await client.query('COMMIT');
       this.notify(input.job.knowledgeBaseId, input.job.documentId, true);
@@ -291,53 +464,82 @@ export class IngestionRepository {
       client.release();
     }
   }
-
-  /** 将任务、文档和 revision 同步标记为失败。 */
+  /** 仅保存仍持有租约的最新失败任务；旧 active 版本不受影响。 */
   async failJob(
     job: ClaimedIngestionJob,
     code: string,
     message: string,
     retryable: boolean,
   ): Promise<void> {
-    await this.pool.query(
-      `UPDATE ${this.table('ingestion_jobs')}
-       SET status = 'failed', lease_until = NULL, error_code = $3, error_message = $4,
-           error_retryable = $5, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
-      [this.tenantId, job.id, code, message, retryable],
-    );
-    await this.pool.query(
-      `UPDATE ${this.table('documents')}
-       SET status = 'failed', error_code = $3, error_message = $4, error_retryable = $5, updated_at = now()
-       WHERE tenant_id = $1 AND id = $2`,
-      [this.tenantId, job.documentId, code, message, retryable],
-    );
-    await this.pool.query(
-      `UPDATE ${this.table('document_revisions')} SET status = 'failed'
-       WHERE tenant_id = $1 AND id = $2`,
-      [this.tenantId, job.revisionId],
-    );
-    this.notify(job.knowledgeBaseId, job.documentId, true);
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await this.ownedJob(client, job);
+      await client.query(
+        `UPDATE ${this.table('ingestion_jobs')} SET status='failed',lease_until=NULL,
+        lease_token=NULL,error_code=$3,error_message=$4,error_retryable=$5,updated_at=now()
+        WHERE tenant_id=$1 AND id=$2`,
+        [this.tenantId, job.id, code, message, retryable],
+      );
+      await client.query(
+        `UPDATE ${this.table('document_revisions')} SET status='failed' WHERE tenant_id=$1 AND id=$2`,
+        [this.tenantId, job.revisionId],
+      );
+      await client.query(
+        `UPDATE ${this.table('documents')} SET
+        status=CASE WHEN active_revision_id IS NULL THEN 'failed' ELSE 'ready' END,
+        error_code=$3,error_message=$4,error_retryable=$5,updated_at=now() WHERE tenant_id=$1 AND id=$2`,
+        [this.tenantId, job.documentId, code, message, retryable],
+      );
+      await client.query('COMMIT');
+      this.notify(job.knowledgeBaseId, job.documentId, true);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      if (
+        error instanceof IngestionLeaseLostError ||
+        (error instanceof RagRepositoryError && error.code === 'NOT_FOUND')
+      )
+        return;
+      throw error;
+    } finally {
+      client.release();
+    }
   }
-
-  /** 仅重新排队仍保留暂存文件且标记为可重试的失败任务。 */
+  /** 仅重新排队最新、有原文件或固化快照且允许重试的失败任务。 */
   async retryDocument(knowledgeBaseId: string, documentId: string): Promise<void> {
-    const result = await this.pool.query(
-      `UPDATE ${this.table('ingestion_jobs')} j
-       SET status = 'queued', error_code = NULL, error_message = NULL, error_retryable = NULL, updated_at = now()
-       FROM ${this.table('documents')} d
-       WHERE j.tenant_id = $1 AND j.knowledge_base_id = $2 AND j.document_id = $3
-         AND d.tenant_id = j.tenant_id AND d.id = j.document_id AND d.status = 'failed'
-         AND j.error_retryable = true AND j.staged_path IS NOT NULL RETURNING j.id`,
-      [this.tenantId, knowledgeBaseId, documentId],
-    );
-    if (!result.rowCount)
-      throw new RagRepositoryError('CONFLICT', '该失败不能直接重试，请重新上传文件。');
-    await this.pool.query(
-      `UPDATE ${this.table('documents')}
-       SET status = 'queued', progress = 0, error_code = NULL, error_message = NULL, error_retryable = NULL
-       WHERE tenant_id = $1 AND knowledge_base_id = $2 AND id = $3`,
-      [this.tenantId, knowledgeBaseId, documentId],
-    );
-    this.notify(knowledgeBaseId, documentId, false);
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const document = await this.lockDocument(client, knowledgeBaseId, documentId);
+      const result = await client.query(
+        `UPDATE ${this.table('ingestion_jobs')} j SET status='queued',progress=0,
+        stage='validate',error_code=NULL,error_message=NULL,error_retryable=NULL,updated_at=now()
+        FROM ${this.table('document_revisions')} r
+        WHERE j.tenant_id=$1 AND j.document_id=$2 AND j.revision_id=$3 AND j.status='failed'
+          AND j.error_retryable=true AND r.tenant_id=j.tenant_id AND r.id=j.revision_id
+          AND (j.staged_path IS NOT NULL OR r.storage_key IS NOT NULL OR r.rebuild_snapshot IS NOT NULL)
+        RETURNING j.id`,
+        [this.tenantId, documentId, document.latest_revision_id],
+      );
+      if (!result.rowCount)
+        throw new RagRepositoryError('CONFLICT', '该失败不能直接重试，请替换上传文件。');
+      await client.query(
+        `UPDATE ${this.table('document_revisions')} SET status='processing' WHERE tenant_id=$1 AND id=$2`,
+        [this.tenantId, document.latest_revision_id],
+      );
+      await client.query(
+        `UPDATE ${this.table('documents')} SET
+        status=CASE WHEN active_revision_id IS NULL THEN 'queued' ELSE 'ready' END,progress=0,
+        error_code=NULL,error_message=NULL,error_retryable=NULL,updated_at=now() WHERE tenant_id=$1 AND id=$2`,
+        [this.tenantId, documentId],
+      );
+      await client.query('COMMIT');
+      this.notify(knowledgeBaseId, documentId, false);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 }

@@ -21,6 +21,7 @@ import {
 } from '../preferences';
 import * as audioAnalysisApi from '@/shared/api/audioAnalysisApi';
 import * as groupsApi from '@/shared/api/groupsApi';
+import { getKnowledgeCitationSource } from '@/shared/api/knowledgeBasesApi';
 import * as requestApi from '@/shared/api/request';
 import * as executionStreamApi from '@/shared/api/audioExecutionStream';
 import * as liveUpdateApi from '@/shared/api/liveUpdateStreams';
@@ -43,6 +44,10 @@ jest.mock('@/shared/api/audioAnalysisApi', () => {
   };
 });
 jest.mock('@/shared/api/groupsApi', () => ({ getGroupSettings: jest.fn() }));
+jest.mock('@/shared/api/knowledgeBasesApi', () => ({
+  ...jest.requireActual('@/shared/api/knowledgeBasesApi'),
+  getKnowledgeCitationSource: jest.fn(),
+}));
 
 jest.mock('@/shared/api/audioExecutionStream', () => ({
   streamAudioExecutionTrace: jest.fn(
@@ -84,6 +89,7 @@ function openAnalysisTasks(screen: Awaited<ReturnType<typeof renderAnalysis>>) {
 describe('AnalysisDetailScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.mocked(getKnowledgeCitationSource).mockResolvedValue({ status: 'active' });
     resetExpoAudioMock();
     setHideIrrelevantSegmentsPreference(false);
     setPostAnalysisControlsCollapsedPreference(true);
@@ -1149,6 +1155,8 @@ describe('AnalysisDetailScreen', () => {
               citations: [
                 {
                   chunkId,
+                  revisionId: 'a1000000-0000-4000-8000-000000000015',
+                  quoteSnapshot: '先确认客户顾虑，再使用可核实的案例说明方案价值。',
                   knowledgeBaseId,
                   documentId,
                   documentTitle: '销售异议处理手册',
@@ -1176,6 +1184,8 @@ describe('AnalysisDetailScreen', () => {
     fireEvent.press(screen.getByLabelText('查看 AI 标签：知识证据标签'));
     expect(screen.getByText('先确认客户顾虑，再使用可核实的案例说明方案价值。')).toBeTruthy();
     fireEvent.press(screen.getByRole('link', { name: '查看知识依据：销售异议处理手册' }));
+    expect(onOpenCitation).not.toHaveBeenCalled();
+    fireEvent.press(await screen.findByText('查看当前原文'));
     expect(onOpenCitation).toHaveBeenCalledWith(knowledgeBaseId, documentId, chunkId);
   });
 

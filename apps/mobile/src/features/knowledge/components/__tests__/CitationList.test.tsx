@@ -42,7 +42,10 @@ describe('CitationList', () => {
     expect(screen.getByText('[6] 来源 6')).toBeTruthy();
 
     fireEvent.press(screen.getByText('[6] 来源 6'));
-    expect(onOpenCitation).toHaveBeenCalledWith(citations[5]?.documentId, citations[5]?.chunkId);
+    expect(screen.getByText('来源 6')).toBeTruthy();
+    expect(screen.getByText('来源不可用，仅展示已保存的引用。')).toBeTruthy();
+    expect(onOpenCitation).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByText('关闭'));
 
     fireEvent.press(screen.getByLabelText('收起引用来源'));
     expect(screen.queryByText('[5] 来源 5')).toBeNull();

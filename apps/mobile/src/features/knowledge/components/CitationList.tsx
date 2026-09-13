@@ -15,6 +15,7 @@ import type { RagQueryResponse } from '@echowave/contracts';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { CitationSnapshotModal } from '@/shared/ui/CitationSnapshotModal';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import {
   colors,
@@ -57,22 +58,36 @@ function locatorLabel(
 export function CitationList({
   citations,
   onOpenCitation,
+  knowledgeId,
 }: {
   citations: RagQueryResponse['citations'];
+  knowledgeId?: string;
   onOpenCitation: (documentId: string, chunkId: string) => void;
 }) {
   const { formatNumber, t } = useAppLanguage();
+  const [selected, setSelected] = useState<Citation>();
   const [expanded, setExpanded] = useState(false);
   const hiddenCount = Math.max(0, citations.length - COLLAPSED_CITATION_COUNT);
   const visibleCitations = expanded ? citations : citations.slice(0, COLLAPSED_CITATION_COUNT);
 
   return (
     <View style={styles.list}>
+      <CitationSnapshotModal
+        citation={
+          selected
+            ? { ...selected, knowledgeBaseId: selected.knowledgeBaseId ?? knowledgeId }
+            : undefined
+        }
+        onClose={() => setSelected(undefined)}
+        onOpenCurrent={() => {
+          if (selected) onOpenCitation(selected.documentId, selected.chunkId);
+        }}
+      />
       {visibleCitations.map((citation) => (
         <Pressable
           key={citation.chunkId}
           accessibilityRole="link"
-          onPress={() => onOpenCitation(citation.documentId, citation.chunkId)}
+          onPress={() => setSelected(citation)}
           style={({ pressed }) => [styles.citation, pressed && styles.pressed]}
         >
           <Text style={styles.citationTitle}>

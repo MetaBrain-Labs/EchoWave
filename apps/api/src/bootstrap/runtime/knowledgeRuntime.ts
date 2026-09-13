@@ -20,6 +20,8 @@ import type { WorkerWakeupSource } from '../../infrastructure/workerWakeup.ts';
 import { createKnowledgeAnswerModule } from '../../knowledge/answer/knowledgeAnswer.ts';
 import { DeepSeekQueryAgent } from '../../knowledge/answer/deepSeekQueryAgent.ts';
 import { DashScopeEmbeddings } from '../../knowledge/embeddings/dashScopeEmbeddings.ts';
+import { KnowledgeCleanupWorker } from '../../knowledge/ingestion/cleanupWorker.ts';
+import { KnowledgeCleanupRepository } from '../../knowledge/persistence/cleanupRepository.ts';
 import { IngestionWorker } from '../../knowledge/ingestion/worker.ts';
 import { KnowledgeRepository } from '../../knowledge/catalog/knowledgeRepository.ts';
 import { ConversationRepository } from '../../knowledge/persistence/conversationRepository.ts';
@@ -123,6 +125,7 @@ export function createKnowledgeRuntime(options: KnowledgeRuntimeOptions) {
       });
     },
     uploadTempDirectory: config.rag.uploadTempDir,
+    knowledgeStorageDirectory: config.rag.knowledgeStorageDir,
     concurrency: 2,
     reporter,
     wakeup: workerWakeup,
@@ -132,10 +135,19 @@ export function createKnowledgeRuntime(options: KnowledgeRuntimeOptions) {
     ingestionRepository,
     conversationRepository,
     answers,
-    config.rag.uploadTempDir,
+    config.rag.knowledgeStorageDir,
     settingsService,
+    liveUpdates,
+    config.rag.uploadTempDir,
+  );
+  const cleanupWorker = new KnowledgeCleanupWorker(
+    new KnowledgeCleanupRepository(pool, config.database.schema, config.rag.tenantId),
+    config.rag.knowledgeStorageDir,
+    config.rag.uploadTempDir,
+    workerWakeup,
   );
   return {
+    cleanupWorker,
     service,
     worker,
     knowledgeSearch,

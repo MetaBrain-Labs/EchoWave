@@ -13,11 +13,13 @@
  * - PostgreSQL 仍是服务器数据的权威来源。
  */
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { copyFile, mkdir, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import {
   DocumentUploadResponseSchema,
+  CitationSourceResponseSchema,
   type DocumentFormat,
   type KnowledgeBaseCreateRequest,
   type RagQueryRequest,
@@ -27,6 +29,9 @@ import type { KnowledgeAnswerModule } from './answer/knowledgeAnswer.ts';
 import type { IngestionRepository } from './persistence/ingestionRepository.ts';
 import type { KnowledgeRepository } from './catalog/knowledgeRepository.ts';
 import type { ConversationRepository } from './persistence/conversationRepository.ts';
+import { checkedKnowledgeFilePath, knowledgeStoragePath } from './ingestion/storage.ts';
+import { RagRepositoryError } from './persistence/errors.ts';
+import type { LiveUpdateBroker } from '../infrastructure/liveUpdateBroker.ts';
 import type { SettingsService } from '../settings/service.ts';
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
@@ -60,6 +65,22 @@ export type KnowledgeService = {
     documentId: string,
   ): ReturnType<KnowledgeRepository['getDocument']>;
   uploadDocument(knowledgeBaseId: string, file: File): Promise<unknown>;
+  renameDocument(
+    knowledgeBaseId: string,
+    documentId: string,
+    input: { title: string; expectedVersion: number },
+  ): Promise<unknown>;
+  replaceDocument(
+    knowledgeBaseId: string,
+    documentId: string,
+    file: File,
+    input: { title?: string; expectedVersion: number },
+  ): Promise<unknown>;
+  getCitationSource(
+    knowledgeBaseId: string,
+    documentId: string,
+    revisionId: string,
+  ): ReturnType<KnowledgeRepository['getCitationSource']>;
   deleteDocument(
     knowledgeBaseId: string,
     documentId: string,
@@ -126,8 +147,10 @@ export class DefaultKnowledgeService implements KnowledgeService {
     private readonly ingestionRepository: IngestionRepository,
     private readonly conversationRepository: ConversationRepository,
     private readonly answers: Pick<KnowledgeAnswerModule, 'answer'>,
-    private readonly uploadTempDirectory: string,
+    private readonly knowledgeStorageDirectory: string,
     private readonly settings: Pick<SettingsService, 'resolveCapability'>,
+    private readonly liveUpdates?: LiveUpdateBroker,
+    private readonly legacyTempDirectory?: string,
   ) {}
 
   listKnowledgeBases() {
@@ -151,8 +174,20 @@ export class DefaultKnowledgeService implements KnowledgeService {
   getDocument(knowledgeBaseId: string, documentId: string) {
     return this.repository.getDocument(knowledgeBaseId, documentId);
   }
-  deleteDocument(knowledgeBaseId: string, documentId: string) {
-    return this.repository.deleteDocument(knowledgeBaseId, documentId);
+  async deleteDocument(knowledgeBaseId: string, documentId: string) {
+    await this.repository.deleteDocument(knowledgeBaseId, documentId);
+    this.liveUpdates?.publish({
+      kind: 'knowledge-document',
+      knowledgeBaseId,
+      documentId,
+      terminal: true,
+    });
+  }
+  /** 仅公开来源状态，已删除正文不通过此接口开放。 */
+  async getCitationSource(knowledgeBaseId: string, documentId: string, revisionId: string) {
+    return CitationSourceResponseSchema.parse(
+      await this.repository.getCitationSource(knowledgeBaseId, documentId, revisionId),
+    );
   }
   retryDocument(knowledgeBaseId: string, documentId: string) {
     return this.ingestionRepository.retryDocument(knowledgeBaseId, documentId);
@@ -172,17 +207,109 @@ export class DefaultKnowledgeService implements KnowledgeService {
 
   /** 校验并暂存上传文件，成功创建入库任务后返回服务器权威文档状态。 */
   async uploadDocument(knowledgeBaseId: string, file: File) {
+    return this.storeUpload(knowledgeBaseId, file);
+  }
+  /** 替换输入先固化文件，再通过预期版本提交新 revision。 */
+  async replaceDocument(
+    knowledgeBaseId: string,
+    documentId: string,
+    file: File,
+    input: { title?: string; expectedVersion: number },
+  ) {
+    const document = await this.repository.getDocument(knowledgeBaseId, documentId);
+    return this.storeUpload(knowledgeBaseId, file, {
+      documentId,
+      expectedVersion: input.expectedVersion,
+      title: input.title ?? document.latestRevision?.title ?? document.title,
+    });
+  }
+  /** 改名复制最新原文件，旧部署无文件时使用已固化 chunk 输入。 */
+  async renameDocument(
+    knowledgeBaseId: string,
+    documentId: string,
+    input: { title: string; expectedVersion: number },
+  ) {
+    const source = await this.ingestionRepository.getRevisionSource(knowledgeBaseId, documentId);
+    if (source.version !== input.expectedVersion)
+      throw new RagRepositoryError('CONFLICT', '文档版本已变化，请刷新后重试。');
+    const directory = path.resolve(this.knowledgeStorageDirectory);
+    await mkdir(directory, { recursive: true });
+    const storageKey = source.rebuildSnapshot ? undefined : `${randomUUID()}.upload`;
+    const stagedPath = storageKey ? knowledgeStoragePath(directory, storageKey) : '';
+    const rebuildSnapshot = source.rebuildSnapshot
+      ? {
+          ...source.rebuildSnapshot,
+          chunks: source.rebuildSnapshot.chunks.map((chunk) => ({
+            ...chunk,
+            title: chunk.title === source.revision.title ? input.title : chunk.title,
+            embeddingText: [
+              `Document: ${input.title}`,
+              chunk.headingPath.length ? `Section: ${chunk.headingPath.join(' > ')}` : '',
+              chunk.content,
+            ]
+              .filter(Boolean)
+              .join('\n'),
+          })),
+        }
+      : undefined;
+    let committed = false;
+    try {
+      if (storageKey) {
+        const sourcePath = source.revision.storage_key
+          ? knowledgeStoragePath(directory, source.revision.storage_key)
+          : checkedKnowledgeFilePath(source.revision.staged_path, [
+              directory,
+              ...(this.legacyTempDirectory ? [this.legacyTempDirectory] : []),
+            ]);
+        await copyFile(sourcePath, stagedPath, constants.COPYFILE_EXCL);
+      }
+      const embedding = await this.settings.resolveCapability('knowledge_embedding');
+      const result = await this.ingestionRepository.createIngestion({
+        knowledgeBaseId,
+        documentId,
+        ...input,
+        format: source.revision.format,
+        sizeBytes: Number(source.revision.size_bytes),
+        sourceSha256: source.revision.source_sha256,
+        stagedPath,
+        storageKey,
+        rebuildSnapshot,
+        parserVersion: source.revision.parser_version,
+        embeddingModel: embedding.model,
+        embeddingBindingRevisionId: embedding.revisionId,
+      });
+      committed = true;
+      return DocumentUploadResponseSchema.parse({
+        document: await this.repository.getDocument(knowledgeBaseId, documentId),
+        jobId: result.jobId,
+      });
+    } catch (error) {
+      if (!committed && stagedPath) await unlink(stagedPath).catch(() => undefined);
+      throw error;
+    }
+  }
+  /** 原文件先独立持久写入，只有 revision 提交失败才回收本次新文件。 */
+  private async storeUpload(
+    knowledgeBaseId: string,
+    file: File,
+    replacement?: { documentId: string; expectedVersion: number; title: string },
+  ) {
     const buffer = Buffer.from(await file.arrayBuffer());
     const { format } = inspectFile(file, buffer);
-    const directory = path.resolve(this.uploadTempDirectory);
+    const directory = path.resolve(this.knowledgeStorageDirectory);
     await mkdir(directory, { recursive: true });
-    const stagedPath = path.join(directory, `${randomUUID()}.upload`);
+    const storageKey = `${randomUUID()}.upload`;
+    const stagedPath = knowledgeStoragePath(directory, storageKey);
     await writeFile(stagedPath, buffer, { flag: 'wx', mode: 0o600 });
+    let committed = false;
     try {
       const embedding = await this.settings.resolveCapability('knowledge_embedding');
       const result = await this.ingestionRepository.createIngestion({
         knowledgeBaseId,
-        title: path.basename(file.name),
+        title: replacement?.title ?? path.basename(file.name),
+        documentId: replacement?.documentId,
+        expectedVersion: replacement?.expectedVersion,
+        storageKey,
         format,
         sizeBytes: buffer.byteLength,
         sourceSha256: createHash('sha256').update(buffer).digest('hex'),
@@ -191,13 +318,14 @@ export class DefaultKnowledgeService implements KnowledgeService {
         embeddingModel: embedding.model,
         embeddingBindingRevisionId: embedding.revisionId,
       });
+      committed = true;
       const document = await this.repository.getDocument(knowledgeBaseId, result.documentId);
       return DocumentUploadResponseSchema.parse({
         document,
         jobId: result.jobId,
       });
     } catch (error) {
-      await unlink(stagedPath).catch(() => undefined);
+      if (!committed) await unlink(stagedPath).catch(() => undefined);
       throw error;
     }
   }

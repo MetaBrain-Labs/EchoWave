@@ -70,14 +70,16 @@ export class PostgresKnowledgeSearch implements KnowledgeSearchPort {
       await client.query('SET LOCAL hnsw.ef_search = 100');
       await client.query("SET LOCAL hnsw.iterative_scan = 'relaxed_order'");
       const result = await client.query(
-        `SELECT c.id, c.knowledge_base_id, c.document_id, d.title AS document_title,
+        `SELECT c.id, c.knowledge_base_id, c.document_id, c.revision_id, d.title AS document_title,
                 c.content, c.content_sha256, c.locator, c.embedding <=> $3::vector AS distance
          FROM ${this.table('document_chunks')} c
          JOIN ${this.table('documents')} d
            ON d.tenant_id = c.tenant_id AND d.id = c.document_id
-          AND d.active_revision_id = c.revision_id
+          AND d.knowledge_base_id=c.knowledge_base_id AND d.active_revision_id = c.revision_id
+         JOIN ${this.table('knowledge_bases')} kb ON kb.tenant_id=c.tenant_id AND kb.id=c.knowledge_base_id AND kb.deleted_at IS NULL
+         JOIN ${this.table('document_revisions')} r ON r.tenant_id=c.tenant_id AND r.document_id=d.id AND r.id=c.revision_id AND r.status='ready'
          WHERE c.tenant_id = $1 AND c.knowledge_base_id = ANY($2::uuid[])
-           AND d.deleted_at IS NULL AND c.embedding_model = $4
+           AND d.deleted_at IS NULL AND d.status NOT IN ('deleted','deleting') AND c.embedding_model = $4 AND r.embedding_model=$4
          ORDER BY c.embedding <=> $3::vector LIMIT ${limit}`,
         [this.tenantId, knowledgeBaseIds, toSql(embedding), embeddingModel],
       );
@@ -113,6 +115,7 @@ export class PostgresKnowledgeSearch implements KnowledgeSearchPort {
         id: row.id,
         knowledgeBaseId: row.knowledge_base_id,
         documentId: row.document_id,
+        revisionId: row.revision_id,
         documentTitle: row.document_title,
         content: row.content,
         locator: SourceLocatorSchema.parse(row.locator),

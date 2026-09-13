@@ -502,6 +502,10 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
           if (!chunk) throw new Error('Validated citation disappeared.');
           return {
             number: index + 1,
+            knowledgeBaseId: chunk.knowledgeBaseId,
+            revisionId: chunk.revisionId ?? null,
+            quoteSnapshot: chunk.content,
+            sourceStatus: chunk.revisionId ? 'active' : 'unavailable',
             documentId: chunk.documentId,
             documentTitle: chunk.documentTitle,
             chunkId: chunk.id,
@@ -519,6 +523,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
           answer: response.answer,
           grounded: response.grounded,
           citedChunkIds: validIds,
+          citations: response.citations,
           embeddingTokens,
           ...usage,
           durationMs: now() - startedAt,

@@ -13,8 +13,8 @@
  * - PostgreSQL 通知负责低延迟唤醒，15 秒安全扫描与 SKIP LOCKED 负责遗漏恢复和并发互斥。
  * - 当前 worker 仍与 API 同进程，本地临时文件路径不支持跨主机接管。
  */
-import { readdir, stat, unlink } from 'node:fs/promises';
-import path from 'node:path';
+import { IngestionLeaseLostError } from '../persistence/ingestionRepository.ts';
+import { checkedKnowledgeFilePath } from './storage.ts';
 
 import {
   noOpAiExecutionReporter,
@@ -37,6 +37,7 @@ type WorkerOptions = {
   embeddings?: DashScopeEmbeddings;
   embeddingModel?: string;
   uploadTempDirectory: string;
+  knowledgeStorageDirectory?: string;
   concurrency?: number;
   reporter?: AiExecutionReporter;
   wakeup?: WorkerWakeupSource;
@@ -62,7 +63,6 @@ export class IngestionWorker {
       'knowledge-ingestion',
       () => void this.pump(),
     );
-    void this.cleanupOrphanedFiles();
     this.timer = setInterval(() => void this.pump(), SAFETY_POLL_INTERVAL_MS);
     this.timer.unref();
     void this.pump();
@@ -120,7 +120,26 @@ export class IngestionWorker {
         embeddingModel,
       },
     });
+    let renewing = false;
+    const heartbeat = setInterval(() => {
+      if (renewing) return;
+      renewing = true;
+      void this.options.repository
+        .heartbeat(job)
+        .catch(() => undefined)
+        .finally(() => {
+          renewing = false;
+        });
+    }, 30_000);
+    heartbeat.unref();
     try {
+      if (!job.rebuildSnapshot)
+        job.stagedPath = checkedKnowledgeFilePath(job.stagedPath, [
+          this.options.uploadTempDirectory,
+          ...(this.options.knowledgeStorageDirectory
+            ? [this.options.knowledgeStorageDirectory]
+            : []),
+        ]);
       const embeddings = this.options.createEmbeddings
         ? await this.options.createEmbeddings(job)
         : this.options.embeddings;
@@ -144,7 +163,11 @@ export class IngestionWorker {
       });
     } catch (error) {
       const known = error instanceof DocumentParseError || error instanceof EmbeddingProviderError;
-      const code = known ? error.code : 'INTERNAL_ERROR';
+      const obsolete =
+        error instanceof IngestionLeaseLostError ||
+        (error instanceof Error && error.message === '知识库不存在。') ||
+        (error instanceof Error && error.message === '文档不存在。');
+      const code = obsolete ? 'REVISION_SUPERSEDED' : known ? error.code : 'INTERNAL_ERROR';
       const retryable = error instanceof EmbeddingProviderError || (!known && job.attempts < 3);
       const message = known ? error.message : '文档处理失败，请稍后重试。';
       const failurePersistenceStartedAt = Date.now();
@@ -174,7 +197,7 @@ export class IngestionWorker {
         });
         throw persistenceError;
       }
-      if (!retryable) await unlink(job.stagedPath).catch(() => undefined);
+      // 即使不可重试也保留最新失败版本；替换或删除后由清理任务回收。
       await report.finish({
         status: 'failed',
         error,
@@ -186,21 +209,8 @@ export class IngestionWorker {
         code,
         retryable,
       });
+    } finally {
+      clearInterval(heartbeat);
     }
-  }
-
-  private async cleanupOrphanedFiles(): Promise<void> {
-    const directory = path.resolve(this.options.uploadTempDirectory);
-    const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
-    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-    await Promise.all(
-      entries
-        .filter((entry) => entry.isFile())
-        .map(async (entry) => {
-          const filePath = path.join(directory, entry.name);
-          const details = await stat(filePath).catch(() => undefined);
-          if (details && details.mtimeMs < cutoff) await unlink(filePath).catch(() => undefined);
-        }),
-    );
   }
 }

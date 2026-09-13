@@ -15,6 +15,11 @@ describe('IngestionRepository model migration recovery', () => {
       query: async (sql, values) => {
         calls.push({ sql, values });
         if (sql === 'BEGIN' || sql === 'COMMIT') return { rows: [] };
+        if (/SELECT \* FROM .*documents/.test(sql))
+          return {
+            rowCount: 1,
+            rows: [{ id: 'document-1', version: 1, active_revision_id: null }],
+          };
         if (/SELECT 1 FROM/.test(sql)) return { rowCount: 1, rows: [{}] };
         if (/SELECT d\.id, d\.error_code/.test(sql)) {
           return {

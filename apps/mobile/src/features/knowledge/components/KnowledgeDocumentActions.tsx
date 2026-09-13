@@ -13,7 +13,7 @@
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { KnowledgeDocument } from '@echowave/contracts';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -85,6 +85,10 @@ export function KnowledgeDocumentActions({
   onRetry,
   onShowFailure,
   pending,
+  onRename,
+  onReplace,
+  onDelete,
+  error,
 }: {
   document?: KnowledgeDocument;
   onClose: () => void;
@@ -93,9 +97,15 @@ export function KnowledgeDocumentActions({
   onRetry: () => void;
   onShowFailure: () => void;
   pending: boolean;
+  onRename?: () => void;
+  onReplace?: () => void;
+  onDelete?: () => void;
+  error?: string;
 }) {
   const { t } = useAppLanguage();
-  const failedStatus = document?.status.kind === 'failed' ? document.status : undefined;
+  const failedStatus =
+    document?.latestRevision?.error ??
+    (document?.status.kind === 'failed' ? document.status : undefined);
   const failed = Boolean(failedStatus);
   const migrationFailure = failedStatus?.code === 'EMBEDDING_MODEL_MIGRATION_REQUIRED';
   const statusDescription = document
@@ -107,9 +117,17 @@ export function KnowledgeDocumentActions({
     : '';
 
   return (
-    <Modal animationType="slide" onRequestClose={onClose} transparent visible={Boolean(document)}>
+    <Modal
+      animationType="slide"
+      onRequestClose={() => {
+        if (!pending) onClose();
+      }}
+      transparent
+      visible={Boolean(document)}
+    >
       <Pressable
         accessibilityLabel={t('documentActions.close')}
+        disabled={pending}
         onPress={onClose}
         style={styles.backdrop}
       />
@@ -117,6 +135,19 @@ export function KnowledgeDocumentActions({
         <Text accessibilityRole="header" numberOfLines={1} style={styles.title}>
           {document?.title ?? ''}
         </Text>
+        {document?.activeRevisionId &&
+        document.latestRevision &&
+        document.latestRevision.id !== document.activeRevisionId ? (
+          <Text style={styles.description}>
+            {t('knowledgeEdit.oldActive')} {document.latestRevision.title} ·{' '}
+            {document.latestRevision.progress}%
+          </Text>
+        ) : null}
+        {error ? (
+          <Text accessibilityRole="alert" style={styles.description}>
+            {error}
+          </Text>
+        ) : null}
         {statusDescription ? <Text style={styles.description}>{statusDescription}</Text> : null}
         {document?.status.kind === 'ready' ? (
           <ActionItem
@@ -150,11 +181,33 @@ export function KnowledgeDocumentActions({
             onPress={onReupload}
           />
         ) : null}
-        {!failed && document?.status.kind !== 'ready' ? (
-          <View accessibilityLiveRegion="polite" style={styles.statusOnly}>
-            <Ionicons color={colors.secondary} name="time-outline" size={20} />
-            <Text style={styles.statusText}>{t('documentActions.unavailable')}</Text>
-          </View>
+        {document && !['deleting', 'deleted'].includes(document.status.kind) ? (
+          <>
+            {onRename && (
+              <ActionItem
+                disabled={pending}
+                icon="create-outline"
+                label={t('knowledgeEdit.rename')}
+                onPress={onRename}
+              />
+            )}
+            {onReplace && (
+              <ActionItem
+                disabled={pending}
+                icon="cloud-upload-outline"
+                label={t('knowledgeEdit.replace')}
+                onPress={onReplace}
+              />
+            )}
+            {onDelete && (
+              <ActionItem
+                disabled={pending}
+                icon="trash-outline"
+                label={t('knowledgeEdit.delete')}
+                onPress={onDelete}
+              />
+            )}
+          </>
         ) : null}
         <Pressable
           accessibilityRole="button"

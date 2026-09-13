@@ -227,6 +227,7 @@ export function createRagRuntime(config: ApiConfig) {
     audioAnalysisRunsService,
     pushDeviceService,
     worker: knowledge.worker,
+    knowledgeCleanupWorker: knowledge.cleanupWorker,
     transcriptionWorker: audio.transcriptionWorker,
     dashScopeCallbackService: audio.dashScopeCallbackService,
     emotionWorker: audio.emotionWorker,
@@ -246,6 +247,7 @@ export function createRagRuntime(config: ApiConfig) {
       await Promise.all([audioAutomationWorker.stop(), pushNotificationWorker.stop()]);
       await audio.stop();
       await knowledge.worker.stop();
+      await knowledge.cleanupWorker.stop();
       await workerWakeup.close();
       await checkpointer.end();
       await pool.end();

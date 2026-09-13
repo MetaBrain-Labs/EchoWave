@@ -105,7 +105,7 @@ describe('knowledge ingestion execution diagnostics', () => {
     assert.equal(JSON.stringify(records[0].models[0]).includes('0.1,0.1'), false);
     assert.equal(
       records[0].steps.find((event) => event.name === 'cleanup' && event.status === 'completed')
-        .metadata.removed,
+        .metadata.retained,
       true,
     );
     assert.equal(records[0].finishes[0].status, 'completed');
@@ -165,7 +165,7 @@ describe('knowledge ingestion execution diagnostics', () => {
     assert.equal(records[0].finishes[0].metadata.retryable, true);
   });
 
-  it('records a non-retryable publish failure and removes its staged file', async () => {
+  it('records a non-retryable publish failure and retains its original file', async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'echowave-worker-'));
     const stagedPath = path.join(directory, 'source.md');
     const source = Buffer.from('# 结论\n\n答案为 A。', 'utf8');
@@ -197,7 +197,7 @@ describe('knowledge ingestion execution diagnostics', () => {
     console.error = () => undefined;
     try {
       await worker.execute(createJob(stagedPath, source.byteLength, 3));
-      await assert.rejects(access(stagedPath));
+      await access(stagedPath);
     } finally {
       console.error = originalConsoleError;
       await rm(directory, { recursive: true, force: true });

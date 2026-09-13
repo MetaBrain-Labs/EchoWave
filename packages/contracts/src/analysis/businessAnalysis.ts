@@ -10,7 +10,7 @@
 import { z } from 'zod';
 
 import { EntityIdSchema, SupportedLanguageSchema } from '../common.ts';
-import { SourceLocatorSchema } from '../document.ts';
+import { CitationSnapshotFields, SourceLocatorSchema } from '../document.ts';
 
 /** 业务分析结果允许返回的限制说明数量上限。 */
 export const BUSINESS_ANALYSIS_MAX_LIMITATIONS = 8;
@@ -22,14 +22,26 @@ export const BusinessAnalysisTagCategorySchema = z.enum([
   'suggestion',
   'custom',
 ]);
-export const BusinessAnalysisCitationSchema = z.object({
-  chunkId: EntityIdSchema,
-  knowledgeBaseId: EntityIdSchema,
-  documentId: EntityIdSchema,
-  documentTitle: z.string().min(1),
-  excerpt: z.string().trim().min(1).max(240),
-  locator: SourceLocatorSchema,
-});
+export const BusinessAnalysisCitationSchema = z
+  .object({
+    ...CitationSnapshotFields,
+    chunkId: EntityIdSchema,
+    knowledgeBaseId: EntityIdSchema,
+    documentId: EntityIdSchema,
+    documentTitle: z.string().min(1),
+    excerpt: z.string().trim().max(240),
+    locator: SourceLocatorSchema,
+  })
+  .superRefine((citation, context) => {
+    // 缺失旧引文只能标记不可用，不用占位文字伪造历史证据。
+    if (!citation.excerpt && citation.sourceStatus !== 'unavailable') {
+      context.addIssue({
+        code: 'custom',
+        path: ['excerpt'],
+        message: 'An available citation requires an excerpt.',
+      });
+    }
+  });
 export const BusinessAnalysisTagSchema = z
   .object({
     id: EntityIdSchema,

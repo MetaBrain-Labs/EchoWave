@@ -111,6 +111,7 @@ describe('BusinessAnalysisWorkflow', () => {
     const calls = { plan: 0, search: 0, analyze: 0, publish: 0 };
     const firstChunk = chunk(firstChunkId, '处理异议前先确认客户顾虑。');
     const repository = {
+      assertKnowledgeCurrent: async () => {},
       updateProgress: async () => {},
       publish: async (_job, result, retrieved) => {
         calls.publish += 1;
@@ -156,6 +157,7 @@ describe('BusinessAnalysisWorkflow', () => {
     const searches = new Map();
     let secondFailed = false;
     const repository = {
+      assertKnowledgeCurrent: async () => {},
       updateProgress: async () => {},
       publish: async () => {},
     };
@@ -202,6 +204,7 @@ describe('BusinessAnalysisWorkflow', () => {
     let published = false;
     const workflow = new BusinessAnalysisWorkflow({
       repository: {
+        assertKnowledgeCurrent: async () => {},
         updateProgress: async () => {},
         publish: async () => {
           published = true;
@@ -239,6 +242,7 @@ describe('BusinessAnalysisWorkflow', () => {
     let published;
     const workflow = new BusinessAnalysisWorkflow({
       repository: {
+        assertKnowledgeCurrent: async () => {},
         updateProgress: async () => {},
         publish: async (_job, result) => {
           published = result;
@@ -264,6 +268,7 @@ describe('BusinessAnalysisWorkflow', () => {
     let published;
     const workflow = new BusinessAnalysisWorkflow({
       repository: {
+        assertKnowledgeCurrent: async () => {},
         updateProgress: async () => {},
         publish: async (_job, result) => {
           published = result;

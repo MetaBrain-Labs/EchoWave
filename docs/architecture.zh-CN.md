@@ -171,3 +171,11 @@ STT 的 DashScope 任务提交、Polling 状态查询或 EventBridge 回调，�
 - 唯一 EAS 配置位于 `apps/mobile/eas.json`；Development、内部 APK 和商店 profiles 不在仓库根目录维护第二份配置。稳定 Tag 发布使用 remote app version source 自动递增正式 APK 的 Android `versionCode`，提交中的用户可见版本仍与 API/Release SemVer 同步。
 - API 默认不记录完整正文、完整模型上下文、provider 原始错误或 reasoning；本地诊断内容只能通过显式开关启用，密钥始终禁止记录。
 - Redis 仍是未来缓存/协调边界，不参与首期 RAG，也不能成为第二业务真相源。
+
+## 知识文档修改与删除
+
+文档写入分配单调递增版本并固化 revision 输入。仅最新请求、有效入库租约且文档及知识库未删除时才能发布。替换文件和改名均在全部分块与 embedding 成功后切换 active revision；处理或失败期间继续检索旧成功版本。文件标题仍参与 embedding。
+
+删除在同一事务中提交文档删除标记和持久清理任务。检索同时检查租户、知识库归属、文档生命周期、active revision 及 embedding 模型。向量位于 PostgreSQL chunk 行中，清理 worker 可重试地移除失效 chunks 和对应版本的本地原文件，保留文档及版本审计和历史 AI 结果。
+
+问答与销售复盘持久保存标题、引文和定位快照。读取引用不再依赖 chunk，来源状态从文档及版本审计动态计算。销售复盘输入指纹包含知识内容版本；知识变化只标记历史结果过期，下次分析创建新输入，不恢复旧知识证据。

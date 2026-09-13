@@ -12,6 +12,7 @@
  */
 import {
   GroupListResponseSchema,
+  CitationSourceResponseSchema,
   KnowledgeBaseGroupLinkRequestSchema,
   KnowledgeBaseListResponseSchema,
   type KnowledgeBaseGroupLinkRequest,
@@ -28,3 +29,14 @@ export const linkKnowledgeBaseGroups = (id: string, input: KnowledgeBaseGroupLin
     body: KnowledgeBaseGroupLinkRequestSchema.parse(input),
     method: 'POST',
   });
+
+/** 来源状态读取允许软删除审计，但不提供已删除正文。 */
+export const getKnowledgeCitationSource = (
+  knowledgeId: string,
+  documentId: string,
+  revisionId: string,
+) =>
+  request(
+    `/api/knowledge-bases/${knowledgeId}/documents/${documentId}/revisions/${revisionId}/source-status`,
+    CitationSourceResponseSchema,
+  );
