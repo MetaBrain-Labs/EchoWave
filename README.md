@@ -1,24 +1,41 @@
 <div align="center">
   <img src="./apps/mobile/assets/img/icon.png" alt="EchoWave" width="96" />
   <h1>EchoWave</h1>
-  <p>An open-source, self-hosted workspace connecting audio, business analysis, and team knowledge.</p>
+  <p>From raw conversations to reviewable, knowledge-grounded business insights.</p>
 
 **English** | [简体中文](./README.zh-CN.md)
 
+[![Latest release](https://img.shields.io/github/v/release/MetaBrain-Labs/EchoWave?include_prereleases&sort=semver&label=release)](https://github.com/MetaBrain-Labs/EchoWave/releases)
+[![CI](https://github.com/MetaBrain-Labs/EchoWave/actions/workflows/ci.yml/badge.svg)](https://github.com/MetaBrain-Labs/EchoWave/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 ![Node.js](https://img.shields.io/badge/Node.js-24-339933?logo=nodedotjs&logoColor=white)
-![pnpm](https://img.shields.io/badge/pnpm-11.3.0-F69220?logo=pnpm&logoColor=white)
 ![Expo](https://img.shields.io/badge/Expo-SDK%2057-000020?logo=expo&logoColor=white)
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20iOS%20%7C%20Web-3ddc84?logo=android&logoColor=white)
 </div>
 
+<p align="center">
+  <img src="./docs/assets/demo.gif" alt="EchoWave: audio upload, speaker and emotion review, business analysis, and a knowledge-base answer with citations" width="640" />
+</p>
+
+**Open-source, self-hosted workspace connecting audio, business analysis, and team knowledge.** Audio → ASR → Speaker/emotion → Human review → Business analysis → Knowledge/RAG → Auditable result.
+
+> [!WARNING]
+> **Early preview:** EchoWave `v0.1.x` is intended for self-hosted or private deployments and is not yet suitable as a public multi-user service. It has no real accounts, authorization, or rate limits. See [Security](./SECURITY.md) and [Current limitations](#current-limitations) before deploying.
+
+[Quick start](#quick-start) · [Use cases](#use-cases) · [Capabilities](#current-capabilities) · [Architecture](#how-it-works) · [Limitations](#current-limitations) · [Future](#future) · [Docs](./docs/README.md) · [Contributing](./CONTRIBUTING.md)
+
+## Use cases
+
+| Scenario                 | What EchoWave produces                                                                    |
+| ------------------------ | ----------------------------------------------------------------------------------------- |
+| Sales calls              | Transcript, speaker roles and emotion, plus strong / improvable / risky talk-track points |
+| Customer & user research | Speaker separation, structured insights, and knowledge that stays in the workspace        |
+| Team meetings            | A confirmable transcript, downstream analysis, and a searchable knowledge base            |
+| Training and QA          | Conversation review, cited evidence, and traceable analysis of each finding               |
+
+## Why EchoWave
+
 EchoWave helps teams turn interviews, sales calls, meetings, and other recordings into structured, reviewable knowledge. It combines a bilingual Expo client, a self-hosted API, PostgreSQL/pgvector RAG, versioned transcription and confirmation, speaker/emotion analysis, business reports, and auditable AI execution records.
-
-> [!IMPORTANT]
-> EchoWave `v0.1` is a development preview. It uses a fixed development tenant and does not yet provide real accounts, authorization, rate limits, or a production-grade public-internet boundary. HTTP is permitted only on localhost or a trusted private network. Any cloud or public App server must use HTTPS, a reverse proxy, and tightly scoped network access while keeping ports 3001 and 5432 off the public internet. These measures still do not make the current release suitable as a public multi-user service. After a stable tag has completed publishing, download its signed Android APK and Server bundle from [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases).
-
-[Quick start](#quick-start) · [Capabilities](#current-capabilities) · [Architecture](#how-it-works) · [Limitations](#current-limitations) · [Future](#future) · [Docs](./docs/README.md) · [Contributing](./CONTRIBUTING.md)
-
-## What EchoWave provides
 
 - **Audio to report**: ASR, speaker review, transcript confirmation, role/emotion recognition, and business analysis.
 - **Reviewable and traceable results**: raw transcripts, confirmed versions, downstream analysis, retries, cancellation, recovery, and provider calls keep distinct audit facts.
@@ -64,7 +81,9 @@ The Server can run on Ubuntu 22.04 x86_64 or on Windows 10/11 with Docker Deskto
 
 Choose an audio runtime mode during setup: all three modes support closing the App after the upload completes and the server task is successfully created/submitted; the Server then continues in the background. Lightweight local uses temporary local storage for the lowest cost but lowest recovery capability; default hybrid uses persistent local storage plus OSS staging for balanced cost and reliability; object storage uses persistent OSS storage for cloud deployment, large scale, and best recovery. Killing the App before upload completes does not mean the Server has taken over. A mode change affects only newly created assets. See [audio runtime modes](./docs/audio-runtime-modes.md).
 
-### Option A: self-host the server
+### I want to use EchoWave
+
+Download the latest signed Android APK and the matching `EchoWave-server-vX.Y.Z.zip` from [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases), verify their SHA-256 checksums, and follow the bundled README. Releases are published through a `vMAJOR.MINOR.PATCH` tag; do not install from `main`.
 
 ```bash
 unzip EchoWave-server-vX.Y.Z.zip -d echowave-server
@@ -77,9 +96,9 @@ docker compose up -d
 curl http://localhost:3001/health
 ```
 
-Download the matching Android APK and `EchoWave-server-vX.Y.Z.zip` from [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases), verify their SHA-256 checksums, and follow the bundled README. On a trusted LAN, a phone connects to `http://<SERVER_LAN_IP>:<API_PORT>`, never the server's `localhost`; a cloud or other public address must use the HTTPS reverse-proxy origin without the internal API port. See the [release guide](./docs/releases.md), [Server deployment guide](./docs/server-deployment.md), and [self-hosting guide](./docs/self-hosting.md).
+Then install the APK and enter the Server address. On a trusted LAN, a phone connects to `http://<SERVER_LAN_IP>:<API_PORT>`, never the server's `localhost`; a cloud or other public address must use the HTTPS reverse-proxy origin without the internal API port. See the [release guide](./docs/releases.md), [Server deployment guide](./docs/server-deployment.md), and [self-hosting guide](./docs/self-hosting.md).
 
-### Option B: local development
+### I want to develop EchoWave
 
 ```bash
 git clone https://github.com/MetaBrain-Labs/EchoWave.git
@@ -141,5 +160,7 @@ Priorities may change with user feedback, maintainer capacity, and security risk
 ## Contributing, security, and license
 
 Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request. Use [GitHub Issues](https://github.com/MetaBrain-Labs/EchoWave/issues) for bugs and feature proposals. Do not disclose vulnerability details publicly; follow [SECURITY.md](./SECURITY.md).
+
+`main` is protected, so every change lands through a pull request and the `CI` workflow must pass before merge. Maintainers keep the branch ruleset, CI requirement, and discussion channels enabled in the repository settings.
 
 EchoWave is licensed under the [Apache License 2.0](./LICENSE). Contributions are submitted under the same license.

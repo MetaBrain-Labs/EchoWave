@@ -1,0 +1,50 @@
+# EchoWave 拉取请求与默认分支验证门禁
+#
+# 该工作流对每个 Pull Request 和 main 分支的推送执行仓库既定的完整校验序列，
+# 与 Tag 发布工作流共用同一套 `pnpm check` 命令，避免发布前才发现问题。
+#
+# Responsibilities:
+# - 在冻结 lockfile 的前提下安装依赖并运行 lint、typecheck、test、build 与文档校验
+#
+# Notes:
+# - 该门禁不读取任何 secret，也不构建 APK 或发布镜像；正式发布仍由 release.yml 负责
+# - 升级 Action 版本时请保持与 release.yml 相同的提交 SHA 固定策略
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Repository verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run repository verification
+        run: pnpm check

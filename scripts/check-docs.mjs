@@ -28,6 +28,7 @@ const IGNORED_DIRECTORIES = new Set([
 ]);
 
 const REQUIRED_PATHS = [
+  '.github/workflows/ci.yml',
   '.github/workflows/release.yml',
   'apps/api/.env.example',
   'apps/api/Dockerfile',

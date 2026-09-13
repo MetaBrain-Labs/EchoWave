@@ -1,40 +1,93 @@
 /**
- * GitHub Release 说明生成入口。
+ * GitHub Release 说明渲染模块。
  *
- * 把机器可读 manifest 中的版本、镜像和数据库兼容边界转换为用户可执行的下载、升级与
- * 回滚说明，并附加 GitHub 自动生成的变更列表。
+ * 把机器可读 manifest 中的版本、镜像、数据库兼容边界与创建时间转换为面向用户的结构化说明：
+ * 先给出变更重点、下载入口与影响范围，再把 migration 明细和自动生成的 PR 列表折叠到末尾。
+ * 维护者仍可在发布草稿中人工补充重点条目。
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+
+/** 把 ISO 时间戳转换为 Release 说明顶部的发布日期；非法值返回 null。 */
+function releaseDate(createdAt) {
+  if (typeof createdAt !== 'string' || createdAt.trim() === '') return null;
+  const parsed = new Date(createdAt);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+}
 
 /** 将发布 manifest 与 GitHub changelog 渲染为最终 Release 说明。 */
 export function renderReleaseNotes(manifest, generatedNotes) {
   const newMigrations = manifest.database.newMigrations;
   const migrationSummary =
     newMigrations.length > 0 ? newMigrations.map((name) => `\`${name}\``).join('、') : '无';
-  return `## 下载与安装
+  const date = releaseDate(manifest.createdAt);
+  const changelog = generatedNotes.trim() || '首次自动化发布。';
+  return `# EchoWave ${manifest.tag}
+${date ? `\n> 发布日期：${date}\n` : ''}
+## Highlights
+
+- 本次发布的重点变更：请在下方的 **What's new** 中按模块查看，完整条目见末尾的 **Full changelog**。
+
+## Downloads
 
 - Android：下载 \`${manifest.assets.android.name}\`。从较新版本降级时，Android 要求先卸载当前 App；这会清除 App 本地偏好，但不会删除服务器数据。
 - Server：下载并解压 \`${manifest.assets.server.name}\`，首次安装按压缩包内 README 配置 \`api.env\`。
 - 完整性：使用 \`${manifest.tag}\` 对应的 \`${`SHA256SUMS-v${manifest.version}.txt`}\` 校验下载文件。
 
-## Server 版本与回滚
+## What's new
 
-- 镜像：\`${manifest.image.reference}\`
-- 平台：${manifest.image.platforms.join('、')}
-- 升级前必须完成并验证 PostgreSQL 备份。
-- 当前数据库允许直接回退的最低 Server 版本：\`v${manifest.database.minimumDirectRollbackVersion}\`。更早版本必须先恢复升级前备份。
-- 本次新增 migration：${migrationSummary}。
+### Audio
 
-> EchoWave 当前仍只适合可信局域网，不要把 API 端口直接暴露到公网。
+- 本次无变化。
 
-## 变更
+### Analysis
 
-${generatedNotes.trim() || '首次自动化发布。'}
+- 本次无变化。
+
+### Knowledge
+
+- 本次无变化。
+
+### Deployment
+
+- 本次无变化。
+
+## Breaking changes
+
+- 无。
+
+## Known limitations
+
+- EchoWave 目前仍只适合可信局域网或私有部署，不要把 API 端口直接暴露到公网。
+- 尚无鉴权、RBAC 与速率限制；如需公网访问，必须自行提供 HTTPS 反向代理与最小化网络访问范围。
+
+## Upgrade
+
+1. 校验下载文件与 \`SHA256SUMS-v${manifest.version}.txt\`。
+2. 升级前必须完成并验证 PostgreSQL 备份。
+3. 保留现有 \`api.env\`、\`.data/secrets\`、\`compose.yaml\` 与备份目录。
+4. 当前数据库允许直接回退的最低 Server 版本：\`v${manifest.database.minimumDirectRollbackVersion}\`。更早版本必须先恢复升级前备份。
+5. 镜像：\`${manifest.image.reference}\`
+6. 平台：${manifest.image.platforms.join('、')}
+
+<details>
+<summary>Database migrations</summary>
+
+本次新增 migration：${migrationSummary}
+
+</details>
+
+<details>
+<summary>Full changelog</summary>
+
+${changelog}
+
+</details>
 `;
 }
 
+/** 命令行入口：读取 manifest 与自动生成的变更列表，写出最终 Release 说明文件。 */
 function runCli() {
   const [manifestPath, generatedNotesPath, outputPath] = process.argv.slice(2);
   if (!manifestPath || !generatedNotesPath || !outputPath) {

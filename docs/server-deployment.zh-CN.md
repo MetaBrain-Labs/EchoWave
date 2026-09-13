@@ -54,7 +54,7 @@ git clone https://github.com/MetaBrain-Labs/EchoWave.git /opt/echowave
 cd /opt/echowave
 ```
 
-公开稳定版本后，长期运行实例应切换到经过校验的 Git Tag，或者改用 Release Server ZIP，不要无条件追踪 `main`。
+长期运行实例应使用经过校验的 Release Tag（例如 `v0.1.0`），或者改用 Release Server ZIP，不要无条件追踪 `main`。
 
 ### 3.3 创建 Server 配置
 

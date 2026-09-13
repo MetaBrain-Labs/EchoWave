@@ -250,6 +250,7 @@ test('renders operational release notes from the public manifest', () => {
     {
       tag: 'v1.2.3',
       version: '1.2.3',
+      createdAt: '2026-09-13T04:21:18Z',
       assets: {
         android: { name: 'EchoWave-android-v1.2.3.apk' },
         server: { name: 'EchoWave-server-v1.2.3.zip' },
@@ -269,4 +270,41 @@ test('renders operational release notes from the public manifest', () => {
   assert.match(notes, /最低 Server 版本：`v1\.2\.2`/);
   assert.match(notes, /本次新增 migration：`003_audio\.sql`/);
   assert.match(notes, /Fixed a regression/);
+  assert.match(notes, /^# EchoWave v1\.2\.3$/mu);
+  assert.match(notes, /发布日期：2026-09-13/);
+  for (const heading of [
+    '## Highlights',
+    '## Downloads',
+    "## What's new",
+    '## Breaking changes',
+    '## Known limitations',
+    '## Upgrade',
+    '<summary>Database migrations</summary>',
+    '<summary>Full changelog</summary>',
+  ]) {
+    assert.ok(notes.includes(heading), `missing release note section: ${heading}`);
+  }
+  assert.ok(
+    notes.indexOf('<summary>Database migrations</summary>') > notes.indexOf('## Known limitations'),
+    'migration details must stay below the user-facing sections',
+  );
+});
+
+test('omits the release date when the manifest has no usable timestamp', () => {
+  const notes = renderReleaseNotes(
+    {
+      tag: 'v1.2.3',
+      version: '1.2.3',
+      assets: {
+        android: { name: 'EchoWave-android-v1.2.3.apk' },
+        server: { name: 'EchoWave-server-v1.2.3.zip' },
+      },
+      image: { reference: 'ghcr.io/example/api@sha256:0', platforms: ['linux/amd64'] },
+      database: { minimumDirectRollbackVersion: '1.2.2', newMigrations: [] },
+    },
+    '',
+  );
+  assert.equal(notes.includes('发布日期'), false);
+  assert.match(notes, /本次新增 migration：无/);
+  assert.match(notes, /首次自动化发布/);
 });

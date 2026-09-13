@@ -19,5 +19,6 @@
 - [GitHub Release 使用手册](./releases.zh-CN.md)：稳定版本下载、校验、App/Server 安装、备份、回退与维护者发布流程。
 - [设计规范](./design-system.zh-CN.md)：移动端视觉令牌、排版、布局与交互约束。
 - [领域语言](./domain-language.zh-CN.md)：知识库、文档 revision、可信回答等统一术语。
+- [README 媒体资源](./assets/README.zh-CN.md)：提交到仓库的 README 演示图、来源场景与重新生成步骤。
 
 仓库使用方式、环境配置和启动命令仍以根目录[中文 README](../README.zh-CN.md)为准；贡献流程以[贡献指南](../CONTRIBUTING.zh-CN.md)为准；工程代理规则以根目录 [AGENTS.md](../AGENTS.md) 为准。

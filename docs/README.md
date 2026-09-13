@@ -19,5 +19,6 @@
 - [GitHub Release Guide](./releases.md): download verification, App/Server installation, backups, rollback, and maintainer publishing.
 - [Design System](./design-system.md): mobile visual tokens, typography, layout, and interaction rules.
 - [Domain Language](./domain-language.md): stable terms for knowledge bases, revisions, trusted answers, audio, and analysis.
+- [README Media Assets](./assets/README.md): the committed README animation, its source scenes, and how to regenerate it.
 
 The root [README](../README.md) is authoritative for basic usage, environment setup, and startup commands. Follow [Contributing](../CONTRIBUTING.md) for contribution workflow and root [AGENTS.md](../AGENTS.md) for engineering-agent rules.

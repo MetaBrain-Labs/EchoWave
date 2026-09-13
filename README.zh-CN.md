@@ -3,22 +3,39 @@
 <div align="center">
   <img src="./apps/mobile/assets/img/icon.png" alt="EchoWave" width="96" />
   <h1>EchoWave</h1>
-  <p>把音频、业务分析与团队知识库连接起来的开源自托管工作台。</p>
+  <p>从原始对话，到可校正、可追溯、知识增强的业务洞察。</p>
 
+[![Latest release](https://img.shields.io/github/v/release/MetaBrain-Labs/EchoWave?include_prereleases&sort=semver&label=release)](https://github.com/MetaBrain-Labs/EchoWave/releases)
+[![CI](https://github.com/MetaBrain-Labs/EchoWave/actions/workflows/ci.yml/badge.svg)](https://github.com/MetaBrain-Labs/EchoWave/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 ![Node.js](https://img.shields.io/badge/Node.js-24-339933?logo=nodedotjs&logoColor=white)
-![pnpm](https://img.shields.io/badge/pnpm-11.3.0-F69220?logo=pnpm&logoColor=white)
 ![Expo](https://img.shields.io/badge/Expo-SDK%2057-000020?logo=expo&logoColor=white)
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20iOS%20%7C%20Web-3ddc84?logo=android&logoColor=white)
 </div>
 
-EchoWave 面向需要从访谈、销售通话、会议等音频中沉淀结构化洞察的团队。它提供中文和英文界面的 Expo 客户端、自托管 API、PostgreSQL/pgvector 知识库、版本化转写与人工确认、情绪/角色识别、业务分析以及可追溯的 AI 执行记录。
+<p align="center">
+  <img src="./docs/assets/demo.gif" alt="EchoWave 界面演示：音频上传、说话人与情绪复核、业务分析，以及带引用的知识库回答" width="640" />
+</p>
 
-> [!IMPORTANT]
-> EchoWave 当前是 `v0.1` 开发预览版：使用固定开发租户，尚未提供真实账号、权限控制、速率限制和完整公网安全边界。可信本机和局域网可以使用 HTTP；任何云服务器或公网 App 服务端都必须使用 HTTPS、反向代理和最小网络访问范围，并保持 3001/5432 不对公网开放。即使完成这些措施，当前版本仍不应作为公开多用户服务运行。稳定 Tag 发布完成后，签名 Android APK 与 Server 包将从 [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases) 下载。
+**把音频、业务分析与团队知识库连接起来的开源自托管工作台。** 音频 → ASR → 说话人/情绪 → 人工确认 → 业务分析 → 知识库/RAG → 可审计结果。
 
-[快速开始](#快速开始) · [当前能力](#当前能力) · [架构](#系统如何工作) · [项目边界](#当前边界) · [Future](#future) · [完整文档](./docs/README.zh-CN.md) · [贡献指南](./CONTRIBUTING.zh-CN.md)
+> [!WARNING]
+> **早期预览版：** EchoWave `v0.1.x` 只面向自托管或私有部署，尚不适合作为公开多用户服务；目前还没有真实账号、权限控制和速率限制。部署前请阅读[安全策略](./SECURITY.zh-CN.md)与[当前边界](#当前边界)。
+
+[快速开始](#快速开始) · [典型场景](#典型场景) · [当前能力](#当前能力) · [架构](#系统如何工作) · [项目边界](#当前边界) · [Future](#future) · [完整文档](./docs/README.zh-CN.md) · [贡献指南](./CONTRIBUTING.zh-CN.md)
+
+## 典型场景
+
+| 场景       | EchoWave 产出                                        |
+| ---------- | ---------------------------------------------------- |
+| 销售通话   | 转写、说话人与情绪，以及优秀 / 可改进 / 风险话术要点 |
+| 客户与访谈 | 说话人分离、结构化洞察，以及留在工作空间中的知识沉淀 |
+| 团队会议   | 可确认的 Transcript、后续分析与可检索的知识库        |
+| 培训质检   | 对话复盘、证据引用，以及可追溯的逐条分析             |
 
 ## 为什么是 EchoWave
+
+EchoWave 面向需要从访谈、销售通话、会议等音频中沉淀结构化洞察的团队。它提供中文和英文界面的 Expo 客户端、自托管 API、PostgreSQL/pgvector 知识库、版本化转写与人工确认、情绪/角色识别、业务分析以及可追溯的 AI 执行记录。
 
 - **从音频到报告**：上传音频，完成 ASR、说话人复核、转写确认、角色/情绪识别和业务分析。
 - **结果可校正、可追溯**：原始转写、确认版本和后续分析分层保存；重试、取消、恢复和供应商调用均保留审计事实。
@@ -64,9 +81,9 @@ Server 可以运行在 Ubuntu 22.04 x86_64，或运行在使用 Linux containers
 
 部署时还要选择音频运行模式：三种模式都支持完成上传并成功创建/提交服务端任务后关闭 App，由服务端继续后台处理；轻量本地使用临时本地存储，成本最低但恢复能力最低；默认混合模式使用持久本地存储和 OSS 中转，平衡成本与可靠性；对象存储模式使用 OSS 持久存储，适合云部署、大规模音频且恢复能力最好。上传未完成时杀掉 App 不代表服务端已接管，模式只影响之后创建的音频，详细差异见[音频运行模式](./docs/audio-runtime-modes.zh-CN.md)。
 
-### 路径 A：启动自托管 Server
+### 我想直接使用 EchoWave
 
-这是最快的服务端体验路径。首个稳定 Release 完成后，普通用户应从 [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases) 下载同一版本的 Android APK 与 `EchoWave-server-vX.Y.Z.zip`，校验 SHA-256 后按压缩包内 README 启动。完整升级和回退规则见[发布指南](./docs/releases.zh-CN.md)。
+这是最快的服务端体验路径。普通用户应从 [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases) 下载同一版本的 Android APK 与 `EchoWave-server-vX.Y.Z.zip`，校验 SHA-256 后按压缩包内 README 启动；发布只通过 `vMAJOR.MINOR.PATCH` Tag 提供，不要从 `main` 安装。完整升级和回退规则见[发布指南](./docs/releases.zh-CN.md)。
 
 ```bash
 unzip EchoWave-server-vX.Y.Z.zip -d echowave-server
@@ -98,7 +115,7 @@ curl http://localhost:3001/api/hello
 
 可信局域网中的手机连接 `http://<SERVER_LAN_IP>:<API_PORT>`，不能使用服务器的 `localhost`；云服务器或其他公网地址必须使用不包含内部 API 端口的 HTTPS 反向代理地址。密钥生成、持久卷、端口、防火墙和证书步骤见 [Server 部署指南](./docs/server-deployment.zh-CN.md)，Production APK 构建见[自托管指南](./docs/self-hosting.zh-CN.md)。
 
-### 路径 B：本地开发
+### 我想参与开发 EchoWave
 
 先克隆仓库，再安装依赖并从模板创建不跟踪的本地配置：
 
@@ -182,6 +199,7 @@ Android 真机回归由 `.maestro/` 和 `scripts/e2e/android-e2e.mjs` 管理，�
 ## 参与项目
 
 - 开始开发前请阅读[贡献指南](./CONTRIBUTING.zh-CN.md)。Bug 与功能建议可通过 [GitHub Issues](https://github.com/MetaBrain-Labs/EchoWave/issues) 提交。
+- `main` 受分支保护，所有改动都必须通过 Pull Request，并且 `CI` 工作流通过后才能合并；维护者在仓库设置中保持分支规则、CI 门禁与讨论区开启。
 - 安全问题不要公开披露复现细节，请按[安全策略](./SECURITY.zh-CN.md)提供最小公开信息并转入私密渠道。
 - 架构、数据库、配置、运行模式和设计说明统一收录在[文档索引](./docs/README.zh-CN.md)。
 
