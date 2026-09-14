@@ -22,6 +22,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   AppState,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -66,8 +67,7 @@ import {
   KnowledgeGroupSwitchDialog,
 } from '../components/KnowledgeGroupDialogs';
 import { SearchAndFilter } from '../components/SearchAndFilter';
-import { showComingSoon } from '../components/feedback';
-import { getKnowledgeBase, listDocuments, uploadDocument } from '../apiClient';
+import { getKnowledgeBase, listDocuments, retryDocument, uploadDocument } from '../apiClient';
 import { useKnowledgeDocumentUpdates } from '../hooks/useKnowledgeDocumentUpdates';
 
 const detailTabs = [
@@ -77,6 +77,7 @@ const detailTabs = [
 ] as const;
 type DetailTab = (typeof detailTabs)[number]['key'];
 const detailTabKeys = detailTabs.map((tab) => tab.key);
+type DocumentFilter = 'all' | 'ready' | 'pending' | 'failed';
 
 function formatBytes(sizeBytes: number) {
   if (sizeBytes < 1024 * 1024) return `${(sizeBytes / 1024).toFixed(1)} KB`;
@@ -307,6 +308,8 @@ export function KnowledgeDetailScreen({
   const [appActive, setAppActive] = useState(AppState.currentState !== 'background');
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
   const [query, setQuery] = useState('');
+  const [documentFilter, setDocumentFilter] = useState<DocumentFilter>('all');
+  const [documentFilterVisible, setDocumentFilterVisible] = useState(false);
   const [searchVisible, setSearchVisible] = useState(false);
   const [switchTarget, setSwitchTarget] = useState<GroupSummary>();
   const [editingBase, setEditingBase] = useState(false);
@@ -372,20 +375,29 @@ export function KnowledgeDetailScreen({
 
   const filteredDocuments = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
-    if (!normalized) return documents;
-    return documents.filter((document) =>
-      [
-        document.title,
-        document.format === 'spreadsheet'
-          ? t('knowledgeDetail.spreadsheet')
-          : document.format === 'word'
-            ? 'Word'
-            : 'Markdown',
-        statusLabel(document.status, t),
-        document.status.kind === 'failed' ? document.status.message : '',
-      ].some((value) => value.toLocaleLowerCase().includes(normalized)),
+    const matching = !normalized
+      ? documents
+      : documents.filter((document) =>
+          [
+            document.title,
+            document.format === 'spreadsheet'
+              ? t('knowledgeDetail.spreadsheet')
+              : document.format === 'word'
+                ? 'Word'
+                : 'Markdown',
+            statusLabel(document.status, t),
+            document.status.kind === 'failed' ? document.status.message : '',
+          ].some((value) => value.toLocaleLowerCase().includes(normalized)),
+        );
+    if (documentFilter === 'all') return matching;
+    return matching.filter((document) =>
+      documentFilter === 'ready'
+        ? document.status.kind === 'ready'
+        : documentFilter === 'failed'
+          ? document.status.kind === 'failed' || document.latestRevision?.status === 'failed'
+          : document.status.kind !== 'ready' && document.status.kind !== 'failed',
     );
-  }, [documents, query, t]);
+  }, [documentFilter, documents, query, t]);
   useEffect(() => {
     let active = true;
     if (!query.trim())
@@ -507,14 +519,47 @@ export function KnowledgeDetailScreen({
     }
   };
 
+  const retryableDocuments = documents.filter(
+    (document) =>
+      (document.status.kind === 'failed' && document.status.retryable) ||
+      (document.latestRevision?.status === 'failed' && document.latestRevision.error?.retryable),
+  );
+  const parseAllFailedDocuments = async () => {
+    if (!retryableDocuments.length) {
+      Alert.alert(t('knowledgeDetail.parseAll'), t('knowledgeDetail.parseAllNone'));
+      return;
+    }
+    Alert.alert(
+      t('knowledgeDetail.parseAllConfirm'),
+      t('knowledgeDetail.parseAllConfirmBody', { count: retryableDocuments.length }),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('common.confirm'),
+          onPress: () => {
+            void Promise.allSettled(
+              retryableDocuments.map((document) => retryDocument(knowledgeId, document.id)),
+            ).then(async (results) => {
+              const succeeded = results.filter((result) => result.status === 'fulfilled').length;
+              await load(false);
+              Alert.alert(
+                t('knowledgeDetail.parseAll'),
+                t('knowledgeDetail.parseAllSummary', {
+                  succeeded,
+                  failed: results.length - succeeded,
+                }),
+              );
+            });
+          },
+        },
+      ],
+    );
+  };
+
   if (loading && !knowledge) {
     return (
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-        <PageHeader
-          onBack={onBack}
-          onMore={() => showComingSoon(t('common.moreActions'))}
-          title={t('knowledgeDetail.title')}
-        />
+        <PageHeader onBack={onBack} title={t('knowledgeDetail.title')} />
         <ActivityIndicator
           accessibilityLabel={t('knowledgeDetail.loading')}
           color={colors.ink}
@@ -527,11 +572,7 @@ export function KnowledgeDetailScreen({
   if (!knowledge) {
     return (
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-        <PageHeader
-          onBack={onBack}
-          onMore={() => showComingSoon(t('common.moreActions'))}
-          title={t('knowledgeDetail.title')}
-        />
+        <PageHeader onBack={onBack} title={t('knowledgeDetail.title')} />
         <ScrollView
           alwaysBounceVertical
           contentContainerStyle={styles.emptyRefreshContent}
@@ -630,7 +671,7 @@ export function KnowledgeDetailScreen({
         <FixedActionButton
           icon="analytics-outline"
           label={t('knowledgeDetail.parseAll')}
-          onPress={() => showComingSoon(t('knowledgeDetail.parseAll'))}
+          onPress={() => void parseAllFailedDocuments()}
         />
         <FixedActionButton
           disabled={uploading}
@@ -892,6 +933,7 @@ export function KnowledgeDetailScreen({
           <View style={styles.stickySearch}>
             <SearchAndFilter
               onChangeText={setQuery}
+              onFilterPress={() => setDocumentFilterVisible(true)}
               placeholder={t('knowledgeDetail.searchDocuments')}
               value={query}
             />
@@ -938,6 +980,33 @@ export function KnowledgeDetailScreen({
           </View>
         </ScrollView>
       </ScrollView>
+      <ActionSheet
+        items={[
+          {
+            icon: 'list-outline',
+            label: t('knowledgeDetail.filterAll'),
+            onPress: () => setDocumentFilter('all'),
+          },
+          {
+            icon: 'checkmark-circle-outline',
+            label: t('knowledgeDetail.filterReady'),
+            onPress: () => setDocumentFilter('ready'),
+          },
+          {
+            icon: 'time-outline',
+            label: t('knowledgeDetail.filterPending'),
+            onPress: () => setDocumentFilter('pending'),
+          },
+          {
+            icon: 'alert-circle-outline',
+            label: t('knowledgeDetail.filterFailed'),
+            onPress: () => setDocumentFilter('failed'),
+          },
+        ]}
+        onClose={() => setDocumentFilterVisible(false)}
+        title={t('knowledgeDetail.filterAction')}
+        visible={documentFilterVisible}
+      />
       <View style={styles.fixedActions} testID="knowledge-fixed-actions">
         {fixedActions}
       </View>

@@ -4,14 +4,14 @@
  * 根据当前分页展示上传、转写、重试和关联入口。
  *
  * Responsibilities:
- * - 保持固定操作区的禁用状态和建设中反馈
+ * - 保持固定操作区的禁用状态和操作反馈
  *
  * Notes:
  * - 仅渲染 feature 数据并通过回调上报操作，不访问网络或路由。
  */
 
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
   colors,
@@ -21,16 +21,9 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
-import { translateAppText, useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 type DetailTab = 'overview' | 'audio' | 'uploads' | 'groups';
-
-export function showComingSoon(feature: string) {
-  Alert.alert(
-    translateAppText('common.inProgress'),
-    translateAppText('sourceFixed.comingSoon', { feature }),
-  );
-}
 
 function ActionButton({
   icon,
@@ -67,11 +60,13 @@ function ActionButton({
 export function FixedActions({
   activeTab,
   onLinkGroups,
+  onTranscribeAll,
   onUpload,
   uploading,
 }: {
   activeTab: DetailTab;
   onLinkGroups: () => void;
+  onTranscribeAll?: () => void;
   onUpload: () => void;
   uploading: boolean;
 }) {
@@ -106,7 +101,7 @@ export function FixedActions({
       <ActionButton
         icon="create-outline"
         label={t('sourceFixed.transcribeAll')}
-        onPress={() => showComingSoon(t('sourceFixed.transcribeAll'))}
+        onPress={() => onTranscribeAll?.()}
       />
       <ActionButton
         emphasized

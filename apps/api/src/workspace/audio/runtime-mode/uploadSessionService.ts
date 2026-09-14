@@ -31,6 +31,7 @@ import { parseFile } from 'music-metadata';
 import type { SettingsService } from '../../../settings/service.ts';
 import { WorkspaceRepositoryError } from '../../errors.ts';
 import type { AudioService } from '../core/service.ts';
+import type { AudioRuntimeService } from './service.ts';
 import type { AudioRuntimeRepository } from './repository.ts';
 import { PrimaryOssStore } from './primaryOssStore.ts';
 import type {
@@ -97,6 +98,7 @@ export class AudioUploadSessionService {
       tempDirectory: string;
       tenantId: string;
     },
+    private readonly runtime?: Pick<AudioRuntimeService, 'availabilityForMode'>,
   ) {}
 
   /** 返回上传会话将冻结的当前运行模式，供自动批次提前执行兼容性校验。 */
@@ -138,8 +140,14 @@ export class AudioUploadSessionService {
     });
     const runtimeSettings = await this.runtimeRepository.get();
     const runtime = { ...runtimeSettings, mode: runtimeModeOverride ?? runtimeSettings.mode };
-    if (runtime.mode === 'hybrid' && input.sizeBytes < 0) {
-      throw new WorkspaceRepositoryError('CONFLICT', '混合模式请使用现有批量上传接口。');
+    if (this.runtime) {
+      const availability = await this.runtime.availabilityForMode(runtime.mode);
+      if (!availability.available) {
+        throw new WorkspaceRepositoryError(
+          'CONFLICT',
+          `当前运行模式不可用：${availability.unavailableReason ?? '请先完成存储配置。'}`,
+        );
+      }
     }
     let bindingRevisionId: string | null = null;
     let store: PrimaryOssStore | undefined;

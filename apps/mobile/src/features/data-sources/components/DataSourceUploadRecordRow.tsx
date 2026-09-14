@@ -11,7 +11,7 @@
  */
 
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import {
@@ -24,12 +24,13 @@ import {
 } from '@/shared/theme/tokens';
 
 import type { UploadRecord } from '../model';
-import { showComingSoon } from './DataSourceFixedActions';
 
 export function UploadRecordRow({
+  onRetryTranscription,
   onReupload,
   record,
 }: {
+  onRetryTranscription: (record: UploadRecord) => void;
   onReupload: () => void;
   record: UploadRecord;
 }) {
@@ -65,7 +66,9 @@ export function UploadRecordRow({
         <Pressable
           accessibilityLabel={`${actionLabel}：${record.time}`}
           accessibilityRole="button"
-          onPress={record.kind === 'upload-failed' ? onReupload : () => showComingSoon(actionLabel)}
+          onPress={
+            record.kind === 'upload-failed' ? onReupload : () => onRetryTranscription(record)
+          }
           style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
         >
           <Text style={styles.retryText}>{actionLabel}</Text>
@@ -75,7 +78,7 @@ export function UploadRecordRow({
           accessibilityLabel={t('uploadRecord.more', { time: record.time })}
           accessibilityRole="button"
           hitSlop={8}
-          onPress={() => showComingSoon(t('uploadRecord.moreAction'))}
+          onPress={() => Alert.alert(t('uploadRecord.details'), record.detail)}
           style={({ pressed }) => [styles.recordMoreButton, pressed && styles.pressed]}
         >
           <Ionicons color={colors.secondary} name="ellipsis-horizontal" size={24} />

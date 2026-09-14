@@ -1068,7 +1068,10 @@ export function AnalysisDetailScreen({
                 onBack={requestBack}
                 onExpand={() => setExpandedPlayer(true)}
                 onPlayPause={() => void playback.toggleFullPlayback()}
+                onReset={() => void playback.seekTo(0)}
+                onRateChange={changePlaybackRate}
                 onRetry={() => playback.retry()}
+                playbackRate={playbackRate}
                 positionSeconds={playback.currentTime}
               />
             )

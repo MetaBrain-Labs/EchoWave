@@ -48,6 +48,7 @@ import {
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
+import { ActionSheet } from '@/shared/ui/ActionSheet';
 
 const capabilities: readonly { id: AiCapability }[] = [
   { id: 'knowledge_embedding' },
@@ -287,6 +288,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
   const [bindingThinking, setBindingThinking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [actionsVisible, setActionsVisible] = useState(false);
 
   useEffect(() => {
     settingsApi
@@ -345,6 +347,17 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
     } finally {
       setBusy(false);
     }
+  };
+
+  const clearAdminSession = () => {
+    setToken(null);
+    setTokenInput('');
+    setOverview(null);
+    setDraft(emptyDraft());
+    setProviderEditorExpanded(false);
+    setBindingCapability(null);
+    setDefaultApplySummary(null);
+    setError(null);
   };
 
   const saveProvider = async () => {
@@ -459,7 +472,12 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-      <PageHeader onBack={onBack} onMore={() => undefined} title={t('aiSettings.title')} />
+      <PageHeader
+        moreLabel={t('aiSettings.moreActions')}
+        onBack={onBack}
+        onMore={() => setActionsVisible(true)}
+        title={t('aiSettings.title')}
+      />
       <ScrollView
         alwaysBounceVertical
         contentContainerStyle={styles.content}
@@ -741,6 +759,25 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
         </View>
         {busy ? <ActivityIndicator color={colors.ink} style={styles.busy} /> : null}
       </ScrollView>
+      <ActionSheet
+        items={[
+          {
+            disabled: busy,
+            icon: 'refresh-outline',
+            label: t('aiSettings.refresh'),
+            onPress: () => void refreshPage(),
+          },
+          {
+            disabled: !token || busy,
+            icon: 'log-out-outline',
+            label: t('aiSettings.clearSession'),
+            onPress: clearAdminSession,
+          },
+        ]}
+        onClose={() => setActionsVisible(false)}
+        title={t('aiSettings.moreActions')}
+        visible={actionsVisible}
+      />
     </SafeAreaView>
   );
 }

@@ -543,7 +543,7 @@ describe('DataSourceDetailScreen', () => {
     expect(screen.queryByRole('header', { name: '音频转写失败' })).toBeNull();
   });
 
-  it('reopens the file picker for failed uploads while transcription retry stays deferred', async () => {
+  it('reopens the file picker for failed uploads and reports unavailable transcription targets', async () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
     const screen = await renderDetail();
 
@@ -551,7 +551,7 @@ describe('DataSourceDetailScreen', () => {
     await waitFor(() => expect(DocumentPicker.getDocumentAsync).toHaveBeenCalled());
     fireEvent.press(screen.getByLabelText(/重新转写/));
 
-    expect(alert).toHaveBeenCalledWith('功能建设中', '重新转写将在后续版本开放。');
+    expect(screen.getByText('ASR 转写启动失败。')).toBeTruthy();
     alert.mockRestore();
   });
 

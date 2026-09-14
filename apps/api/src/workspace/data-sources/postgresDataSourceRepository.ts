@@ -417,7 +417,8 @@ export class PostgresDataSourceRepository implements DataSourceRepository {
               coalesce(r.completed_at, r.started_at) AS occurred_at,
               count(DISTINCT af.id)::int AS audio_count,
               coalesce(sum(af.duration_ms), 0)::bigint AS total_duration_ms,
-              r.error_code, r.error_message, coalesce(r.error_retryable, false) AS retryable
+              r.error_code, r.error_message, coalesce(r.error_retryable, false) AS retryable,
+              coalesce(array_agg(DISTINCT af.id) FILTER (WHERE af.id IS NOT NULL), '{}') AS retry_target_audio_ids
        FROM ${this.table('data_source_ingestion_runs')} r
        LEFT JOIN ${this.table('audio_files')} af
          ON af.tenant_id = r.tenant_id AND af.ingestion_run_id = r.id AND af.deleted_at IS NULL
@@ -427,7 +428,8 @@ export class PostgresDataSourceRepository implements DataSourceRepository {
        SELECT ar.id, 'transcription-failed' AS kind,
               coalesce(ar.completed_at, ar.created_at) AS occurred_at,
               1::int AS audio_count, coalesce(af.duration_ms, 0)::bigint AS total_duration_ms,
-              ar.error_code, ar.error_message, coalesce(ar.error_retryable, false) AS retryable
+              ar.error_code, ar.error_message, coalesce(ar.error_retryable, false) AS retryable,
+              ARRAY[ar.audio_file_id] AS retry_target_audio_ids
        FROM ${this.table('audio_analysis_revisions')} ar
        JOIN ${this.table('audio_files')} af
          ON af.tenant_id = ar.tenant_id AND af.id = ar.audio_file_id AND af.deleted_at IS NULL
@@ -446,6 +448,9 @@ export class PostgresDataSourceRepository implements DataSourceRepository {
         errorCode: row.error_code ?? null,
         errorMessage: row.error_message ?? null,
         retryable: row.retryable,
+        retryTargetAudioIds: Array.isArray(row.retry_target_audio_ids)
+          ? row.retry_target_audio_ids
+          : [],
       })),
     });
   }

@@ -45,6 +45,7 @@ export default function DocumentDetailRoute() {
 
   return (
     <DocumentDetailScreen
+      key={`${documentId}:${initialTab}`}
       documentId={documentId}
       initialBlockId={blockId || undefined}
       initialTab={initialTab}

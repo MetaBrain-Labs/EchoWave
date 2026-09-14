@@ -22,6 +22,7 @@ import type {
 } from '@echowave/contracts';
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   ActivityIndicator,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -34,7 +35,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
+  archiveGroup,
   createGroup,
+  getGroupSettings,
   getGroupTemplateExample,
   listGroupAudioFiles,
   listGroupDataSources,
@@ -42,6 +45,7 @@ import {
   listGroups,
   replaceGroupDataSources,
   replaceGroupKnowledgeBases,
+  updateGroupSettings,
 } from '@/shared/api/groupsApi';
 import { listDataSources } from '@/shared/api/dataSourcesApi';
 import { listKnowledgeBases } from '@/shared/api/knowledgeBasesApi';
@@ -158,6 +162,8 @@ export function GroupScreen({
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
+  const [renaming, setRenaming] = useState(false);
+  const [renameError, setRenameError] = useState('');
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterVisible, setFilterVisible] = useState(false);
@@ -461,6 +467,63 @@ export function GroupScreen({
     }
   };
 
+  const handleRenameGroup = async (target: GroupSummary, name: string) => {
+    setRenaming(true);
+    setRenameError('');
+    try {
+      const settings = await getGroupSettings(target.id);
+      const updated = await updateGroupSettings(target.id, {
+        name,
+        analysis: settings.analysis,
+      });
+      setGroups((current) =>
+        current.map((item) =>
+          item.id === target.id ? { ...item, name, updatedAt: updated.updatedAt } : item,
+        ),
+      );
+      setGroup((current) =>
+        current?.id === target.id ? { ...current, name, updatedAt: updated.updatedAt } : current,
+      );
+      return true;
+    } catch (reason) {
+      setRenameError(reason instanceof Error ? reason.message : t('groups.renameFailed'));
+      return false;
+    } finally {
+      setRenaming(false);
+    }
+  };
+
+  const handleArchiveGroup = (target: GroupSummary) => {
+    Alert.alert(t('groupSettings.archiveTitle'), t('groupSettings.archiveBody'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('groupSettings.archive'),
+        style: 'destructive',
+        onPress: () => {
+          void (async () => {
+            try {
+              await archiveGroup(target.id);
+              const remaining = groups.filter((item) => item.id !== target.id);
+              setGroups(remaining);
+              if (selectedGroupId.current === target.id) {
+                const nextGroup = remaining[0];
+                if (nextGroup) await selectGroup(nextGroup, true);
+                else {
+                  clearSelection();
+                  onGroupChangeRef.current?.(undefined);
+                }
+              }
+            } catch (reason) {
+              setDirectoryError(
+                reason instanceof Error ? reason.message : t('groupSettings.archiveFailed'),
+              );
+            }
+          })();
+        },
+      },
+    ]);
+  };
+
   const closeResourceLinkSheet = useCallback(() => {
     setResourceLinkKind(undefined);
     setResourceLinkOptions([]);
@@ -641,12 +704,16 @@ export function GroupScreen({
           createError={createError}
           creating={creating}
           groups={groups}
+          onArchive={handleArchiveGroup}
           onClose={() => setDrawerVisible(false)}
           onCreate={handleCreateGroup}
           onOpenSettings={(target) => onOpenSettings?.(target.id)}
+          onRename={handleRenameGroup}
           onSelect={(target) => {
             void selectGroup(target, true);
           }}
+          renameError={renameError}
+          renaming={renaming}
           selectedGroupId={group?.id}
           visible
         />

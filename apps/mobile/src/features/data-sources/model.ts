@@ -62,6 +62,7 @@ export type UploadRecord = {
   kind: 'upload-success' | 'upload-failed' | 'transcription-failed';
   description: string;
   detail: string;
+  retryTargetAudioIds: string[];
 };
 
 export type DataSourceDetailView = {
@@ -210,6 +211,7 @@ export function toDataSourceDetailView(
             ? t('sourceDetail.retryAvailable')
             : t('sourceDetail.inspectSource')
           : t('sourceDetail.continuing'),
+        retryTargetAudioIds: record.retryTargetAudioIds,
       };
     }),
     linkedGroups: groups,

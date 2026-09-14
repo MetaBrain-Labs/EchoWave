@@ -14,7 +14,7 @@
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { copyFile, mkdir, unlink, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import {
@@ -81,6 +81,10 @@ export type KnowledgeService = {
     documentId: string,
     revisionId: string,
   ): ReturnType<KnowledgeRepository['getCitationSource']>;
+  getOriginalSource(
+    knowledgeBaseId: string,
+    documentId: string,
+  ): Promise<{ body: Buffer; filename: string; mimeType: string }>;
   deleteDocument(
     knowledgeBaseId: string,
     documentId: string,
@@ -189,6 +193,38 @@ export class DefaultKnowledgeService implements KnowledgeService {
     return CitationSourceResponseSchema.parse(
       await this.repository.getCitationSource(knowledgeBaseId, documentId, revisionId),
     );
+  }
+  /** 读取活动版本原文件；文件已按保留策略清理时返回稳定冲突提示。 */
+  async getOriginalSource(knowledgeBaseId: string, documentId: string) {
+    const source = await this.repository.getOriginalSource(knowledgeBaseId, documentId);
+    const sourcePath = source.storageKey
+      ? knowledgeStoragePath(this.knowledgeStorageDirectory, source.storageKey)
+      : source.stagedPath
+        ? checkedKnowledgeFilePath(source.stagedPath, [
+            this.knowledgeStorageDirectory,
+            ...(this.legacyTempDirectory ? [this.legacyTempDirectory] : []),
+          ])
+        : undefined;
+    if (!sourcePath) throw new RagRepositoryError('CONFLICT', '原文件已清理，当前无法下载。');
+    const mimeType =
+      source.format === 'markdown'
+        ? 'text/markdown'
+        : source.format === 'word'
+          ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+          : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    const extension =
+      source.format === 'markdown' ? '.md' : source.format === 'word' ? '.docx' : '.xlsx';
+    const filename = path.extname(source.title)
+      ? path.basename(source.title)
+      : `${path.basename(source.title)}${extension}`;
+    try {
+      return { body: await readFile(sourcePath), filename, mimeType };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new RagRepositoryError('CONFLICT', '原文件已清理，当前无法下载。');
+      }
+      throw error;
+    }
   }
   retryDocument(
     knowledgeBaseId: string,

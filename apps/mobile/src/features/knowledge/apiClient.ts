@@ -11,6 +11,8 @@
  * - 当前问答读取完整 JSON，不解析流式事件。
  */
 import type { DocumentPickerAsset } from 'expo-document-picker';
+import { File, Paths } from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import { Platform } from 'react-native';
 
 import {
@@ -117,6 +119,54 @@ export const getDocument = (knowledgeId: string, documentId: string) =>
     `/api/knowledge-bases/${knowledgeId}/documents/${documentId}`,
     KnowledgeDocumentDetailSchema,
   );
+
+/** 下载原始文档；Web 触发浏览器下载，原生端写入文档目录后交给系统分享面板。 */
+export async function downloadDocumentSource(
+  knowledgeId: string,
+  documentId: string,
+  fallbackName: string,
+): Promise<void> {
+  const response = await fetch(
+    `${getApiUrl()}/api/knowledge-bases/${knowledgeId}/documents/${documentId}/source`,
+    { headers: { Accept: 'application/octet-stream' } },
+  );
+  if (!response.ok) {
+    const body: unknown = await response.json().catch(() => null);
+    const parsed = ApiErrorResponseSchema.safeParse(body);
+    throw new KnowledgeRequestError(
+      parsed.success ? parsed.data.error.code : 'HTTP_ERROR',
+      localizeRequestError(
+        parsed.success ? parsed.data.error.code : 'HTTP_ERROR',
+        parsed.success ? parsed.data.error.message : `请求失败（HTTP ${response.status}）。`,
+      ),
+      parsed.success && parsed.data.error.retryable,
+    );
+  }
+  const disposition = response.headers.get('content-disposition') ?? '';
+  const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  const filename = encodedName ? decodeURIComponent(encodedName) : fallbackName;
+  const body = await response.arrayBuffer();
+  if (Platform.OS === 'web') {
+    const url = URL.createObjectURL(new Blob([body]));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    return;
+  }
+  const file = new File(Paths.document, filename);
+  file.write(new Uint8Array(body));
+  if (!(await Sharing.isAvailableAsync())) {
+    throw new KnowledgeRequestError(
+      'SHARING_UNAVAILABLE',
+      localizeRequestError('SHARING_UNAVAILABLE', '当前设备不支持保存或分享文件。'),
+    );
+  }
+  await Sharing.shareAsync(file.uri, {
+    mimeType: response.headers.get('content-type') ?? undefined,
+  });
+}
 export const listChunks = (knowledgeId: string, documentId: string) =>
   request(
     `/api/knowledge-bases/${knowledgeId}/documents/${documentId}/chunks`,

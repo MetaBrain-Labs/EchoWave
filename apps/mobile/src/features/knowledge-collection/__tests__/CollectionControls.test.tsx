@@ -31,7 +31,9 @@ test('collection drawers have document action rows and centered secondary cancel
     fontFamily: fontFamilies.sansBold,
   });
   // 背景关闭区域也叫取消，文字所在的按钮才是底部取消操作。
-  expect(screen.getAllByRole('button', { name: '取消' }).at(-1)).toHaveStyle({ alignItems: 'center' });
+  expect(screen.getAllByRole('button', { name: '取消' }).at(-1)).toHaveStyle({
+    alignItems: 'center',
+  });
   fireEvent.press(screen.getByRole('button', { name: '打开文件夹' }));
   expect(open).toHaveBeenCalledTimes(1);
 });

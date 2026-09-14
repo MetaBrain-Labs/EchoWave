@@ -11,7 +11,7 @@
  * - 连接状态与地址由共享运行时配置层持有。
  */
 import { useRouter } from 'expo-router';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -29,6 +29,7 @@ import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { colors, spacing } from '@/shared/theme/tokens';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
+import { ActionSheet } from '@/shared/ui/ActionSheet';
 
 /** 渲染 API 服务状态、当前端点、重试和服务器切换操作。 */
 export default function ServiceStatusRoute() {
@@ -36,6 +37,7 @@ export default function ServiceStatusRoute() {
   const router = useRouter();
   const cardRef = useRef<ServiceStatusCardHandle>(null);
   const pushCardRef = useRef<PushNotificationStatusCardHandle>(null);
+  const [actionsVisible, setActionsVisible] = useState(false);
   const screenRefresh = useScreenRefresh(async () => {
     await Promise.all([
       cardRef.current?.refresh() ?? Promise.resolve(),
@@ -46,7 +48,8 @@ export default function ServiceStatusRoute() {
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
       <PageHeader
         onBack={() => backOrReplace(router, '/')}
-        onMore={() => undefined}
+        moreLabel={t('service.moreActions')}
+        onMore={() => setActionsVisible(true)}
         title={t('more.service.title')}
       />
       <ScrollView
@@ -57,6 +60,23 @@ export default function ServiceStatusRoute() {
         <ServiceStatusCard onChangeServer={() => router.push('/server-connection')} ref={cardRef} />
         <PushNotificationStatusCard ref={pushCardRef} />
       </ScrollView>
+      <ActionSheet
+        items={[
+          {
+            icon: 'refresh-outline',
+            label: t('service.refreshAll'),
+            onPress: screenRefresh.onRefresh,
+          },
+          {
+            icon: 'server-outline',
+            label: t('service.change'),
+            onPress: () => router.push('/server-connection'),
+          },
+        ]}
+        onClose={() => setActionsVisible(false)}
+        title={t('service.moreActions')}
+        visible={actionsVisible}
+      />
     </SafeAreaView>
   );
 }

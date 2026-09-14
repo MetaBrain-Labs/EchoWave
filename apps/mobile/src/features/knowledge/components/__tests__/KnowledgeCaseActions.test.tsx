@@ -88,14 +88,12 @@ test('withdraw requires confirmation and version conflict preserves menu until e
   alert.mockRestore();
 });
 test('retry appears only for failed retryable stages and never offers generated document replacement', async () => {
-  jest
-    .mocked(getKnowledgeCase)
-    .mockResolvedValue({
-      ...item,
-      publication: 'failed',
-      publicationRetryable: false,
-      publicationMessage: '不可直接重试',
-    });
+  jest.mocked(getKnowledgeCase).mockResolvedValue({
+    ...item,
+    publication: 'failed',
+    publicationRetryable: false,
+    publicationMessage: '不可直接重试',
+  });
   const screen = render(
     <KnowledgeCaseActions
       caseId={id}

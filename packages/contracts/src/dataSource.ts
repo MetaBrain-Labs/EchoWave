@@ -136,6 +136,7 @@ export const DataSourceIngestionRecordSchema = z.object({
   errorCode: z.string().nullable(),
   errorMessage: z.string().nullable(),
   retryable: z.boolean(),
+  retryTargetAudioIds: z.array(EntityIdSchema).max(20).default([]),
 });
 export const DataSourceIngestionListResponseSchema = z.object({
   items: z.array(DataSourceIngestionRecordSchema),

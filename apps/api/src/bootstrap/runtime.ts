@@ -190,6 +190,7 @@ export function createRagRuntime(config: ApiConfig) {
       tempDirectory: config.rag.audioTranscriptionTempDir,
       tenantId: config.rag.tenantId,
     },
+    audioRuntimeService,
   );
   const audioAutomationRepository = new AudioAutomationRepository(
     pool,

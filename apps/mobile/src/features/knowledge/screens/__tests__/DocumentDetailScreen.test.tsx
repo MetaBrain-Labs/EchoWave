@@ -15,6 +15,7 @@ import { clearImportantBlocksForTests } from '../../importantBlocks';
 import { DocumentDetailScreen } from '../DocumentDetailScreen';
 import { getDocument } from '../../apiClient';
 import { document, knowledge } from '../../testing/fixtures';
+import { colors } from '@/shared/theme/tokens';
 
 jest.mock('expo-router', () => ({ useFocusEffect: jest.fn() }));
 jest.mock('../../apiClient');
@@ -78,6 +79,61 @@ describe('DocumentDetailScreen', () => {
     expect(screen.getByText(document.previewText)).toBeTruthy();
     fireEvent.press(screen.getByLabelText('退出全屏预览'));
     expect(screen.getByLabelText('返回')).toBeTruthy();
+  });
+
+  it('starts on the original page when opened from block location', async () => {
+    const screen = render(
+      <DocumentDetailScreen
+        documentId={document.id}
+        initialBlockId={document.chunks[0]?.id}
+        initialTab="original"
+        knowledgeId={knowledge.id}
+        onBack={jest.fn()}
+        onOpenBlock={jest.fn()}
+      />,
+    );
+
+    expect(await screen.findByTestId('document-original-scroll')).toBeTruthy();
+    expect(screen.getByRole('tab', { name: '文档原文' }).props.accessibilityState).toEqual({
+      selected: true,
+    });
+    expect(screen.getByTestId('document-detail-pager').props.contentOffset).toEqual({
+      x: 480,
+      y: 0,
+    });
+  });
+
+  it('scrolls to and highlights the located original block', async () => {
+    const target = document.chunks[0]!;
+    const locatedDocument = {
+      ...document,
+      previewText: `开头\n${target.sourceExcerpt}\n结尾`,
+    };
+    jest.mocked(getDocument).mockResolvedValueOnce(locatedDocument);
+    const screen = render(
+      <DocumentDetailScreen
+        documentId={document.id}
+        initialBlockId={target.id}
+        initialTab="original"
+        knowledgeId={knowledge.id}
+        onBack={jest.fn()}
+        onOpenBlock={jest.fn()}
+      />,
+    );
+
+    const targetLine = await screen.findByTestId('document-original-target-line');
+    expect(
+      screen.getAllByText(target.sourceExcerpt).some((match) => {
+        const styles = Array.isArray(match.props.style) ? match.props.style : [match.props.style];
+        return styles.some((style) => style?.backgroundColor === colors.successSurface);
+      }),
+    ).toBe(true);
+
+    fireEvent(screen.getByTestId('document-preview'), 'layout', {
+      nativeEvent: { layout: { y: 200 } },
+    });
+    fireEvent(targetLine, 'layout', { nativeEvent: { layout: { y: 300 } } });
+    expect(screen.getByTestId('document-original-target-line')).toBeTruthy();
   });
 
   it('shares important state and opens explicit version actions', async () => {

@@ -79,13 +79,16 @@ jest.mock('@/features/knowledge/screens/BlockDetailScreen', () => {
 jest.mock('@/features/knowledge/screens/DocumentDetailScreen', () => {
   return {
     DocumentDetailScreen: ({
+      initialTab,
       onBack,
       onOpenBlock,
     }: {
+      initialTab?: 'parsed' | 'original';
       onBack: () => void;
       onOpenBlock: (id: string) => void;
     }) => (
       <MockView>
+        <MockText>{`initial:${initialTab ?? 'parsed'}`}</MockText>
         <MockPressable onPress={onBack}>
           <MockText>原文返回</MockText>
         </MockPressable>
@@ -169,6 +172,7 @@ describe('knowledge citation routes', () => {
     };
     const screen = render(<DocumentDetailRoute />);
 
+    expect(screen.getByText('initial:original')).toBeTruthy();
     fireEvent.press(screen.getByText('原文返回'));
     expect(mockRouter.back).toHaveBeenCalledTimes(1);
 

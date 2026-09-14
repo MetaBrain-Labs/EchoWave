@@ -1,15 +1,19 @@
 /**
- * 跨平台操作抽屉。
+ * 跨平台操作菜单。
+ *
+ * 使用 React Native Modal 呈现一组可访问的动作，统一处理遮罩、取消和危险操作样式。
  *
  * Responsibilities:
- * - 复用项目单列画布、三色文字与触控区域。
- * - 由业务调用方管理确认、版本冲突和失败重试。
+ * - 为移动端和 Web 提供一致的底部操作菜单。
+ * - 将动作执行交给调用方，不承载领域状态或网络请求。
+ *
  * Notes:
- * - 不依赖任何功能模块。
+ * - 新式 items 动作会先关闭菜单；兼容旧式 actions 时保留调用方控制关闭时机。
  */
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useEffect, useState } from 'react';
+import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+
 import {
   colors,
   fontFamilies,
@@ -18,134 +22,213 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
-/** 动作失败时保持打开，调用方明确决定何时关闭。 */
+export type ActionSheetItem = {
+  destructive?: boolean;
+  disabled?: boolean;
+  icon?: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+};
+
+/** 渲染带遮罩的动作列表。 */
 export function ActionSheet({
+  actions,
+  busy = false,
+  closeLabel,
+  items,
+  message,
+  onClose,
   title,
   visible,
-  onClose,
-  closeLabel,
-  actions,
-  message,
-  busy = false,
 }: {
-  title: string;
-  visible: boolean;
-  onClose: () => void;
-  closeLabel: string;
-  message?: string;
+  actions?: ActionSheetItem[];
   busy?: boolean;
-  actions: Array<{
-    label: string;
-    onPress: () => void;
-    icon?: keyof typeof Ionicons.glyphMap;
-    disabled?: boolean;
-  }>;
+  closeLabel?: string;
+  items?: ActionSheetItem[];
+  message?: string;
+  onClose: () => void;
+  title?: string;
+  visible: boolean;
 }) {
+  const { t } = useAppLanguage();
+  const resolvedItems = items ?? actions ?? [];
+  const preserveLegacyCloseSemantics = items === undefined && actions !== undefined;
+  const [mounted, setMounted] = useState(visible);
+  const [backdropOpacity] = useState(() => new Animated.Value(0));
+  const [sheetProgress] = useState(() => new Animated.Value(1));
+  const sheetTranslateY = sheetProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 480],
+  });
+
+  useEffect(() => {
+    if (visible) {
+      backdropOpacity.stopAnimation();
+      sheetProgress.stopAnimation();
+      backdropOpacity.setValue(0);
+      sheetProgress.setValue(1);
+      const frame = requestAnimationFrame(() => {
+        Animated.parallel([
+          Animated.timing(backdropOpacity, {
+            duration: 180,
+            toValue: 1,
+            useNativeDriver: true,
+          }),
+          Animated.timing(sheetProgress, {
+            duration: 220,
+            toValue: 0,
+            useNativeDriver: true,
+          }),
+        ]).start();
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+
+    if (!mounted) return undefined;
+    backdropOpacity.stopAnimation();
+    sheetProgress.stopAnimation();
+    Animated.parallel([
+      Animated.timing(backdropOpacity, {
+        duration: 150,
+        toValue: 0,
+        useNativeDriver: true,
+      }),
+      Animated.timing(sheetProgress, {
+        duration: 180,
+        toValue: 1,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) setMounted(false);
+    });
+    return undefined;
+  }, [backdropOpacity, mounted, sheetProgress, visible]);
+
+  if (!visible && !mounted) return null;
+
   return (
     <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
+      animationType="none"
       onRequestClose={() => {
         if (!busy) onClose();
       }}
+      transparent
+      visible={visible || mounted}
     >
       <View style={styles.overlay}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={closeLabel}
-          disabled={busy}
-          onPress={onClose}
-          style={StyleSheet.absoluteFill}
-        />
-        <SafeAreaView edges={['bottom']} style={styles.sheet}>
-          <Text accessibilityRole="header" numberOfLines={1} style={styles.title}>
-            {title}
-          </Text>
-          <ScrollView keyboardShouldPersistTaps="handled" style={styles.actions}>
-            {message ? (
-              <Text accessibilityRole="alert" style={styles.message}>
-                {message}
-              </Text>
-            ) : null}
-            {actions.map((action) => (
+        <Animated.View
+          style={[StyleSheet.absoluteFill, styles.backdrop, { opacity: backdropOpacity }]}
+        >
+          <Pressable
+            accessibilityLabel={t('common.close')}
+            accessibilityRole="button"
+            disabled={busy}
+            onPress={onClose}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+        <Animated.View
+          accessibilityViewIsModal
+          style={[styles.sheet, { transform: [{ translateY: sheetTranslateY }] }]}
+        >
+          {title ? <Text style={styles.title}>{title}</Text> : null}
+          {message ? <Text style={styles.message}>{message}</Text> : null}
+          <View style={styles.items}>
+            {resolvedItems.map((item) => (
               <Pressable
-                key={action.label}
                 accessibilityRole="button"
-                accessibilityLabel={action.label}
-                accessibilityState={{ disabled: busy || action.disabled }}
-                disabled={busy || action.disabled}
-                onPress={action.onPress}
-                style={({ pressed }) => [styles.action, pressed && styles.pressed]}
+                accessibilityState={{ disabled: item.disabled || busy }}
+                disabled={item.disabled || busy}
+                key={item.label}
+                onPress={() => {
+                  if (!preserveLegacyCloseSemantics) onClose();
+                  item.onPress();
+                }}
+                style={({ pressed }) => [
+                  styles.item,
+                  item.destructive && styles.destructiveItem,
+                  (item.disabled || busy) && styles.disabled,
+                  pressed && styles.pressed,
+                ]}
               >
-                {action.icon ? (
-                  <Ionicons name={action.icon} size={22} color={textColors.secondary} />
+                {item.icon ? (
+                  <Ionicons
+                    color={item.destructive ? colors.danger : colors.ink}
+                    name={item.icon}
+                    size={22}
+                  />
                 ) : null}
-                <Text style={[styles.text, (busy || action.disabled) && styles.secondary]}>
-                  {action.label}
+                <Text style={[styles.itemText, item.destructive && styles.destructiveText]}>
+                  {item.label}
                 </Text>
               </Pressable>
             ))}
-          </ScrollView>
+          </View>
           <Pressable
             accessibilityRole="button"
             disabled={busy}
-            accessibilityLabel={closeLabel}
             onPress={onClose}
-            style={styles.cancel}
+            style={({ pressed }) => [styles.cancel, pressed && styles.pressed]}
           >
-            <Text style={styles.cancelText}>{closeLabel}</Text>
+            <Text style={styles.cancelText}>{closeLabel ?? t('common.cancel')}</Text>
           </Pressable>
-        </SafeAreaView>
+        </Animated.View>
       </View>
     </Modal>
   );
 }
+
 const styles = StyleSheet.create({
-  overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(16, 24, 40, 0.28)' },
+  overlay: { flex: 1, justifyContent: 'flex-end' },
+  backdrop: { backgroundColor: 'rgba(16, 24, 40, 0.24)' },
   sheet: {
-    width: '100%',
-    maxWidth: 480,
-    alignSelf: 'center',
-    maxHeight: '80%',
     backgroundColor: colors.card,
     borderTopLeftRadius: radii.default,
     borderTopRightRadius: radii.default,
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
+    gap: spacing.sm,
+    padding: spacing.md,
+    paddingBottom: spacing.lg,
   },
-  actions: { flexGrow: 0 },
-  pressed: { backgroundColor: colors.background },
   title: {
-    ...typography.heading2,
-    fontFamily: fontFamilies.sansBold,
-    fontWeight: 'bold',
+    ...typography.heading3,
     color: textColors.primary,
-    paddingBottom: spacing.xs,
+    fontFamily: fontFamilies.sansBold,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
   },
-  action: {
-    minHeight: 52,
-    flexDirection: 'row',
+  message: {
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+    paddingHorizontal: spacing.sm,
+  },
+  items: { gap: spacing.xs },
+  item: {
     alignItems: 'center',
+    borderRadius: radii.default,
+    flexDirection: 'row',
     gap: spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.divider,
+    minHeight: 52,
+    paddingHorizontal: spacing.md,
   },
-  text: { ...typography.body, fontFamily: fontFamilies.sans, color: textColors.primary, flex: 1 },
-  cancel: { alignItems: 'center', minHeight: 48, paddingTop: spacing.md },
+  itemText: { ...typography.body, color: textColors.primary, fontFamily: fontFamilies.sans },
+  destructiveItem: { backgroundColor: colors.background },
+  destructiveText: { color: colors.danger, fontFamily: fontFamilies.sansBold },
+  cancel: {
+    alignItems: 'center',
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 48,
+  },
   cancelText: {
     ...typography.body,
     color: textColors.secondary,
     fontFamily: fontFamilies.sansBold,
-    fontWeight: 'bold',
   },
-  secondary: { color: textColors.secondary },
-  message: {
-    ...typography.description,
-    fontFamily: fontFamilies.sans,
-    color: textColors.secondary,
-    paddingBottom: spacing.sm,
-  },
+  disabled: { opacity: 0.45 },
+  pressed: { backgroundColor: colors.background },
 });
