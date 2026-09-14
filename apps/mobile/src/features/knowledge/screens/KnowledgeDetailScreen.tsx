@@ -50,6 +50,7 @@ import { PageTabs } from '@/shared/ui/PageTabs';
 import { SearchSheet } from '@/shared/ui/SearchSheet';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import {
   colors,
   fontFamilies,
@@ -69,6 +70,8 @@ import {
 import { SearchAndFilter } from '../components/SearchAndFilter';
 import { getKnowledgeBase, listDocuments, retryDocument, uploadDocument } from '../apiClient';
 import { useKnowledgeDocumentUpdates } from '../hooks/useKnowledgeDocumentUpdates';
+import { GuideDemoBanner } from '../components/GuideDemoBanner';
+import { guideDemoDocument, guideDemoKnowledge } from '../guideDemoData';
 
 const detailTabs = [
   { key: 'overview', labelKey: 'knowledgeDetail.tabOverview' },
@@ -268,6 +271,7 @@ function GroupCard({ group, onSwitch }: { group: GroupSummary; onSwitch: () => v
 
 /** 加载并展示知识库详情，协调上传、关联、切组与问答入口。 */
 export function KnowledgeDetailScreen({
+  guideDemo = false,
   knowledgeId,
   onBack,
   onAsk,
@@ -280,6 +284,7 @@ export function KnowledgeDetailScreen({
   onOrganize,
   onEditCase,
 }: {
+  guideDemo?: boolean;
   knowledgeId: string;
   onBack: () => void;
   onAsk?: () => void;
@@ -320,11 +325,22 @@ export function KnowledgeDetailScreen({
     onTabChange: setActiveTab,
     tabs: detailTabKeys,
   });
+  const overviewTargetRef = useStarterTourTarget('knowledge-overview');
+  const filesTargetRef = useStarterTourTarget('knowledge-files');
+  const uploadTargetRef = useStarterTourTarget('knowledge-upload');
 
   const load = useCallback(
     async (showLoading = true) => {
       if (showLoading) setLoading(true);
       setError('');
+      if (guideDemo) {
+        setKnowledge(guideDemoKnowledge);
+        setDirectory([]);
+        setDocuments([guideDemoDocument]);
+        setLinkedGroups([]);
+        if (showLoading) setLoading(false);
+        return;
+      }
       try {
         const [nextKnowledge, nextDocuments, nextGroups, nextDirectory] = await Promise.all([
           getKnowledgeBase(knowledgeId),
@@ -342,7 +358,7 @@ export function KnowledgeDetailScreen({
         if (showLoading) setLoading(false);
       }
     },
-    [knowledgeId, t],
+    [guideDemo, knowledgeId, t],
   );
 
   useEffect(() => {
@@ -486,6 +502,7 @@ export function KnowledgeDetailScreen({
   } = useGroupAssociationEditor({ linkGroups: linkSelectedGroups });
 
   const pickAndUpload = async () => {
+    if (guideDemo) return;
     try {
       const selection = await pickDocumentAsync({
         type: [
@@ -525,6 +542,7 @@ export function KnowledgeDetailScreen({
       (document.latestRevision?.status === 'failed' && document.latestRevision.error?.retryable),
   );
   const parseAllFailedDocuments = async () => {
+    if (guideDemo) return;
     if (!retryableDocuments.length) {
       Alert.alert(t('knowledgeDetail.parseAll'), t('knowledgeDetail.parseAllNone'));
       return;
@@ -641,49 +659,55 @@ export function KnowledgeDetailScreen({
       ) : null}
     </View>
   );
-  const fixedActions =
-    activeTab === 'groups' ? (
+  const fixedActions = guideDemo ? (
+    <FixedActionButton
+      disabled
+      icon="information-circle-outline"
+      label={t('knowledgeDetail.upload')}
+      onPress={() => undefined}
+    />
+  ) : activeTab === 'groups' ? (
+    <FixedActionButton
+      emphasized
+      icon="add"
+      label={t('knowledgeDetail.linkGroup')}
+      onPress={openGroupPicker}
+    />
+  ) : activeTab === 'files' ? (
+    <>
+      <FixedActionButton
+        disabled={uploading}
+        icon="cloud-upload-outline"
+        label={uploading ? t('knowledgeDetail.uploading') : t('knowledgeDetail.upload')}
+        onPress={() => {
+          void pickAndUpload();
+        }}
+      />
       <FixedActionButton
         emphasized
-        icon="add"
-        label={t('knowledgeDetail.linkGroup')}
-        onPress={openGroupPicker}
+        icon="chatbubble-ellipses-outline"
+        label={t('knowledgeDetail.ask')}
+        onPress={() => onAsk?.()}
       />
-    ) : activeTab === 'files' ? (
-      <>
-        <FixedActionButton
-          disabled={uploading}
-          icon="cloud-upload-outline"
-          label={uploading ? t('knowledgeDetail.uploading') : t('knowledgeDetail.upload')}
-          onPress={() => {
-            void pickAndUpload();
-          }}
-        />
-        <FixedActionButton
-          emphasized
-          icon="chatbubble-ellipses-outline"
-          label={t('knowledgeDetail.ask')}
-          onPress={() => onAsk?.()}
-        />
-      </>
-    ) : (
-      <>
-        <FixedActionButton
-          icon="analytics-outline"
-          label={t('knowledgeDetail.parseAll')}
-          onPress={() => void parseAllFailedDocuments()}
-        />
-        <FixedActionButton
-          disabled={uploading}
-          emphasized
-          icon="cloud-upload-outline"
-          label={uploading ? t('knowledgeDetail.uploading') : t('knowledgeDetail.upload')}
-          onPress={() => {
-            void pickAndUpload();
-          }}
-        />
-      </>
-    );
+    </>
+  ) : (
+    <>
+      <FixedActionButton
+        icon="analytics-outline"
+        label={t('knowledgeDetail.parseAll')}
+        onPress={() => void parseAllFailedDocuments()}
+      />
+      <FixedActionButton
+        disabled={uploading}
+        emphasized
+        icon="cloud-upload-outline"
+        label={uploading ? t('knowledgeDetail.uploading') : t('knowledgeDetail.upload')}
+        onPress={() => {
+          void pickAndUpload();
+        }}
+      />
+    </>
+  );
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
@@ -800,11 +824,12 @@ export function KnowledgeDetailScreen({
       />
       <PageHeader
         onBack={onBack}
-        onMore={() => setEditingBase(true)}
+        onMore={guideDemo ? undefined : () => setEditingBase(true)}
         onSearch={() => setSearchVisible(true)}
         searchLabel={t('knowledgeDetail.searchTitle')}
         title={knowledge.name}
       />
+      {guideDemo ? <GuideDemoBanner /> : null}
       <ScrollView
         directionalLockEnabled
         horizontal
@@ -825,7 +850,9 @@ export function KnowledgeDetailScreen({
           style={[styles.page, { width: pageWidth }]}
           testID="knowledge-overview-scroll"
         >
-          {renderHero()}
+          <View ref={overviewTargetRef} collapsable={false}>
+            {renderHero()}
+          </View>
           {renderTabs()}
           {error ? (
             <Text accessibilityRole="alert" style={styles.failureReason}>
@@ -919,42 +946,44 @@ export function KnowledgeDetailScreen({
           </View>
         </ScrollView>
 
-        <ScrollView
-          alwaysBounceVertical
-          contentContainerStyle={styles.pageContent}
-          keyboardShouldPersistTaps="handled"
-          refreshControl={<ScreenRefreshControl {...screenRefresh} />}
-          showsVerticalScrollIndicator={false}
-          stickyHeaderIndices={[0]}
-          style={[styles.page, { width: pageWidth }]}
-          testID="knowledge-files-scroll"
-        >
-          {renderTabs()}
-          <View style={styles.stickySearch}>
-            <SearchAndFilter
-              onChangeText={setQuery}
-              onFilterPress={() => setDocumentFilterVisible(true)}
-              placeholder={t('knowledgeDetail.searchDocuments')}
-              value={query}
-            />
-          </View>
-          {error ? (
-            <Text accessibilityRole="alert" style={styles.failureReason}>
-              {error}
-            </Text>
-          ) : null}
-          <View style={styles.documentList}>
-            {entries.length ? (
-              entries.map(renderEntry)
-            ) : (
-              <Text style={styles.emptyText}>
-                {query.trim()
-                  ? t('knowledgeDetail.noDocumentMatch', { query })
-                  : t('knowledgeDetail.noDocuments')}
+        <View collapsable={false} ref={filesTargetRef} style={[styles.page, { width: pageWidth }]}>
+          <ScrollView
+            alwaysBounceVertical
+            contentContainerStyle={styles.pageContent}
+            keyboardShouldPersistTaps="handled"
+            refreshControl={<ScreenRefreshControl {...screenRefresh} />}
+            showsVerticalScrollIndicator={false}
+            stickyHeaderIndices={[0]}
+            style={styles.flexPage}
+            testID="knowledge-files-scroll"
+          >
+            {renderTabs()}
+            <View style={styles.stickySearch}>
+              <SearchAndFilter
+                onChangeText={setQuery}
+                onFilterPress={() => setDocumentFilterVisible(true)}
+                placeholder={t('knowledgeDetail.searchDocuments')}
+                value={query}
+              />
+            </View>
+            {error ? (
+              <Text accessibilityRole="alert" style={styles.failureReason}>
+                {error}
               </Text>
-            )}
-          </View>
-        </ScrollView>
+            ) : null}
+            <View style={styles.documentList}>
+              {entries.length ? (
+                entries.map(renderEntry)
+              ) : (
+                <Text style={styles.emptyText}>
+                  {query.trim()
+                    ? t('knowledgeDetail.noDocumentMatch', { query })
+                    : t('knowledgeDetail.noDocuments')}
+                </Text>
+              )}
+            </View>
+          </ScrollView>
+        </View>
 
         <ScrollView
           alwaysBounceVertical
@@ -1007,7 +1036,12 @@ export function KnowledgeDetailScreen({
         title={t('knowledgeDetail.filterAction')}
         visible={documentFilterVisible}
       />
-      <View style={styles.fixedActions} testID="knowledge-fixed-actions">
+      <View
+        collapsable={false}
+        ref={uploadTargetRef}
+        style={styles.fixedActions}
+        testID="knowledge-fixed-actions"
+      >
         {fixedActions}
       </View>
     </SafeAreaView>
@@ -1038,6 +1072,7 @@ const styles = StyleSheet.create({
   loading: { marginTop: spacing.xl },
   pager: { flex: 1 },
   page: { flex: 1 },
+  flexPage: { flex: 1 },
   pageContent: { flexGrow: 1, paddingBottom: spacing.lg },
   hero: {
     gap: spacing.md,

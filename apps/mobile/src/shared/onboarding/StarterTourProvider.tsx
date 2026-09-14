@@ -1,7 +1,7 @@
 /**
  * EchoWave 多引导编排器。
  *
- * 按设备与 Server URL 保存六项引导状态，并跨页面测量、滚动和高亮注册目标。
+ * 按设备与 Server URL 保存九项引导状态，并跨页面测量、滚动和高亮注册目标。
  *
  * Responsibilities:
  * - 迁移旧基础引导状态并只自动播放一次基础引导。
@@ -34,6 +34,7 @@ import {
   clampSpotlight,
   localizeGuideRegistry,
   placeTourCard,
+  windowRectToLocal,
   type GuideId,
   type GuideStatus,
   type GuideStep,
@@ -45,13 +46,38 @@ import { StarterTourContext, type StarterTourContextValue } from './StarterTourC
 export const GUIDE_STORAGE_VERSION = 2;
 export const STARTER_TOUR_STORAGE_VERSION = 1;
 
-type TargetRegistration = { node: View; prepare?: () => void };
+type TargetRegistration = { node: View; prepare?: () => void | Promise<void> };
 type GuideStatuses = Record<GuideId, GuideStatus>;
+
+/** 等待原生交互和下一帧布局，避免在导航或滚动中间态测量目标。 */
+function waitForStableFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    const frame = (
+      globalThis as typeof globalThis & {
+        requestAnimationFrame?: (callback: () => void) => number;
+      }
+    ).requestAnimationFrame;
+    if (frame) frame(() => frame(() => resolve()));
+    else setTimeout(resolve, 32);
+  });
+}
+
+/** 将 React Native 的异步测量包装成可取消流程可使用的 Promise。 */
+function measureNode(node: View): Promise<WindowRect | null> {
+  return new Promise((resolve) => {
+    node.measureInWindow((x, y, width, height) => {
+      resolve(width > 0 && height > 0 ? { x, y, width, height } : null);
+    });
+  });
+}
 
 const emptyStatuses = (): GuideStatuses => ({
   basic: 'not_started',
   knowledge: 'not_started',
+  knowledge_query: 'not_started',
   data_sources: 'not_started',
+  group_settings: 'not_started',
+  knowledge_collection: 'not_started',
   ai_configuration: 'not_started',
   runtime_mode: 'not_started',
   analysis: 'not_started',
@@ -81,12 +107,13 @@ function parseStatuses(value: string | null): GuideStatuses | null {
   }
 }
 
-/** 在根导航上层维护六项产品引导的设备端生命周期。 */
+/** 在根导航上层维护九项产品引导的设备端生命周期。 */
 export function StarterTourProvider({
   children,
   serverUrl,
 }: PropsWithChildren<{ serverUrl: string }>) {
   const { t } = useAppLanguage();
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const guideRegistry = useMemo(() => localizeGuideRegistry(t), [t]);
   const router = useRouter();
   const targets = useRef(new Map<StarterTourTargetKey, TargetRegistration>());
@@ -152,11 +179,12 @@ export function StarterTourProvider({
     (step: GuideStep, knownTemplates = templates) => {
       const routes = {
         create: '/(tabs)/create',
+        more: '/(tabs)/more',
         knowledge: '/(tabs)/knowledge',
         data_sources: '/(tabs)/sources',
         ai_configuration: '/settings',
         runtime_mode: '/audio-runtime',
-      } as const satisfies Record<Exclude<GuideStep['route'], 'group' | 'analysis'>, string>;
+      } as const;
 
       if (step.route === 'group') {
         const groupId = knownTemplates.sales_call_review;
@@ -180,6 +208,81 @@ export function StarterTourProvider({
         } else {
           router.replace('/');
         }
+      } else if (step.route === 'group_settings') {
+        const groupId = knownTemplates.sales_call_review ?? knownTemplates.personal_speaking_coach;
+        if (groupId) {
+          router.replace({ pathname: '/groups/[groupId]/settings', params: { groupId } });
+        } else {
+          router.replace('/guides' as Href);
+        }
+      } else if (step.route === 'collection') {
+        router.replace({
+          pathname: '/collection',
+          params:
+            (knownTemplates.sales_call_review ?? knownTemplates.personal_speaking_coach)
+              ? {
+                  groupId:
+                    knownTemplates.sales_call_review ?? knownTemplates.personal_speaking_coach,
+                }
+              : undefined,
+        });
+      } else if (
+        step.route === 'collection_rules' ||
+        step.route === 'collection_rule_editor' ||
+        step.route === 'collection_history'
+      ) {
+        const groupId = knownTemplates.sales_call_review ?? knownTemplates.personal_speaking_coach;
+        router.replace({
+          pathname: '/collection',
+          params: {
+            ...(groupId ? { groupId } : {}),
+            guideDemo: 'true',
+            ...(step.route === 'collection_rule_editor'
+              ? { view: 'rule' }
+              : step.route === 'collection_history'
+                ? { view: 'history' }
+                : {}),
+          },
+        });
+      } else if (step.route === 'collection_cases') {
+        router.replace({
+          pathname: '/collection',
+          params: { guideDemo: 'true', knowledgeId: 'guide-demo-knowledge' },
+        });
+      } else if (step.route === 'collection_case_demo') {
+        router.replace({
+          pathname: '/collection',
+          params: { caseId: 'guide-demo-case', guideDemo: 'true' },
+        });
+      } else if (step.route === 'knowledge_detail_demo') {
+        router.replace({
+          pathname: '/knowledge/[knowledgeId]',
+          params: { guideDemo: 'true', knowledgeId: 'guide-demo' },
+        });
+      } else if (step.route === 'knowledge_document_demo') {
+        router.replace({
+          pathname: '/knowledge/[knowledgeId]/files/[fileId]',
+          params: {
+            fileId: 'guide-demo-document',
+            guideDemo: 'true',
+            knowledgeId: 'guide-demo',
+          },
+        });
+      } else if (step.route === 'knowledge_block_demo') {
+        router.replace({
+          pathname: '/knowledge/[knowledgeId]/files/[fileId]/blocks/[blockId]',
+          params: {
+            blockId: 'guide-demo-block',
+            fileId: 'guide-demo-document',
+            guideDemo: 'true',
+            knowledgeId: 'guide-demo',
+          },
+        });
+      } else if (step.route === 'knowledge_query_demo') {
+        router.replace({
+          pathname: '/knowledge/[knowledgeId]/ask',
+          params: { guideDemo: 'true', knowledgeId: 'guide-demo' },
+        });
       } else {
         router.replace(routes[step.route]);
       }
@@ -219,7 +322,7 @@ export function StarterTourProvider({
   }, [activeGuide, hydrated, startGuide, statuses.basic, templates]);
 
   const registerTarget = useCallback(
-    (key: StarterTourTargetKey, node: View | null, prepare?: () => void) => {
+    (key: StarterTourTargetKey, node: View | null, prepare?: () => void | Promise<void>) => {
       const previous = targets.current.get(key);
       if (node) {
         if (previous?.node === node && previous.prepare === prepare) return;
@@ -241,27 +344,40 @@ export function StarterTourProvider({
     if (!activeGuide || !step?.target) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const clearRectTimer = setTimeout(() => setRect(null), 0);
     let attempt = 0;
-    const measure = () => {
+    const measure = async () => {
+      if (cancelled) return;
+      await waitForStableFrame();
       if (cancelled) return;
       const registration = targets.current.get(step.target!);
       if (!registration) {
-        if (attempt++ < 4) timer = setTimeout(measure, 120);
+        if (attempt++ < 6) timer = setTimeout(() => void measure(), 120);
         return;
       }
-      if (attempt === 0) registration.prepare?.();
-      registration.node.measureInWindow((x, y, width, height) => {
-        if (cancelled) return;
-        if (width > 0 && height > 0) setRect({ x, y, width, height });
-        else if (attempt++ < 4) timer = setTimeout(measure, 120);
-      });
+      if (attempt === 0) await registration.prepare?.();
+      await waitForStableFrame();
+      const first = await measureNode(registration.node);
+      await waitForStableFrame();
+      const second = await measureNode(registration.node);
+      if (cancelled) return;
+      const stable =
+        first &&
+        second &&
+        Math.abs(first.x - second.x) <= 1 &&
+        Math.abs(first.y - second.y) <= 1 &&
+        Math.abs(first.width - second.width) <= 1 &&
+        Math.abs(first.height - second.height) <= 1;
+      if (stable) setRect(second);
+      else if (attempt++ < 6) timer = setTimeout(() => void measure(), 120);
     };
-    timer = setTimeout(measure, 40);
+    timer = setTimeout(() => void measure(), 40);
     return () => {
       cancelled = true;
+      clearTimeout(clearRectTimer);
       if (timer) clearTimeout(timer);
     };
-  }, [activeGuide, step?.target, targetRevision]);
+  }, [activeGuide, step?.target, targetRevision, windowHeight, windowWidth]);
 
   const persistStatus = useCallback(
     (id: GuideId, status: GuideStatus) => {
@@ -371,9 +487,60 @@ function StarterTourOverlay({
   const { height, width } = useWindowDimensions();
   const cardRef = useRef<View>(null);
   const [cardHeight, setCardHeight] = useState(220);
+  const [cardReady, setCardReady] = useState(false);
+  const [overlayLayout, setOverlayLayout] = useState<{
+    rect: WindowRect;
+    step: number;
+  } | null>(null);
+  const overlayRect = overlayLayout?.step === current ? overlayLayout.rect : null;
   const cardWidth = Math.min(360, width - spacing.md * 2);
-  const spotlight = rect ? clampSpotlight(rect, width, height) : null;
-  const placement = placeTourCard(spotlight, width, height, cardWidth, cardHeight, spacing.md);
+  // Modal 根节点使用实际布局的局部原点，不使用其在宿主影子树中的测量位置。
+  // 状态栏策略跟随原生窗口：强制半透明会让 Android 内容坐标与遮罩原点差一个状态栏高度。
+  const localRect = rect && overlayRect ? windowRectToLocal(rect, overlayRect) : null;
+  const overlayWidth = overlayRect?.width ?? width;
+  const overlayHeight = overlayRect?.height ?? height;
+  const spotlight = localRect ? clampSpotlight(localRect, overlayWidth, overlayHeight) : null;
+  const placement = placeTourCard(
+    spotlight,
+    overlayWidth,
+    overlayHeight,
+    cardWidth,
+    cardHeight,
+    spacing.md,
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const resetTimer = setTimeout(() => {
+      setCardReady(false);
+      setOverlayLayout(null);
+    }, 0);
+    if (!visible) {
+      return () => {
+        cancelled = true;
+        clearTimeout(resetTimer);
+      };
+    }
+    // 极端情况下原生卡片布局回调会晚于遮罩显示，保留默认卡片高度避免说明卡隐身。
+    const cardFallback = setTimeout(() => {
+      if (!cancelled) setCardReady(true);
+    }, 320);
+    // 某些原生窗口切换只触发一次 onLayout，使用窗口尺寸兜底并由后续布局回调校正。
+    const layoutFallback = setTimeout(() => {
+      if (!cancelled) {
+        setOverlayLayout(
+          (currentLayout) =>
+            currentLayout ?? { rect: { height, width, x: 0, y: 0 }, step: current },
+        );
+      }
+    }, 32);
+    return () => {
+      cancelled = true;
+      clearTimeout(resetTimer);
+      clearTimeout(cardFallback);
+      clearTimeout(layoutFallback);
+    };
+  }, [current, height, visible, width]);
 
   useEffect(() => {
     if (!visible) return;
@@ -385,14 +552,20 @@ function StarterTourOverlay({
   }, [current, visible]);
 
   return (
-    <Modal
-      animationType="fade"
-      onRequestClose={onClose}
-      statusBarTranslucent
-      transparent
-      visible={visible}
-    >
-      <View style={styles.overlay} testID="starter-tour-overlay">
+    <Modal animationType="none" onRequestClose={onClose} transparent visible={visible}>
+      <View
+        onLayout={(event) => {
+          const { height: layoutHeight, width: layoutWidth } = event.nativeEvent.layout;
+          if (layoutWidth > 0 && layoutHeight > 0) {
+            setOverlayLayout({
+              rect: { height: layoutHeight, width: layoutWidth, x: 0, y: 0 },
+              step: current,
+            });
+          }
+        }}
+        style={styles.overlay}
+        testID="starter-tour-overlay"
+      >
         {spotlight ? (
           <>
             <View style={[styles.mask, { height: spotlight.top, left: 0, right: 0, top: 0 }]} />
@@ -419,7 +592,11 @@ function StarterTourOverlay({
                 { bottom: 0, left: 0, right: 0, top: spotlight.top + spotlight.height },
               ]}
             />
-            <View pointerEvents="none" style={[styles.spotlight, spotlight]} />
+            <View
+              pointerEvents="none"
+              style={[styles.spotlight, spotlight]}
+              testID="starter-tour-spotlight"
+            />
           </>
         ) : (
           <View style={[styles.mask, StyleSheet.absoluteFill]} />
@@ -431,9 +608,20 @@ function StarterTourOverlay({
             total: formatNumber(stepCount),
           })}
           accessibilityViewIsModal
-          onLayout={(event) => setCardHeight(event.nativeEvent.layout.height)}
+          onLayout={(event) => {
+            setCardHeight(event.nativeEvent.layout.height);
+            setCardReady(true);
+          }}
           ref={cardRef}
-          style={[styles.card, { left: placement.left, top: placement.top, width: cardWidth }]}
+          style={[
+            styles.card,
+            {
+              left: placement.left,
+              opacity: cardReady ? 1 : 0,
+              top: placement.top,
+              width: cardWidth,
+            },
+          ]}
         >
           {spotlight ? (
             <View
@@ -499,7 +687,7 @@ function StarterTourOverlay({
 
 const styles = StyleSheet.create({
   provider: { flex: 1 },
-  overlay: { flex: 1 },
+  overlay: { bottom: 0, flex: 1, left: 0, position: 'absolute', right: 0, top: 0 },
   mask: { backgroundColor: 'rgba(16, 24, 40, 0.68)', position: 'absolute' },
   spotlight: {
     borderColor: colors.white,

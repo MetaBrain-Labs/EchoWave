@@ -47,6 +47,7 @@ import { listKnowledgeBases } from '@/shared/api/knowledgeBasesApi';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import {
   colors,
@@ -97,12 +98,10 @@ export function GroupSettingsScreen({
   groupId,
   onArchived,
   onBack,
-  onOpenCollection,
 }: {
   groupId: string;
   onArchived: () => void;
   onBack: () => void;
-  onOpenCollection?: () => void;
 }) {
   const { formatNumber, t } = useAppLanguage();
   const tabs: { key: SettingsTab; label: string }[] = [
@@ -132,6 +131,14 @@ export function GroupSettingsScreen({
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(() => new Set());
   const runInitialRequest = useInitialRequestLoading();
   const dirtyRef = useRef(false);
+  const headerTargetRef = useStarterTourTarget('group-settings-header');
+  const tabsTargetRef = useStarterTourTarget('group-settings-tabs');
+  const basicTargetRef = useStarterTourTarget('group-settings-basic');
+  const tagsTargetRef = useStarterTourTarget('group-settings-tags');
+  const knowledgeTargetRef = useStarterTourTarget('group-settings-knowledge');
+  const sourcesTargetRef = useStarterTourTarget('group-settings-sources');
+  const saveTargetRef = useStarterTourTarget('group-settings-save');
+  const archiveTargetRef = useStarterTourTarget('group-settings-archive');
 
   const load = useCallback(
     async (preserveDraft = false) => {
@@ -273,7 +280,7 @@ export function GroupSettingsScreen({
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-      <View style={styles.header}>
+      <View collapsable={false} ref={headerTargetRef} style={styles.header}>
         <Pressable
           accessibilityLabel={t('common.back')}
           onPress={onBack}
@@ -286,7 +293,7 @@ export function GroupSettingsScreen({
         </Text>
         <View style={styles.headerButton} />
       </View>
-      <View accessibilityRole="tablist" style={styles.tabs}>
+      <View accessibilityRole="tablist" collapsable={false} ref={tabsTargetRef} style={styles.tabs}>
         {tabs.map((tab) => (
           <Pressable
             accessibilityRole="tab"
@@ -331,17 +338,8 @@ export function GroupSettingsScreen({
           testID="group-settings-scroll"
         >
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
-          {onOpenCollection ? (
-            <Pressable
-              accessibilityRole="button"
-              onPress={onOpenCollection}
-              style={styles.secondaryButton}
-            >
-              <Text style={styles.secondaryButtonText}>{t('collection.rules')}</Text>
-            </Pressable>
-          ) : null}
           {activeTab === 'basic' ? (
-            <>
+            <View collapsable={false} ref={basicTargetRef}>
               <Text style={styles.sectionTitle}>{t('groupSettings.groupInfo')}</Text>
               <Text style={styles.label}>{t('groupSettings.groupName')}</Text>
               <TextInput
@@ -419,40 +417,43 @@ export function GroupSettingsScreen({
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.label}>{t('groupSettings.analysisTags')}</Text>
-              <Text style={styles.hint}>{t('groupSettings.analysisTagsHint')}</Text>
-              <View style={styles.chips}>
-                {customTags.map((tag) => (
-                  <Pressable
-                    accessibilityLabel={t('groupSettings.removeTag', { tag })}
-                    key={tag}
-                    onPress={() => {
-                      setCustomTags((current) => current.filter((item) => item !== tag));
-                      dirtyRef.current = true;
-                    }}
-                    style={styles.chip}
-                  >
-                    <Text style={styles.chipText}>{tag} ×</Text>
+              <View collapsable={false} ref={tagsTargetRef}>
+                <Text style={styles.label}>{t('groupSettings.analysisTags')}</Text>
+                <Text style={styles.hint}>{t('groupSettings.analysisTagsHint')}</Text>
+                <View style={styles.chips}>
+                  {customTags.map((tag) => (
+                    <Pressable
+                      accessibilityLabel={t('groupSettings.removeTag', { tag })}
+                      key={tag}
+                      onPress={() => {
+                        setCustomTags((current) => current.filter((item) => item !== tag));
+                        dirtyRef.current = true;
+                      }}
+                      style={styles.chip}
+                    >
+                      <Text style={styles.chipText}>{tag} ×</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <View style={styles.addTagRow}>
+                  <TextInput
+                    accessibilityLabel={t('groupSettings.newTag')}
+                    maxLength={24}
+                    onChangeText={setTagDraft}
+                    onSubmitEditing={addTag}
+                    placeholder={t('groupSettings.newTagPlaceholder')}
+                    style={[styles.input, styles.addTagInput]}
+                    value={tagDraft}
+                  />
+                  <Pressable onPress={addTag} style={styles.addTagButton}>
+                    <Text style={styles.addTagText}>{t('groupSettings.add')}</Text>
                   </Pressable>
-                ))}
-              </View>
-              <View style={styles.addTagRow}>
-                <TextInput
-                  accessibilityLabel={t('groupSettings.newTag')}
-                  maxLength={24}
-                  onChangeText={setTagDraft}
-                  onSubmitEditing={addTag}
-                  placeholder={t('groupSettings.newTagPlaceholder')}
-                  style={[styles.input, styles.addTagInput]}
-                  value={tagDraft}
-                />
-                <Pressable onPress={addTag} style={styles.addTagButton}>
-                  <Text style={styles.addTagText}>{t('groupSettings.add')}</Text>
-                </Pressable>
+                </View>
               </View>
               <Pressable
                 disabled={saving}
                 onPress={() => void saveBasic()}
+                ref={saveTargetRef}
                 style={styles.primaryButton}
               >
                 <Text style={styles.primaryButtonText}>
@@ -460,13 +461,21 @@ export function GroupSettingsScreen({
                 </Text>
               </Pressable>
               <Text style={styles.sectionTitle}>{t('groupSettings.groupActions')}</Text>
-              <Pressable disabled={saving} onPress={confirmArchive} style={styles.archiveButton}>
+              <Pressable
+                disabled={saving}
+                onPress={confirmArchive}
+                ref={archiveTargetRef}
+                style={styles.archiveButton}
+              >
                 <Ionicons color={colors.white} name="archive-outline" size={22} />
                 <Text style={styles.archiveText}>{t('groupSettings.archive')}</Text>
               </Pressable>
-            </>
+            </View>
           ) : (
-            <>
+            <View
+              collapsable={false}
+              ref={activeTab === 'knowledge' ? knowledgeTargetRef : sourcesTargetRef}
+            >
               <Text style={styles.sectionTitle}>
                 {activeTab === 'knowledge'
                   ? t('groupSettings.linkKnowledge')
@@ -506,13 +515,14 @@ export function GroupSettingsScreen({
               <Pressable
                 disabled={saving}
                 onPress={() => void saveLinks()}
+                ref={saveTargetRef}
                 style={styles.primaryButton}
               >
                 <Text style={styles.primaryButtonText}>
                   {saving ? t('sourceForm.saving') : t('groupSettings.saveLinks')}
                 </Text>
               </Pressable>
-            </>
+            </View>
           )}
         </ScrollView>
       )}

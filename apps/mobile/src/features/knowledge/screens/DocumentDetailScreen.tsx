@@ -36,6 +36,7 @@ import { useSwipePager } from '@/shared/hooks/useSwipePager';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import {
   colors,
@@ -52,6 +53,8 @@ import { KnowledgeDocumentEditor } from '../components/KnowledgeDocumentEditor';
 import { EmptyState } from '../components/EmptyState';
 import { SearchAndFilter } from '../components/SearchAndFilter';
 import { toggleImportantBlock, useImportantBlocks } from '../importantBlocks';
+import { GuideDemoBanner } from '../components/GuideDemoBanner';
+import { guideDemoDocument } from '../guideDemoData';
 
 const tabKeys = ['parsed', 'original'] as const;
 type Tab = (typeof tabKeys)[number];
@@ -105,6 +108,7 @@ function findOriginalTarget(previewText: string, chunk?: DocumentChunk) {
 
 /** 加载并展示指定知识文档的解析结果与原文预览。 */
 export function DocumentDetailScreen({
+  guideDemo = false,
   documentId,
   initialBlockId,
   initialTab = 'parsed',
@@ -112,6 +116,7 @@ export function DocumentDetailScreen({
   onBack,
   onOpenBlock,
 }: {
+  guideDemo?: boolean;
   documentId: string;
   initialBlockId?: string;
   initialTab?: Tab;
@@ -148,15 +153,17 @@ export function DocumentDetailScreen({
     onTabChange: setActiveTab,
     tabs: tabKeys,
   });
+  const documentStatusTargetRef = useStarterTourTarget('knowledge-document-status');
+  const blockListTargetRef = useStarterTourTarget('document-block-list');
 
   const load = useCallback(async () => {
     try {
-      setDocument(await getDocument(knowledgeId, documentId));
+      setDocument(guideDemo ? guideDemoDocument : await getDocument(knowledgeId, documentId));
       setError('');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t('documentDetail.loadFailed'));
     }
-  }, [documentId, knowledgeId, t]);
+  }, [documentId, guideDemo, knowledgeId, t]);
   const screenRefresh = useScreenRefresh(load);
 
   useEffect(() => {
@@ -294,7 +301,7 @@ export function DocumentDetailScreen({
       ) : null}
       <PageHeader
         leading={<DocumentFormatIcon format={document.format} size={28} />}
-        onMore={() => setEditingDocument(true)}
+        onMore={guideDemo ? undefined : () => setEditingDocument(true)}
         onBack={onBack}
         onSearch={() => {
           if (activeTab === 'parsed') searchInputRef.current?.focus();
@@ -307,6 +314,7 @@ export function DocumentDetailScreen({
         }
         title={document.title}
       />
+      {guideDemo ? <GuideDemoBanner /> : null}
       <PageTabs
         activeTab={activeTab}
         onChange={selectTab}
@@ -336,7 +344,7 @@ export function DocumentDetailScreen({
             stickyHeaderIndices={[1]}
             testID="document-parsed-scroll"
           >
-            <View style={styles.parsedOverview}>
+            <View ref={documentStatusTargetRef} collapsable={false} style={styles.parsedOverview}>
               <Text style={styles.sectionTitle}>{t('documentDetail.parseStatus')}</Text>
               <Text style={styles.timestamp}>
                 {t('documentDetail.parsedAt', { date: formatDateTime(parsedAt) })}
@@ -377,7 +385,7 @@ export function DocumentDetailScreen({
                 value={query}
               />
             </View>
-            <View style={styles.chunkList}>
+            <View ref={blockListTargetRef} collapsable={false} style={styles.chunkList}>
               {chunks.map((chunk) => {
                 const important = importantBlocks.has(chunk.id);
                 return (

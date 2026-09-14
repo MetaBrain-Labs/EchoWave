@@ -23,6 +23,7 @@ export default function BlockDetailRoute() {
   const params = useLocalSearchParams<{
     blockId?: string | string[];
     fileId?: string | string[];
+    guideDemo?: string | string[];
     groupId?: string | string[];
     knowledgeId?: string | string[];
     origin?: string | string[];
@@ -30,6 +31,7 @@ export default function BlockDetailRoute() {
   }>();
   const knowledgeId = firstRouteParam(params.knowledgeId);
   const documentId = firstRouteParam(params.fileId);
+  const guideDemo = firstRouteParam(params.guideDemo) === 'true';
   const blockId = firstRouteParam(params.blockId);
   const groupId = firstRouteParam(params.groupId);
   const origin = parseResourceOrigin(params.origin) ?? 'knowledge-list';
@@ -37,7 +39,13 @@ export default function BlockDetailRoute() {
   const returnsToAnalysis = firstRouteParam(params.returnTo) === 'analysis';
   const fileRoute = {
     pathname: '/knowledge/[knowledgeId]/files/[fileId]' as const,
-    params: { fileId: documentId, knowledgeId, origin, ...(groupId ? { groupId } : {}) },
+    params: {
+      fileId: documentId,
+      knowledgeId,
+      origin,
+      ...(groupId ? { groupId } : {}),
+      ...(guideDemo ? { guideDemo: 'true' } : {}),
+    },
   };
   const goBack = () => {
     backOrReplace(router, fileRoute);
@@ -47,6 +55,7 @@ export default function BlockDetailRoute() {
     <BlockDetailScreen
       blockId={blockId}
       documentId={documentId}
+      guideDemo={guideDemo}
       knowledgeId={knowledgeId}
       onBack={goBack}
       onLocateOriginal={(targetBlockId) => {
@@ -73,6 +82,7 @@ export default function BlockDetailRoute() {
             knowledgeId,
             origin,
             ...(groupId ? { groupId } : {}),
+            ...(guideDemo ? { guideDemo: 'true' } : {}),
             ...(returnsToQuery
               ? { returnTo: 'knowledge-query' }
               : returnsToAnalysis

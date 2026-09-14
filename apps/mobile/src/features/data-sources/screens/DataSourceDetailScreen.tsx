@@ -54,6 +54,7 @@ import { PageTabs } from '@/shared/ui/PageTabs';
 import { SearchSheet } from '@/shared/ui/SearchSheet';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import {
   getDataSource,
   archiveDataSource,
@@ -192,6 +193,9 @@ export function DataSourceDetailScreen({
     onTabChange: setActiveTab,
     tabs: detailTabKeys,
   });
+  const detailHeaderTargetRef = useStarterTourTarget('data-source-detail-header');
+  const audioListTargetRef = useStarterTourTarget('data-source-audio-list');
+  const transcribeTargetRef = useStarterTourTarget('data-source-transcribe');
 
   const load = useCallback(
     async (showLoading = true) => {
@@ -856,13 +860,15 @@ export function DataSourceDetailScreen({
         title={t('sourceDetail.switchTitle')}
         visible={Boolean(switchTarget)}
       />
-      <PageHeader
-        onBack={onBack}
-        onMore={openMoreActions}
-        onSearch={() => setSearchVisible(true)}
-        searchLabel={t('sourceDetail.searchTitle')}
-        title={source.name}
-      />
+      <View collapsable={false} ref={detailHeaderTargetRef}>
+        <PageHeader
+          onBack={onBack}
+          onMore={openMoreActions}
+          onSearch={() => setSearchVisible(true)}
+          searchLabel={t('sourceDetail.searchTitle')}
+          title={source.name}
+        />
+      </View>
       {operationError || audioPlayback.error ? (
         <View style={styles.operationError}>
           <Text accessibilityRole="alert" style={styles.operationErrorText}>
@@ -961,7 +967,7 @@ export function DataSourceDetailScreen({
           testID="data-source-audio-scroll"
         >
           {renderTabs()}
-          <View style={styles.audioList}>
+          <View collapsable={false} ref={audioListTargetRef} style={styles.audioList}>
             {filteredAudioItems.length === 0 ? (
               <Text style={styles.listEmptyText}>
                 {searchQuery
@@ -1067,15 +1073,17 @@ export function DataSourceDetailScreen({
           </View>
         </ScrollView>
       </ScrollView>
-      <FixedActions
-        activeTab={activeTab}
-        onLinkGroups={openGroupPicker}
-        onTranscribeAll={transcribeAll}
-        onUpload={() => {
-          void pickAndUpload();
-        }}
-        uploading={uploading}
-      />
+      <View collapsable={false} ref={transcribeTargetRef}>
+        <FixedActions
+          activeTab={activeTab}
+          onLinkGroups={openGroupPicker}
+          onTranscribeAll={transcribeAll}
+          onUpload={() => {
+            void pickAndUpload();
+          }}
+          uploading={uploading}
+        />
+      </View>
     </SafeAreaView>
   );
 }

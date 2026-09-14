@@ -154,6 +154,7 @@ export function GroupScreen({
   const menuTourRef = useStarterTourTarget('group-menu');
   const settingsTourRef = useStarterTourTarget('group-settings');
   const titleTourRef = useStarterTourTarget('group-title');
+  const tabsTourRef = useStarterTourTarget('group-tabs');
   const [activeTab, setActiveTab] = useState<TabKey>(initialTab ?? 'audio');
   const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [group, setGroup] = useState<GroupSummary>();
@@ -861,12 +862,14 @@ export function GroupScreen({
         </ScrollView>
       ) : (
         <>
-          <PageTabs
-            activeTab={activeTab}
-            onChange={selectTab}
-            tabs={localizedTabs}
-            testIDPrefix="group-tab"
-          />
+          <View collapsable={false} ref={tabsTourRef}>
+            <PageTabs
+              activeTab={activeTab}
+              onChange={selectTab}
+              tabs={localizedTabs}
+              testIDPrefix="group-tab"
+            />
+          </View>
           <ScrollView
             accessibilityLabel={t('groups.pager')}
             directionalLockEnabled

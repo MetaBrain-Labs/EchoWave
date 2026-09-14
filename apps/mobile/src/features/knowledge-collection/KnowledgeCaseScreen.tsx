@@ -27,6 +27,7 @@ import {
 } from 'expo-router/react-navigation';
 import { useCasePlayback, caseTime } from './useCasePlayback';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import { CaseContentEditor, CollectionAudioControl, CollectionLayout, styles } from './ui';
 
 /** 一个有原声来源、明确角色和独立发布状态的案例。 */
@@ -40,8 +41,10 @@ export function KnowledgeCaseScreen({
   onBack: () => void;
   initiallyEditing?: boolean;
   navigation?: Pick<NavigationProp<ParamListBase>, 'dispatch'>;
+  guideDemo?: boolean;
 }) {
   const { t } = useAppLanguage();
+  const caseEditorTargetRef = useStarterTourTarget('collection-case-editor');
   const [item, setItem] = useState<KnowledgeCase>();
   const [draft, setDraft] = useState<CaseContent>();
   const [editing, setEditing] = useState(false);
@@ -290,6 +293,9 @@ export function KnowledgeCaseScreen({
         ) : undefined
       }
     >
+      <View collapsable={false} ref={caseEditorTargetRef}>
+        <Text style={styles.hint}>{t(item ? 'collection.openCase' : 'collection.loading')}</Text>
+      </View>
       <ActionSheet
         visible={menu}
         title={item?.content.title ?? t('collection.openCase')}

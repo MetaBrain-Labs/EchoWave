@@ -22,6 +22,7 @@ import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 
 import {
   colors,
@@ -36,6 +37,8 @@ import { EmptyState } from '../components/EmptyState';
 import { toggleImportantBlock, useImportantBlocks } from '../importantBlocks';
 import { ActionSheet } from '@/shared/ui/ActionSheet';
 import { SearchSheet } from '@/shared/ui/SearchSheet';
+import { GuideDemoBanner } from '../components/GuideDemoBanner';
+import { guideDemoDocument } from '../guideDemoData';
 
 function locatorText(chunk: DocumentChunk, t: ReturnType<typeof useAppLanguage>['t']) {
   const locator = chunk.locator;
@@ -62,6 +65,7 @@ function locatorText(chunk: DocumentChunk, t: ReturnType<typeof useAppLanguage>[
 export function BlockDetailScreen({
   blockId,
   documentId,
+  guideDemo = false,
   knowledgeId,
   onBack,
   onLocateOriginal,
@@ -69,6 +73,7 @@ export function BlockDetailScreen({
 }: {
   blockId: string;
   documentId: string;
+  guideDemo?: boolean;
   knowledgeId: string;
   onBack: () => void;
   onLocateOriginal: (blockId: string) => void;
@@ -81,15 +86,17 @@ export function BlockDetailScreen({
   const [actionsVisible, setActionsVisible] = useState(false);
   const importantBlocks = useImportantBlocks();
   const runInitialRequest = useInitialRequestLoading();
+  const contentTargetRef = useStarterTourTarget('block-content');
+  const sourceTargetRef = useStarterTourTarget('block-source');
 
   const load = useCallback(async () => {
     try {
-      setDocument(await getDocument(knowledgeId, documentId));
+      setDocument(guideDemo ? guideDemoDocument : await getDocument(knowledgeId, documentId));
       setError('');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t('blockDetail.loadFailed'));
     }
-  }, [documentId, knowledgeId, t]);
+  }, [documentId, guideDemo, knowledgeId, t]);
   const screenRefresh = useScreenRefresh(load);
 
   useEffect(() => {
@@ -137,7 +144,7 @@ export function BlockDetailScreen({
     <SafeAreaView style={styles.safeArea}>
       <PageHeader
         onBack={onBack}
-        onMore={() => setActionsVisible(true)}
+        onMore={guideDemo ? undefined : () => setActionsVisible(true)}
         onSearch={() => setSearchVisible(true)}
         searchLabel={t('blockDetail.search')}
         title={t('documentDetail.chunkTitle', {
@@ -145,6 +152,7 @@ export function BlockDetailScreen({
           title: block.title || t('documentDetail.body'),
         })}
       />
+      {guideDemo ? <GuideDemoBanner /> : null}
       <ScrollView
         alwaysBounceVertical
         contentContainerStyle={styles.content}
@@ -166,23 +174,29 @@ export function BlockDetailScreen({
         </View>
 
         <Text style={styles.sectionTitle}>{t('blockDetail.content')}</Text>
-        <ContentCard
-          action={
-            <Pressable
-              accessibilityLabel={t('blockDetail.copyAccessibility')}
-              accessibilityRole="button"
-              hitSlop={8}
-              onPress={() => void copyContent()}
-            >
-              <Ionicons color={colors.ink} name="copy-outline" size={typography.body.lineHeight} />
-            </Pressable>
-          }
-          label={t('blockDetail.content')}
-        >
-          <Text selectable style={styles.body}>
-            {block.content}
-          </Text>
-        </ContentCard>
+        <View collapsable={false} ref={contentTargetRef}>
+          <ContentCard
+            action={
+              <Pressable
+                accessibilityLabel={t('blockDetail.copyAccessibility')}
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() => void copyContent()}
+              >
+                <Ionicons
+                  color={colors.ink}
+                  name="copy-outline"
+                  size={typography.body.lineHeight}
+                />
+              </Pressable>
+            }
+            label={t('blockDetail.content')}
+          >
+            <Text selectable style={styles.body}>
+              {block.content}
+            </Text>
+          </ContentCard>
+        </View>
 
         <View style={styles.sectionHeadingGroup}>
           <Text style={styles.sectionTitle}>{t('blockDetail.sourcePreview')}</Text>
@@ -190,27 +204,29 @@ export function BlockDetailScreen({
             {t('blockDetail.sourceLocation', { location: locatorText(block, t) })}
           </Text>
         </View>
-        <ContentCard
-          action={
-            <Pressable
-              accessibilityLabel={t('blockDetail.fullscreenSource')}
-              accessibilityRole="button"
-              hitSlop={8}
-              onPress={() => onLocateOriginal(block.id)}
-            >
-              <Ionicons
-                color={colors.ink}
-                name="expand-outline"
-                size={typography.body.lineHeight}
-              />
-            </Pressable>
-          }
-          label={t('blockDetail.original')}
-        >
-          <Text selectable style={styles.body}>
-            {block.sourceExcerpt || block.content}
-          </Text>
-        </ContentCard>
+        <View collapsable={false} ref={sourceTargetRef}>
+          <ContentCard
+            action={
+              <Pressable
+                accessibilityLabel={t('blockDetail.fullscreenSource')}
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() => onLocateOriginal(block.id)}
+              >
+                <Ionicons
+                  color={colors.ink}
+                  name="expand-outline"
+                  size={typography.body.lineHeight}
+                />
+              </Pressable>
+            }
+            label={t('blockDetail.original')}
+          >
+            <Text selectable style={styles.body}>
+              {block.sourceExcerpt || block.content}
+            </Text>
+          </ContentCard>
+        </View>
 
         <View style={styles.sectionHeadingGroup}>
           <Text style={styles.sectionTitle}>{t('blockDetail.context')}</Text>
