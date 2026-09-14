@@ -12,6 +12,11 @@
  * Notes:
  * - 知识库配置当前只读；实际解析仍由服务端全局配置驱动。
  */
+import { listKnowledgeDirectory } from '@/shared/api/collectionFoldersApi';
+import { FixedActionButton } from '@/shared/ui/FixedActionButton';
+import { ActionSheet } from '@/shared/ui/ActionSheet';
+import { CollectionFolderRow } from '../components/CollectionFolderRow';
+import { KnowledgeCaseActions } from '../components/KnowledgeCaseActions';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -25,6 +30,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type {
+  CollectionFolder,
+  KnowledgeDirectoryEntry,
   DocumentStatus,
   GroupSummary,
   KnowledgeBaseDetail,
@@ -139,7 +146,8 @@ function InfoRow({
   );
 }
 
-function DocumentRow({
+/** 文档主体打开内容，右侧操作区独立打开抽屉，失败案例也可读取正文。 */
+export function DocumentRow({
   document,
   onMore,
   onOpen,
@@ -149,7 +157,7 @@ function DocumentRow({
   onOpen: () => void;
 }) {
   const { formatDateTime, t } = useAppLanguage();
-  const enabled = document.status.kind === 'ready';
+  const enabled = !!document.caseId || document.status.kind === 'ready';
   const formatLabel =
     document.format === 'spreadsheet'
       ? t('knowledgeDetail.spreadsheet')
@@ -257,41 +265,6 @@ function GroupCard({ group, onSwitch }: { group: GroupSummary; onSwitch: () => v
   );
 }
 
-function FixedActionButton({
-  disabled = false,
-  emphasized = false,
-  icon,
-  label,
-  onPress,
-}: {
-  disabled?: boolean;
-  emphasized?: boolean;
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.actionButton,
-        emphasized && styles.emphasizedAction,
-        disabled && styles.disabled,
-        pressed && styles.pressed,
-      ]}
-    >
-      <Ionicons
-        color={emphasized ? colors.white : colors.ink}
-        name={icon}
-        size={typography.body.lineHeight}
-      />
-      <Text style={[styles.actionText, emphasized && styles.emphasizedActionText]}>{label}</Text>
-    </Pressable>
-  );
-}
-
 /** 加载并展示知识库详情，协调上传、关联、切组与问答入口。 */
 export function KnowledgeDetailScreen({
   knowledgeId,
@@ -299,16 +272,34 @@ export function KnowledgeDetailScreen({
   onAsk,
   onOpenDocument,
   onSwitchGroup,
+  onOpenCases,
+  onOpenCollection,
+  onOpenFolder,
+  onViewRule,
+  onOrganize,
+  onEditCase,
 }: {
   knowledgeId: string;
   onBack: () => void;
   onAsk?: () => void;
   onOpenDocument: (documentId: string) => void;
   onSwitchGroup?: (groupId: string) => void;
+  onOpenCases?: (caseId?: string) => void;
+  onOpenCollection?: (associatedGroupIds: string[]) => void;
+  onOpenFolder?: (folderId: string, query: string) => void;
+  onViewRule?: (folder: CollectionFolder) => void;
+  onOrganize?: (folder: CollectionFolder) => void;
+  onEditCase?: (caseId: string) => void;
 }) {
   const { formatDateTime, formatNumber, t } = useAppLanguage();
   const [knowledge, setKnowledge] = useState<KnowledgeBaseDetail>();
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
+  const [directory, setDirectory] = useState<KnowledgeDirectoryEntry[]>([]);
+  const [searchedDirectory, setSearchedDirectory] = useState<{
+    query: string;
+    items: KnowledgeDirectoryEntry[];
+  }>();
+  const [actionFolder, setActionFolder] = useState<CollectionFolder>();
   const [linkedGroups, setLinkedGroups] = useState<GroupSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -332,12 +323,14 @@ export function KnowledgeDetailScreen({
       if (showLoading) setLoading(true);
       setError('');
       try {
-        const [nextKnowledge, nextDocuments, nextGroups] = await Promise.all([
+        const [nextKnowledge, nextDocuments, nextGroups, nextDirectory] = await Promise.all([
           getKnowledgeBase(knowledgeId),
           listDocuments(knowledgeId),
           listKnowledgeBaseGroups(knowledgeId),
+          listKnowledgeDirectory(knowledgeId),
         ]);
         setKnowledge(nextKnowledge);
+        setDirectory(nextDirectory.items);
         setDocuments(nextDocuments.items);
         setLinkedGroups(nextGroups.items);
       } catch (reason) {
@@ -393,6 +386,66 @@ export function KnowledgeDetailScreen({
       ].some((value) => value.toLocaleLowerCase().includes(normalized)),
     );
   }, [documents, query, t]);
+  useEffect(() => {
+    let active = true;
+    if (!query.trim())
+      return () => {
+        active = false;
+      };
+    const timer = setTimeout(() => {
+      void listKnowledgeDirectory(knowledgeId, query)
+        .then((result) => {
+          if (active) setSearchedDirectory({ query, items: result.items });
+        })
+        .catch(() => {
+          if (active) setError(t('collection.loadFailed'));
+        });
+    }, 180);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [knowledgeId, query, directory, t]);
+  const entries: KnowledgeDirectoryEntry[] = [
+    ...(query.trim()
+      ? searchedDirectory?.query === query
+        ? searchedDirectory.items
+        : []
+      : directory
+    ).filter((entry) => entry.kind === 'folder'),
+    ...filteredDocuments
+      .filter((document) => !document.caseId)
+      .map((document) => ({
+        kind: 'document' as const,
+        documentId: document.id,
+        updatedAt: document.updatedAt,
+      })),
+  ].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const renderEntry = (entry: KnowledgeDirectoryEntry) => {
+    if (entry.kind === 'folder')
+      return (
+        <CollectionFolderRow
+          key={entry.folder.id}
+          folder={entry.folder}
+          onMore={() => setActionFolder(entry.folder)}
+          onOpen={() => onOpenFolder?.(entry.folder.id, query)}
+        />
+      );
+    const document = documents.find((document) => document.id === entry.documentId);
+    if (!document) return null;
+    return (
+      <DocumentRow
+        key={document.id}
+        document={document}
+        onMore={() => setActionDocument(document)}
+        onOpen={() =>
+          document.caseId && onOpenCases
+            ? onOpenCases(document.caseId)
+            : onOpenDocument(document.id)
+        }
+      />
+    );
+  };
   const linkedGroupIds = useMemo(
     () => new Set(linkedGroups.map((group) => group.id)),
     [linkedGroups],
@@ -517,6 +570,34 @@ export function KnowledgeDetailScreen({
           groups: formatNumber(knowledge.linkedGroupCount),
         })}
       </Text>
+      {onOpenCases || onOpenCollection ? (
+        <View style={styles.collectionQuickActions}>
+          {onOpenCases ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('collection.casesAndReview')}
+              onPress={() => onOpenCases()}
+              style={styles.collectionQuickAction}
+              testID="knowledge-cases-entry"
+            >
+              <Ionicons name="chatbubbles-outline" size={20} color={textColors.primary} />
+              <Text style={styles.collectionQuickText}>{t('collection.casesAndReview')}</Text>
+            </Pressable>
+          ) : null}
+          {onOpenCollection ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('collection.rules')}
+              onPress={() => onOpenCollection(linkedGroups.map((group) => group.id))}
+              style={styles.collectionQuickAction}
+              testID="knowledge-collection-entry"
+            >
+              <Ionicons name="library-outline" size={20} color={textColors.primary} />
+              <Text style={styles.collectionQuickText}>{t('collection.rules')}</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
   const fixedActions =
@@ -609,8 +690,58 @@ export function KnowledgeDetailScreen({
           if (target) onSwitchGroup?.(target.id);
         }}
       />
+      {actionDocument?.caseId ? (
+        <KnowledgeCaseActions
+          caseId={actionDocument.caseId}
+          onClose={() => setActionDocument(undefined)}
+          onChanged={() => load(false)}
+          onOpen={(editing) =>
+            editing ? onEditCase?.(actionDocument.caseId!) : onOpenCases?.(actionDocument.caseId!)
+          }
+        />
+      ) : null}
+      <ActionSheet
+        visible={!!actionFolder}
+        title={actionFolder?.name ?? ''}
+        closeLabel={t('collection.cancel')}
+        onClose={() => setActionFolder(undefined)}
+        actions={[
+          {
+            label: t('collection.openFolderAction'),
+            icon: 'folder-open-outline',
+            onPress: () => {
+              if (actionFolder) onOpenFolder?.(actionFolder.id, query);
+              setActionFolder(undefined);
+            },
+          },
+          ...(actionFolder?.kind === 'rule'
+            ? [
+                {
+                  label: t('collection.viewRule'),
+                  icon: 'options-outline' as const,
+                  onPress: () => {
+                    if (actionFolder) onViewRule?.(actionFolder);
+                    setActionFolder(undefined);
+                  },
+                },
+              ]
+            : []),
+          ...(actionFolder?.kind === 'legacy'
+            ? [
+                {
+                  label: t('collection.organize'),
+                  icon: 'albums-outline' as const,
+                  onPress: () => {
+                    if (actionFolder) onOrganize?.(actionFolder);
+                    setActionFolder(undefined);
+                  },
+                },
+              ]
+            : []),
+        ]}
+      />
       <KnowledgeDocumentEditor
-        document={actionDocument}
+        document={actionDocument?.caseId ? undefined : actionDocument}
         knowledgeId={knowledgeId}
         onClose={() => setActionDocument(undefined)}
         onChanged={() => load()}
@@ -738,17 +869,8 @@ export function KnowledgeDetailScreen({
             </View>
             <View style={styles.recentDocuments}>
               <Text style={styles.sectionTitle}>{t('knowledgeDetail.recentDocuments')}</Text>
-              {documents.length ? (
-                documents
-                  .slice(0, 3)
-                  .map((document) => (
-                    <DocumentRow
-                      key={document.id}
-                      document={document}
-                      onMore={() => setActionDocument(document)}
-                      onOpen={() => onOpenDocument(document.id)}
-                    />
-                  ))
+              {entries.length ? (
+                entries.slice(0, 3).map(renderEntry)
               ) : (
                 <Text style={styles.emptyText}>{t('knowledgeDetail.noRecentDocuments')}</Text>
               )}
@@ -780,15 +902,8 @@ export function KnowledgeDetailScreen({
             </Text>
           ) : null}
           <View style={styles.documentList}>
-            {filteredDocuments.length ? (
-              filteredDocuments.map((document) => (
-                <DocumentRow
-                  key={document.id}
-                  document={document}
-                  onMore={() => setActionDocument(document)}
-                  onOpen={() => onOpenDocument(document.id)}
-                />
-              ))
+            {entries.length ? (
+              entries.map(renderEntry)
             ) : (
               <Text style={styles.emptyText}>
                 {query.trim()
@@ -831,6 +946,24 @@ export function KnowledgeDetailScreen({
 }
 
 const styles = StyleSheet.create({
+  collectionQuickActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  collectionQuickAction: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.card,
+    borderRadius: radii.default,
+    borderColor: colors.divider,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  collectionQuickText: {
+    ...typography.body,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sans,
+  },
   safeArea: { backgroundColor: colors.card, flex: 1 },
   emptyRefreshContent: { flexGrow: 1 },
   loading: { marginTop: spacing.xl },
@@ -980,27 +1113,6 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     padding: spacing.md,
   },
-  actionButton: {
-    alignItems: 'center',
-    backgroundColor: colors.background,
-    borderColor: colors.divider,
-    borderRadius: radii.default,
-    borderWidth: StyleSheet.hairlineWidth,
-    flex: 1,
-    flexDirection: 'row',
-    gap: spacing.sm,
-    justifyContent: 'center',
-    minHeight: 56,
-    paddingHorizontal: spacing.md,
-  },
-  emphasizedAction: { backgroundColor: colors.ink, borderColor: colors.ink },
-  actionText: {
-    ...typography.body,
-    color: textColors.primary,
-    fontFamily: fontFamilies.sansBold,
-    fontWeight: 'bold',
-  },
-  emphasizedActionText: { color: colors.white },
   disabled: { opacity: 0.45 },
   pressed: { backgroundColor: colors.background },
 });

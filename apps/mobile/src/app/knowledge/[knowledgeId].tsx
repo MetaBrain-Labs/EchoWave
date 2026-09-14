@@ -40,6 +40,43 @@ export default function KnowledgeDetailRoute() {
   return (
     <KnowledgeDetailScreen
       knowledgeId={id}
+      onOpenCollection={(associatedGroupIds) => {
+        const selectedGroup =
+          groupId || (associatedGroupIds.length === 1 ? associatedGroupIds[0] : undefined);
+        router.push({
+          pathname: '/collection',
+          params: { defaultKnowledgeId: id, ...(selectedGroup ? { groupId: selectedGroup } : {}) },
+        });
+      }}
+      onOpenCases={(caseId) =>
+        router.push({ pathname: '/collection', params: caseId ? { caseId } : { knowledgeId: id } })
+      }
+      onOpenFolder={(folderId, query) =>
+        router.push({
+          pathname: '/knowledge/[knowledgeId]/folders/[folderId]',
+          params: { knowledgeId: id, folderId, query },
+        })
+      }
+      onViewRule={(folder) =>
+        router.push({
+          pathname: '/collection',
+          params: {
+            groupId: folder.groupId!,
+            ruleId: folder.ruleId!,
+            view: 'rule',
+            defaultKnowledgeId: id,
+          },
+        })
+      }
+      onOrganize={(folder) =>
+        router.push({
+          pathname: '/knowledge/[knowledgeId]/folders/[folderId]',
+          params: { knowledgeId: id, folderId: folder.id, organize: 'true' },
+        })
+      }
+      onEditCase={(caseId) =>
+        router.push({ pathname: '/collection', params: { caseId, edit: 'true' } })
+      }
       onBack={goBack}
       onAsk={() =>
         router.push({

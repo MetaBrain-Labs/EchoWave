@@ -61,6 +61,12 @@ export default function AnalysisDetailRoute() {
   return (
     <AnalysisDetailScreen
       detailId={detailId}
+      onCollect={(jobId, tagId, correct) =>
+        router.push({
+          pathname: '/collection',
+          params: { jobId, ...(tagId ? { tagId } : {}), ...(correct ? { correct: 'true' } : {}) },
+        })
+      }
       groupId={analysisGroupId || undefined}
       onBack={goBack}
       onOpenCitation={(knowledgeBaseId, documentId, chunkId) =>

@@ -13,6 +13,7 @@
 - [Audio Runtime Modes](./audio-runtime-modes.md): hybrid, object-storage, and lightweight-local audio lifecycle.
 - [Server Deployment](./server-deployment.md): verified Ubuntu 22.04 x86_64 source deployment, Windows Docker Desktop, HTTPS, updates, uninstall, and restricted-network troubleshooting.
 - [Automated Audio Analysis](./audio-analysis-automation.md): batches, scheduling, recovery, cancellation, and Expo push.
+- [Analysis Case Collection](./analysis-case-collection.md): group rules, corrections, review, retrieval projections, and original audio learning.
 - [Android Device E2E](./mobile-e2e.md): Codex + Maestro suites, real integrations, evidence, and repair gates.
 - [Android E2E Troubleshooting](./mobile-e2e-troubleshooting.md): device, migration, seed, Metro, Flow, keyboard, and process-cleanup findings.
 - [Self-hosting and App Builds](./self-hosting.md): Server entry points, Development Builds, APKs, EAS, and Firebase identity.

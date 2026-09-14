@@ -20,6 +20,7 @@ import { quoteIdentifier } from './postgres.ts';
 export const WORKER_WAKEUP_CHANNEL = 'echowave_worker_jobs';
 
 export type WorkerQueue =
+  | 'analysis-case-collection'
   | 'knowledge-cleanup'
   | 'knowledge-ingestion'
   | 'audio-transcription'
@@ -31,6 +32,7 @@ export type WorkerQueue =
   | 'push-notifications';
 
 const workerQueues = new Set<WorkerQueue>([
+  'analysis-case-collection',
   'knowledge-ingestion',
   'knowledge-cleanup',
   'audio-transcription',

@@ -30,6 +30,7 @@ export default function MoreScreen() {
   const router = useRouter();
   const { t } = useAppLanguage();
   const navigationCards = [
+    { key: 'collection', href: '/collection' as Href, icon: 'library-outline' as const },
     { key: 'analysis', href: '/analysis' as Href, icon: 'pulse-outline' as const },
     { key: 'service', href: '/service-status' as Href, icon: 'options-outline' as const },
     { key: 'general', href: '/general-settings' as Href, icon: 'settings-outline' as const },
@@ -108,7 +109,7 @@ const styles = StyleSheet.create({
     width: 40,
   },
   navigationCopy: { flex: 1 },
-  pressed: { opacity: 0.65 },
+  pressed: { backgroundColor: colors.background },
   navigationTitle: {
     ...typography.heading2,
     color: textColors.primary,

@@ -33,6 +33,7 @@ import { SettingsService, type LegacyAiConfiguration } from '../settings/service
 import { createAudioRuntime } from './runtime/audioRuntime.ts';
 import { createKnowledgeRuntime } from './runtime/knowledgeRuntime.ts';
 import { createWorkspaceRuntime } from './runtime/workspaceRuntime.ts';
+import { createCollectionRuntime } from './runtime/collectionRuntime.ts';
 import { AudioAutomationRepository } from '../workspace/audio/automation/repository.ts';
 import { AudioAutomationService } from '../workspace/audio/automation/service.ts';
 import { AudioAutomationWorker } from '../workspace/audio/automation/worker.ts';
@@ -170,6 +171,15 @@ export function createRagRuntime(config: ApiConfig) {
     settingsService,
     audio.audioInputPreprocessor,
   );
+  const collection = createCollectionRuntime({
+    config,
+    pool,
+    wakeup: workerWakeup,
+    liveUpdates,
+    audio: audio.audioService,
+    settings: settingsService,
+    knowledge: knowledge.service,
+  });
   const audioUploadService = new AudioUploadSessionService(
     new AudioUploadSessionRepository(pool, config.database.schema, config.rag.tenantId),
     audioRuntimeRepository,
@@ -218,6 +228,8 @@ export function createRagRuntime(config: ApiConfig) {
 
   return {
     service: knowledge.service,
+    collectionService: collection.service,
+    collectionWorker: collection.worker,
     groupService: workspace.groupService,
     dataSourceService: workspace.dataSourceService,
     audioService: audio.audioService,
@@ -243,6 +255,7 @@ export function createRagRuntime(config: ApiConfig) {
     workerWakeup,
     settingsService,
     async close(): Promise<void> {
+      await collection.worker.stop();
       await knowledge.disposeAnswers();
       await Promise.all([audioAutomationWorker.stop(), pushNotificationWorker.stop()]);
       await audio.stop();

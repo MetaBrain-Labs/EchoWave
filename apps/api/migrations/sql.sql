@@ -83,6 +83,20 @@ create unique index ai_execution_runs_tenant_id_id_key on ai_execution_runs usin
 create index ai_execution_runs_revision_timeline_idx on ai_execution_runs using btree (tenant_id, analysis_revision_id, started_at);
 create index ai_execution_runs_group_timeline_idx on ai_execution_runs using btree (tenant_id, group_id, analysis_revision_id, started_at) WHERE (group_id IS NOT NULL);
 
+create table public.analysis_corrections (
+  id uuid primary key not null default gen_random_uuid(),
+  tenant_id uuid not null,
+  job_id uuid not null,
+  tag_id uuid not null,
+  version integer not null,
+  data jsonb not null,
+  created_at timestamp with time zone not null default now(),
+  foreign key (tenant_id, job_id, tag_id) references public.business_analysis_tags (tenant_id, job_id, id)
+  match simple on update no action on delete no action
+);
+create unique index analysis_corrections_tenant_id_id_key on analysis_corrections using btree (tenant_id, id);
+create unique index analysis_corrections_tenant_id_job_id_tag_id_version_key on analysis_corrections using btree (tenant_id, job_id, tag_id, version);
+
 create table public.analysis_invalid_segments (
   id uuid primary key not null default gen_random_uuid(),
   tenant_id uuid not null,
@@ -320,6 +334,7 @@ create table public.audio_business_analysis_jobs (
   chat_binding_revision_id uuid,
   embedding_binding_revision_id uuid,
   cancel_requested boolean not null default false,
+  knowledge_version_snapshot jsonb not null default '[]'::jsonb,
   foreign key (tenant_id, chat_binding_revision_id) references public.ai_capability_binding_revisions (tenant_id, id)
   match simple on update no action on delete no action,
   foreign key (tenant_id, embedding_binding_revision_id) references public.ai_capability_binding_revisions (tenant_id, id)
@@ -545,9 +560,9 @@ create table public.business_analysis_citations (
   document_id uuid not null,
   document_title text not null,
   locator jsonb not null,
+  revision_id uuid,
+  quote_snapshot text not null default ''::text,
   primary key (tenant_id, job_id, tag_id, chunk_id),
-  foreign key (tenant_id, chunk_id) references public.document_chunks (tenant_id, id)
-  match simple on update no action on delete no action,
   foreign key (tenant_id, job_id, tag_id) references public.business_analysis_tags (tenant_id, job_id, id)
   match simple on update no action on delete cascade
 );
@@ -594,6 +609,56 @@ create table public.business_analysis_tags (
 );
 create unique index business_analysis_tags_tenant_id_job_id_tag_index_key on business_analysis_tags using btree (tenant_id, job_id, tag_index);
 create unique index business_analysis_tags_tenant_id_job_id_id_key on business_analysis_tags using btree (tenant_id, job_id, id);
+
+create table public.collection_rules (
+  id uuid primary key not null default gen_random_uuid(),
+  tenant_id uuid not null,
+  group_id uuid not null,
+  knowledge_base_id uuid not null,
+  version integer not null default 1,
+  data jsonb not null,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  foreign key (tenant_id, group_id) references public.groups (tenant_id, id)
+  match simple on update no action on delete no action,
+  foreign key (tenant_id, knowledge_base_id) references public.knowledge_bases (tenant_id, id)
+  match simple on update no action on delete no action
+);
+create unique index collection_rules_tenant_id_id_key on collection_rules using btree (tenant_id, id);
+create index collection_rules_group_idx on collection_rules using btree (tenant_id, group_id);
+
+create table public.collection_runs (
+  id uuid primary key not null default gen_random_uuid(),
+  tenant_id uuid not null,
+  group_id uuid not null,
+  created_at timestamp with time zone not null default now(),
+  foreign key (tenant_id, group_id) references public.groups (tenant_id, id)
+  match simple on update no action on delete no action
+);
+create unique index collection_runs_tenant_id_id_key on collection_runs using btree (tenant_id, id);
+
+create table public.collection_tasks (
+  id uuid primary key not null default gen_random_uuid(),
+  tenant_id uuid not null,
+  kind text not null,
+  dedupe_key text not null,
+  payload jsonb not null,
+  run_id uuid,
+  status text not null default 'queued'::text,
+  stage text not null default 'prepare'::text,
+  attempts integer not null default 0,
+  lease_token uuid,
+  lease_until timestamp with time zone,
+  error_message text,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  foreign key (tenant_id) references public.tenants (id)
+  match simple on update no action on delete no action,
+  foreign key (tenant_id, run_id) references public.collection_runs (tenant_id, id)
+  match simple on update no action on delete no action
+);
+create unique index collection_tasks_tenant_id_kind_dedupe_key_key on collection_tasks using btree (tenant_id, kind, dedupe_key);
+create index collection_tasks_claim_idx on collection_tasks using btree (tenant_id, status, lease_until, created_at);
 
 create table public.configuration_imports (
   tenant_id uuid not null,
@@ -725,6 +790,13 @@ create table public.document_revisions (
   published_at timestamp with time zone,
   embedding_cost_currency text not null default 'USD'::text,
   embedding_binding_revision_id uuid,
+  version integer not null,
+  title text not null,
+  format text not null,
+  size_bytes bigint not null,
+  storage_key text,
+  rebuild_snapshot jsonb,
+  cleaned_at timestamp with time zone,
   foreign key (document_id) references public.documents (id)
   match simple on update no action on delete no action,
   foreign key (tenant_id, embedding_binding_revision_id) references public.ai_capability_binding_revisions (tenant_id, id)
@@ -732,7 +804,9 @@ create table public.document_revisions (
   foreign key (tenant_id) references public.tenants (id)
   match simple on update no action on delete no action
 );
-create unique index document_revision_hash_idx on document_revisions using btree (tenant_id, document_id, source_sha256, embedding_model);
+create unique index document_revision_version_idx on document_revisions using btree (tenant_id, document_id, version);
+create unique index document_revision_owner_unique on document_revisions using btree (tenant_id, document_id, id);
+create unique index document_revisions_tenant_identity on document_revisions using btree (tenant_id, id);
 
 create table public.documents (
   id uuid primary key not null default gen_random_uuid(),
@@ -750,14 +824,22 @@ create table public.documents (
   deleted_at timestamp with time zone,
   created_at timestamp with time zone not null default now(),
   updated_at timestamp with time zone not null default now(),
-  foreign key (active_revision_id) references public.document_revisions (id)
+  version integer not null default 0,
+  latest_revision_id uuid,
+  knowledge_case_id uuid,
+  foreign key (tenant_id, knowledge_case_id) references public.knowledge_cases (tenant_id, id)
+  match simple on update no action on delete no action,
+  foreign key (tenant_id, id, active_revision_id) references public.document_revisions (tenant_id, document_id, id)
   match simple on update no action on delete no action,
   foreign key (knowledge_base_id) references public.knowledge_bases (id)
+  match simple on update no action on delete no action,
+  foreign key (tenant_id, id, latest_revision_id) references public.document_revisions (tenant_id, document_id, id)
   match simple on update no action on delete no action,
   foreign key (tenant_id) references public.tenants (id)
   match simple on update no action on delete no action
 );
 create index documents_library_idx on documents using btree (tenant_id, knowledge_base_id, updated_at) WHERE (deleted_at IS NULL);
+create unique index documents_tenant_identity on documents using btree (tenant_id, id);
 
 create table public.group_analysis_settings (
   tenant_id uuid not null,
@@ -842,6 +924,8 @@ create table public.ingestion_jobs (
   error_retryable boolean,
   created_at timestamp with time zone not null default now(),
   updated_at timestamp with time zone not null default now(),
+  lease_token uuid,
+  progress smallint not null default 0,
   foreign key (document_id) references public.documents (id)
   match simple on update no action on delete no action,
   foreign key (knowledge_base_id) references public.knowledge_bases (id)
@@ -866,11 +950,94 @@ create table public.knowledge_bases (
   embedding_model text not null default 'qwen3.7-text-embedding'::text,
   reranker_model text,
   parsing_mode text not null default 'automatic'::text,
+  content_version integer not null default 0,
   foreign key (tenant_id) references public.tenants (id)
   match simple on update no action on delete no action
 );
 create index knowledge_bases_tenant_updated_idx on knowledge_bases using btree (tenant_id, updated_at) WHERE (deleted_at IS NULL);
 create unique index knowledge_bases_tenant_id_id_unique on knowledge_bases using btree (tenant_id, id);
+
+create table public.knowledge_case_media (
+  tenant_id uuid not null,
+  case_id uuid not null,
+  version integer not null,
+  segment_id uuid not null,
+  status text not null default 'pending'::text,
+  storage_key text,
+  message text,
+  updated_at timestamp with time zone not null default now(),
+  primary key (tenant_id, case_id, version, segment_id),
+  foreign key (tenant_id, case_id, version) references public.knowledge_case_versions (tenant_id, case_id, version)
+  match simple on update no action on delete no action
+);
+
+create table public.knowledge_case_versions (
+  id uuid primary key not null default gen_random_uuid(),
+  tenant_id uuid not null,
+  case_id uuid not null,
+  version integer not null,
+  content jsonb not null,
+  document_revision_id uuid,
+  created_at timestamp with time zone not null default now(),
+  foreign key (tenant_id, case_id) references public.knowledge_cases (tenant_id, id)
+  match simple on update no action on delete no action,
+  foreign key (tenant_id, document_revision_id) references public.document_revisions (tenant_id, id)
+  match simple on update no action on delete no action
+);
+create unique index knowledge_case_versions_tenant_id_id_key on knowledge_case_versions using btree (tenant_id, id);
+create unique index knowledge_case_versions_tenant_id_case_id_version_key on knowledge_case_versions using btree (tenant_id, case_id, version);
+
+create table public.knowledge_cases (
+  id uuid primary key not null default gen_random_uuid(),
+  tenant_id uuid not null,
+  group_id uuid not null,
+  knowledge_base_id uuid not null,
+  dedupe_key text not null,
+  version integer not null default 1,
+  status text not null,
+  origin text not null,
+  source jsonb not null,
+  available_turns jsonb not null,
+  document_id uuid,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  foreign key (tenant_id, document_id) references public.documents (tenant_id, id)
+  match simple on update no action on delete no action,
+  foreign key (tenant_id, knowledge_base_id) references public.knowledge_bases (tenant_id, id)
+  match simple on update no action on delete no action
+);
+create unique index knowledge_cases_tenant_id_id_key on knowledge_cases using btree (tenant_id, id);
+create unique index knowledge_cases_tenant_id_knowledge_base_id_dedupe_key_key on knowledge_cases using btree (tenant_id, knowledge_base_id, dedupe_key);
+create index knowledge_cases_catalog_idx on knowledge_cases using btree (tenant_id, knowledge_base_id, status, updated_at);
+
+create table public.knowledge_cleanup_jobs (
+  id uuid primary key not null default gen_random_uuid(),
+  tenant_id uuid not null,
+  knowledge_base_id uuid not null,
+  document_id uuid not null,
+  revision_id uuid not null,
+  status text not null default 'queued'::text,
+  stage text not null default 'chunks'::text,
+  storage_key text,
+  staged_path text,
+  attempts integer not null default 0,
+  lease_token uuid,
+  lease_until timestamp with time zone,
+  next_attempt_at timestamp with time zone not null default now(),
+  error_code text,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  foreign key (document_id) references public.documents (id)
+  match simple on update no action on delete no action,
+  foreign key (knowledge_base_id) references public.knowledge_bases (id)
+  match simple on update no action on delete no action,
+  foreign key (revision_id) references public.document_revisions (id)
+  match simple on update no action on delete no action,
+  foreign key (tenant_id) references public.tenants (id)
+  match simple on update no action on delete no action
+);
+create unique index knowledge_cleanup_jobs_tenant_id_revision_id_key on knowledge_cleanup_jobs using btree (tenant_id, revision_id);
+create index knowledge_cleanup_claim_idx on knowledge_cleanup_jobs using btree (tenant_id, status, next_attempt_at, lease_until);
 
 create table public.notification_deliveries (
   id uuid primary key not null default gen_random_uuid(),
@@ -1003,6 +1170,7 @@ create table public.rag_runs (
   completed_at timestamp with time zone,
   embedding_binding_revision_id uuid,
   chat_binding_revision_id uuid,
+  citation_snapshots jsonb not null default '[]'::jsonb,
   foreign key (tenant_id, chat_binding_revision_id) references public.ai_capability_binding_revisions (tenant_id, id)
   match simple on update no action on delete no action,
   foreign key (conversation_id) references public.rag_conversations (id)

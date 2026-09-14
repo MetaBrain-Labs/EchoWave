@@ -44,14 +44,20 @@ function configureAudioMode(): Promise<void> {
   return audioModeTask;
 }
 
-function sourceFor(audioFileId: string | undefined): AudioSource {
-  return audioFileId ? { uri: audioPlaybackUrl(audioFileId) } : null;
+function sourceFor(
+  audioFileId: string | undefined,
+  sourceUrlFor: (id: string) => string,
+): AudioSource {
+  return audioFileId ? { uri: sourceUrlFor(audioFileId) } : null;
 }
 
 /** 创建一个离开页面即停止的音频播放控制器。 */
-export function useAudioPlayback(initialAudioFileId?: string) {
+export function useAudioPlayback(
+  initialAudioFileId?: string,
+  sourceUrlFor: (id: string) => string = audioPlaybackUrl,
+) {
   const { t } = useAppLanguage();
-  const player = useAudioPlayer(sourceFor(initialAudioFileId), {
+  const player = useAudioPlayer(sourceFor(initialAudioFileId, sourceUrlFor), {
     crossOrigin: 'anonymous',
     updateInterval: 100,
   });
@@ -81,8 +87,8 @@ export function useAudioPlayback(initialAudioFileId?: string) {
     setActiveRange(undefined);
     setOperationError(undefined);
     player.pause();
-    player.replace(sourceFor(initialAudioFileId));
-  }, [initialAudioFileId, player]);
+    player.replace(sourceFor(initialAudioFileId, sourceUrlFor));
+  }, [initialAudioFileId, player, sourceUrlFor]);
 
   const activeRangeEnded = Boolean(
     activeRange && (status.didJustFinish || status.currentTime + 0.02 >= activeRange.endSeconds),
@@ -168,7 +174,7 @@ export function useAudioPlayback(initialAudioFileId?: string) {
       if (audioFileId === activeAudioFileId) {
         if (status.error) {
           player.pause();
-          player.replace(sourceFor(audioFileId));
+          player.replace(sourceFor(audioFileId, sourceUrlFor));
           player.play();
         } else if (status.playing) {
           player.pause();
@@ -179,12 +185,12 @@ export function useAudioPlayback(initialAudioFileId?: string) {
         return;
       }
       player.pause();
-      player.replace(sourceFor(audioFileId));
+      player.replace(sourceFor(audioFileId, sourceUrlFor));
       sourceIdRef.current = audioFileId;
       setActiveAudioFileId(audioFileId);
       player.play();
     },
-    [activeAudioFileId, player, status.didJustFinish, status.error, status.playing],
+    [activeAudioFileId, player, sourceUrlFor, status.didJustFinish, status.error, status.playing],
   );
 
   const retry = useCallback(
@@ -192,10 +198,10 @@ export function useAudioPlayback(initialAudioFileId?: string) {
       if (!activeAudioFileId) return;
       setOperationError(undefined);
       player.pause();
-      player.replace(sourceFor(activeAudioFileId));
+      player.replace(sourceFor(activeAudioFileId, sourceUrlFor));
       if (autoplay) player.play();
     },
-    [activeAudioFileId, player],
+    [activeAudioFileId, player, sourceUrlFor],
   );
 
   const setPlaybackRate = useCallback(
@@ -208,6 +214,7 @@ export function useAudioPlayback(initialAudioFileId?: string) {
   return useMemo(
     () => ({
       activeAudioFileId,
+      didJustFinish: status.didJustFinish,
       activeRangeKey: activeRangeEnded ? undefined : activeRange?.key,
       currentTime: status.currentTime,
       duration: status.duration,
@@ -235,6 +242,7 @@ export function useAudioPlayback(initialAudioFileId?: string) {
       seekTo,
       setPlaybackRate,
       status.currentTime,
+      status.didJustFinish,
       status.duration,
       status.error,
       status.isBuffering,

@@ -97,10 +97,12 @@ export function GroupSettingsScreen({
   groupId,
   onArchived,
   onBack,
+  onOpenCollection,
 }: {
   groupId: string;
   onArchived: () => void;
   onBack: () => void;
+  onOpenCollection?: () => void;
 }) {
   const { formatNumber, t } = useAppLanguage();
   const tabs: { key: SettingsTab; label: string }[] = [
@@ -329,6 +331,15 @@ export function GroupSettingsScreen({
           testID="group-settings-scroll"
         >
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {onOpenCollection ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={onOpenCollection}
+              style={styles.secondaryButton}
+            >
+              <Text style={styles.secondaryButtonText}>{t('collection.rules')}</Text>
+            </Pressable>
+          ) : null}
           {activeTab === 'basic' ? (
             <>
               <Text style={styles.sectionTitle}>{t('groupSettings.groupInfo')}</Text>

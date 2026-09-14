@@ -88,6 +88,7 @@ export type KnowledgeService = {
   retryDocument(
     knowledgeBaseId: string,
     documentId: string,
+    expectedCase?: { id: string; version: number },
   ): ReturnType<IngestionRepository['retryDocument']>;
   listChunks(
     knowledgeBaseId: string,
@@ -189,8 +190,12 @@ export class DefaultKnowledgeService implements KnowledgeService {
       await this.repository.getCitationSource(knowledgeBaseId, documentId, revisionId),
     );
   }
-  retryDocument(knowledgeBaseId: string, documentId: string) {
-    return this.ingestionRepository.retryDocument(knowledgeBaseId, documentId);
+  retryDocument(
+    knowledgeBaseId: string,
+    documentId: string,
+    expectedCase?: { id: string; version: number },
+  ) {
+    return this.ingestionRepository.retryDocument(knowledgeBaseId, documentId, expectedCase);
   }
   listChunks(knowledgeBaseId: string, documentId: string) {
     return this.repository.listChunks(knowledgeBaseId, documentId);
