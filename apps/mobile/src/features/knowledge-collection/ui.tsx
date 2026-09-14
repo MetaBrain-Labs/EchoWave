@@ -89,11 +89,13 @@ export function CollectionButton({
   onPress,
   disabled = false,
   selected = false,
+  icon,
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
   selected?: boolean;
+  icon?: keyof typeof Ionicons.glyphMap;
 }) {
   return (
     <Pressable
@@ -102,8 +104,20 @@ export function CollectionButton({
       accessibilityState={{ selected, disabled }}
       disabled={disabled}
       onPress={onPress}
-      style={[styles.button, selected && styles.selected, disabled && styles.disabled]}
+      style={[
+        styles.button,
+        styles.centeredButton,
+        selected && styles.selected,
+        disabled && styles.disabled,
+      ]}
     >
+      {icon ? (
+        <Ionicons
+          name={icon}
+          size={20}
+          color={disabled ? textColors.secondary : textColors.primary}
+        />
+      ) : null}
       <Text
         style={[
           styles.buttonText,
@@ -122,7 +136,9 @@ export function CollectionNavigationRow({
   description,
   icon,
   onPress,
+  uniformHeight = false,
 }: {
+  uniformHeight?: boolean;
   title: string;
   description?: string;
   icon?: keyof typeof Ionicons.glyphMap;
@@ -133,7 +149,11 @@ export function CollectionNavigationRow({
       accessibilityRole="button"
       accessibilityLabel={title}
       onPress={onPress}
-      style={({ pressed }) => [styles.navigationRow, pressed && styles.navigationPressed]}
+      style={({ pressed }) => [
+        styles.navigationRow,
+        uniformHeight && styles.operationCard,
+        pressed && styles.navigationPressed,
+      ]}
     >
       {icon ? (
         <View style={styles.navigationIcon}>
@@ -142,7 +162,11 @@ export function CollectionNavigationRow({
       ) : null}
       <View style={styles.navigationCopy}>
         <Text style={styles.navigationTitle}>{title}</Text>
-        {description ? <Text style={styles.hint}>{description}</Text> : null}
+        {description ? (
+          <Text numberOfLines={uniformHeight ? 2 : undefined} style={styles.hint}>
+            {description}
+          </Text>
+        ) : null}
       </View>
       <Ionicons name="chevron-forward" size={20} color={textColors.secondary} />
     </Pressable>
@@ -152,6 +176,7 @@ export function CollectionNavigationRow({
 export function CollectionAudioControl({
   label,
   range,
+  compactLabel,
   playing,
   disabled,
   onPress,
@@ -161,6 +186,7 @@ export function CollectionAudioControl({
 }: {
   label: string;
   range?: string;
+  compactLabel?: string;
   playing: boolean;
   disabled?: boolean;
   onPress: () => void;
@@ -177,14 +203,16 @@ export function CollectionAudioControl({
         accessibilityState={{ disabled, selected: playing }}
         disabled={disabled}
         onPress={onPress}
-        style={styles.audioRow}
+        style={[styles.audioRow, !!compactLabel && styles.audioSegment]}
       >
         <Ionicons
           name={playing ? 'pause' : 'play'}
           size={20}
           color={disabled ? textColors.tertiary : textColors.primary}
         />
-        <Text style={[styles.text, disabled && styles.disabledText]}>{range ?? label}</Text>
+        <Text style={[styles.text, disabled && styles.disabledText]}>
+          {range ?? compactLabel ?? label}
+        </Text>
       </Pressable>
       {loading ? <Text style={styles.hint}>{t('collection.loadingAudio')}</Text> : null}
       {error ? (
@@ -242,7 +270,7 @@ export function CollectionCheck({
       accessibilityLabel={label}
       accessibilityState={{ checked }}
       onPress={onPress}
-      style={styles.button}
+      style={[styles.button, checked && styles.selected]}
     >
       <Text style={styles.text}>
         {checked ? '☑ ' : '☐ '}
@@ -426,6 +454,17 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
+  operationCard: { height: 88 },
+  audioToolbar: {
+    flexDirection: 'row',
+    backgroundColor: colors.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+  },
+  audioSegmentContainer: { flex: 1 },
+  audioDivider: { borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: colors.divider },
+  audioSegment: { justifyContent: 'center', gap: spacing.xs, paddingHorizontal: spacing.xs },
   navigationPressed: { backgroundColor: colors.background },
   audioRow: {
     minHeight: 44,
@@ -450,7 +489,7 @@ export const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.background,
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -498,16 +537,17 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: spacing.base,
     paddingVertical: spacing.sm,
-    backgroundColor: colors.background,
+    backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.divider,
     borderRadius: radii.default,
   },
+  centeredButton: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   buttonText: { ...typography.body, color: textColors.primary, fontFamily: fontFamilies.sans },
-  selected: { borderColor: textColors.primary, backgroundColor: colors.card },
+  selected: { borderColor: colors.success, backgroundColor: colors.successSurface },
   disabled: { backgroundColor: colors.divider },
   disabledText: { color: textColors.secondary },
-  selectedText: { fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
+  selectedText: { fontFamily: fontFamilies.sans, fontWeight: 'normal' },
   displayTitle: {
     ...typography.contentDisplay,
     color: textColors.primary,

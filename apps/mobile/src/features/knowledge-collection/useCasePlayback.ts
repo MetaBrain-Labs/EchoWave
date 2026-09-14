@@ -39,20 +39,23 @@ export function useCasePlayback(item: KnowledgeCase | undefined) {
         !!item.media.find((media) => media.segmentId === turn.segmentId && media.status === 'ready')
           ?.url;
   /** 不对未知角色编造配对；连续回听只使用当前筛选的真实轮次。 */
-  const start = useCallback((turn: KnowledgeCase['content']['turns'][number]) => {
-    setTurnId(turn.segmentId);
-    armed.current = undefined;
-    if (item?.status === 'candidate')
-      void playback.playRange({
-        key: turn.segmentId,
-        startSeconds: turn.startMs / 1000,
-        endSeconds: turn.endMs / 1000,
-      });
-    else {
-      const url = item?.media.find((media) => media.segmentId === turn.segmentId)?.url;
-      if (url) playback.toggleAudio(url);
-    }
-  }, [item, playback]);
+  const start = useCallback(
+    (turn: KnowledgeCase['content']['turns'][number]) => {
+      setTurnId(turn.segmentId);
+      armed.current = undefined;
+      if (item?.status === 'candidate')
+        void playback.playRange({
+          key: turn.segmentId,
+          startSeconds: turn.startMs / 1000,
+          endSeconds: turn.endMs / 1000,
+        });
+      else {
+        const url = item?.media.find((media) => media.segmentId === turn.segmentId)?.url;
+        if (url) playback.toggleAudio(url);
+      }
+    },
+    [item, playback],
+  );
   useEffect(() => {
     if (playback.error) {
       pending.current = [];

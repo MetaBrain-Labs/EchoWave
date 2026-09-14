@@ -60,8 +60,10 @@ export function ActionSheet({
           style={StyleSheet.absoluteFill}
         />
         <SafeAreaView edges={['bottom']} style={styles.sheet}>
-          <Text style={styles.title}>{title}</Text>
-          <ScrollView keyboardShouldPersistTaps="handled">
+          <Text accessibilityRole="header" numberOfLines={1} style={styles.title}>
+            {title}
+          </Text>
+          <ScrollView keyboardShouldPersistTaps="handled" style={styles.actions}>
             {message ? (
               <Text accessibilityRole="alert" style={styles.message}>
                 {message}
@@ -75,15 +77,14 @@ export function ActionSheet({
                 accessibilityState={{ disabled: busy || action.disabled }}
                 disabled={busy || action.disabled}
                 onPress={action.onPress}
-                style={styles.action}
+                style={({ pressed }) => [styles.action, pressed && styles.pressed]}
               >
                 {action.icon ? (
-                  <Ionicons name={action.icon} size={20} color={textColors.secondary} />
+                  <Ionicons name={action.icon} size={22} color={textColors.secondary} />
                 ) : null}
                 <Text style={[styles.text, (busy || action.disabled) && styles.secondary]}>
                   {action.label}
                 </Text>
-                <Ionicons name="chevron-forward" size={20} color={textColors.secondary} />
               </Pressable>
             ))}
           </ScrollView>
@@ -92,9 +93,9 @@ export function ActionSheet({
             disabled={busy}
             accessibilityLabel={closeLabel}
             onPress={onClose}
-            style={styles.action}
+            style={styles.cancel}
           >
-            <Text style={styles.text}>{closeLabel}</Text>
+            <Text style={styles.cancelText}>{closeLabel}</Text>
           </Pressable>
         </SafeAreaView>
       </View>
@@ -102,7 +103,7 @@ export function ActionSheet({
   );
 }
 const styles = StyleSheet.create({
-  overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.24)' },
+  overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(16, 24, 40, 0.28)' },
   sheet: {
     width: '100%',
     maxWidth: 480,
@@ -111,25 +112,35 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderTopLeftRadius: radii.default,
     borderTopRightRadius: radii.default,
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
   },
+  actions: { flexGrow: 0 },
+  pressed: { backgroundColor: colors.background },
   title: {
     ...typography.heading2,
     fontFamily: fontFamilies.sansBold,
     fontWeight: 'bold',
     color: textColors.primary,
-    paddingBottom: spacing.md,
+    paddingBottom: spacing.xs,
   },
   action: {
-    minHeight: 48,
+    minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderColor: colors.divider,
-    paddingVertical: spacing.sm,
   },
   text: { ...typography.body, fontFamily: fontFamilies.sans, color: textColors.primary, flex: 1 },
+  cancel: { alignItems: 'center', minHeight: 48, paddingTop: spacing.md },
+  cancelText: {
+    ...typography.body,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
   secondary: { color: textColors.secondary },
   message: {
     ...typography.description,

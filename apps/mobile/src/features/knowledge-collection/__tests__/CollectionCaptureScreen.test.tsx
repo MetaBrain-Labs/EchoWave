@@ -7,8 +7,9 @@
  * Notes:
  * - 不调用模型或真实 API。
  */
-import { RefreshControl } from 'react-native';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { usePreventRemove } from 'expo-router/react-navigation';
+import { Alert, RefreshControl } from 'react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { CollectionCapture, KnowledgeBaseSummary } from '@echowave/contracts';
 import { CollectionCaptureScreen } from '../CollectionCaptureScreen';
 import {
@@ -127,4 +128,38 @@ test('failed human correction preserves inputs and original AI judgment on refre
       reason: '人工解释',
     }),
   );
+});
+
+test('manual capture cancel confirms once through the navigation guard', async () => {
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  const dispatch = jest.fn();
+  const onBack = jest.fn(() => {
+    const guard = jest.mocked(usePreventRemove).mock.calls.at(-1)!;
+    if (guard[0]) guard[1]({ data: { action: { type: 'GO_BACK' } } });
+  });
+  try {
+    const screen = render(
+      <CollectionCaptureScreen
+        jobId={id}
+        tagId={id}
+        onBack={onBack}
+        onSaved={jest.fn()}
+        navigation={{ dispatch }}
+      />,
+    );
+    await screen.findByLabelText('案例标题');
+    await waitFor(() => expect(screen.getByRole('button', { name: '取消' })).not.toBeDisabled());
+    fireEvent.press(screen.getByRole('button', { name: '取消' }));
+    expect(alert).toHaveBeenCalledTimes(1);
+    act(() => {
+      alert.mock.calls
+        .at(-1)![2]!
+        .find((button) => button.style === 'destructive')!
+        .onPress?.();
+    });
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith({ type: 'GO_BACK' });
+  } finally {
+    alert.mockRestore();
+  }
 });

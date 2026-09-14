@@ -224,11 +224,29 @@ try {
   );
   published = await repository.getCase(published.id);
   assert.equal(published.publication, 'ready');
-  const beforeReadyRetry = await client.query(`SELECT id,status FROM ${table('collection_tasks')} WHERE kind='projection' AND payload->>'caseId'=$1`,[published.id]);
-  await client.query(`UPDATE ${table('collection_tasks')} SET status='completed' WHERE id=$1`,[beforeReadyRetry.rows[0].id]);
-  await repository.retryCase(published.id,published.version);
-  assert.equal((await client.query(`SELECT status FROM ${table('collection_tasks')} WHERE id=$1`,[beforeReadyRetry.rows[0].id])).rows[0].status,'completed');
-  await assert.rejects(ingestion.retryDocument(library,published.documentId,{id:published.id,version:published.version-1}),/版本/);
+  const beforeReadyRetry = await client.query(
+    `SELECT id,status FROM ${table('collection_tasks')} WHERE kind='projection' AND payload->>'caseId'=$1`,
+    [published.id],
+  );
+  await client.query(`UPDATE ${table('collection_tasks')} SET status='completed' WHERE id=$1`, [
+    beforeReadyRetry.rows[0].id,
+  ]);
+  await repository.retryCase(published.id, published.version);
+  assert.equal(
+    (
+      await client.query(`SELECT status FROM ${table('collection_tasks')} WHERE id=$1`, [
+        beforeReadyRetry.rows[0].id,
+      ])
+    ).rows[0].status,
+    'completed',
+  );
+  await assert.rejects(
+    ingestion.retryDocument(library, published.documentId, {
+      id: published.id,
+      version: published.version - 1,
+    }),
+    /版本/,
+  );
   const active = (await knowledge.getDocument(library, published.documentId)).activeRevisionId;
   published = await repository.updateCase(published.id, published.version, {
     ...published.content,

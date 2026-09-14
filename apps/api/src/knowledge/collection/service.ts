@@ -120,7 +120,8 @@ export class CollectionService {
   ) {
     if (action === 'retry') {
       const current = await this.repository.getCase(id);
-      if(current.version!==version||current.status!=='published')throw new RagRepositoryError('CONFLICT','案例版本已变化。');
+      if (current.version !== version || current.status !== 'published')
+        throw new RagRepositoryError('CONFLICT', '案例版本已变化。');
       for (const turn of current.media.filter((m) => m.status === 'ready')) {
         try {
           await this.playback(id, version, turn.segmentId);
@@ -128,7 +129,7 @@ export class CollectionService {
           await this.repository.invalidateMedia(id, version, turn.segmentId);
         }
       }
-      await this.repository.retryCase(id,version);
+      await this.repository.retryCase(id, version);
       if (current.publication === 'failed' && current.documentId && current.publicationRetryable) {
         await this.knowledge.retryDocument(current.knowledgeBaseId, current.documentId, {
           id,

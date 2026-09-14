@@ -9,7 +9,7 @@
  */
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { usePreventRemove } from 'expo-router/react-navigation';
-import { Alert, RefreshControl } from 'react-native';
+import { Alert, RefreshControl, StyleSheet } from 'react-native';
 import type { CollectionRule } from '@echowave/contracts';
 import { CollectionRulesScreen } from '../CollectionRulesScreen';
 import {
@@ -189,6 +189,15 @@ test('home shows server group and operation cards before existing rules', async 
     />,
   );
   await screen.findByText('服务器当前分组');
+  const cards = ['切换分组', '新增收集规则', '历史补收'].map((name) =>
+    screen.getByRole('button', { name }),
+  );
+  expect(cards.map((card) => StyleSheet.flatten(card.props.style).height)).toEqual([88, 88, 88]);
+  let iconContainer = screen.getByTestId('icon-swap-horizontal-outline').parent;
+  while (iconContainer && !StyleSheet.flatten(iconContainer.props.style)?.backgroundColor) {
+    iconContainer = iconContainer.parent;
+  }
+  expect(StyleSheet.flatten(iconContainer?.props.style).backgroundColor).toBe('transparent');
   expect(screen.queryByLabelText('规则名称')).toBeNull();
   fireEvent.press(screen.getByRole('button', { name: '新增收集规则' }));
   expect(operation).toHaveBeenLastCalledWith('rule');
@@ -198,4 +207,40 @@ test('home shows server group and operation cards before existing rules', async 
   expect(operation).toHaveBeenLastCalledWith('rule', rule.id);
   fireEvent.press(screen.getByRole('button', { name: '切换分组' }));
   expect(switchGroup).toHaveBeenCalledTimes(1);
+});
+
+test('independent rule editor back uses navigation confirmation only once', async () => {
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  const dispatch = jest.fn();
+  const onBack = jest.fn(() => {
+    const guard = jest.mocked(usePreventRemove).mock.calls.at(-1)!;
+    if (guard[0]) guard[1]({ data: { action: { type: 'GO_BACK' } } });
+  });
+  try {
+    const screen = render(
+      <CollectionRulesScreen
+        groupId={groupId}
+        view="rule"
+        onOperation={jest.fn()}
+        onBack={onBack}
+        navigation={{ dispatch }}
+      />,
+    );
+    await screen.findByLabelText('规则名称');
+    await waitFor(() => expect(screen.queryByLabelText('正在加载收集与案例…')).toBeNull());
+    await act(async () => {});
+    fireEvent.changeText(screen.getByLabelText('规则名称'), '未保存的规则');
+    fireEvent.press(screen.getByRole('button', { name: '返回' }));
+    expect(alert).toHaveBeenCalledTimes(1);
+    act(() => {
+      alert.mock.calls
+        .at(-1)![2]!
+        .find((button) => button.style === 'destructive')!
+        .onPress?.();
+    });
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith({ type: 'GO_BACK' });
+  } finally {
+    alert.mockRestore();
+  }
 });

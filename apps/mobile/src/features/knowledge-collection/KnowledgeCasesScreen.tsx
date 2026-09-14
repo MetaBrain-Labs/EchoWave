@@ -70,7 +70,9 @@ export function KnowledgeCasesScreen({
       );
       await load();
       const failures = result.items.filter((v) => !v.success);
-      setSelected(current => new Set([...current].filter(id => failures.some(item => item.id === id))));
+      setSelected(
+        (current) => new Set([...current].filter((id) => failures.some((item) => item.id === id))),
+      );
       if (failures.length) setError(t('collection.partialFailure', { count: failures.length }));
     } catch {
       setError(t('collection.saveFailed'));
@@ -176,7 +178,11 @@ export function KnowledgeCasesScreen({
             <Text style={styles.text} numberOfLines={3}>
               {item.content.reason}
             </Text>
-            <CollectionButton label={t('collection.openCase')} onPress={() => onOpen(item.id)} />
+            <CollectionButton
+              icon="chatbubbles-outline"
+              label={t('collection.openCase')}
+              onPress={() => onOpen(item.id)}
+            />
           </View>
         ))}
       {visible.length > 20 ? (

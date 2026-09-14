@@ -9,7 +9,8 @@
  * Notes:
  * - 网络由替身控制，不进行设备录音。
  */
-import { RefreshControl } from 'react-native';
+import { usePreventRemove } from 'expo-router/react-navigation';
+import { Alert, BackHandler, RefreshControl, StyleSheet } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { KnowledgeCase } from '@echowave/contracts';
 import { KnowledgeCaseScreen } from '../KnowledgeCaseScreen';
@@ -128,6 +129,14 @@ test('formal dialogue plays independent customer then sales audio in order, and 
   const screen = render(<KnowledgeCaseScreen caseId={id} onBack={jest.fn()} />);
   await screen.findByText('价格异议');
   fireEvent.press(screen.getByRole('button', { name: '连续回听对话' }));
+  const toolbar = screen.getByTestId('case-audio-toolbar');
+  expect(toolbar).toHaveStyle({ flexDirection: 'row' });
+  const dividers = toolbar.findAll(
+    (node) =>
+      typeof node.type === 'string' &&
+      StyleSheet.flatten(node.props.style)?.borderLeftWidth === StyleSheet.hairlineWidth,
+  );
+  expect(dividers).toHaveLength(2);
   const player = mockAudioPlayers[0];
   await waitFor(() =>
     expect(player.source).toEqual({ uri: expect.stringContaining(turns[0].segmentId) }),
@@ -171,11 +180,54 @@ test('candidate turn control shows source range and toggles its own pause', asyn
 test('candidate playback retry seeks back to its evidence rather than playing the whole source', async () => {
   const screen = render(<KnowledgeCaseScreen caseId={id} onBack={jest.fn()} />);
   await screen.findByText('00:01–00:02');
-  fireEvent.press(screen.getAllByRole('button', {name:'回听原音频片段'})[0]);
+  fireEvent.press(screen.getAllByRole('button', { name: '回听原音频片段' })[0]);
   const player = mockAudioPlayers[0];
   await waitFor(() => expect(player.seekTo).toHaveBeenCalledWith(1));
-  await act(async () => player.update({error:'failed',playing:false,currentTime:1.5}));
-  fireEvent.press(screen.getByRole('button', {name:'重试播放'}));
+  await act(async () => player.update({ error: 'failed', playing: false, currentTime: 1.5 }));
+  fireEvent.press(screen.getByRole('button', { name: '重试播放' }));
   await waitFor(() => expect(player.seekTo).toHaveBeenCalledTimes(2));
   expect(player.seekTo).toHaveBeenLastCalledWith(1);
 });
+
+test.each(['header', 'hardware'])(
+  'case editor %s exit confirms once before dispatching navigation',
+  async (entry) => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const handlers = jest.spyOn(BackHandler, 'addEventListener');
+    const dispatch = jest.fn();
+    const onBack = jest.fn(() => {
+      const guard = jest.mocked(usePreventRemove).mock.calls.at(-1)!;
+      if (guard[0]) guard[1]({ data: { action: { type: 'GO_BACK' } } });
+    });
+    try {
+      const screen = render(
+        <KnowledgeCaseScreen
+          caseId={id}
+          initiallyEditing
+          navigation={{ dispatch }}
+          onBack={onBack}
+        />,
+      );
+      await screen.findByLabelText('评价与理由');
+      fireEvent.changeText(screen.getByLabelText('评价与理由'), '仍未保存的编辑');
+      if (entry === 'header') fireEvent.press(screen.getByRole('button', { name: '返回' }));
+      else
+        act(() => {
+          handlers.mock.calls.at(-1)![1]({ type: 'hardwareBackPress', timeStamp: 0 });
+        });
+      expect(alert).toHaveBeenCalledTimes(1);
+      act(() => {
+        alert.mock.calls
+          .at(-1)![2]!
+          .find((button) => button.text === '放弃编辑')!
+          .onPress?.();
+      });
+      expect(alert).toHaveBeenCalledTimes(1);
+      expect(onBack).toHaveBeenCalledTimes(1);
+      expect(dispatch).toHaveBeenCalledWith({ type: 'GO_BACK' });
+    } finally {
+      alert.mockRestore();
+      handlers.mockRestore();
+    }
+  },
+);

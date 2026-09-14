@@ -18,17 +18,16 @@ import {
   getKnowledgeCase,
   updateKnowledgeCase,
 } from '@/shared/api/collectionApi';
+import { FixedActionButton } from '@/shared/ui/FixedActionButton';
 import { ActionSheet } from '@/shared/ui/ActionSheet';
-import { usePreventRemove, type NavigationProp, type ParamListBase } from 'expo-router/react-navigation';
+import {
+  usePreventRemove,
+  type NavigationProp,
+  type ParamListBase,
+} from 'expo-router/react-navigation';
 import { useCasePlayback, caseTime } from './useCasePlayback';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
-import {
-  CaseContentEditor,
-  CollectionAudioControl,
-  CollectionButton,
-  CollectionLayout,
-  styles,
-} from './ui';
+import { CaseContentEditor, CollectionAudioControl, CollectionLayout, styles } from './ui';
 
 /** 一个有原声来源、明确角色和独立发布状态的案例。 */
 export function KnowledgeCaseScreen({
@@ -131,6 +130,11 @@ export function KnowledgeCaseScreen({
     ]);
   const back = () => {
     if (busy) return;
+    // 导航已提供退出保护时只请求返回，避免重复确认。
+    if (navigation) {
+      onBack();
+      return;
+    }
     if (editing)
       Alert.alert(t('collection.unsaved'), t('collection.unsavedHint'), [
         { text: t('collection.cancel'), style: 'cancel' },
@@ -142,6 +146,10 @@ export function KnowledgeCaseScreen({
     if (!editing) return;
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
       if (busy) return true;
+      if (navigation) {
+        onBack();
+        return true;
+      }
       Alert.alert(t('collection.unsaved'), t('collection.unsavedHint'), [
         { text: t('collection.cancel'), style: 'cancel' },
         { text: t('collection.discard'), style: 'destructive', onPress: onBack },
@@ -149,7 +157,7 @@ export function KnowledgeCaseScreen({
       return true;
     });
     return () => subscription.remove();
-  }, [editing, onBack, t, busy]);
+  }, [editing, onBack, t, busy, navigation]);
   usePreventRemove(!!navigation && editing, ({ data }) => {
     if (busy) return;
     Alert.alert(t('collection.unsaved'), t('collection.unsavedHint'), [
@@ -177,18 +185,45 @@ export function KnowledgeCaseScreen({
   };
   const retryable =
     item?.status === 'published' &&
-    (!!playback.error || (item.publication === 'failed' && item.publicationRetryable !== false) ||
+    (!!playback.error ||
+      (item.publication === 'failed' && item.publicationRetryable !== false) ||
       item.media.some((media) => ['failed', 'missing'].includes(media.status)));
   const actions = [
     ...(['candidate', 'published'].includes(item?.status ?? '')
       ? [{ label: t('collection.edit'), icon: 'create-outline' as const, onPress: edit }]
       : []),
     ...(item?.status === 'published'
-      ? [{ label: t('collection.withdraw'), onPress: () => confirmAction('withdraw') }]
+      ? [
+          {
+            label: t('collection.withdraw'),
+            icon: 'arrow-undo-outline' as const,
+            onPress: () => confirmAction('withdraw'),
+          },
+        ]
       : []),
-    ...(retryable ? [{ label: t('collection.retry'), onPress: () => void action('retry') }] : []),
-    { label: t('collection.delete'), onPress: () => confirmAction('delete') },
-    ...(error ? [{ label: t('collection.readServerState'), onPress: () => void load() }] : []),
+    ...(retryable
+      ? [
+          {
+            label: t('collection.retry'),
+            icon: 'refresh-outline' as const,
+            onPress: () => void action('retry'),
+          },
+        ]
+      : []),
+    {
+      label: t('collection.delete'),
+      icon: 'trash-outline' as const,
+      onPress: () => confirmAction('delete'),
+    },
+    ...(error
+      ? [
+          {
+            label: t('collection.readServerState'),
+            icon: 'sync-outline' as const,
+            onPress: () => void load(),
+          },
+        ]
+      : []),
   ];
   return (
     <CollectionLayout
@@ -204,24 +239,52 @@ export function KnowledgeCaseScreen({
           editing ? (
             <>
               <View style={styles.footerAction}>
-                <CollectionButton label={t('collection.cancel')} disabled={busy} onPress={cancel} />
+                <FixedActionButton
+                  icon="close-outline"
+                  label={t('collection.cancel')}
+                  disabled={busy}
+                  onPress={cancel}
+                />
               </View>
               <View style={styles.footerAction}>
-                <CollectionButton label={t('collection.saveCase')} disabled={busy} onPress={() => void save()} />
+                <FixedActionButton
+                  emphasized
+                  icon="checkmark-outline"
+                  label={t('collection.saveCase')}
+                  disabled={busy}
+                  onPress={() => void save()}
+                />
               </View>
             </>
           ) : item.status === 'candidate' ? (
             <>
               <View style={styles.footerAction}>
-                <CollectionButton label={t('collection.reject')} disabled={busy} onPress={() => confirmAction('reject')} />
+                <FixedActionButton
+                  icon="close-circle-outline"
+                  label={t('collection.reject')}
+                  disabled={busy}
+                  onPress={() => confirmAction('reject')}
+                />
               </View>
               <View style={styles.footerAction}>
-                <CollectionButton label={t('collection.publish')} disabled={busy} onPress={() => void action('publish')} />
+                <FixedActionButton
+                  emphasized
+                  icon="checkmark-circle-outline"
+                  label={t('collection.publish')}
+                  disabled={busy}
+                  onPress={() => void action('publish')}
+                />
               </View>
             </>
           ) : item.status === 'published' ? (
             <View style={styles.footerAction}>
-              <CollectionButton label={t('collection.edit')} disabled={busy} onPress={edit} />
+              <FixedActionButton
+                emphasized
+                icon="create-outline"
+                label={t('collection.edit')}
+                disabled={busy}
+                onPress={edit}
+              />
             </View>
           ) : undefined
         ) : undefined
@@ -314,32 +377,40 @@ export function KnowledgeCaseScreen({
                   </>
                 ) : null}
               </View>
-              <View style={styles.card}>
-                <View style={styles.row}>
-                  {(['all', 'customer', 'sales'] as const).map((role) => {
-                    const turns = item.content.turns.filter((turn) => role === 'all' || turn.role === role);
-                    const label = t(
-                      role === 'all'
-                        ? 'collection.playAll'
-                        : role === 'customer'
-                          ? 'collection.playCustomer'
-                          : 'collection.playSales',
-                    );
-                    return (
+              <View testID="case-audio-toolbar" style={styles.audioToolbar}>
+                {(['all', 'customer', 'sales'] as const).map((role) => {
+                  const turns = item.content.turns.filter(
+                    (turn) => role === 'all' || turn.role === role,
+                  );
+                  const label = t(
+                    role === 'all'
+                      ? 'collection.playAll'
+                      : role === 'customer'
+                        ? 'collection.playCustomer'
+                        : 'collection.playSales',
+                  );
+                  return (
+                    <View
+                      key={role}
+                      style={[styles.audioSegmentContainer, role !== 'all' && styles.audioDivider]}
+                    >
                       <CollectionAudioControl
-                        key={role}
                         label={label}
+                        compactLabel={t(
+                          role === 'all' ? 'collection.dialogue' : `collection.${role}`,
+                        )}
                         playing={audio.control === role && playback.isPlaying}
                         disabled={!turns.length || turns.some((turn) => !audio.available(turn))}
                         onPress={() => audio.toggle(role, turns)}
                       />
-                    );
-                  })}
-                </View>
+                    </View>
+                  );
+                })}
               </View>
               {item.content.turns.map((turn) => {
                 const media = item.media.find((v) => v.segmentId === turn.segmentId);
-                const active = audio.turnId === turn.segmentId ||
+                const active =
+                  audio.turnId === turn.segmentId ||
                   (!audio.turnId && turn.segmentId === item.content.turns[0]?.segmentId);
                 return (
                   <View key={turn.segmentId} style={styles.card}>
@@ -353,7 +424,11 @@ export function KnowledgeCaseScreen({
                     {media?.message ? <Text style={styles.hint}>{media.message}</Text> : null}
                     {['candidate', 'published'].includes(item.status) ? (
                       <CollectionAudioControl
-                        label={t(item.status === 'candidate' ? 'collection.playSource' : 'collection.playTurn')}
+                        label={t(
+                          item.status === 'candidate'
+                            ? 'collection.playSource'
+                            : 'collection.playTurn',
+                        )}
                         range={`${caseTime(turn.startMs)}–${caseTime(turn.endMs)}`}
                         playing={audio.turnId === turn.segmentId && playback.isPlaying}
                         disabled={!audio.available(turn)}

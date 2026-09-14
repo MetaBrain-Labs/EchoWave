@@ -18,11 +18,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type {
-  CollectionRule,
-  GroupSummary,
-  KnowledgeDocument,
-} from '@echowave/contracts';
+import type { CollectionRule, GroupSummary, KnowledgeDocument } from '@echowave/contracts';
 import { getCollectionFolder, organizeCollectionCases } from '@/shared/api/collectionFoldersApi';
 import { listCollectionRules } from '@/shared/api/collectionApi';
 import { listGroups } from '@/shared/api/groupsApi';
@@ -30,6 +26,7 @@ import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
+import { FixedActionButton } from '@/shared/ui/FixedActionButton';
 import { ActionSheet } from '@/shared/ui/ActionSheet';
 import {
   colors,
@@ -134,7 +131,9 @@ export function CollectionFolderScreen({
       });
       await load();
       const failed = result.items.filter((item) => !item.success);
-      setSelected(current => new Set([...current].filter(id => failed.some(item => item.id === id))));
+      setSelected(
+        (current) => new Set([...current].filter((id) => failed.some((item) => item.id === id))),
+      );
       if (failed.length) setError(t('collection.partialFailure', { count: failed.length }));
     } catch {
       setError(t('collection.menuFailure'));
@@ -217,7 +216,7 @@ export function CollectionFolderScreen({
                     setRules([]);
                     setSelected(new Set());
                   }}
-                  style={styles.action}
+                  style={[styles.action, groupId === group.id && styles.selected]}
                 >
                   <Text style={styles.text}>{group.name}</Text>
                 </Pressable>
@@ -229,7 +228,7 @@ export function CollectionFolderScreen({
                 accessibilityRole="radio"
                 accessibilityState={{ checked: ruleId === rule.id }}
                 onPress={() => setRuleId(rule.id)}
-                style={styles.action}
+                style={[styles.action, ruleId === rule.id && styles.selected]}
               >
                 <Text style={styles.text}>{rule.name}</Text>
               </Pressable>
@@ -268,7 +267,7 @@ export function CollectionFolderScreen({
                       return next;
                     })
                   }
-                  style={styles.action}
+                  style={[styles.action, selected.has(item.caseId) && styles.selected]}
                 >
                   <Text style={styles.text}>
                     {selected.has(item.caseId) ? '☑' : '☐'} {item.title}
@@ -306,17 +305,13 @@ export function CollectionFolderScreen({
       </ScrollView>
       {organizing ? (
         <View style={styles.footer}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t('collection.organize')}
+          <FixedActionButton
+            emphasized
+            icon="albums-outline"
+            label={`${t('collection.organize')} (${selected.size})`}
             disabled={busy || !selected.size || !ruleId}
             onPress={() => void organize()}
-            style={styles.action}
-          >
-            <Text style={styles.heading}>
-              {t('collection.organize')} ({selected.size})
-            </Text>
-          </Pressable>
+          />
         </View>
       ) : null}
       {caseMenu ? (
@@ -337,6 +332,7 @@ export function CollectionFolderScreen({
             ? [
                 {
                   label: t('collection.viewRule'),
+                  icon: 'options-outline' as const,
                   onPress: () => {
                     onViewRule(data.folder.groupId!, data.folder.ruleId!);
                     setFolderMenu(false);
@@ -348,6 +344,7 @@ export function CollectionFolderScreen({
             ? [
                 {
                   label: t('collection.organize'),
+                  icon: 'albums-outline' as const,
                   onPress: () => {
                     onOrganize();
                     setFolderMenu(false);
@@ -399,12 +396,14 @@ const styles = StyleSheet.create({
   meta: { ...typography.description, fontFamily: fontFamilies.sans, color: textColors.secondary },
   action: {
     minHeight: 44,
+    backgroundColor: colors.card,
     justifyContent: 'center',
     padding: spacing.sm,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.divider,
     borderRadius: radii.default,
   },
+  selected: { backgroundColor: colors.successSurface, borderColor: colors.success },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   copy: { flex: 1 },
   footer: {
@@ -412,6 +411,9 @@ const styles = StyleSheet.create({
     maxWidth: 480,
     alignSelf: 'center',
     padding: spacing.md,
+    flexDirection: 'row',
+    borderTopColor: colors.divider,
+    borderTopWidth: StyleSheet.hairlineWidth,
     backgroundColor: colors.card,
   },
 });

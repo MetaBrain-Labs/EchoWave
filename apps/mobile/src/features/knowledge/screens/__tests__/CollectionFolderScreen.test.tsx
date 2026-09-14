@@ -22,41 +22,100 @@ jest.mock('@/shared/api/groupsApi');
 jest.mock('../../apiClient');
 const id = '11111111-1111-4111-8111-111111111111';
 const folder = {
-  id, knowledgeBaseId: knowledge.id, kind: 'legacy' as const, name: '历史收集',
-  ruleId: null, groupId: null, caseCount: 1, updatedAt: document.updatedAt,
+  id,
+  knowledgeBaseId: knowledge.id,
+  kind: 'legacy' as const,
+  name: '历史收集',
+  ruleId: null,
+  groupId: null,
+  caseCount: 1,
+  updatedAt: document.updatedAt,
 };
 beforeEach(() => {
   jest.clearAllMocks();
-  jest.mocked(getCollectionFolder).mockResolvedValue({ folder, items: [
-    { caseId: id, documentId: document.id, groupId: groupFixture.id, title: document.title, version: 3 },
-  ] });
+  jest
+    .mocked(getCollectionFolder)
+    .mockResolvedValue({
+      folder,
+      items: [
+        {
+          caseId: id,
+          documentId: document.id,
+          groupId: groupFixture.id,
+          title: document.title,
+          version: 3,
+        },
+      ],
+    });
   jest.mocked(listDocuments).mockResolvedValue({ items: [{ ...document, caseId: id }] });
   jest.mocked(listGroups).mockResolvedValue({ items: [groupFixture] });
-  jest.mocked(listCollectionRules).mockResolvedValue({ items: [{
-    id, groupId: groupFixture.id, version: 1, updatedAt: document.updatedAt, name: '已有收集规则',
-    enabled: true, mode: 'review', knowledgeBaseId: knowledge.id,
-    category: { id: 'strength', name: '优点' },
-    filters: { sources: ['strength'], dataSourceIds: [], customLabels: [], keywords: [], minimumConfidence: null },
-  }] });
+  jest.mocked(listCollectionRules).mockResolvedValue({
+    items: [
+      {
+        id,
+        groupId: groupFixture.id,
+        version: 1,
+        updatedAt: document.updatedAt,
+        name: '已有收集规则',
+        enabled: true,
+        mode: 'review',
+        knowledgeBaseId: knowledge.id,
+        category: { id: 'strength', name: '优点' },
+        filters: {
+          sources: ['strength'],
+          dataSourceIds: [],
+          customLabels: [],
+          keywords: [],
+          minimumConfidence: null,
+        },
+      },
+    ],
+  });
 });
 test('historical organizing sends current versions and retains failed selections', async () => {
-  jest.mocked(organizeCollectionCases).mockResolvedValue({ items: [{ id, success: false, message: '冲突' }] });
-  const screen = render(<CollectionFolderScreen knowledgeId={knowledge.id} folderId={id} organizing
-    onBack={jest.fn()} onOpenCase={jest.fn()} onViewRule={jest.fn()} onOrganize={jest.fn()} />);
+  jest
+    .mocked(organizeCollectionCases)
+    .mockResolvedValue({ items: [{ id, success: false, message: '冲突' }] });
+  const screen = render(
+    <CollectionFolderScreen
+      knowledgeId={knowledge.id}
+      folderId={id}
+      organizing
+      onBack={jest.fn()}
+      onOpenCase={jest.fn()}
+      onViewRule={jest.fn()}
+      onOrganize={jest.fn()}
+    />,
+  );
   fireEvent.press(await screen.findByRole('radio', { name: groupFixture.name }));
   fireEvent.press(await screen.findByRole('radio', { name: '已有收集规则' }));
   fireEvent.press(screen.getByRole('checkbox', { name: `选择案例：${document.title}` }));
-  fireEvent.press(screen.getByRole('button', { name: '整理案例' }));
-  await waitFor(() => expect(organizeCollectionCases).toHaveBeenCalledWith(knowledge.id, id, {
-    ruleId: id, items: [{ id, expectedVersion: 3 }],
-  }));
+  fireEvent.press(screen.getByRole('button', { name: /^整理案例/ }));
+  await waitFor(() =>
+    expect(organizeCollectionCases).toHaveBeenCalledWith(knowledge.id, id, {
+      ruleId: id,
+      items: [{ id, expectedVersion: 3 }],
+    }),
+  );
   await screen.findByText(/未完成/);
-  expect(screen.getByRole('checkbox', { name: `选择案例：${document.title}` }).props.accessibilityState.checked).toBe(true);
+  expect(
+    screen.getByRole('checkbox', { name: `选择案例：${document.title}` }).props.accessibilityState
+      .checked,
+  ).toBe(true);
 });
 test('folder retains incoming document search and document body opens its case', async () => {
   const open = jest.fn();
-  const screen = render(<CollectionFolderScreen knowledgeId={knowledge.id} folderId={id}
-    initialQuery="执行计划" onBack={jest.fn()} onOpenCase={open} onViewRule={jest.fn()} onOrganize={jest.fn()} />);
+  const screen = render(
+    <CollectionFolderScreen
+      knowledgeId={knowledge.id}
+      folderId={id}
+      initialQuery="执行计划"
+      onBack={jest.fn()}
+      onOpenCase={open}
+      onViewRule={jest.fn()}
+      onOrganize={jest.fn()}
+    />,
+  );
   fireEvent.press(await screen.findByLabelText(`打开文件：${document.title}`));
   expect(open).toHaveBeenCalledWith(id);
   expect(screen.getByLabelText('搜索案例或类别').props.value).toBe('执行计划');

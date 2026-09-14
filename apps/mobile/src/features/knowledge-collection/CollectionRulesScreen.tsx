@@ -35,6 +35,7 @@ import {
   saveCollectionRule,
   startCollectionHistory,
 } from '@/shared/api/collectionApi';
+import { FixedActionButton } from '@/shared/ui/FixedActionButton';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import {
   CollectionButton,
@@ -163,34 +164,37 @@ export function CollectionRulesScreen({
     return () => clearInterval(timer);
   }, [groupId, runs, t]);
   /** 新增规则应用入口默认库，已有规则保留服务器目标与版本。 */
-  const edit = useCallback((rule?: CollectionRule) => {
-    setEditing(true);
-    setEditorKey((v) => v + 1);
-    const value = rule
-      ? {
-          name: rule.name,
-          enabled: rule.enabled,
-          mode: rule.mode,
-          category: rule.category,
-          knowledgeBaseId: rule.knowledgeBaseId,
-          filters: rule.filters,
-        }
-      : defaults();
-    setBaseline(
-      JSON.stringify({
-        draft: value,
-        labels: rule?.filters.customLabels.join(', ') ?? '',
-        keywords: rule?.filters.keywords.join(', ') ?? '',
-        confidence: rule?.filters.minimumConfidence?.toString() ?? '',
-      }),
-    );
-    setPrevious(rule);
-    setDraft(value);
-    setLabels(rule?.filters.customLabels.join(', ') ?? '');
-    setKeywords(rule?.filters.keywords.join(', ') ?? '');
-    setConfidence(rule?.filters.minimumConfidence?.toString() ?? '');
-    setPreview(undefined);
-  }, [defaults]);
+  const edit = useCallback(
+    (rule?: CollectionRule) => {
+      setEditing(true);
+      setEditorKey((v) => v + 1);
+      const value = rule
+        ? {
+            name: rule.name,
+            enabled: rule.enabled,
+            mode: rule.mode,
+            category: rule.category,
+            knowledgeBaseId: rule.knowledgeBaseId,
+            filters: rule.filters,
+          }
+        : defaults();
+      setBaseline(
+        JSON.stringify({
+          draft: value,
+          labels: rule?.filters.customLabels.join(', ') ?? '',
+          keywords: rule?.filters.keywords.join(', ') ?? '',
+          confidence: rule?.filters.minimumConfidence?.toString() ?? '',
+        }),
+      );
+      setPrevious(rule);
+      setDraft(value);
+      setLabels(rule?.filters.customLabels.join(', ') ?? '');
+      setKeywords(rule?.filters.keywords.join(', ') ?? '');
+      setConfidence(rule?.filters.minimumConfidence?.toString() ?? '');
+      setPreview(undefined);
+    },
+    [defaults],
+  );
   useEffect(() => {
     if (view !== 'rule' || loading || initialized.current) return;
     initialized.current = true;
@@ -290,10 +294,20 @@ export function CollectionRulesScreen({
       { text: t('collection.discard'), style: 'destructive', onPress: next },
     ]);
   };
-  const back = () => leave(editing && !onOperation ? () => setEditing(false) : onBack);
+  const back = () => {
+    if (busy) return;
+    // 独立编辑页由导航统一确认，内嵌表单仍确认后退出编辑状态。
+    if (navigation && (!editing || onOperation)) onBack();
+    else leave(editing && !onOperation ? () => setEditing(false) : onBack);
+  };
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
       if (!editing) return false;
+      if (busy) return true;
+      if (navigation && onOperation) {
+        onBack();
+        return true;
+      }
       if (!busy) {
         if (dirty)
           Alert.alert(t('collection.unsaved'), t('collection.unsavedHint'), [
@@ -310,7 +324,7 @@ export function CollectionRulesScreen({
       return true;
     });
     return () => subscription.remove();
-  }, [editing, busy, dirty, t, onOperation, onBack]);
+  }, [editing, busy, dirty, t, onOperation, onBack, navigation]);
   const targetUnavailable =
     !!draft.knowledgeBaseId && !bases.some((base) => base.id === draft.knowledgeBaseId);
   return (
@@ -331,10 +345,17 @@ export function CollectionRulesScreen({
         editing ? (
           <>
             <View style={styles.footerAction}>
-              <CollectionButton label={t('collection.cancel')} disabled={busy} onPress={back} />
+              <FixedActionButton
+                icon="close-outline"
+                label={t('collection.cancel')}
+                disabled={busy}
+                onPress={back}
+              />
             </View>
             <View style={styles.footerAction}>
-              <CollectionButton
+              <FixedActionButton
+                emphasized
+                icon="checkmark-outline"
                 label={t('collection.saveRule')}
                 disabled={busy || loading || targetUnavailable || (!!ruleId && !previous)}
                 onPress={() => void save()}
@@ -349,6 +370,7 @@ export function CollectionRulesScreen({
         <>
           {onSwitchGroup ? (
             <CollectionNavigationRow
+              uniformHeight
               icon="swap-horizontal-outline"
               title={t('collection.switchGroup')}
               description={groupName || t('collection.loading')}
@@ -356,12 +378,14 @@ export function CollectionRulesScreen({
             />
           ) : null}
           <CollectionNavigationRow
+            uniformHeight
             icon="add-outline"
             title={t('collection.newRule')}
             description={t('collection.newRuleHint')}
             onPress={() => (onOperation ? onOperation('rule') : edit())}
           />
           <CollectionNavigationRow
+            uniformHeight
             icon="time-outline"
             title={t('collection.history')}
             description={t('collection.historyHint')}

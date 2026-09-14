@@ -33,6 +33,7 @@ import {
   type NavigationProp,
   type ParamListBase,
 } from 'expo-router/react-navigation';
+import { FixedActionButton } from '@/shared/ui/FixedActionButton';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import {
   CaseContentEditor,
@@ -243,6 +244,11 @@ export function CollectionCaptureScreen({
       setBusy(false);
     }
   };
+  const back = () => {
+    if (busy) return;
+    if (navigation || !content) onBack();
+    else leave(onBack);
+  };
   const tag = capture?.tags.find((v) => v.id === tagId);
   const leave = (next: () => void) => {
     if (busy) return;
@@ -269,14 +275,17 @@ export function CollectionCaptureScreen({
         capture ? (
           <>
             <View style={styles.footerAction}>
-              <CollectionButton
+              <FixedActionButton
+                icon="close-outline"
                 label={t('collection.cancel')}
                 disabled={busy}
-                onPress={() => leave(onBack)}
+                onPress={back}
               />
             </View>
             <View style={styles.footerAction}>
-              <CollectionButton
+              <FixedActionButton
+                emphasized
+                icon="checkmark-outline"
                 label={t(
                   editingCorrection ? 'collection.saveCorrection' : 'collection.saveCandidate',
                 )}
@@ -287,7 +296,7 @@ export function CollectionCaptureScreen({
           </>
         ) : undefined
       }
-      onBack={() => leave(onBack)}
+      onBack={back}
     >
       {capture ? (
         <>

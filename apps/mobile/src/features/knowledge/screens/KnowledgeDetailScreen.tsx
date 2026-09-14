@@ -13,6 +13,7 @@
  * - 知识库配置当前只读；实际解析仍由服务端全局配置驱动。
  */
 import { listKnowledgeDirectory } from '@/shared/api/collectionFoldersApi';
+import { FixedActionButton } from '@/shared/ui/FixedActionButton';
 import { ActionSheet } from '@/shared/ui/ActionSheet';
 import { CollectionFolderRow } from '../components/CollectionFolderRow';
 import { KnowledgeCaseActions } from '../components/KnowledgeCaseActions';
@@ -264,41 +265,6 @@ function GroupCard({ group, onSwitch }: { group: GroupSummary; onSwitch: () => v
   );
 }
 
-function FixedActionButton({
-  disabled = false,
-  emphasized = false,
-  icon,
-  label,
-  onPress,
-}: {
-  disabled?: boolean;
-  emphasized?: boolean;
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.actionButton,
-        emphasized && styles.emphasizedAction,
-        disabled && styles.disabled,
-        pressed && styles.pressed,
-      ]}
-    >
-      <Ionicons
-        color={emphasized ? colors.white : colors.ink}
-        name={icon}
-        size={typography.body.lineHeight}
-      />
-      <Text style={[styles.actionText, emphasized && styles.emphasizedActionText]}>{label}</Text>
-    </Pressable>
-  );
-}
-
 /** 加载并展示知识库详情，协调上传、关联、切组与问答入口。 */
 export function KnowledgeDetailScreen({
   knowledgeId,
@@ -329,7 +295,10 @@ export function KnowledgeDetailScreen({
   const [knowledge, setKnowledge] = useState<KnowledgeBaseDetail>();
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
   const [directory, setDirectory] = useState<KnowledgeDirectoryEntry[]>([]);
-  const [searchedDirectory, setSearchedDirectory] = useState<{query:string;items:KnowledgeDirectoryEntry[]}>();
+  const [searchedDirectory, setSearchedDirectory] = useState<{
+    query: string;
+    items: KnowledgeDirectoryEntry[];
+  }>();
   const [actionFolder, setActionFolder] = useState<CollectionFolder>();
   const [linkedGroups, setLinkedGroups] = useState<GroupSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -419,11 +388,14 @@ export function KnowledgeDetailScreen({
   }, [documents, query, t]);
   useEffect(() => {
     let active = true;
-    if (!query.trim()) return () => {active=false;};
+    if (!query.trim())
+      return () => {
+        active = false;
+      };
     const timer = setTimeout(() => {
       void listKnowledgeDirectory(knowledgeId, query)
         .then((result) => {
-          if (active) setSearchedDirectory({query,items:result.items});
+          if (active) setSearchedDirectory({ query, items: result.items });
         })
         .catch(() => {
           if (active) setError(t('collection.loadFailed'));
@@ -435,9 +407,12 @@ export function KnowledgeDetailScreen({
     };
   }, [knowledgeId, query, directory, t]);
   const entries: KnowledgeDirectoryEntry[] = [
-    ...(query.trim() ? (searchedDirectory?.query===query?searchedDirectory.items:[]) : directory).filter(
-      (entry) => entry.kind === 'folder',
-    ),
+    ...(query.trim()
+      ? searchedDirectory?.query === query
+        ? searchedDirectory.items
+        : []
+      : directory
+    ).filter((entry) => entry.kind === 'folder'),
     ...filteredDocuments
       .filter((document) => !document.caseId)
       .map((document) => ({
@@ -1138,27 +1113,6 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     padding: spacing.md,
   },
-  actionButton: {
-    alignItems: 'center',
-    backgroundColor: colors.background,
-    borderColor: colors.divider,
-    borderRadius: radii.default,
-    borderWidth: StyleSheet.hairlineWidth,
-    flex: 1,
-    flexDirection: 'row',
-    gap: spacing.sm,
-    justifyContent: 'center',
-    minHeight: 56,
-    paddingHorizontal: spacing.md,
-  },
-  emphasizedAction: { backgroundColor: colors.ink, borderColor: colors.ink },
-  actionText: {
-    ...typography.body,
-    color: textColors.primary,
-    fontFamily: fontFamilies.sansBold,
-    fontWeight: 'bold',
-  },
-  emphasizedActionText: { color: colors.white },
   disabled: { opacity: 0.45 },
   pressed: { backgroundColor: colors.background },
 });
