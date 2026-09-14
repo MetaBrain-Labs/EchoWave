@@ -16,6 +16,7 @@ import type { KnowledgeCase } from '@echowave/contracts';
 import { batchCaseActions, listKnowledgeCases } from '@/shared/api/collectionApi';
 import { PageTabs } from '@/shared/ui/PageTabs';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import { CollectionButton, CollectionCheck, CollectionField, CollectionLayout, styles } from './ui';
 
 /** 列表默认展示正式案例，用户可进入待审核和历史状态。 */
@@ -27,8 +28,10 @@ export function KnowledgeCasesScreen({
   knowledgeId: string;
   onBack: () => void;
   onOpen: (id: string) => void;
+  guideDemo?: boolean;
 }) {
   const { t } = useAppLanguage();
+  const casesTargetRef = useStarterTourTarget('collection-cases');
   const [items, setItems] = useState<KnowledgeCase[]>([]);
   const [tab, setTab] = useState<'published' | 'candidate' | 'history'>('published');
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -97,18 +100,20 @@ export function KnowledgeCasesScreen({
       onRetry={() => void load()}
       onRefresh={load}
     >
-      <PageTabs
-        activeTab={tab}
-        onChange={(value) => {
-          setTab(value);
-          setPage(1);
-          setSelected(new Set());
-        }}
-        tabs={(['published', 'candidate', 'history'] as const).map((value) => ({
-          key: value,
-          label: `${t(`collection.${value}`)} (${items.filter((item) => (value === 'history' ? ['rejected', 'withdrawn'].includes(item.status) : item.status === value)).length})`,
-        }))}
-      />
+      <View collapsable={false} ref={casesTargetRef}>
+        <PageTabs
+          activeTab={tab}
+          onChange={(value) => {
+            setTab(value);
+            setPage(1);
+            setSelected(new Set());
+          }}
+          tabs={(['published', 'candidate', 'history'] as const).map((value) => ({
+            key: value,
+            label: `${t(`collection.${value}`)} (${items.filter((item) => (value === 'history' ? ['rejected', 'withdrawn'].includes(item.status) : item.status === value)).length})`,
+          }))}
+        />
+      </View>
       <CollectionField
         label={t('collection.search')}
         value={query}

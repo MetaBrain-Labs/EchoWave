@@ -11,6 +11,15 @@ tags:
     id: 'e2e-tab-more'
 - tapOn: '打开新手引导中心'
 - assertVisible: '新手引导'
+- assertVisible: '基础引导'
+- assertVisible: '知识库引导'
+- assertVisible: '问知识库引导'
+- assertVisible: '数据源引导'
+- assertVisible: '分组设置引导'
+- assertVisible: '知识收集引导'
+- assertVisible: 'AI 配置引导'
+- assertVisible: '运行模式引导'
+- assertVisible: '查看分析引导'
 - runFlow:
     when:
       visible: '开始数据源引导'
@@ -27,6 +36,78 @@ tags:
 - assertVisible: '新建数据源，第 2 步，共 2 步'
 - tapOn:
     id: 'starter-tour-finish'
+- runFlow:
+    when:
+      visible: '开始分组设置引导'
+    commands:
+      - tapOn: '开始分组设置引导'
+- runFlow:
+    when:
+      visible: '重播分组设置引导'
+    commands:
+      - tapOn: '重播分组设置引导'
+- assertVisible: '分组设置总览，第 1 步，共 8 步'
+- tapOn:
+    id: 'starter-tour-skip'
+- runFlow:
+    when:
+      visible: '开始知识库引导'
+    commands:
+      - tapOn: '开始知识库引导'
+- runFlow:
+    when:
+      visible: '重播知识库引导'
+    commands:
+      - tapOn: '重播知识库引导'
+- assertVisible: '知识库，第 1 步，共 10 步'
+- tapOn:
+    id: 'starter-tour-next'
+- tapOn:
+    id: 'starter-tour-next'
+- tapOn:
+    id: 'starter-tour-next'
+- assertVisible: '查看知识库详情，第 4 步，共 10 步'
+- tapOn:
+    id: 'starter-tour-skip'
+- runFlow:
+    when:
+      visible: '开始问知识库引导'
+    commands:
+      - tapOn: '开始问知识库引导'
+- runFlow:
+    when:
+      visible: '重播问知识库引导'
+    commands:
+      - tapOn: '重播问知识库引导'
+- assertVisible: '问知识库，第 1 步，共 6 步'
+- tapOn:
+    id: 'starter-tour-skip'
+- runFlow:
+    when:
+      visible: '开始 AI 配置引导'
+    commands:
+      - tapOn: '开始 AI 配置引导'
+- runFlow:
+    when:
+      visible: '重播 AI 配置引导'
+    commands:
+      - tapOn: '重播 AI 配置引导'
+- assertVisible: '先完成安全校验，第 1 步，共 8 步'
+- tapOn:
+    id: 'starter-tour-skip'
+- runFlow:
+    when:
+      visible: '开始知识收集引导'
+    commands:
+      - tapOn: '开始知识收集引导'
+- runFlow:
+    when:
+      visible: '重播知识收集引导'
+    commands:
+      - tapOn: '重播知识收集引导'
+- assertVisible: '从更多页进入知识收集，第 1 步，共 7 步'
+- tapOn:
+    id: 'starter-tour-skip'
 - tapOn:
     id: 'e2e-tab-more'
 - tapOn: '打开新手引导中心'

@@ -103,6 +103,13 @@ describe('GroupSettingsScreen', () => {
     );
   });
 
+  it('keeps knowledge collection out of group settings', async () => {
+    const screen = await renderSettings();
+
+    expect(screen.queryByText('知识收集规则')).toBeNull();
+    expect(screen.queryByText('收集规则')).toBeNull();
+  });
+
   it('atomically replaces the selected knowledge-base set', async () => {
     const screen = await renderSettings();
 

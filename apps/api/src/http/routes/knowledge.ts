@@ -181,6 +181,20 @@ export function registerKnowledgeRoutes(
       );
     },
   );
+  app.get('/api/knowledge-bases/:knowledgeBaseId/documents/:documentId/source', async (context) => {
+    const source = await service.getOriginalSource(
+      entityId(context.req.param('knowledgeBaseId')),
+      entityId(context.req.param('documentId')),
+    );
+    return new Response(new Uint8Array(source.body), {
+      headers: {
+        'Cache-Control': 'no-store',
+        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(source.filename)}`,
+        'Content-Length': String(source.body.byteLength),
+        'Content-Type': source.mimeType,
+      },
+    });
+  });
   app.get(
     '/api/knowledge-bases/:knowledgeBaseId/documents/:documentId/revisions/:revisionId/source-status',
     async (context) =>

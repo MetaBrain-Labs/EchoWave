@@ -34,12 +34,14 @@ export default function CollectionRoute() {
     view?: string | string[];
     ruleId?: string | string[];
     edit?: string | string[];
+    guideDemo?: string | string[];
   }>();
   const groupId = firstRouteParam(params.groupId);
   const defaultKnowledgeId = firstRouteParam(params.defaultKnowledgeId) || undefined;
   const knowledgeId = firstRouteParam(params.knowledgeId);
   const jobId = firstRouteParam(params.jobId);
   const caseId = firstRouteParam(params.caseId);
+  const guideDemo = firstRouteParam(params.guideDemo) === 'true';
   const onBack = () => backOrReplace(router, '/');
   const onOpen = (id: string) => router.push({ pathname: '/collection', params: { caseId: id } });
   if (caseId)
@@ -48,6 +50,7 @@ export default function CollectionRoute() {
         caseId={caseId}
         onBack={onBack}
         initiallyEditing={firstRouteParam(params.edit) === 'true'}
+        guideDemo={guideDemo}
         navigation={navigation}
       />
     );
@@ -63,7 +66,14 @@ export default function CollectionRoute() {
       />
     );
   if (knowledgeId)
-    return <KnowledgeCasesScreen knowledgeId={knowledgeId} onBack={onBack} onOpen={onOpen} />;
+    return (
+      <KnowledgeCasesScreen
+        guideDemo={guideDemo}
+        knowledgeId={knowledgeId}
+        onBack={onBack}
+        onOpen={onOpen}
+      />
+    );
   if (!groupId)
     return (
       <CollectionGroupsScreen
@@ -102,6 +112,7 @@ export default function CollectionRoute() {
       groupId={groupId}
       navigation={navigation}
       defaultKnowledgeId={defaultKnowledgeId}
+      guideDemo={guideDemo}
       onBack={onBack}
       onSwitchGroup={() =>
         router.push({

@@ -74,6 +74,15 @@ describe('KnowledgeDetailScreen', () => {
     expect(overview.getByText('用户研究执行计划')).toBeTruthy();
   });
 
+  it('uses local read-only demo data when guideDemo is enabled', async () => {
+    const screen = await renderDetail({ guideDemo: true });
+
+    expect(screen.getByTestId('knowledge-guide-demo-banner')).toBeTruthy();
+    expect(screen.getAllByText('引导演示知识库').length).toBeGreaterThan(0);
+    expect(getKnowledgeBase).not.toHaveBeenCalled();
+    expect(listDocuments).not.toHaveBeenCalled();
+  });
+
   it('filters files and opens ready content', async () => {
     const onOpenDocument = jest.fn();
     const screen = await renderDetail({ onOpenDocument });

@@ -21,7 +21,8 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 import { IconButton } from './AnalysisControls';
-import { formatTime, showComingSoon } from './utils';
+import { ActionSheet } from '@/shared/ui/ActionSheet';
+import { formatTime } from './utils';
 
 const waveformHeights = [
   8, 12, 17, 23, 14, 29, 19, 34, 22, 16, 27, 38, 25, 31, 18, 13, 24, 36, 20, 28, 16, 33, 26, 14, 22,
@@ -95,7 +96,10 @@ export function CompactPlayer({
   onBack,
   onExpand,
   onPlayPause,
+  onReset,
+  onRateChange,
   onRetry,
+  playbackRate,
   positionSeconds,
 }: {
   durationSeconds: number;
@@ -106,57 +110,76 @@ export function CompactPlayer({
   onBack: () => void;
   onExpand: () => void;
   onPlayPause: () => void;
+  onReset: () => void;
+  onRateChange: () => void;
   onRetry: () => void;
+  playbackRate: number;
   positionSeconds: number;
 }) {
   const { t } = useAppLanguage();
+  const [actionsVisible, setActionsVisible] = useState(false);
   return (
-    <View style={styles.compactHeader}>
-      <IconButton icon="chevron-back" label={t('common.back')} onPress={onBack} />
-      <View style={styles.compactPlayer}>
-        <Pressable
-          accessibilityLabel={isPlaying ? t('player.pauseAudio') : t('player.playAudio')}
-          accessibilityRole="button"
-          disabled={!isLoaded || Boolean(error)}
-          onPress={onPlayPause}
-          style={({ pressed }) => [
-            styles.compactPlayButton,
-            (!isLoaded || error) && styles.disabled,
-            pressed && styles.pressed,
-          ]}
-        >
-          {isBuffering || !isLoaded ? (
-            <ActivityIndicator color={colors.ink} size="small" />
-          ) : (
-            <Ionicons color={colors.ink} name={isPlaying ? 'pause' : 'play'} size={22} />
-          )}
-        </Pressable>
-        <Pressable
-          accessibilityLabel={t('player.expand')}
-          accessibilityRole="button"
-          onPress={onExpand}
-          style={({ pressed }) => [styles.compactWaveformButton, pressed && styles.pressed]}
-        >
-          <Waveform progress={durationSeconds > 0 ? positionSeconds / durationSeconds : 0} />
-        </Pressable>
-        {error ? (
-          <Pressable accessibilityRole="button" onPress={onRetry}>
-            <Text numberOfLines={1} style={styles.playerError}>
-              {t('player.loadRetry')}
-            </Text>
+    <>
+      <View style={styles.compactHeader}>
+        <IconButton icon="chevron-back" label={t('common.back')} onPress={onBack} />
+        <View style={styles.compactPlayer}>
+          <Pressable
+            accessibilityLabel={isPlaying ? t('player.pauseAudio') : t('player.playAudio')}
+            accessibilityRole="button"
+            disabled={!isLoaded || Boolean(error)}
+            onPress={onPlayPause}
+            style={({ pressed }) => [
+              styles.compactPlayButton,
+              (!isLoaded || error) && styles.disabled,
+              pressed && styles.pressed,
+            ]}
+          >
+            {isBuffering || !isLoaded ? (
+              <ActivityIndicator color={colors.ink} size="small" />
+            ) : (
+              <Ionicons color={colors.ink} name={isPlaying ? 'pause' : 'play'} size={22} />
+            )}
           </Pressable>
-        ) : (
-          <Text style={styles.playerTime}>
-            {formatTime(positionSeconds)} / {formatTime(durationSeconds)}
-          </Text>
-        )}
+          <Pressable
+            accessibilityLabel={t('player.expand')}
+            accessibilityRole="button"
+            onPress={onExpand}
+            style={({ pressed }) => [styles.compactWaveformButton, pressed && styles.pressed]}
+          >
+            <Waveform progress={durationSeconds > 0 ? positionSeconds / durationSeconds : 0} />
+          </Pressable>
+          {error ? (
+            <Pressable accessibilityRole="button" onPress={onRetry}>
+              <Text numberOfLines={1} style={styles.playerError}>
+                {t('player.loadRetry')}
+              </Text>
+            </Pressable>
+          ) : (
+            <Text style={styles.playerTime}>
+              {formatTime(positionSeconds)} / {formatTime(durationSeconds)}
+            </Text>
+          )}
+        </View>
+        <IconButton
+          icon="ellipsis-horizontal"
+          label={t('common.moreActions')}
+          onPress={() => setActionsVisible(true)}
+        />
       </View>
-      <IconButton
-        icon="ellipsis-horizontal"
-        label={t('common.moreActions')}
-        onPress={() => showComingSoon(t('common.moreActions'))}
+      <ActionSheet
+        items={[
+          {
+            icon: 'speedometer-outline',
+            label: t('player.changeRate', { rate: playbackRate.toFixed(1) }),
+            onPress: onRateChange,
+          },
+          { icon: 'refresh-outline', label: t('player.reset'), onPress: onReset },
+        ]}
+        onClose={() => setActionsVisible(false)}
+        title={t('player.actions')}
+        visible={actionsVisible}
       />
-    </View>
+    </>
   );
 }
 
@@ -192,63 +215,83 @@ export function ExpandedPlayer({
   positionSeconds: number;
 }) {
   const { t } = useAppLanguage();
+  const [actionsVisible, setActionsVisible] = useState(false);
   return (
-    <View style={styles.expandedPlayerContainer}>
-      <View style={styles.expandedTopBar}>
-        <IconButton icon="chevron-back" label={t('common.back')} onPress={onBack} />
-        <IconButton
-          icon="ellipsis-horizontal"
-          label={t('common.moreActions')}
-          onPress={() => showComingSoon(t('common.moreActions'))}
-        />
+    <>
+      <View style={styles.expandedPlayerContainer}>
+        <View style={styles.expandedTopBar}>
+          <IconButton icon="chevron-back" label={t('common.back')} onPress={onBack} />
+          <IconButton
+            icon="ellipsis-horizontal"
+            label={t('common.moreActions')}
+            onPress={() => setActionsVisible(true)}
+          />
+        </View>
+        <View style={styles.largeWaveformArea}>
+          <Waveform
+            expanded
+            onSeek={(progress) => onSeek(progress * durationSeconds)}
+            progress={durationSeconds > 0 ? positionSeconds / durationSeconds : 0}
+          />
+        </View>
+        <View style={styles.expandedTimeRow}>
+          <Text style={styles.playerTime}>{formatTime(positionSeconds)}</Text>
+          <Text style={styles.playerTime}>{formatTime(durationSeconds)}</Text>
+        </View>
+        <View style={styles.playerControls}>
+          <Pressable
+            accessibilityLabel={t('player.rate', { rate: playbackRate.toFixed(1) })}
+            accessibilityRole="button"
+            onPress={onRateChange}
+            style={({ pressed }) => [styles.controlButton, pressed && styles.pressed]}
+          >
+            <Text style={styles.controlText}>x{playbackRate.toFixed(1)}</Text>
+          </Pressable>
+          <IconButton icon="play-back" label={t('player.rewind')} onPress={() => onJump(-15)} />
+          <Pressable
+            accessibilityLabel={isPlaying ? t('player.pauseAudio') : t('player.playAudio')}
+            accessibilityRole="button"
+            onPress={onPlayPause}
+            disabled={!isLoaded || Boolean(error)}
+            style={({ pressed }) => [
+              styles.largePlayButton,
+              (!isLoaded || error) && styles.disabled,
+              pressed && styles.pressed,
+            ]}
+          >
+            {isBuffering || !isLoaded ? (
+              <ActivityIndicator color={colors.ink} />
+            ) : (
+              <Ionicons color={colors.ink} name={isPlaying ? 'pause' : 'play'} size={36} />
+            )}
+          </Pressable>
+          <IconButton icon="play-forward" label={t('player.forward')} onPress={() => onJump(15)} />
+          <IconButton icon="contract-outline" label={t('player.collapse')} onPress={onCollapse} />
+        </View>
+        {error ? (
+          <Pressable accessibilityRole="button" onPress={onRetry} style={styles.expandedError}>
+            <Text style={styles.playerError}>{t('player.errorRetry', { error })}</Text>
+          </Pressable>
+        ) : null}
       </View>
-      <View style={styles.largeWaveformArea}>
-        <Waveform
-          expanded
-          onSeek={(progress) => onSeek(progress * durationSeconds)}
-          progress={durationSeconds > 0 ? positionSeconds / durationSeconds : 0}
-        />
-      </View>
-      <View style={styles.expandedTimeRow}>
-        <Text style={styles.playerTime}>{formatTime(positionSeconds)}</Text>
-        <Text style={styles.playerTime}>{formatTime(durationSeconds)}</Text>
-      </View>
-      <View style={styles.playerControls}>
-        <Pressable
-          accessibilityLabel={t('player.rate', { rate: playbackRate.toFixed(1) })}
-          accessibilityRole="button"
-          onPress={onRateChange}
-          style={({ pressed }) => [styles.controlButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.controlText}>x{playbackRate.toFixed(1)}</Text>
-        </Pressable>
-        <IconButton icon="play-back" label={t('player.rewind')} onPress={() => onJump(-15)} />
-        <Pressable
-          accessibilityLabel={isPlaying ? t('player.pauseAudio') : t('player.playAudio')}
-          accessibilityRole="button"
-          onPress={onPlayPause}
-          disabled={!isLoaded || Boolean(error)}
-          style={({ pressed }) => [
-            styles.largePlayButton,
-            (!isLoaded || error) && styles.disabled,
-            pressed && styles.pressed,
-          ]}
-        >
-          {isBuffering || !isLoaded ? (
-            <ActivityIndicator color={colors.ink} />
-          ) : (
-            <Ionicons color={colors.ink} name={isPlaying ? 'pause' : 'play'} size={36} />
-          )}
-        </Pressable>
-        <IconButton icon="play-forward" label={t('player.forward')} onPress={() => onJump(15)} />
-        <IconButton icon="contract-outline" label={t('player.collapse')} onPress={onCollapse} />
-      </View>
-      {error ? (
-        <Pressable accessibilityRole="button" onPress={onRetry} style={styles.expandedError}>
-          <Text style={styles.playerError}>{t('player.errorRetry', { error })}</Text>
-        </Pressable>
-      ) : null}
-    </View>
+      <ActionSheet
+        items={[
+          {
+            icon: 'speedometer-outline',
+            label: t('player.changeRate', { rate: playbackRate.toFixed(1) }),
+            onPress: onRateChange,
+          },
+          {
+            icon: 'refresh-outline',
+            label: t('player.reset'),
+            onPress: () => onSeek(0),
+          },
+        ]}
+        onClose={() => setActionsVisible(false)}
+        title={t('player.actions')}
+        visible={actionsVisible}
+      />
+    </>
   );
 }
 

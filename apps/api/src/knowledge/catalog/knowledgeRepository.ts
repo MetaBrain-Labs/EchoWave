@@ -100,6 +100,32 @@ export class KnowledgeRepository {
     return { status: result[0]!.sourceStatus };
   }
 
+  /** 读取活动版本的原文件引用，供应用服务在租户边界内安全下载。 */
+  async getOriginalSource(knowledgeBaseId: string, documentId: string) {
+    const result = await this.pool.query(
+      `SELECT d.title, d.format, d.size_bytes, r.storage_key, j.staged_path
+       FROM ${this.table('documents')} d
+       JOIN ${this.table('knowledge_bases')} kb
+         ON kb.tenant_id=d.tenant_id AND kb.id=d.knowledge_base_id AND kb.deleted_at IS NULL
+       JOIN ${this.table('document_revisions')} r
+         ON r.tenant_id=d.tenant_id AND r.document_id=d.id AND r.id=d.active_revision_id
+       LEFT JOIN ${this.table('ingestion_jobs')} j
+         ON j.tenant_id=r.tenant_id AND j.document_id=r.document_id AND j.revision_id=r.id
+       WHERE d.tenant_id=$1 AND d.knowledge_base_id=$2 AND d.id=$3 AND d.deleted_at IS NULL
+       ORDER BY j.created_at DESC NULLS LAST LIMIT 1`,
+      [this.tenantId, knowledgeBaseId, documentId],
+    );
+    const row = result.rows[0];
+    if (!row) throw new RagRepositoryError('NOT_FOUND', '文档不存在。');
+    return {
+      title: String(row.title),
+      format: String(row.format) as 'markdown' | 'word' | 'spreadsheet',
+      sizeBytes: Number(row.size_bytes),
+      storageKey: row.storage_key ? String(row.storage_key) : null,
+      stagedPath: row.staged_path ? String(row.staged_path) : null,
+    };
+  }
+
   async listKnowledgeBases() {
     const result = await this.pool.query(
       `SELECT kb.id, kb.name, kb.description, kb.updated_at,

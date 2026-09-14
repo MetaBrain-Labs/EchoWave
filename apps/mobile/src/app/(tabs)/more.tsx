@@ -24,11 +24,13 @@ import {
 } from '@/shared/theme/tokens';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 
 /** 将“更多”页面渲染为统一的导航与引导入口。 */
 export default function MoreScreen() {
   const router = useRouter();
   const { t } = useAppLanguage();
+  const collectionEntryRef = useStarterTourTarget('collection-entry');
   const navigationCards = [
     { key: 'collection', href: '/collection' as Href, icon: 'library-outline' as const },
     { key: 'analysis', href: '/analysis' as Href, icon: 'pulse-outline' as const },
@@ -48,6 +50,7 @@ export default function MoreScreen() {
             accessibilityRole="button"
             key={card.key}
             onPress={() => router.push(card.href)}
+            ref={card.key === 'collection' ? collectionEntryRef : undefined}
             style={({ pressed }) => [styles.navigationCard, pressed && styles.pressed]}
           >
             <View style={styles.navigationIcon}>

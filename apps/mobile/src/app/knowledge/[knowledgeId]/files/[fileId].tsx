@@ -23,6 +23,7 @@ export default function DocumentDetailRoute() {
   const params = useLocalSearchParams<{
     block?: string | string[];
     fileId?: string | string[];
+    guideDemo?: string | string[];
     groupId?: string | string[];
     knowledgeId?: string | string[];
     origin?: string | string[];
@@ -31,6 +32,7 @@ export default function DocumentDetailRoute() {
   }>();
   const knowledgeId = firstRouteParam(params.knowledgeId);
   const documentId = firstRouteParam(params.fileId);
+  const guideDemo = firstRouteParam(params.guideDemo) === 'true';
   const groupId = firstRouteParam(params.groupId);
   const origin = parseResourceOrigin(params.origin) ?? 'knowledge-list';
   const blockId = firstRouteParam(params.block);
@@ -39,13 +41,20 @@ export default function DocumentDetailRoute() {
   const goBack = () => {
     backOrReplace(router, {
       pathname: '/knowledge/[knowledgeId]',
-      params: { knowledgeId, origin, ...(groupId ? { groupId } : {}) },
+      params: {
+        knowledgeId,
+        origin,
+        ...(groupId ? { groupId } : {}),
+        ...(guideDemo ? { guideDemo: 'true' } : {}),
+      },
     });
   };
 
   return (
     <DocumentDetailScreen
+      key={`${documentId}:${initialTab}`}
       documentId={documentId}
+      guideDemo={guideDemo}
       initialBlockId={blockId || undefined}
       initialTab={initialTab}
       knowledgeId={knowledgeId}
@@ -59,6 +68,7 @@ export default function DocumentDetailRoute() {
             knowledgeId,
             origin,
             ...(groupId ? { groupId } : {}),
+            ...(guideDemo ? { guideDemo: 'true' } : {}),
             ...(returnsToQuery ? { returnTo: 'knowledge-query' } : {}),
           },
         });

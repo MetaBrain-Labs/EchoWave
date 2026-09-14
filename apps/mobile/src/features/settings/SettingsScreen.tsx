@@ -47,7 +47,8 @@ import {
 } from '@/shared/theme/tokens';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
-import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
+import { useStarterTour, useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
+import { ActionSheet } from '@/shared/ui/ActionSheet';
 
 const capabilities: readonly { id: AiCapability }[] = [
   { id: 'knowledge_embedding' },
@@ -266,9 +267,96 @@ function providerInput(draft: ProviderDraft): ProviderConnectionWrite {
   } as ProviderConnectionWrite;
 }
 
+/** 展示 AI 配置引导的脱敏静态区域，不读取真实 Credential，也不提交任何请求。 */
+function AiConfigurationGuideDemo() {
+  const noticeRef = useStarterTourTarget('ai-demo-notice');
+  const localProviderRef = useStarterTourTarget('ai-demo-local-provider');
+  const connectionsRef = useStarterTourTarget('ai-demo-connections');
+  const defaultsRef = useStarterTourTarget('ai-demo-default-bindings');
+  const capabilitiesRef = useStarterTourTarget('ai-demo-capabilities');
+  const legacyRef = useStarterTourTarget('ai-demo-legacy-env');
+  const demoConnections = [
+    ['旧环境 阿里云 OSS', '阿里云 OSS · Database · ••••••LdFu'],
+    ['旧环境 DeepSeek', 'DeepSeek · Database · ••••••cd79'],
+    ['旧环境 DashScope', 'DashScope · Database · ••••••doJW'],
+  ];
+  const demoCapabilities = [
+    ['知识嵌入', '旧环境 DashScope · demo-qwen-text-embedding'],
+    ['知识问答', '旧环境 DeepSeek · demo-deepseek-chat'],
+    ['音频转写', '旧环境 DashScope · demo-qwen-audio-transcription'],
+    ['情绪分析', '旧环境 DashScope · demo-qwen-omni-analysis'],
+    ['角色识别', '旧环境 DeepSeek · demo-deepseek-role'],
+    ['业务分析', '旧环境 DeepSeek · demo-deepseek-business'],
+    ['临时 OSS', '旧环境 阿里云 OSS · demo-aliyun-oss'],
+  ];
+  return (
+    <View style={styles.demoPanel} testID="ai-configuration-guide-demo">
+      <View collapsable={false} ref={noticeRef} style={styles.demoNotice}>
+        <Text style={styles.demoNoticeTitle}>仅用于引导演示，不是实际配置</Text>
+        <Text style={styles.help}>
+          以下内容是脱敏模拟值，仅帮助你理解页面结构。不会读取真实 Credential、调用保存接口或修改 AI
+          配置。
+        </Text>
+      </View>
+      <View collapsable={false} ref={localProviderRef} style={styles.demoCard}>
+        <Text style={styles.rowTitle}>Local Credential Provider</Text>
+        <Text style={styles.help}>文件异常时应检查本地 Credential 文件的 YAML 结构和权限。</Text>
+      </View>
+      <View collapsable={false} ref={connectionsRef} style={styles.demoCard}>
+        <Text style={styles.sectionTitle}>供应商连接</Text>
+        {demoConnections.map(([name, detail]) => (
+          <View key={name} style={styles.listRow}>
+            <View style={styles.flex}>
+              <Text style={styles.rowTitle}>{name}</Text>
+              <Text style={styles.help}>{detail}</Text>
+            </View>
+            <Text style={styles.link}>修改（演示）</Text>
+          </View>
+        ))}
+        <Text style={styles.link}>添加连接（演示）</Text>
+      </View>
+      <View collapsable={false} ref={defaultsRef} style={styles.demoCard}>
+        <Text style={styles.sectionTitle}>默认能力配置</Text>
+        <Text style={styles.help}>
+          选择兼容供应商后，可以一次补齐尚未配置的能力；演示按钮不可操作。
+        </Text>
+        {[
+          'DashScope · 旧环境 DashScope',
+          'DeepSeek · 旧环境 DeepSeek',
+          '阿里云 OSS · 旧环境阿里云 OSS',
+        ].map((value) => (
+          <View key={value} style={styles.demoChoice}>
+            <Text style={styles.choiceText}>{value}</Text>
+          </View>
+        ))}
+        <View style={[styles.demoApplyButton, styles.disabled]}>
+          <Text style={styles.demoApplyText}>应用默认配置（演示）</Text>
+        </View>
+      </View>
+      <View collapsable={false} ref={capabilitiesRef} style={styles.demoCard}>
+        <Text style={styles.sectionTitle}>能力绑定</Text>
+        {demoCapabilities.map(([name, detail]) => (
+          <View key={name} style={styles.listRow}>
+            <View style={styles.flex}>
+              <Text style={styles.rowTitle}>{name}</Text>
+              <Text style={styles.help}>{detail}</Text>
+            </View>
+            <Text style={styles.link}>设置（演示）</Text>
+          </View>
+        ))}
+      </View>
+      <View collapsable={false} ref={legacyRef} style={styles.demoCard}>
+        <Text style={styles.sectionTitle}>旧 .env 导入</Text>
+        <Text style={styles.help}>演示状态：已发现 3 项变量，未执行导入。</Text>
+      </View>
+    </View>
+  );
+}
+
 /** 渲染配置中心并将返回行为交给路由层。 */
 export function SettingsScreen({ onBack }: { onBack: () => void }) {
   const { formatDateTime, formatNumber, t } = useAppLanguage();
+  const { activeGuide } = useStarterTour();
   const securityTourRef = useStarterTourTarget('ai-security');
   const configurationTourRef = useStarterTourTarget('ai-configuration');
   const [tokenInput, setTokenInput] = useState('');
@@ -287,6 +375,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
   const [bindingThinking, setBindingThinking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [actionsVisible, setActionsVisible] = useState(false);
 
   useEffect(() => {
     settingsApi
@@ -345,6 +434,17 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
     } finally {
       setBusy(false);
     }
+  };
+
+  const clearAdminSession = () => {
+    setToken(null);
+    setTokenInput('');
+    setOverview(null);
+    setDraft(emptyDraft());
+    setProviderEditorExpanded(false);
+    setBindingCapability(null);
+    setDefaultApplySummary(null);
+    setError(null);
   };
 
   const saveProvider = async () => {
@@ -459,13 +559,19 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-      <PageHeader onBack={onBack} onMore={() => undefined} title={t('aiSettings.title')} />
+      <PageHeader
+        moreLabel={t('aiSettings.moreActions')}
+        onBack={onBack}
+        onMore={() => setActionsVisible(true)}
+        title={t('aiSettings.title')}
+      />
       <ScrollView
         alwaysBounceVertical
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         refreshControl={<ScreenRefreshControl {...screenRefresh} />}
       >
+        {activeGuide === 'ai_configuration' ? <AiConfigurationGuideDemo /> : null}
         <View collapsable={false} ref={securityTourRef}>
           <SecurityBanner mode={transportMode} secretAllowed={secretAllowed} />
         </View>
@@ -741,6 +847,25 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
         </View>
         {busy ? <ActivityIndicator color={colors.ink} style={styles.busy} /> : null}
       </ScrollView>
+      <ActionSheet
+        items={[
+          {
+            disabled: busy,
+            icon: 'refresh-outline',
+            label: t('aiSettings.refresh'),
+            onPress: () => void refreshPage(),
+          },
+          {
+            disabled: !token || busy,
+            icon: 'log-out-outline',
+            label: t('aiSettings.clearSession'),
+            onPress: clearAdminSession,
+          },
+        ]}
+        onClose={() => setActionsVisible(false)}
+        title={t('aiSettings.moreActions')}
+        visible={actionsVisible}
+      />
     </SafeAreaView>
   );
 }
@@ -1064,6 +1189,42 @@ const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.canvas, flex: 1 },
   content: { gap: spacing.md, padding: spacing.md, paddingBottom: spacing.xxl },
   flex: { flex: 1 },
+  demoPanel: { gap: spacing.md },
+  demoNotice: {
+    backgroundColor: '#fff1e8',
+    borderColor: '#ffd7a8',
+    borderRadius: radii.default,
+    borderWidth: 1,
+    gap: spacing.xs,
+    padding: spacing.md,
+  },
+  demoNoticeTitle: {
+    ...typography.body,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  demoCard: {
+    backgroundColor: colors.card,
+    borderRadius: radii.default,
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  demoChoice: {
+    borderColor: colors.ink,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    padding: spacing.sm,
+  },
+  demoApplyButton: {
+    alignItems: 'center',
+    backgroundColor: colors.black,
+    borderRadius: radii.default,
+    minHeight: 44,
+    justifyContent: 'center',
+    padding: spacing.sm,
+  },
+  demoApplyText: { ...typography.body, color: colors.white, fontFamily: fontFamilies.sansBold },
   banner: {
     backgroundColor: colors.successSurface,
     borderRadius: radii.default,

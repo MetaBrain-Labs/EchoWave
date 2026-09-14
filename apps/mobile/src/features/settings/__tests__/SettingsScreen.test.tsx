@@ -16,6 +16,10 @@ import { StyleSheet } from 'react-native';
 
 import { settingsApi } from '@/shared/api/settingsApi';
 import { WorkspaceRequestError } from '@/shared/api/request';
+import {
+  StarterTourContext,
+  type StarterTourContextValue,
+} from '@/shared/onboarding/StarterTourContext';
 import { SettingsScreen } from '../SettingsScreen';
 
 jest.mock('expo-router', () => ({ useFocusEffect: jest.fn() }));
@@ -86,6 +90,40 @@ describe('SettingsScreen', () => {
       bindings: [],
       legacy: { detectedVariables: [], missingVariables: [], ready: false, importedAt: null },
     });
+  });
+
+  it('renders the AI guide demo without requesting or saving real configuration', async () => {
+    const context: StarterTourContextValue = {
+      activeGuide: 'ai_configuration',
+      activeStep: 'ai-demo-notice',
+      offerStarterTemplates: jest.fn(),
+      registerTarget: jest.fn(),
+      replay: jest.fn(),
+      startGuide: jest.fn(),
+      statuses: {
+        basic: 'not_started',
+        knowledge: 'not_started',
+        knowledge_query: 'not_started',
+        data_sources: 'not_started',
+        group_settings: 'not_started',
+        knowledge_collection: 'not_started',
+        ai_configuration: 'not_started',
+        runtime_mode: 'not_started',
+        analysis: 'not_started',
+      },
+      templates: {},
+    };
+    const screen = render(
+      <StarterTourContext.Provider value={context}>
+        <SettingsScreen onBack={jest.fn()} />
+      </StarterTourContext.Provider>,
+    );
+    await waitFor(() => expect(screen.getByTestId('ai-configuration-guide-demo')).toBeTruthy());
+    expect(screen.getByTestId('ai-configuration-guide-demo')).toBeTruthy();
+    expect(screen.getByText('仅用于引导演示，不是实际配置')).toBeTruthy();
+    expect(screen.getByText(/LdFu/)).toBeTruthy();
+    expect(mockedApi.overview).not.toHaveBeenCalled();
+    expect(mockedApi.saveCapability).not.toHaveBeenCalled();
   });
 
   it('disables Secret entry but keeps Local alias configuration available on remote HTTP', async () => {

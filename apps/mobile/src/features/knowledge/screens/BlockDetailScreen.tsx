@@ -8,12 +8,13 @@
  * - 提供定位原文、会话级重点标记与前后块导航。
  *
  * Notes:
- * - 不在客户端修改正文事实，复制能力在未引入剪贴板依赖前使用占位反馈。
+ * - 不在客户端修改正文事实，复制与搜索仅作用于当前文档内容。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { DocumentChunk, KnowledgeDocumentDetail } from '@echowave/contracts';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PageHeader } from '@/shared/ui/PageHeader';
@@ -21,6 +22,7 @@ import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 
 import {
   colors,
@@ -32,8 +34,11 @@ import {
 } from '@/shared/theme/tokens';
 import { getDocument } from '../apiClient';
 import { EmptyState } from '../components/EmptyState';
-import { showComingSoon } from '../components/feedback';
 import { toggleImportantBlock, useImportantBlocks } from '../importantBlocks';
+import { ActionSheet } from '@/shared/ui/ActionSheet';
+import { SearchSheet } from '@/shared/ui/SearchSheet';
+import { GuideDemoBanner } from '../components/GuideDemoBanner';
+import { guideDemoDocument } from '../guideDemoData';
 
 function locatorText(chunk: DocumentChunk, t: ReturnType<typeof useAppLanguage>['t']) {
   const locator = chunk.locator;
@@ -60,6 +65,7 @@ function locatorText(chunk: DocumentChunk, t: ReturnType<typeof useAppLanguage>[
 export function BlockDetailScreen({
   blockId,
   documentId,
+  guideDemo = false,
   knowledgeId,
   onBack,
   onLocateOriginal,
@@ -67,6 +73,7 @@ export function BlockDetailScreen({
 }: {
   blockId: string;
   documentId: string;
+  guideDemo?: boolean;
   knowledgeId: string;
   onBack: () => void;
   onLocateOriginal: (blockId: string) => void;
@@ -75,17 +82,21 @@ export function BlockDetailScreen({
   const { formatNumber, t } = useAppLanguage();
   const [document, setDocument] = useState<KnowledgeDocumentDetail>();
   const [error, setError] = useState('');
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [actionsVisible, setActionsVisible] = useState(false);
   const importantBlocks = useImportantBlocks();
   const runInitialRequest = useInitialRequestLoading();
+  const contentTargetRef = useStarterTourTarget('block-content');
+  const sourceTargetRef = useStarterTourTarget('block-source');
 
   const load = useCallback(async () => {
     try {
-      setDocument(await getDocument(knowledgeId, documentId));
+      setDocument(guideDemo ? guideDemoDocument : await getDocument(knowledgeId, documentId));
       setError('');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t('blockDetail.loadFailed'));
     }
-  }, [documentId, knowledgeId, t]);
+  }, [documentId, guideDemo, knowledgeId, t]);
   const screenRefresh = useScreenRefresh(load);
 
   useEffect(() => {
@@ -100,14 +111,20 @@ export function BlockDetailScreen({
   const previous = index > 0 ? document?.chunks[index - 1] : undefined;
   const next = index >= 0 ? document?.chunks[index + 1] : undefined;
 
+  const copyContent = async () => {
+    if (!block) return;
+    try {
+      await Clipboard.setStringAsync(block.content);
+      Alert.alert(t('blockDetail.copySuccess'));
+    } catch {
+      Alert.alert(t('blockDetail.copyFailed'));
+    }
+  };
+
   if (!document || !block) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <PageHeader
-          onBack={onBack}
-          onMore={() => showComingSoon(t('common.moreActions'))}
-          title={t('blockDetail.title')}
-        />
+        <PageHeader onBack={onBack} title={t('blockDetail.title')} />
         <ScrollView
           alwaysBounceVertical
           contentContainerStyle={styles.emptyRefreshContent}
@@ -127,14 +144,15 @@ export function BlockDetailScreen({
     <SafeAreaView style={styles.safeArea}>
       <PageHeader
         onBack={onBack}
-        onMore={() => showComingSoon(t('common.moreActions'))}
-        onSearch={() => showComingSoon(t('blockDetail.searchAction'))}
+        onMore={guideDemo ? undefined : () => setActionsVisible(true)}
+        onSearch={() => setSearchVisible(true)}
         searchLabel={t('blockDetail.search')}
         title={t('documentDetail.chunkTitle', {
           index: formatNumber(block.index),
           title: block.title || t('documentDetail.body'),
         })}
       />
+      {guideDemo ? <GuideDemoBanner /> : null}
       <ScrollView
         alwaysBounceVertical
         contentContainerStyle={styles.content}
@@ -156,23 +174,29 @@ export function BlockDetailScreen({
         </View>
 
         <Text style={styles.sectionTitle}>{t('blockDetail.content')}</Text>
-        <ContentCard
-          action={
-            <Pressable
-              accessibilityLabel={t('blockDetail.copyAccessibility')}
-              accessibilityRole="button"
-              hitSlop={8}
-              onPress={() => showComingSoon(t('blockDetail.copy'))}
-            >
-              <Ionicons color={colors.ink} name="copy-outline" size={typography.body.lineHeight} />
-            </Pressable>
-          }
-          label={t('blockDetail.content')}
-        >
-          <Text selectable style={styles.body}>
-            {block.content}
-          </Text>
-        </ContentCard>
+        <View collapsable={false} ref={contentTargetRef}>
+          <ContentCard
+            action={
+              <Pressable
+                accessibilityLabel={t('blockDetail.copyAccessibility')}
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() => void copyContent()}
+              >
+                <Ionicons
+                  color={colors.ink}
+                  name="copy-outline"
+                  size={typography.body.lineHeight}
+                />
+              </Pressable>
+            }
+            label={t('blockDetail.content')}
+          >
+            <Text selectable style={styles.body}>
+              {block.content}
+            </Text>
+          </ContentCard>
+        </View>
 
         <View style={styles.sectionHeadingGroup}>
           <Text style={styles.sectionTitle}>{t('blockDetail.sourcePreview')}</Text>
@@ -180,27 +204,29 @@ export function BlockDetailScreen({
             {t('blockDetail.sourceLocation', { location: locatorText(block, t) })}
           </Text>
         </View>
-        <ContentCard
-          action={
-            <Pressable
-              accessibilityLabel={t('blockDetail.fullscreenSource')}
-              accessibilityRole="button"
-              hitSlop={8}
-              onPress={() => onLocateOriginal(block.id)}
-            >
-              <Ionicons
-                color={colors.ink}
-                name="expand-outline"
-                size={typography.body.lineHeight}
-              />
-            </Pressable>
-          }
-          label={t('blockDetail.original')}
-        >
-          <Text selectable style={styles.body}>
-            {block.sourceExcerpt || block.content}
-          </Text>
-        </ContentCard>
+        <View collapsable={false} ref={sourceTargetRef}>
+          <ContentCard
+            action={
+              <Pressable
+                accessibilityLabel={t('blockDetail.fullscreenSource')}
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() => onLocateOriginal(block.id)}
+              >
+                <Ionicons
+                  color={colors.ink}
+                  name="expand-outline"
+                  size={typography.body.lineHeight}
+                />
+              </Pressable>
+            }
+            label={t('blockDetail.original')}
+          >
+            <Text selectable style={styles.body}>
+              {block.sourceExcerpt || block.content}
+            </Text>
+          </ContentCard>
+        </View>
 
         <View style={styles.sectionHeadingGroup}>
           <Text style={styles.sectionTitle}>{t('blockDetail.context')}</Text>
@@ -234,7 +260,7 @@ export function BlockDetailScreen({
           <FooterAction
             icon="copy-outline"
             label={t('blockDetail.copy')}
-            onPress={() => showComingSoon(t('blockDetail.copy'))}
+            onPress={() => void copyContent()}
           />
           <FooterAction
             icon="location-outline"
@@ -266,6 +292,44 @@ export function BlockDetailScreen({
           />
         </View>
       </View>
+      <ActionSheet
+        items={[
+          { icon: 'copy-outline', label: t('blockDetail.copy'), onPress: () => void copyContent() },
+          {
+            icon: 'location-outline',
+            label: t('blockDetail.locate'),
+            onPress: () => onLocateOriginal(block.id),
+          },
+          {
+            icon: important ? 'star' : 'star-outline',
+            label: important ? t('blockDetail.unmark') : t('blockDetail.mark'),
+            onPress: () => toggleImportantBlock(block.id),
+          },
+        ]}
+        onClose={() => setActionsVisible(false)}
+        title={t('blockDetail.actions')}
+        visible={actionsVisible}
+      />
+      <SearchSheet
+        appliedQuery=""
+        inputLabel={t('blockDetail.search')}
+        onApply={(value) => {
+          setSearchVisible(false);
+          const normalized = value.toLocaleLowerCase();
+          if (!normalized) return;
+          const match = document.chunks.find((candidate) =>
+            `${candidate.title}\n${candidate.content}\n${candidate.vectorId}`
+              .toLocaleLowerCase()
+              .includes(normalized),
+          );
+          if (match) onNavigateBlock(match.id);
+          else Alert.alert(t('blockDetail.noSearchMatch'), t('blockDetail.noSearchMatchBody'));
+        }}
+        onClose={() => setSearchVisible(false)}
+        placeholder={t('blockDetail.search')}
+        title={t('blockDetail.searchAction')}
+        visible={searchVisible}
+      />
     </SafeAreaView>
   );
 }

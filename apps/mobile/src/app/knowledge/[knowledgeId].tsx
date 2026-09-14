@@ -22,11 +22,13 @@ export default function KnowledgeDetailRoute() {
   const router = useRouter();
   const params = useLocalSearchParams<{
     groupId?: string | string[];
+    guideDemo?: string | string[];
     knowledgeId?: string | string[];
     origin?: string | string[];
   }>();
   const { knowledgeId } = params;
   const id = firstRouteParam(knowledgeId);
+  const guideDemo = firstRouteParam(params.guideDemo) === 'true';
   const groupId = firstRouteParam(params.groupId);
   const origin = parseResourceOrigin(params.origin);
   const goBack = () => {
@@ -39,6 +41,7 @@ export default function KnowledgeDetailRoute() {
 
   return (
     <KnowledgeDetailScreen
+      guideDemo={guideDemo}
       knowledgeId={id}
       onOpenCollection={(associatedGroupIds) => {
         const selectedGroup =
@@ -85,6 +88,7 @@ export default function KnowledgeDetailRoute() {
             knowledgeId: id,
             origin: origin ?? 'knowledge-list',
             ...(groupId ? { groupId } : {}),
+            ...(guideDemo ? { guideDemo: 'true' } : {}),
           },
         })
       }
@@ -96,6 +100,7 @@ export default function KnowledgeDetailRoute() {
             knowledgeId: id,
             origin: origin ?? 'knowledge-list',
             ...(groupId ? { groupId } : {}),
+            ...(guideDemo ? { guideDemo: 'true' } : {}),
           },
         });
       }}

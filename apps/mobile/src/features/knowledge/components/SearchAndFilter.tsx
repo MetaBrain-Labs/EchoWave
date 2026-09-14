@@ -24,17 +24,17 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 
-import { showComingSoon } from './feedback';
-
 /** 渲染知识库页面复用的搜索框与筛选入口。 */
 export function SearchAndFilter({
   inputRef,
   onChangeText,
+  onFilterPress,
   placeholder,
   value,
 }: {
   inputRef?: RefObject<TextInput | null>;
   onChangeText: (value: string) => void;
+  onFilterPress?: () => void;
   placeholder: string;
   value: string;
 }) {
@@ -62,7 +62,8 @@ export function SearchAndFilter({
       <Pressable
         accessibilityLabel={t('searchFilter.filter')}
         accessibilityRole="button"
-        onPress={() => showComingSoon(t('searchFilter.filter'))}
+        disabled={!onFilterPress}
+        onPress={onFilterPress}
         style={({ pressed }) => [styles.filterButton, pressed && styles.pressed]}
       >
         <Text style={styles.filterText}>{t('searchFilter.filter')}</Text>

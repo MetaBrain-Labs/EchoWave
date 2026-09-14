@@ -7,7 +7,7 @@
  * - 根据数据源标识读取并组合服务端只读详情。
  * - 提供跨音频、上传记录和关联分组的详情搜索。
  * - 协调标签点击、横向滑动、独立纵向滚动和固定操作栏。
- * - 为尚未接入的批量转写和记录操作提供明确反馈。
+ * - 为批量转写、记录重试和运行模式门禁提供明确反馈。
  *
  * Notes:
  * - 页面不持久化筛选、分页或操作栏交互状态。
@@ -17,6 +17,7 @@ import type {
   AudioTranscriptionCapabilitiesResponse,
   AudioTranscriptionPreprocessing,
   AudioRuntimeMode,
+  AudioRuntimeOverview,
   LinkedDataSourceGroup,
   SupportedLanguage,
 } from '@echowave/contracts';
@@ -53,6 +54,7 @@ import { PageTabs } from '@/shared/ui/PageTabs';
 import { SearchSheet } from '@/shared/ui/SearchSheet';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import {
   getDataSource,
   archiveDataSource,
@@ -91,7 +93,7 @@ import { useDataSourceAudioUpdates } from '../hooks/useDataSourceAudioUpdates';
 import { toDataSourceDetailView, type DataSourceDetailView, type SourceAudioItem } from '../model';
 
 import { AudioRow } from '../components/DataSourceAudioRow';
-import { FixedActions, showComingSoon } from '../components/DataSourceFixedActions';
+import { FixedActions } from '../components/DataSourceFixedActions';
 import { GroupCard } from '../components/DataSourceGroupCard';
 import { OverviewContent } from '../components/DataSourceOverviewContent';
 import { UploadRecordRow } from '../components/DataSourceUploadRecordRow';
@@ -173,6 +175,7 @@ export function DataSourceDetailScreen({
     useState<AudioTranscriptionPreprocessing>('silero_vad');
   const [includeAcousticEmotion, setIncludeAcousticEmotion] = useState(true);
   const [audioRuntimeMode, setAudioRuntimeMode] = useState<AudioRuntimeMode>('hybrid');
+  const [audioRuntime, setAudioRuntime] = useState<AudioRuntimeOverview>();
   const [expectedSpeakerCount, setExpectedSpeakerCount] = useState('');
   const [analysisLanguage, setAnalysisLanguage] = useState<SupportedLanguage>(appLanguage);
   const [startingTranscription, setStartingTranscription] = useState(false);
@@ -190,6 +193,9 @@ export function DataSourceDetailScreen({
     onTabChange: setActiveTab,
     tabs: detailTabKeys,
   });
+  const detailHeaderTargetRef = useStarterTourTarget('data-source-detail-header');
+  const audioListTargetRef = useStarterTourTarget('data-source-audio-list');
+  const transcribeTargetRef = useStarterTourTarget('data-source-transcribe');
 
   const load = useCallback(
     async (showLoading = true) => {
@@ -207,7 +213,10 @@ export function DataSourceDetailScreen({
           showLoading ? getAudioRuntime().catch(() => undefined) : Promise.resolve(undefined),
         ]);
         if (showLoading) setTranscriptionCapabilities(capabilities);
-        if (runtime) setAudioRuntimeMode(runtime.mode);
+        if (runtime) {
+          setAudioRuntimeMode(runtime.mode);
+          setAudioRuntime(runtime);
+        }
         setSource(
           toDataSourceDetailView(detail, audio.items, records.items, groups.items, appLanguage),
         );
@@ -236,7 +245,10 @@ export function DataSourceDetailScreen({
       await Promise.all([
         load(false),
         getAudioTranscriptionCapabilities().then(setTranscriptionCapabilities),
-        getAudioRuntime().then((runtime) => setAudioRuntimeMode(runtime.mode)),
+        getAudioRuntime().then((runtime) => {
+          setAudioRuntimeMode(runtime.mode);
+          setAudioRuntime(runtime);
+        }),
       ]);
     } catch (reason) {
       setProgressRefreshError(
@@ -323,6 +335,21 @@ export function DataSourceDetailScreen({
     setUploading(true);
     setOperationError('');
     try {
+      const availability = audioRuntime?.modes.find((item) => item.mode === audioRuntimeMode);
+      if (availability && !availability.available) {
+        setOperationError(
+          t('sourceDetail.runtimeUnavailable', {
+            mode:
+              audioRuntimeMode === 'hybrid'
+                ? t('runtime.hybrid')
+                : audioRuntimeMode === 'object_storage'
+                  ? t('runtime.objectStorage')
+                  : t('runtime.lightweight'),
+            reason: availability.unavailableReason ?? t('runtime.operationFailed'),
+          }),
+        );
+        return;
+      }
       // 兼容旧版测试适配器；正式 API 始终提供流式会话实现。
       if (audioRuntimeMode === 'hybrid' && typeof uploadSessionAudioFiles !== 'function') {
         await uploadDataSourceAudioFiles(sourceId, assets);
@@ -340,6 +367,21 @@ export function DataSourceDetailScreen({
 
   const pickAndUpload = async () => {
     if (uploading) return;
+    const availability = audioRuntime?.modes.find((item) => item.mode === audioRuntimeMode);
+    if (availability && !availability.available) {
+      setOperationError(
+        t('sourceDetail.runtimeUnavailable', {
+          mode:
+            audioRuntimeMode === 'hybrid'
+              ? t('runtime.hybrid')
+              : audioRuntimeMode === 'object_storage'
+                ? t('runtime.objectStorage')
+                : t('runtime.lightweight'),
+          reason: availability.unavailableReason ?? t('runtime.operationFailed'),
+        }),
+      );
+      return;
+    }
     try {
       const selection = await pickDocumentAsync({
         type: ['audio/*'],
@@ -466,11 +508,7 @@ export function DataSourceDetailScreen({
   if (loading) {
     return (
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-        <PageHeader
-          onBack={onBack}
-          onMore={() => showComingSoon(t('common.moreActions'))}
-          title={t('sourceDetail.title')}
-        />
+        <PageHeader onBack={onBack} title={t('sourceDetail.title')} />
         <ActivityIndicator
           accessibilityLabel={t('sourceDetail.loading')}
           color={colors.ink}
@@ -483,11 +521,7 @@ export function DataSourceDetailScreen({
   if (!source) {
     return (
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-        <PageHeader
-          onBack={onBack}
-          onMore={() => showComingSoon(t('common.moreActions'))}
-          title={t('sourceDetail.title')}
-        />
+        <PageHeader onBack={onBack} title={t('sourceDetail.title')} />
         <ScrollView
           alwaysBounceVertical
           contentContainerStyle={styles.emptyState}
@@ -553,6 +587,52 @@ export function DataSourceDetailScreen({
     setIncludeAcousticEmotion(true);
     setAnalysisLanguage(appLanguage);
     setTranscriptionTarget(target);
+  };
+
+  const transcribeAll = () => {
+    const targets = source.audioItems.filter(
+      (item) =>
+        (item.status.kind === 'waiting' ||
+          (item.status.kind === 'transcription-failed' && item.status.retryable)) &&
+        item.sourceRecoveryState !== 'required',
+    );
+    if (!targets.length) {
+      Alert.alert(t('sourceFixed.transcribeAll'), t('sourceDetail.transcribeAllNone'));
+      return;
+    }
+    Alert.alert(
+      t('sourceDetail.transcribeAllConfirm'),
+      t('sourceDetail.transcribeAllConfirmBody', { count: targets.length }),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('common.confirm'),
+          onPress: () => {
+            void Promise.allSettled(
+              targets.map((item) =>
+                startAudioTranscription(item.id, {
+                  model: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+                  includeAcousticEmotion: true,
+                  preprocessing: 'silero_vad',
+                  segmentationMode: 'speaker_turn',
+                  language: appLanguage,
+                }),
+              ),
+            ).then(async (results) => {
+              const succeeded = results.filter((result) => result.status === 'fulfilled').length;
+              await load(false);
+              Alert.alert(
+                t('sourceFixed.transcribeAll'),
+                t('sourceDetail.transcribeAllSummary', {
+                  succeeded,
+                  failed: results.length - succeeded,
+                }),
+              );
+            });
+          },
+        },
+      ],
+    );
   };
 
   const requestTranscription = () => {
@@ -780,19 +860,39 @@ export function DataSourceDetailScreen({
         title={t('sourceDetail.switchTitle')}
         visible={Boolean(switchTarget)}
       />
-      <PageHeader
-        onBack={onBack}
-        onMore={openMoreActions}
-        onSearch={() => setSearchVisible(true)}
-        searchLabel={t('sourceDetail.searchTitle')}
-        title={source.name}
-      />
+      <View collapsable={false} ref={detailHeaderTargetRef}>
+        <PageHeader
+          onBack={onBack}
+          onMore={openMoreActions}
+          onSearch={() => setSearchVisible(true)}
+          searchLabel={t('sourceDetail.searchTitle')}
+          title={source.name}
+        />
+      </View>
       {operationError || audioPlayback.error ? (
         <View style={styles.operationError}>
           <Text accessibilityRole="alert" style={styles.operationErrorText}>
             {audioPlayback.error
               ? t('sourceDetail.playbackFailed', { message: audioPlayback.error })
               : operationError}
+          </Text>
+        </View>
+      ) : null}
+      {audioRuntime?.modes.find((item) => item.mode === audioRuntimeMode && !item.available) ? (
+        <View style={styles.runtimeNotice}>
+          <Ionicons color={colors.secondary} name="information-circle-outline" size={20} />
+          <Text style={styles.runtimeNoticeText}>
+            {t('sourceDetail.runtimeUnavailable', {
+              mode:
+                audioRuntimeMode === 'hybrid'
+                  ? t('runtime.hybrid')
+                  : audioRuntimeMode === 'object_storage'
+                    ? t('runtime.objectStorage')
+                    : t('runtime.lightweight'),
+              reason:
+                audioRuntime.modes.find((item) => item.mode === audioRuntimeMode)
+                  ?.unavailableReason ?? t('runtime.operationFailed'),
+            })}
           </Text>
         </View>
       ) : null}
@@ -867,7 +967,7 @@ export function DataSourceDetailScreen({
           testID="data-source-audio-scroll"
         >
           {renderTabs()}
-          <View style={styles.audioList}>
+          <View collapsable={false} ref={audioListTargetRef} style={styles.audioList}>
             {filteredAudioItems.length === 0 ? (
               <Text style={styles.listEmptyText}>
                 {searchQuery
@@ -924,6 +1024,13 @@ export function DataSourceDetailScreen({
                     .map((record) => (
                       <UploadRecordRow
                         key={record.id}
+                        onRetryTranscription={(retryRecord) => {
+                          const target = source.audioItems.find((item) =>
+                            retryRecord.retryTargetAudioIds.includes(item.id),
+                          );
+                          if (target) prepareTranscription(target);
+                          else setOperationError(t('sourceDetail.startAsrFailed'));
+                        }}
                         onReupload={() => {
                           void pickAndUpload();
                         }}
@@ -966,20 +1073,38 @@ export function DataSourceDetailScreen({
           </View>
         </ScrollView>
       </ScrollView>
-      <FixedActions
-        activeTab={activeTab}
-        onLinkGroups={openGroupPicker}
-        onUpload={() => {
-          void pickAndUpload();
-        }}
-        uploading={uploading}
-      />
+      <View collapsable={false} ref={transcribeTargetRef}>
+        <FixedActions
+          activeTab={activeTab}
+          onLinkGroups={openGroupPicker}
+          onTranscribeAll={transcribeAll}
+          onUpload={() => {
+            void pickAndUpload();
+          }}
+          uploading={uploading}
+        />
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.background, flex: 1 },
+  runtimeNotice: {
+    alignItems: 'flex-start',
+    backgroundColor: colors.card,
+    borderBottomColor: colors.divider,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  runtimeNoticeText: {
+    ...typography.description,
+    color: textColors.secondary,
+    flex: 1,
+    fontFamily: fontFamilies.sans,
+  },
   loading: { marginTop: spacing.xxl },
   emptyState: {
     alignItems: 'center',

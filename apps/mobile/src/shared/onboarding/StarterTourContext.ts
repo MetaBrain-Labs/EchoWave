@@ -27,7 +27,11 @@ export type StarterTourContextValue = {
   activeGuide: GuideId | null;
   activeStep: StarterTourTargetKey | null;
   offerStarterTemplates: (groups: readonly GroupSummary[]) => void;
-  registerTarget: (key: StarterTourTargetKey, node: View | null, prepare?: () => void) => void;
+  registerTarget: (
+    key: StarterTourTargetKey,
+    node: View | null,
+    prepare?: () => void | Promise<void>,
+  ) => void;
   replay: () => void;
   startGuide: (id: GuideId) => void;
   statuses: GuideStatuses;
@@ -53,7 +57,7 @@ export function useStarterTour(): StarterTourContextValue {
 /** 为可测量 View 生成稳定的引导目标 ref。 */
 export function useStarterTourTarget(
   key: StarterTourTargetKey,
-  prepare?: () => void,
+  prepare?: () => void | Promise<void>,
 ): RefCallback<View> {
   const { registerTarget } = useStarterTour();
   return useCallback((node) => registerTarget(key, node, prepare), [key, prepare, registerTarget]);

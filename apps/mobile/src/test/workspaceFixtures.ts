@@ -194,6 +194,7 @@ export const ingestionFixtures: DataSourceIngestionRecord[] = [
     errorCode: null,
     errorMessage: null,
     retryable: false,
+    retryTargetAudioIds: [],
   },
   {
     id: '30000000-0000-4000-8000-000000000002',
@@ -204,6 +205,7 @@ export const ingestionFixtures: DataSourceIngestionRecord[] = [
     errorCode: 'SOURCE_UNAVAILABLE',
     errorMessage: '文件连接已中断',
     retryable: true,
+    retryTargetAudioIds: [],
   },
   {
     id: '50000000-0000-4000-8000-000000000006',
@@ -214,6 +216,7 @@ export const ingestionFixtures: DataSourceIngestionRecord[] = [
     errorCode: 'UNSUPPORTED_CODEC',
     errorMessage: '音频编码暂不支持',
     retryable: false,
+    retryTargetAudioIds: ['50000000-0000-4000-8000-000000000001'],
   },
 ];
 

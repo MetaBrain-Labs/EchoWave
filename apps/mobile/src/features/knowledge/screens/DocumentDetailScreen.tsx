@@ -11,9 +11,22 @@
  * - 文档与解析结果始终以服务器响应为准，重新解析暂不调用失败任务专用接口。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { KnowledgeDocumentDetail, SupportedLanguage } from '@echowave/contracts';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, type TextInput, View } from 'react-native';
+import type {
+  DocumentChunk,
+  KnowledgeDocumentDetail,
+  SupportedLanguage,
+} from '@echowave/contracts';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  type LayoutChangeEvent,
+  type TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PageHeader } from '@/shared/ui/PageHeader';
@@ -23,6 +36,7 @@ import { useSwipePager } from '@/shared/hooks/useSwipePager';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import {
   colors,
@@ -32,17 +46,20 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
-import { getDocument } from '../apiClient';
+import { downloadDocumentSource, getDocument } from '../apiClient';
+import { ActionSheet } from '@/shared/ui/ActionSheet';
 import { ActionButton, DocumentFormatIcon } from '../components/DocumentUi';
 import { KnowledgeDocumentEditor } from '../components/KnowledgeDocumentEditor';
 import { EmptyState } from '../components/EmptyState';
 import { SearchAndFilter } from '../components/SearchAndFilter';
-import { showComingSoon } from '../components/feedback';
 import { toggleImportantBlock, useImportantBlocks } from '../importantBlocks';
+import { GuideDemoBanner } from '../components/GuideDemoBanner';
+import { guideDemoDocument } from '../guideDemoData';
 
 const tabKeys = ['parsed', 'original'] as const;
 type Tab = (typeof tabKeys)[number];
 type PreviewMode = 'preview' | 'code';
+type ChunkFilter = 'all' | 'important';
 
 function formatBytes(sizeBytes: number, language: SupportedLanguage) {
   const formatter = new Intl.NumberFormat(language, {
@@ -53,8 +70,45 @@ function formatBytes(sizeBytes: number, language: SupportedLanguage) {
   return `${formatter.format(sizeBytes / 1024 / 1024)} MB`;
 }
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** 在原文预览中标记搜索命中，保持原始正文可选择和复制。 */
+function HighlightedText({ content, query }: { content: string; query: string }): ReactNode {
+  const normalized = query.trim();
+  if (!normalized) return content;
+  const parts = content.split(new RegExp(`(${escapeRegExp(normalized)})`, 'ig'));
+  return parts.map((part, index) =>
+    part.toLocaleLowerCase() === normalized.toLocaleLowerCase() ? (
+      <Text key={`${part}-${index}`} style={styles.searchHighlight}>
+        {part}
+      </Text>
+    ) : (
+      part
+    ),
+  );
+}
+
+function findOriginalTarget(previewText: string, chunk?: DocumentChunk) {
+  if (!chunk || !previewText) return undefined;
+  const previewLower = previewText.toLocaleLowerCase();
+  const candidates = [chunk.sourceExcerpt, chunk.content]
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  const matched = candidates.find((value) => previewLower.includes(value.toLocaleLowerCase()));
+  if (!matched) return undefined;
+  const lineQuery =
+    matched
+      .split(/\r?\n/)
+      .find((line) => line.trim())
+      ?.trim() ?? matched;
+  return { lineQuery };
+}
+
 /** 加载并展示指定知识文档的解析结果与原文预览。 */
 export function DocumentDetailScreen({
+  guideDemo = false,
   documentId,
   initialBlockId,
   initialTab = 'parsed',
@@ -62,6 +116,7 @@ export function DocumentDetailScreen({
   onBack,
   onOpenBlock,
 }: {
+  guideDemo?: boolean;
   documentId: string;
   initialBlockId?: string;
   initialTab?: Tab;
@@ -80,8 +135,17 @@ export function DocumentDetailScreen({
   const [previewMode, setPreviewMode] = useState<PreviewMode>('preview');
   const [fullScreen, setFullScreen] = useState(false);
   const [query, setQuery] = useState('');
+  const [originalQuery, setOriginalQuery] = useState('');
+  const [chunkFilter, setChunkFilter] = useState<ChunkFilter>('all');
+  const [chunkFilterVisible, setChunkFilterVisible] = useState(false);
   const [error, setError] = useState('');
   const searchInputRef = useRef<TextInput>(null);
+  const originalSearchInputRef = useRef<TextInput>(null);
+  const originalScrollRef = useRef<ScrollView>(null);
+  const originalPreviewYRef = useRef<number | undefined>(undefined);
+  const originalTargetYRef = useRef<number | undefined>(undefined);
+  const [originalLayoutVersion, setOriginalLayoutVersion] = useState(0);
+  const originalLocatedRef = useRef(false);
   const importantBlocks = useImportantBlocks();
   const runInitialRequest = useInitialRequestLoading();
   const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } = useSwipePager({
@@ -89,15 +153,17 @@ export function DocumentDetailScreen({
     onTabChange: setActiveTab,
     tabs: tabKeys,
   });
+  const documentStatusTargetRef = useStarterTourTarget('knowledge-document-status');
+  const blockListTargetRef = useStarterTourTarget('document-block-list');
 
   const load = useCallback(async () => {
     try {
-      setDocument(await getDocument(knowledgeId, documentId));
+      setDocument(guideDemo ? guideDemoDocument : await getDocument(knowledgeId, documentId));
       setError('');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t('documentDetail.loadFailed'));
     }
-  }, [documentId, knowledgeId, t]);
+  }, [documentId, guideDemo, knowledgeId, t]);
   const screenRefresh = useScreenRefresh(load);
 
   useEffect(() => {
@@ -112,13 +178,63 @@ export function DocumentDetailScreen({
 
   const chunks = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
-    if (!normalized) return document?.chunks ?? [];
-    return (document?.chunks ?? []).filter((chunk) =>
-      `${chunk.title}\n${chunk.content}\n${chunk.vectorId}`
-        .toLocaleLowerCase()
-        .includes(normalized),
-    );
-  }, [document, query]);
+    const matching = !normalized
+      ? (document?.chunks ?? [])
+      : (document?.chunks ?? []).filter((chunk) =>
+          `${chunk.title}\n${chunk.content}\n${chunk.vectorId}`
+            .toLocaleLowerCase()
+            .includes(normalized),
+        );
+    return chunkFilter === 'important'
+      ? matching.filter((chunk) => importantBlocks.has(chunk.id))
+      : matching;
+  }, [chunkFilter, document, importantBlocks, query]);
+
+  const originalTarget = useMemo(
+    () =>
+      findOriginalTarget(
+        document?.previewText ?? '',
+        document?.chunks.find((chunk) => chunk.id === initialBlockId),
+      ),
+    [document, initialBlockId],
+  );
+  const originalTargetKey = originalTarget?.lineQuery ?? '';
+  useEffect(() => {
+    originalLocatedRef.current = false;
+    originalPreviewYRef.current = undefined;
+    originalTargetYRef.current = undefined;
+  }, [originalTargetKey]);
+
+  const handleOriginalPreviewLayout = useCallback((y: number) => {
+    originalPreviewYRef.current = y;
+    setOriginalLayoutVersion((version) => version + 1);
+  }, []);
+  const handleOriginalTargetLayout = useCallback((y: number) => {
+    originalTargetYRef.current = y;
+    setOriginalLayoutVersion((version) => version + 1);
+  }, []);
+
+  useEffect(() => {
+    if (
+      activeTab !== 'original' ||
+      !originalTarget ||
+      originalPreviewYRef.current === undefined ||
+      originalTargetYRef.current === undefined ||
+      originalLocatedRef.current
+    ) {
+      return undefined;
+    }
+    const previewY = originalPreviewYRef.current;
+    const targetY = originalTargetYRef.current;
+    const frame = requestAnimationFrame(() => {
+      originalScrollRef.current?.scrollTo({
+        animated: true,
+        y: Math.max(0, previewY + targetY - spacing.lg),
+      });
+      originalLocatedRef.current = true;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeTab, originalLayoutVersion, originalTarget]);
 
   if (!document) {
     return (
@@ -147,6 +263,7 @@ export function DocumentDetailScreen({
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
         <DocumentPreview
           fullScreen
+          highlightQuery={originalQuery}
           mode={previewMode}
           onModeChange={setPreviewMode}
           onRefresh={screenRefresh.onRefresh}
@@ -184,11 +301,11 @@ export function DocumentDetailScreen({
       ) : null}
       <PageHeader
         leading={<DocumentFormatIcon format={document.format} size={28} />}
-        onMore={() => setEditingDocument(true)}
+        onMore={guideDemo ? undefined : () => setEditingDocument(true)}
         onBack={onBack}
         onSearch={() => {
           if (activeTab === 'parsed') searchInputRef.current?.focus();
-          else showComingSoon(t('documentDetail.originalSearch'));
+          else originalSearchInputRef.current?.focus();
         }}
         searchLabel={
           activeTab === 'parsed'
@@ -197,6 +314,7 @@ export function DocumentDetailScreen({
         }
         title={document.title}
       />
+      {guideDemo ? <GuideDemoBanner /> : null}
       <PageTabs
         activeTab={activeTab}
         onChange={selectTab}
@@ -211,6 +329,7 @@ export function DocumentDetailScreen({
         onMomentumScrollEnd={handleMomentumScrollEnd}
         pagingEnabled
         ref={pagerRef}
+        contentOffset={{ x: Math.max(tabKeys.indexOf(activeTab), 0) * pageWidth, y: 0 }}
         showsHorizontalScrollIndicator={false}
         style={styles.pager}
         testID="document-detail-pager"
@@ -225,7 +344,7 @@ export function DocumentDetailScreen({
             stickyHeaderIndices={[1]}
             testID="document-parsed-scroll"
           >
-            <View style={styles.parsedOverview}>
+            <View ref={documentStatusTargetRef} collapsable={false} style={styles.parsedOverview}>
               <Text style={styles.sectionTitle}>{t('documentDetail.parseStatus')}</Text>
               <Text style={styles.timestamp}>
                 {t('documentDetail.parsedAt', { date: formatDateTime(parsedAt) })}
@@ -261,11 +380,12 @@ export function DocumentDetailScreen({
               <SearchAndFilter
                 inputRef={searchInputRef}
                 onChangeText={setQuery}
+                onFilterPress={() => setChunkFilterVisible(true)}
                 placeholder={t('documentDetail.searchParsed')}
                 value={query}
               />
             </View>
-            <View style={styles.chunkList}>
+            <View ref={blockListTargetRef} collapsable={false} style={styles.chunkList}>
               {chunks.map((chunk) => {
                 const important = importantBlocks.has(chunk.id);
                 return (
@@ -347,7 +467,9 @@ export function DocumentDetailScreen({
             alwaysBounceVertical
             contentContainerStyle={styles.originalContent}
             refreshControl={<ScreenRefreshControl {...screenRefresh} />}
+            ref={originalScrollRef}
             showsVerticalScrollIndicator={false}
+            testID="document-original-scroll"
           >
             <View style={styles.documentMetaRow}>
               <DocumentFormatIcon format={document.format} size={40} />
@@ -370,7 +492,18 @@ export function DocumentDetailScreen({
               <Pressable
                 accessibilityLabel={t('documentDetail.downloadAccessibility')}
                 accessibilityRole="button"
-                onPress={() => showComingSoon(t('documentDetail.downloadAction'))}
+                onPress={() => {
+                  void downloadDocumentSource(knowledgeId, document.id, document.title).catch(
+                    (reason) => {
+                      Alert.alert(
+                        t('documentDetail.downloadFailed'),
+                        reason instanceof Error
+                          ? reason.message
+                          : t('documentDetail.downloadFailed'),
+                      );
+                    },
+                  );
+                }}
                 style={({ pressed }) => [styles.downloadButton, pressed && styles.pressed]}
               >
                 <Ionicons
@@ -381,20 +514,47 @@ export function DocumentDetailScreen({
                 <Text style={styles.downloadText}>{t('documentDetail.download')}</Text>
               </Pressable>
             </View>
+            <SearchAndFilter
+              inputRef={originalSearchInputRef}
+              onChangeText={setOriginalQuery}
+              placeholder={t('documentDetail.searchOriginal')}
+              value={originalQuery}
+            />
             <View style={styles.divider} />
             <DocumentPreview
               mode={previewMode}
               onModeChange={setPreviewMode}
+              onPreviewLayout={handleOriginalPreviewLayout}
               onRefresh={screenRefresh.onRefresh}
+              onTargetLayout={handleOriginalTargetLayout}
               onToggleFullScreen={() => setFullScreen(true)}
               previewText={document.previewText}
               refreshing={screenRefresh.refreshing}
+              highlightQuery={originalQuery || originalTarget?.lineQuery || ''}
+              targetQuery={originalTarget?.lineQuery}
               title={document.title}
             />
           </ScrollView>
           <FixedAction label={t('documentDetail.reparse')} onPress={reparse} />
         </View>
       </ScrollView>
+      <ActionSheet
+        items={[
+          {
+            icon: 'list-outline',
+            label: t('documentDetail.filterAll'),
+            onPress: () => setChunkFilter('all'),
+          },
+          {
+            icon: 'star-outline',
+            label: t('documentDetail.filterImportant'),
+            onPress: () => setChunkFilter('important'),
+          },
+        ]}
+        onClose={() => setChunkFilterVisible(false)}
+        title={t('documentDetail.filterAction')}
+        visible={chunkFilterVisible}
+      />
     </SafeAreaView>
   );
 }
@@ -426,29 +586,114 @@ function FixedAction({ label, onPress }: { label: string; onPress: () => void })
   );
 }
 
+function PreviewTextContent({
+  content,
+  fontSize,
+  highlightQuery,
+  mode,
+  onLayout,
+  onTargetLayout,
+  targetQuery,
+}: {
+  content: string;
+  fontSize: number;
+  highlightQuery: string;
+  mode: PreviewMode;
+  onLayout?: (event: LayoutChangeEvent) => void;
+  onTargetLayout?: (event: LayoutChangeEvent) => void;
+  targetQuery?: string;
+}) {
+  const textStyle = [styles.previewText, { fontSize }, mode === 'code' && styles.codeText];
+  const lines = content.split(/\r?\n/);
+  const normalizedTarget = targetQuery?.trim().toLocaleLowerCase();
+  const targetLineIndex = normalizedTarget
+    ? lines.findIndex((line) => line.toLocaleLowerCase().includes(normalizedTarget))
+    : -1;
+
+  if (targetLineIndex < 0) {
+    return (
+      <Text onLayout={onLayout} selectable style={textStyle}>
+        <HighlightedText content={content} query={highlightQuery} />
+      </Text>
+    );
+  }
+
+  return (
+    <View onLayout={onLayout}>
+      {lines.map((line, index) => (
+        <Text
+          key={`${index}-${line}`}
+          onLayout={index === targetLineIndex ? onTargetLayout : undefined}
+          selectable
+          style={textStyle}
+          testID={index === targetLineIndex ? 'document-original-target-line' : undefined}
+        >
+          <HighlightedText content={line || ' '} query={highlightQuery} />
+        </Text>
+      ))}
+    </View>
+  );
+}
+
 function DocumentPreview({
   fullScreen = false,
+  highlightQuery,
   mode,
   onModeChange,
+  onPreviewLayout,
+  onTargetLayout,
   onRefresh,
   onToggleFullScreen,
   previewText,
   refreshing,
+  targetQuery,
   title,
 }: {
   fullScreen?: boolean;
+  highlightQuery: string;
   mode: PreviewMode;
   onModeChange: (mode: PreviewMode) => void;
+  onPreviewLayout?: (y: number) => void;
+  onTargetLayout?: (y: number) => void;
   onRefresh: () => void;
   onToggleFullScreen: () => void;
   previewText: string;
   refreshing: boolean;
+  targetQuery?: string;
   title: string;
 }) {
   const { t } = useAppLanguage();
+  const [zoom, setZoom] = useState(100);
+  const [zoomVisible, setZoomVisible] = useState(false);
+  const previewContentYRef = useRef(0);
+  const textBlockYRef = useRef(0);
   const content = previewText || t('documentDetail.noPreview');
+  const reportTargetLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      onTargetLayout?.(
+        previewContentYRef.current + textBlockYRef.current + event.nativeEvent.layout.y,
+      );
+    },
+    [onTargetLayout],
+  );
+  const textContent = (
+    <PreviewTextContent
+      content={content}
+      fontSize={(typography.body.fontSize ?? 16) * (zoom / 100)}
+      highlightQuery={highlightQuery}
+      mode={mode}
+      onLayout={(event) => {
+        textBlockYRef.current = event.nativeEvent.layout.y;
+      }}
+      onTargetLayout={reportTargetLayout}
+      targetQuery={targetQuery}
+    />
+  );
   return (
     <View
+      onLayout={
+        onPreviewLayout ? (event) => onPreviewLayout(event.nativeEvent.layout.y) : undefined
+      }
       style={[styles.previewCard, fullScreen && styles.fullScreenPreview]}
       testID={fullScreen ? 'document-fullscreen-preview' : 'document-preview'}
     >
@@ -475,10 +720,10 @@ function DocumentPreview({
         <Pressable
           accessibilityLabel={t('documentDetail.zoomAccessibility')}
           accessibilityRole="button"
-          onPress={() => showComingSoon(t('documentDetail.zoomAction'))}
+          onPress={() => setZoomVisible(true)}
           style={styles.toolbarButton}
         >
-          <Text style={styles.toolbarText}>100%</Text>
+          <Text style={styles.toolbarText}>{zoom}%</Text>
           <Ionicons color={colors.ink} name="chevron-down" size={typography.heading5.lineHeight} />
         </Pressable>
         <Pressable
@@ -508,22 +753,32 @@ function DocumentPreview({
               {title}
             </Text>
           ) : null}
-          <Text selectable style={[styles.previewText, mode === 'code' && styles.codeText]}>
-            {content}
-          </Text>
+          {textContent}
         </ScrollView>
       ) : (
-        <View style={styles.previewContent}>
+        <View
+          onLayout={(event) => {
+            previewContentYRef.current = event.nativeEvent.layout.y;
+          }}
+          style={styles.previewContent}
+        >
           {mode === 'preview' ? (
             <Text accessibilityRole="header" style={styles.previewTitle}>
               {title}
             </Text>
           ) : null}
-          <Text selectable style={[styles.previewText, mode === 'code' && styles.codeText]}>
-            {content}
-          </Text>
+          {textContent}
         </View>
       )}
+      <ActionSheet
+        items={[70, 85, 100, 115, 130].map((value) => ({
+          label: `${value}%`,
+          onPress: () => setZoom(value),
+        }))}
+        onClose={() => setZoomVisible(false)}
+        title={t('documentDetail.zoomAction')}
+        visible={zoomVisible}
+      />
     </View>
   );
 }
@@ -673,6 +928,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   previewText: { ...typography.body, color: textColors.primary, fontFamily: fontFamilies.sans },
+  searchHighlight: { backgroundColor: colors.successSurface, color: textColors.primary },
   codeText: { color: textColors.secondary },
   pressed: { backgroundColor: colors.background },
 });

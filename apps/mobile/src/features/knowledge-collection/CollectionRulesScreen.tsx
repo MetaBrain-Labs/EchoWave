@@ -37,6 +37,7 @@ import {
 } from '@/shared/api/collectionApi';
 import { FixedActionButton } from '@/shared/ui/FixedActionButton';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import {
   CollectionButton,
   CollectionCheck,
@@ -74,6 +75,7 @@ export function CollectionRulesScreen({
   onBack,
   onSwitchGroup,
   defaultKnowledgeId,
+  guideDemo = false,
   navigation,
   view = 'home',
   ruleId,
@@ -86,9 +88,13 @@ export function CollectionRulesScreen({
   onBack: () => void;
   onSwitchGroup?: () => void;
   defaultKnowledgeId?: string;
+  guideDemo?: boolean;
   navigation?: Pick<NavigationProp<ParamListBase>, 'dispatch'>;
 }) {
   const { t } = useAppLanguage();
+  const rulesTargetRef = useStarterTourTarget('collection-rules');
+  const editorTargetRef = useStarterTourTarget('collection-rule-editor');
+  const historyTargetRef = useStarterTourTarget('collection-history');
   const defaults = useCallback(
     (): CollectionRuleInput => ({
       name: '',
@@ -200,14 +206,15 @@ export function CollectionRulesScreen({
     initialized.current = true;
     void Promise.resolve().then(() => {
       const rule = ruleId ? rules.find((r) => r.id === ruleId) : undefined;
-      if (ruleId && !rule) {
+      if (ruleId && !rule && !guideDemo) {
         setError(t('collection.loadFailed'));
         return;
       }
       edit(rule);
     });
-  }, [view, loading, ruleId, rules, t, edit]);
+  }, [view, loading, ruleId, rules, t, edit, guideDemo]);
   const save = async () => {
+    if (guideDemo) return;
     setBusy(true);
     setError('');
     try {
@@ -267,7 +274,7 @@ export function CollectionRulesScreen({
   };
   const dirty = editing && baseline !== JSON.stringify({ draft, labels, keywords, confidence });
   // 使用 Expo Router 内置移除保护，覆盖原生手势、系统返回及浏览器导航。
-  usePreventRemove(!!navigation && editing && (dirty || busy), ({ data }) => {
+  usePreventRemove(!!navigation && !guideDemo && editing && (dirty || busy), ({ data }) => {
     if (committed.current) {
       navigation?.dispatch(data.action);
       return;
@@ -285,6 +292,10 @@ export function CollectionRulesScreen({
   /** 离开编辑或切换分组前必须明确放弃未保存输入。 */
   const leave = (next: () => void) => {
     if (busy) return;
+    if (guideDemo) {
+      next();
+      return;
+    }
     if (!dirty) {
       next();
       return;
@@ -301,6 +312,7 @@ export function CollectionRulesScreen({
     else leave(editing && !onOperation ? () => setEditing(false) : onBack);
   };
   useEffect(() => {
+    if (guideDemo) return;
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
       if (!editing) return false;
       if (busy) return true;
@@ -324,7 +336,7 @@ export function CollectionRulesScreen({
       return true;
     });
     return () => subscription.remove();
-  }, [editing, busy, dirty, t, onOperation, onBack, navigation]);
+  }, [editing, busy, dirty, t, onOperation, onBack, navigation, guideDemo]);
   const targetUnavailable =
     !!draft.knowledgeBaseId && !bases.some((base) => base.id === draft.knowledgeBaseId);
   return (
@@ -357,7 +369,9 @@ export function CollectionRulesScreen({
                 emphasized
                 icon="checkmark-outline"
                 label={t('collection.saveRule')}
-                disabled={busy || loading || targetUnavailable || (!!ruleId && !previous)}
+                disabled={
+                  guideDemo || busy || loading || targetUnavailable || (!!ruleId && !previous)
+                }
                 onPress={() => void save()}
               />
             </View>
@@ -365,7 +379,9 @@ export function CollectionRulesScreen({
         ) : undefined
       }
     >
-      <Text style={styles.hint}>{t('collection.rulesHint')}</Text>
+      <View collapsable={false} ref={rulesTargetRef}>
+        <Text style={styles.hint}>{t('collection.rulesHint')}</Text>
+      </View>
       {view === 'home' && !editing ? (
         <>
           {onSwitchGroup ? (
@@ -419,7 +435,7 @@ export function CollectionRulesScreen({
         />
       ) : null}
       {editing ? (
-        <View key={editorKey} style={styles.card}>
+        <View collapsable={false} key={editorKey} ref={editorTargetRef} style={styles.card}>
           {previous && onOperation ? (
             <CollectionNavigationRow
               title={t('collection.history')}
@@ -562,7 +578,7 @@ export function CollectionRulesScreen({
         </View>
       ) : null}
       {view === 'history' ? (
-        <View style={styles.card}>
+        <View collapsable={false} ref={historyTargetRef} style={styles.card}>
           <Text style={styles.heading}>{t('collection.history')}</Text>
           <CollectionPicker
             label={t('collection.selectRule')}

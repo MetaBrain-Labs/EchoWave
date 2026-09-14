@@ -9,11 +9,12 @@
  * - 不隐式选择分组，也不保存全局工作区状态。
  */
 import { useCallback, useEffect, useState } from 'react';
-import { Text } from 'react-native';
+import { Text, View } from 'react-native';
 import type { GroupSummary } from '@echowave/contracts';
 import { listGroups } from '@/shared/api/groupsApi';
 import { listKnowledgeBaseGroups } from '@/shared/api/knowledgeBasesApi';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import {
   CollectionButton,
   CollectionField,
@@ -33,6 +34,7 @@ export function CollectionGroupsScreen({
   onSelect: (id: string) => void;
 }) {
   const { t } = useAppLanguage();
+  const groupTargetRef = useStarterTourTarget('collection-group');
   const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [linked, setLinked] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState('');
@@ -86,14 +88,16 @@ export function CollectionGroupsScreen({
           {t(groups.length ? 'collection.noMatches' : 'collection.noGroups')}
         </Text>
       ) : null}
-      {visible.map((group) => (
-        <CollectionNavigationRow
-          key={group.id}
-          title={group.name}
-          description={linked.has(group.id) ? t('collection.linkedGroup') : undefined}
-          onPress={() => onSelect(group.id)}
-        />
-      ))}
+      <View collapsable={false} ref={groupTargetRef}>
+        {visible.map((group) => (
+          <CollectionNavigationRow
+            key={group.id}
+            title={group.name}
+            description={linked.has(group.id) ? t('collection.linkedGroup') : undefined}
+            onPress={() => onSelect(group.id)}
+          />
+        ))}
+      </View>
     </CollectionLayout>
   );
 }

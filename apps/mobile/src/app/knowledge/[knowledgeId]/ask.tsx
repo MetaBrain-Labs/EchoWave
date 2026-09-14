@@ -22,19 +22,27 @@ export default function KnowledgeQueryRoute() {
   const router = useRouter();
   const params = useLocalSearchParams<{
     groupId?: string | string[];
+    guideDemo?: string | string[];
     knowledgeId?: string | string[];
     origin?: string | string[];
   }>();
   const knowledgeId = firstRouteParam(params.knowledgeId);
+  const guideDemo = firstRouteParam(params.guideDemo) === 'true';
   const groupId = firstRouteParam(params.groupId);
   const origin = parseResourceOrigin(params.origin) ?? 'knowledge-list';
   return (
     <KnowledgeQueryScreen
+      guideDemo={guideDemo}
       knowledgeId={knowledgeId}
       onBack={() =>
         backOrReplace(router, {
           pathname: '/knowledge/[knowledgeId]',
-          params: { knowledgeId, origin, ...(groupId ? { groupId } : {}) },
+          params: {
+            knowledgeId,
+            origin,
+            ...(groupId ? { groupId } : {}),
+            ...(guideDemo ? { guideDemo: 'true' } : {}),
+          },
         })
       }
       onOpenCitation={(documentId, chunkId) =>
@@ -47,6 +55,7 @@ export default function KnowledgeQueryRoute() {
             returnTo: 'knowledge-query',
             origin,
             ...(groupId ? { groupId } : {}),
+            ...(guideDemo ? { guideDemo: 'true' } : {}),
           },
         })
       }

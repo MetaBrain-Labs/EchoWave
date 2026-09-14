@@ -389,7 +389,8 @@ describe('GroupScreen', () => {
     const screen = await renderGroup({ onOpenSettings });
 
     fireEvent.press(screen.getByLabelText('菜单'));
-    fireEvent.press(screen.getByLabelText(`打开分组设置：${groupFixture.name}`));
+    fireEvent.press(screen.getByLabelText(`分组操作：${groupFixture.name}`));
+    fireEvent.press(screen.getAllByRole('button', { name: '分组设置' })[0]!);
     await finishDrawerClose();
 
     expect(onOpenSettings).toHaveBeenCalledWith(groupFixture.id);

@@ -37,6 +37,7 @@ import {
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
+import { ActionSheet } from '@/shared/ui/ActionSheet';
 
 const modeCopyKeys: Record<
   AudioRuntimeMode,
@@ -87,6 +88,7 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
   const [error, setError] = useState<string>();
   const [dirty, setDirty] = useState(false);
   const [baseRevision, setBaseRevision] = useState<number>();
+  const [actionsVisible, setActionsVisible] = useState(false);
 
   const applyOverview = (value: AudioRuntimeOverview) => {
     setOverview(value);
@@ -142,9 +144,21 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
     }
   };
 
+  const resetDraft = () => {
+    if (!overview) return;
+    applyOverview(overview);
+    setToken('');
+    setError(undefined);
+  };
+
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
-      <PageHeader onBack={onBack} onMore={() => undefined} title={t('runtime.title')} />
+      <PageHeader
+        moreLabel={t('runtime.moreActions')}
+        onBack={onBack}
+        onMore={() => setActionsVisible(true)}
+        title={t('runtime.title')}
+      />
       <ScrollView
         alwaysBounceVertical
         contentContainerStyle={styles.content}
@@ -250,6 +264,30 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
           </Pressable>
         </View>
       </ScrollView>
+      <ActionSheet
+        items={[
+          {
+            icon: 'refresh-outline',
+            label: t('runtime.refresh'),
+            onPress: screenRefresh.onRefresh,
+          },
+          {
+            disabled: !dirty || saving,
+            icon: 'return-up-back-outline',
+            label: t('runtime.resetDraft'),
+            onPress: resetDraft,
+          },
+          {
+            disabled: !token || saving,
+            icon: 'key-outline',
+            label: t('runtime.clearToken'),
+            onPress: () => setToken(''),
+          },
+        ]}
+        onClose={() => setActionsVisible(false)}
+        title={t('runtime.moreActions')}
+        visible={actionsVisible}
+      />
     </SafeAreaView>
   );
 }

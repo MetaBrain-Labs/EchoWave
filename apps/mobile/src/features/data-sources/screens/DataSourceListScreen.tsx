@@ -109,6 +109,9 @@ export function DataSourceListScreen({
   const { t } = useAppLanguage();
   const headerTourRef = useStarterTourTarget('data-sources-header');
   const createTourRef = useStarterTourTarget('data-sources-create');
+  const detailTourRef = useStarterTourTarget('data-source-detail-header');
+  const audioTourRef = useStarterTourTarget('data-source-audio-list');
+  const transcribeTourRef = useStarterTourTarget('data-source-transcribe');
   const [dataSources, setDataSources] = useState<DataSourceSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -247,12 +250,20 @@ export function DataSourceListScreen({
             <Text style={styles.description}>{t('sources.noMatch', { query: searchQuery })}</Text>
           ) : null}
           {!loading && !error
-            ? visibleDataSources.map((source) => (
-                <DataSourceCard
-                  key={source.id}
-                  onOpen={() => onOpenSource(source.id)}
-                  source={source}
-                />
+            ? visibleDataSources.map((source, index) => (
+                <View key={source.id}>
+                  {index === 0 ? (
+                    <View collapsable={false} ref={detailTourRef}>
+                      <View collapsable={false} ref={audioTourRef}>
+                        <View collapsable={false} ref={transcribeTourRef}>
+                          <DataSourceCard onOpen={() => onOpenSource(source.id)} source={source} />
+                        </View>
+                      </View>
+                    </View>
+                  ) : (
+                    <DataSourceCard onOpen={() => onOpenSource(source.id)} source={source} />
+                  )}
+                </View>
               ))
             : null}
         </View>

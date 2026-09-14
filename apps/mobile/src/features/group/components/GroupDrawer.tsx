@@ -36,26 +36,35 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { ActionSheet } from '@/shared/ui/ActionSheet';
 
 /** 渲染从左侧进入的分组目录。 */
 export function GroupDrawer({
   createError,
   creating,
   groups,
+  onArchive,
   onClose,
   onCreate,
   onOpenSettings,
+  onRename,
   onSelect,
+  renameError,
+  renaming,
   selectedGroupId,
   visible,
 }: {
   createError: string;
   creating: boolean;
   groups: GroupSummary[];
+  onArchive: (group: GroupSummary) => void;
   onClose: () => void;
   onCreate: (name: string) => Promise<boolean>;
   onOpenSettings: (group: GroupSummary) => void;
+  onRename: (group: GroupSummary, name: string) => Promise<boolean>;
   onSelect: (group: GroupSummary) => void;
+  renameError: string;
+  renaming: boolean;
   selectedGroupId?: string;
   visible: boolean;
 }) {
@@ -65,6 +74,15 @@ export function GroupDrawer({
   const closeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
+  const [actionTarget, setActionTarget] = useState<GroupSummary>();
+  const [renameTarget, setRenameTarget] = useState<GroupSummary>();
+  const [renameName, setRenameName] = useState('');
+
+  const closeActions = () => setActionTarget(undefined);
+  const openRename = (target: GroupSummary) => {
+    setRenameName(target.name);
+    setRenameTarget(target);
+  };
 
   useEffect(() => {
     if (!visible) return;
@@ -100,9 +118,46 @@ export function GroupDrawer({
     if (await onCreate(trimmed)) closeDrawer();
   };
 
+  const submitRename = async () => {
+    const target = renameTarget;
+    const trimmed = renameName.trim();
+    if (!target || !trimmed || renaming) return;
+    if (await onRename(target, trimmed)) {
+      setRenameTarget(undefined);
+      setRenameName('');
+    }
+  };
+
   return (
     <Modal animationType="none" onRequestClose={() => closeDrawer()} transparent visible={visible}>
       <View accessibilityViewIsModal style={styles.drawerOverlay}>
+        <ActionSheet
+          items={
+            actionTarget
+              ? [
+                  {
+                    icon: 'create-outline',
+                    label: t('groupDrawer.rename'),
+                    onPress: () => openRename(actionTarget),
+                  },
+                  {
+                    icon: 'options-outline',
+                    label: t('groupDrawer.settings'),
+                    onPress: () => closeDrawer(() => onOpenSettings(actionTarget)),
+                  },
+                  {
+                    destructive: true,
+                    icon: 'archive-outline',
+                    label: t('groupDrawer.archive'),
+                    onPress: () => closeDrawer(() => onArchive(actionTarget)),
+                  },
+                ]
+              : []
+          }
+          onClose={closeActions}
+          title={actionTarget ? t('groupDrawer.actions', { name: actionTarget.name }) : undefined}
+          visible={Boolean(actionTarget)}
+        />
         <Animated.View style={[styles.drawer, { transform: [{ translateX }] }]}>
           <SafeAreaView edges={['top', 'bottom']} style={styles.drawerSafeArea}>
             <View style={styles.brandBlock}>
@@ -178,6 +233,62 @@ export function GroupDrawer({
               </Pressable>
             )}
 
+            {renameTarget ? (
+              <View style={styles.createBox}>
+                <TextInput
+                  accessibilityLabel={t('groupDrawer.renameName')}
+                  autoFocus
+                  editable={!renaming}
+                  maxLength={120}
+                  onChangeText={setRenameName}
+                  onSubmitEditing={() => {
+                    void submitRename();
+                  }}
+                  placeholder={t('groupDrawer.namePlaceholder')}
+                  placeholderTextColor={textColors.tertiary}
+                  returnKeyType="done"
+                  style={styles.input}
+                  value={renameName}
+                />
+                {renameError ? (
+                  <Text accessibilityRole="alert" style={styles.errorText}>
+                    {renameError}
+                  </Text>
+                ) : null}
+                <View style={styles.createActions}>
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={renaming}
+                    onPress={() => {
+                      setRenameTarget(undefined);
+                      setRenameName('');
+                    }}
+                    style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
+                  >
+                    <Text style={styles.secondaryButtonText}>{t('common.cancel')}</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={!renameName.trim() || renaming}
+                    onPress={() => {
+                      void submitRename();
+                    }}
+                    style={({ pressed }) => [
+                      styles.createSubmitButton,
+                      (!renameName.trim() || renaming) && styles.disabled,
+                      pressed && styles.primaryPressed,
+                    ]}
+                  >
+                    {renaming ? (
+                      <ActivityIndicator color={colors.white} size="small" />
+                    ) : (
+                      <Text style={styles.createSubmitText}>{t('common.confirm')}</Text>
+                    )}
+                  </Pressable>
+                </View>
+              </View>
+            ) : null}
+
             <Text style={styles.sectionTitle}>{t('groupDrawer.list')}</Text>
             <ScrollView
               contentContainerStyle={styles.groupList}
@@ -223,10 +334,10 @@ export function GroupDrawer({
                         </Text>
                       </Pressable>
                       <Pressable
-                        accessibilityLabel={t('groupDrawer.settings', { name: group.name })}
+                        accessibilityLabel={t('groupDrawer.actions', { name: group.name })}
                         accessibilityRole="button"
                         hitSlop={6}
-                        onPress={() => closeDrawer(() => onOpenSettings(group))}
+                        onPress={() => setActionTarget(group)}
                         style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
                       >
                         <Ionicons color={textColors.secondary} name="options-outline" size={24} />

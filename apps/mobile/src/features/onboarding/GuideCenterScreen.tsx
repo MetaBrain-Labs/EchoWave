@@ -1,7 +1,7 @@
 /**
  * 新手引导中心。
  *
- * 展示六项独立引导的用途、步骤数和设备端状态，并允许单独开始或重播。
+ * 展示九项独立引导的用途、步骤数和设备端状态，并允许单独开始或重播。
  *
  * Responsibilities:
  * - 将注册表元数据映射为可访问的引导卡片。
@@ -31,7 +31,7 @@ import {
 } from '@/shared/theme/tokens';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
 
-/** 渲染六项产品引导目录。 */
+/** 渲染九项产品引导目录。 */
 export function GuideCenterScreen({ onBack }: { onBack: () => void }) {
   const { formatNumber, t } = useAppLanguage();
   const { startGuide, statuses, templates } = useStarterTour();
@@ -53,7 +53,12 @@ export function GuideCenterScreen({ onBack }: { onBack: () => void }) {
           const guide = guides[id];
           const status = statuses[id];
           const needsSalesTemplate = id === 'basic' || id === 'analysis';
-          const disabled = needsSalesTemplate && !templates.sales_call_review;
+          const needsAnyTemplate = id === 'group_settings';
+          const disabled =
+            (needsSalesTemplate && !templates.sales_call_review) ||
+            (needsAnyTemplate &&
+              !templates.sales_call_review &&
+              !templates.personal_speaking_coach);
           return (
             <View key={id} style={styles.card}>
               <View style={styles.headingRow}>

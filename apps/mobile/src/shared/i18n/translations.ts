@@ -209,7 +209,7 @@ export const zhCN = {
   'more.runtime.description': '查看或切换混合、对象存储与轻量本地模式。',
   'more.runtime.accessibility': '打开运行模式',
   'more.guides.title': '新手引导',
-  'more.guides.description': '按主题开始、跳过或重播六项产品引导。',
+  'more.guides.description': '按主题开始、跳过或重播九项产品引导。',
   'more.guides.accessibility': '打开新手引导中心',
   'language.section': '语言 / Language',
   'language.zhCN': '简体中文',
@@ -378,6 +378,7 @@ export const zhCN = {
   'analysis.allScenes': '全部场景',
   'analysis.allText': '全部文本',
   'analysis.allTags': '全部标签',
+  'analysis.selectedTags': '仅显示已选标签',
   'analysis.skipInvalid': '跳过无效音频',
   'analysis.hideSpeakerReview': '屏蔽说话人待确认',
   'analysis.roleConfidence': '%{speaker} · 角色置信度 %{confidence}%',
@@ -487,6 +488,9 @@ export const zhCN = {
   'player.rewind': '后退 15 秒',
   'player.forward': '前进 15 秒',
   'player.errorRetry': '%{error} 点击重试。',
+  'player.actions': '播放器操作',
+  'player.changeRate': '切换播放倍速（当前 %{rate} 倍）',
+  'player.reset': '回到音频开头',
   'execution.seconds': '%{value} 秒',
   'execution.reasoning': '原始推理内容',
   'execution.waitingReasoning': '等待模型返回推理内容…',
@@ -712,6 +716,8 @@ export const zhCN = {
   'service.connecting': '正在连接 EchoWave API…',
   'service.retry': '重试连接',
   'service.change': '修改服务器',
+  'service.moreActions': '服务状态更多操作',
+  'service.refreshAll': '刷新服务状态',
   'pushCard.title': '推送通知',
   'pushCard.serverCapability': '服务端能力',
   'pushCard.systemPermission': '系统权限',
@@ -742,10 +748,10 @@ export const zhCN = {
   'pushCard.failed': '失败',
   'runtime.title': '运行模式',
   'runtime.notice':
-    '三种模式都支持：上传完成并成功创建/提交服务端任务后关闭 App，由服务端继续后台处理。区别不在能不能异步，而在原音频保存在哪里，以及服务器异常、重启、迁移后能恢复到什么程度。上传未完成时直接杀掉 App，不代表服务端已经接管。模式和期限修改只影响之后上传的音频，不迁移或删除已有资产。',
+    '默认使用混合存储模式，但混合模式依赖临时 OSS；未配置 OSS 时不能上传或使用该模式，请先完成 OSS 配置，或切换到已就绪的轻量本地模式。三种模式在上传完成并成功创建服务端任务后都可由服务端后台继续处理；模式和期限修改只影响之后上传的音频，不迁移或删除已有资产。',
   'runtime.hybrid': '混合存储模式（默认）',
   'runtime.hybridDescription':
-    '异步处理 + 持久本地存储 + OSS 中转；原音频保存在 API 持久目录，默认方案，成本和可靠性平衡。',
+    '异步处理 + 持久本地存储 + OSS 中转；原音频保存在 API 持久目录。默认方案，但必须配置临时 OSS 才能使用。',
   'runtime.objectStorage': '对象存储模式',
   'runtime.objectStorageDescription':
     '异步处理 + OSS 持久存储；原音频直接进入企业 OSS，适合云部署和大规模音频，恢复能力最好。',
@@ -761,6 +767,10 @@ export const zhCN = {
   'runtime.adminToken': '管理员口令',
   'runtime.saving': '保存中…',
   'runtime.save': '保存运行模式',
+  'runtime.moreActions': '运行模式更多操作',
+  'runtime.refresh': '刷新运行模式',
+  'runtime.resetDraft': '恢复当前配置',
+  'runtime.clearToken': '清空管理员口令',
   'groups.tab.audio': '音频分析',
   'groups.tab.knowledge': '关联知识库',
   'groups.tab.sources': '连接数据源',
@@ -771,6 +781,7 @@ export const zhCN = {
   'groups.loadFailed': '分组加载失败。',
   'groups.linkFailed': '关联分组失败。',
   'groups.createFailed': '创建分组失败。',
+  'groups.renameFailed': '分组重命名失败。',
   'groups.noMatch': '没有匹配“%{query}”的内容',
   'groups.searchInput': '输入搜索关键词',
   'groups.searchPlaceholder': '搜索音频、知识库或数据源',
@@ -894,6 +905,15 @@ export const zhCN = {
   'knowledgeDetail.upload': '上传文档',
   'knowledgeDetail.ask': '问知识库',
   'knowledgeDetail.parseAll': '全部解析',
+  'knowledgeDetail.parseAllConfirm': '重新解析失败文档？',
+  'knowledgeDetail.parseAllConfirmBody': '将重新提交 %{count} 份可重试文档。',
+  'knowledgeDetail.parseAllNone': '当前没有可批量重新解析的文档。',
+  'knowledgeDetail.parseAllSummary': '已提交 %{succeeded} 份，%{failed} 份提交失败。',
+  'knowledgeDetail.filterAction': '文档筛选',
+  'knowledgeDetail.filterAll': '全部文档',
+  'knowledgeDetail.filterReady': '仅解析完成',
+  'knowledgeDetail.filterPending': '仅处理中',
+  'knowledgeDetail.filterFailed': '仅解析失败',
   'knowledgeDetail.searchInput': '输入知识库内容搜索关键词',
   'knowledgeDetail.searchPlaceholder': '搜索文档标题、格式或解析状态',
   'knowledgeDetail.searchSubtitle': '搜索结果将在库文件中展示',
@@ -990,6 +1010,11 @@ export const zhCN = {
   'sourceDetail.refreshFailed': '刷新数据源失败。',
   'sourceDetail.saveFailed': '数据源保存失败。',
   'sourceDetail.uploadFailed': '音频上传失败。',
+  'sourceDetail.runtimeUnavailable': '%{mode}暂不可用：%{reason}',
+  'sourceDetail.transcribeAllConfirm': '批量转写失败音频？',
+  'sourceDetail.transcribeAllConfirmBody': '将重新提交 %{count} 条可重试音频。',
+  'sourceDetail.transcribeAllNone': '当前没有可批量转写的音频。',
+  'sourceDetail.transcribeAllSummary': '已提交 %{succeeded} 条，%{failed} 条提交失败。',
   'sourceDetail.batchLimit': '单批最多上传 20 个音频文件。',
   'sourceDetail.formatLimit': '仅支持 MP3、WAV、M4A、AAC、FLAC、OGG 和 WebM 音频。',
   'sourceDetail.sizeLimit': '单个文件和整批文件总大小均不能超过 200 MB。',
@@ -1047,6 +1072,7 @@ export const zhCN = {
   'sourceDetail.noUploads': '暂无上传记录。',
   'sourceDetail.noGroupMatch': '没有匹配“%{query}”的关联分组。',
   'sourceDetail.noGroups': '暂未关联分组。',
+  'uploadRecord.details': '查看上传记录详情',
   'groupSettings.tabBasic': '基本设置',
   'groupSettings.tabKnowledge': '知识库设置',
   'groupSettings.tabSources': '数据源设置',
@@ -1106,6 +1132,8 @@ export const zhCN = {
   'aiSettings.unauthorized': '管理员口令无效或已变更。',
   'aiSettings.operationFailed': '配置操作失败，请重试。',
   'aiSettings.refresh': '刷新配置',
+  'aiSettings.moreActions': 'AI 配置更多操作',
+  'aiSettings.clearSession': '退出管理员配置',
   'aiSettings.adminVerification': '管理员验证',
   'aiSettings.tokenMemory': '口令只保存在当前页面内存，离开页面后会清除。',
   'aiSettings.enter': '进入配置中心',
@@ -1197,6 +1225,7 @@ export const zhCN = {
   'documentDetail.downloadAccessibility': '下载原文件',
   'documentDetail.downloadAction': '文档下载',
   'documentDetail.download': '下载',
+  'documentDetail.downloadFailed': '原文件下载失败，请稍后重试。',
   'documentDetail.noPreview': '原文件已在解析后删除，当前没有规范化文本预览。',
   'documentDetail.preview': '预览',
   'documentDetail.code': '代码',
@@ -1204,16 +1233,24 @@ export const zhCN = {
   'documentDetail.zoomAction': '文档缩放',
   'documentDetail.exitFullscreen': '退出全屏预览',
   'documentDetail.fullscreen': '全屏预览',
+  'documentDetail.filterAction': '文本块筛选',
+  'documentDetail.filterAll': '全部文本块',
+  'documentDetail.filterImportant': '仅重点文本块',
   'blockDetail.title': '文本块详情',
   'blockDetail.loadFailed': '文本块加载失败。',
   'blockDetail.loadingDescription': '正在从服务器读取文本块。',
   'blockDetail.searchAction': '文本块搜索',
   'blockDetail.search': '搜索文本块',
+  'blockDetail.actions': '文本块操作',
   'blockDetail.details': '块详情',
   'blockDetail.sequence': '块序号',
   'blockDetail.content': '块内容',
   'blockDetail.copyAccessibility': '复制块内容',
   'blockDetail.copy': '复制内容',
+  'blockDetail.copySuccess': '内容已复制到剪贴板。',
+  'blockDetail.copyFailed': '复制失败，请检查系统剪贴板权限。',
+  'blockDetail.noSearchMatch': '没有找到匹配的文本块',
+  'blockDetail.noSearchMatchBody': '请尝试其他标题、正文或 Vector ID 关键词。',
   'blockDetail.sourcePreview': '来源预览',
   'blockDetail.sourceLocation': '来源位置：%{location}',
   'blockDetail.fullscreenSource': '全屏查看来源原文',
@@ -1411,7 +1448,11 @@ export const zhCN = {
   'groupDrawer.template': '模板',
   'groupDrawer.analysisCount': '%{count} 份分析%{current}',
   'groupDrawer.current': ' · 当前分组',
-  'groupDrawer.settings': '打开分组设置：%{name}',
+  'groupDrawer.actions': '分组操作：%{name}',
+  'groupDrawer.settings': '分组设置',
+  'groupDrawer.rename': '重命名分组',
+  'groupDrawer.renameName': '新的分组名称',
+  'groupDrawer.archive': '归档分组',
   'groupDrawer.closeOverlay': '关闭分组侧栏遮罩',
   'guideCenter.title': '新手引导',
   'guideCenter.subtitle': '按主题学习，随时可以跳过或重播。',
@@ -1429,58 +1470,188 @@ export const zhCN = {
   'guideCenter.replayGuide': '重新播放',
   'guide.basic.title': '基础引导',
   'guide.basic.description': '认识模板分组并完成首次录音分析准备。',
-  'guide.basic.1.title': '欢迎使用 EchoWave',
-  'guide.basic.1.body': '我们已准备好销售通话复盘和个人表达教练两个可直接使用的分组模板。',
-  'guide.basic.2.title': '从模板分组开始',
-  'guide.basic.2.body': '模板预置了适合对应场景的分析重点，你仍可按自己的目标调整。',
-  'guide.basic.3.title': '先看一份模板示例',
-  'guide.basic.3.body': '只读示例展示转写、证据和建议，不会计入你的真实音频与分析数量。',
-  'guide.basic.4.title': '切换或归档模板',
-  'guide.basic.4.body': '打开分组菜单可以切换模板；不需要的模板可从分组设置中归档。',
-  'guide.basic.5.title': '按目标调整',
-  'guide.basic.5.body': '这里可修改分析时机、内容侧重、报告语气和自定义标签。',
-  'guide.basic.6.title': '选择数据源',
-  'guide.basic.6.body': '选择录音所属的数据源，起步模板默认关联“快速录音上传”。',
-  'guide.basic.7.title': '选择模板分组',
-  'guide.basic.7.body': '选择销售通话复盘或个人表达教练，决定本次分析方向。',
-  'guide.basic.8.title': '上传第一段录音',
-  'guide.basic.8.body': '选择销售通话、自我介绍或演讲音频，然后启动全流程分析。',
+  'guide.basic.steps.group.title': '欢迎使用 EchoWave',
+  'guide.basic.steps.group.body':
+    '我们已准备好销售通话复盘和个人表达教练两个可直接使用的分组模板。',
+  'guide.basic.steps.group-title.title': '从模板分组开始',
+  'guide.basic.steps.group-title.body':
+    '模板预置了适合对应场景的分析重点，你仍可按自己的目标调整。',
+  'guide.basic.steps.group-template-example.title': '先看一份模板示例',
+  'guide.basic.steps.group-template-example.body':
+    '只读示例展示转写、证据和建议，不会计入你的真实音频与分析数量。',
+  'guide.basic.steps.group-menu.title': '切换或归档模板',
+  'guide.basic.steps.group-menu.body': '打开分组菜单可以切换模板；不需要的模板可从分组设置中归档。',
+  'guide.basic.steps.group-tabs.title': '按页面标签完成工作流',
+  'guide.basic.steps.group-tabs.body':
+    '分组页聚合音频、知识库和数据源：音频负责产生分析素材，知识库提供可检索材料，数据源负责管理文件与处理状态。',
+  'guide.basic.steps.group-settings.title': '按目标调整',
+  'guide.basic.steps.group-settings.body': '这里可修改分析时机、内容侧重、报告语气和自定义标签。',
+  'guide.basic.steps.create-source.title': '选择数据源',
+  'guide.basic.steps.create-source.body': '选择录音所属的数据源，起步模板默认关联“快速录音上传”。',
+  'guide.basic.steps.create-group.title': '选择模板分组',
+  'guide.basic.steps.create-group.body': '选择销售通话复盘或个人表达教练，决定本次分析方向。',
+  'guide.basic.steps.create-audio.title': '上传第一段录音',
+  'guide.basic.steps.create-audio.body': '选择销售通话、自我介绍或演讲音频，然后启动全流程分析。',
   'guide.knowledge.title': '知识库引导',
   'guide.knowledge.description': '了解知识库入口与创建流程，不实际创建内容。',
-  'guide.knowledge.1.title': '知识库',
-  'guide.knowledge.1.body': '知识库用于为分析和问答提供经过维护的业务材料。',
-  'guide.knowledge.2.title': '创建入口',
-  'guide.knowledge.2.body': '从这里可以打开创建表单。',
-  'guide.knowledge.3.title': '了解创建内容',
-  'guide.knowledge.3.body': '表单会临时展开供你了解字段；引导不会提交或写入任何知识库。',
+  'guide.knowledge.steps.knowledge-header.title': '知识库',
+  'guide.knowledge.steps.knowledge-header.body': '知识库用于为分析和问答提供经过维护的业务材料。',
+  'guide.knowledge.steps.knowledge-create.title': '创建入口',
+  'guide.knowledge.steps.knowledge-create.body': '从这里可以打开创建表单。',
+  'guide.knowledge.steps.knowledge-form.title': '了解创建内容',
+  'guide.knowledge.steps.knowledge-form.body':
+    '表单会临时展开供你了解字段；引导不会提交或写入任何知识库。',
+  'guide.knowledge.steps.knowledge-overview.title': '查看知识库详情',
+  'guide.knowledge.steps.knowledge-overview.body':
+    '详情页展示知识库用途、文档数量、文本块数量和关联分组；当前页面使用只读演示数据。',
+  'guide.knowledge.steps.knowledge-files.title': '管理知识库文档',
+  'guide.knowledge.steps.knowledge-files.body':
+    '文档列表用于查看上传、解析和失败状态。引导只介绍入口，不上传文件、不触发解析。',
+  'guide.knowledge.steps.knowledge-upload.title': '添加文档',
+  'guide.knowledge.steps.knowledge-upload.body':
+    '真实页面可以从固定操作区选择 Markdown、文本、Word 或表格文档；引导中的按钮是禁用的，只展示位置。',
+  'guide.knowledge.steps.knowledge-document-status.title': '了解文档处理状态',
+  'guide.knowledge.steps.knowledge-document-status.body':
+    '文档详情会区分原始文件、解析结果和文本块。只有解析完成的文档才能继续查看文本块。',
+  'guide.knowledge.steps.document-block-list.title': '查看文本块列表',
+  'guide.knowledge.steps.document-block-list.body':
+    '文本块是检索和引用的最小内容单元，列表可帮助你检查切分结果与来源位置。',
+  'guide.knowledge.steps.block-content.title': '文本块详情',
+  'guide.knowledge.steps.block-content.body':
+    '文本块详情保留原文、元数据和上下文，便于确认这段内容是否适合被问答引用。',
+  'guide.knowledge.steps.block-source.title': '定位原文来源',
+  'guide.knowledge.steps.block-source.body':
+    '从引用或文本块详情可以回到文档原文位置，核对回答依据。',
+  'guide.knowledgeQuery.title': '问知识库引导',
+  'guide.knowledgeQuery.description': '从提问到引用核验，了解知识库问答的完整流程。',
+  'guide.knowledgeQuery.steps.query-header.title': '问知识库',
+  'guide.knowledgeQuery.steps.query-header.body':
+    '问知识库会根据已解析的文本块检索相关材料，再生成带引用的回答。当前使用只读演示数据。',
+  'guide.knowledgeQuery.steps.query-hint.title': '先描述你要确认的事实',
+  'guide.knowledgeQuery.steps.query-hint.body':
+    '问题越具体，检索范围越容易收敛；可以询问规则、流程、项目背景或文档中的明确结论。',
+  'guide.knowledgeQuery.steps.query-composer.title': '输入并发送问题',
+  'guide.knowledgeQuery.steps.query-composer.body':
+    '输入框和发送按钮用于真实问答。本引导只展示交互位置，不发送请求、不消耗模型额度。',
+  'guide.knowledgeQuery.steps.query-answer.title': '查看回答进度与结果',
+  'guide.knowledgeQuery.steps.query-answer.body':
+    '回答生成期间会展示进度，完成后请先看结论，再结合引用判断是否需要继续追问。',
+  'guide.knowledgeQuery.steps.query-citation.title': '打开引用核验原文',
+  'guide.knowledgeQuery.steps.query-citation.body':
+    '点击引用可进入对应文本块或文档位置，验证回答是否忠实于知识库内容。',
+  'guide.knowledgeQuery.steps.query-history.title': '回看历史问题',
+  'guide.knowledgeQuery.steps.query-history.body':
+    '历史记录保存本知识库下的问答上下文，便于继续追问或复用常见问题。',
   'guide.dataSources.title': '数据源引导',
   'guide.dataSources.description': '认识音频数据源与连接入口。',
-  'guide.dataSources.1.title': '数据源',
-  'guide.dataSources.1.body': '数据源组织音频入口、处理状态以及关联分组。',
-  'guide.dataSources.2.title': '新建数据源',
-  'guide.dataSources.2.body': '从这里配置新的来源；引导只做说明，不创建或保存。',
+  'guide.dataSources.steps.data-sources-header.title': '数据源',
+  'guide.dataSources.steps.data-sources-header.body': '数据源组织音频入口、处理状态以及关联分组。',
+  'guide.dataSources.steps.data-sources-create.title': '新建数据源',
+  'guide.dataSources.steps.data-sources-create.body':
+    '从这里配置新的来源；引导只做说明，不创建或保存。',
+  'guide.dataSources.steps.data-source-detail-header.title': '打开数据源详情',
+  'guide.dataSources.steps.data-source-detail-header.body':
+    '详情页集中展示数据源信息、关联分组以及其中的音频文件。',
+  'guide.dataSources.steps.data-source-audio-list.title': '查看音频状态',
+  'guide.dataSources.steps.data-source-audio-list.body':
+    '每条音频会显示上传、处理中、转写完成或失败等状态，方便判断下一步操作。',
+  'guide.dataSources.steps.data-source-transcribe.title': '进入转写与分析',
+  'guide.dataSources.steps.data-source-transcribe.body':
+    '处理完成的音频可以进入转写和分析入口；引导不会启动任何任务。',
+  'guide.groupSettings.title': '分组设置引导',
+  'guide.groupSettings.description': '了解基本设置、分析标签、知识库和数据源关联。',
+  'guide.groupSettings.steps.group-settings-header.title': '分组设置总览',
+  'guide.groupSettings.steps.group-settings-header.body':
+    '分组设置决定这个工作空间如何组织音频、关联知识库，以及报告需要关注哪些分析标签。',
+  'guide.groupSettings.steps.group-settings-tabs.title': '四类设置标签',
+  'guide.groupSettings.steps.group-settings-tabs.body':
+    '基本设置管理名称和分析偏好；分析标签定义关注维度；知识库设置关联问答材料；数据源设置管理音频入口。',
+  'guide.groupSettings.steps.group-settings-basic.title': '基本设置',
+  'guide.groupSettings.steps.group-settings-basic.body':
+    '在基本设置中调整分组名称、分析时机、内容侧重和报告语气，让后续分析更贴合团队习惯。',
+  'guide.groupSettings.steps.group-settings-tags.title': '分析标签',
+  'guide.groupSettings.steps.group-settings-tags.body':
+    '分析标签用于补充业务关心的维度，例如客户需求、异议处理或下一步行动。',
+  'guide.groupSettings.steps.group-settings-knowledge.title': '知识库设置',
+  'guide.groupSettings.steps.group-settings-knowledge.body':
+    '关联知识库后，分析和问答可以参考统一的业务材料；这里只切换到标签页查看说明，不修改关联。',
+  'guide.groupSettings.steps.group-settings-sources.title': '数据源设置',
+  'guide.groupSettings.steps.group-settings-sources.body':
+    '数据源设置决定哪些音频入口属于当前分组，便于统一查看处理状态和分析结果。',
+  'guide.groupSettings.steps.group-settings-save.title': '保存设置',
+  'guide.groupSettings.steps.group-settings-save.body':
+    '确认修改后再保存，保存会影响之后的新任务。本引导不会提交表单。',
+  'guide.groupSettings.steps.group-settings-archive.title': '归档分组',
+  'guide.groupSettings.steps.group-settings-archive.body':
+    '归档适用于暂时停用的分组，历史数据仍可按产品规则保留；这是高影响操作，需要你主动确认。',
+  'guide.knowledgeCollection.title': '知识收集引导',
+  'guide.knowledgeCollection.description': '从更多页进入知识收集，了解规则、补收和案例审核。',
+  'guide.knowledgeCollection.steps.collection-entry.title': '从更多页进入知识收集',
+  'guide.knowledgeCollection.steps.collection-entry.body':
+    '知识收集的唯一入口在更多页。分组设置不再提供跳转按钮，避免入口重复。',
+  'guide.knowledgeCollection.steps.collection-group.title': '选择目标分组',
+  'guide.knowledgeCollection.steps.collection-group.body':
+    '先选择要沉淀知识的分组，后续规则和案例都会在该分组范围内生效。',
+  'guide.knowledgeCollection.steps.collection-rules.title': '设置收集规则',
+  'guide.knowledgeCollection.steps.collection-rules.body':
+    '规则决定从哪些分析结果中提取候选知识，例如命中指定标签或出现高频问题。',
+  'guide.knowledgeCollection.steps.collection-rule-editor.title': '编辑规则条件',
+  'guide.knowledgeCollection.steps.collection-rule-editor.body':
+    '编辑器用于配置触发条件和收集目标；引导只查看字段，不保存规则。',
+  'guide.knowledgeCollection.steps.collection-history.title': '查看历史补收',
+  'guide.knowledgeCollection.steps.collection-history.body':
+    '历史补收可以针对过去的分析记录重新筛选候选内容，执行前请确认范围与影响。',
+  'guide.knowledgeCollection.steps.collection-cases.title': '审核候选案例',
+  'guide.knowledgeCollection.steps.collection-cases.body':
+    '候选案例需要人工审核，确认内容、标签和来源后再决定是否进入知识库。',
+  'guide.knowledgeCollection.steps.collection-case-editor.title': '编辑案例内容',
+  'guide.knowledgeCollection.steps.collection-case-editor.body':
+    '案例编辑可以修正文案、补充标签和核对来源。引导不会通过审核、发布或保存。',
   'guide.ai.title': 'AI 配置引导',
   'guide.ai.description': '了解安全校验、供应商和能力绑定。',
-  'guide.ai.1.title': '先完成安全校验',
-  'guide.ai.1.body': 'AI 密钥属于敏感配置，需要管理员口令和受信任连接。',
-  'guide.ai.2.title': '供应商与能力绑定',
-  'guide.ai.2.body': '校验后可以查看供应商连接和模型能力绑定；本引导不会保存任何配置。',
+  'guide.ai.steps.ai-security.title': '先完成安全校验',
+  'guide.ai.steps.ai-security.body': 'AI 密钥属于敏感配置，需要管理员口令和受信任连接。',
+  'guide.ai.steps.ai-configuration.title': '供应商与能力绑定',
+  'guide.ai.steps.ai-configuration.body':
+    '校验后可以查看供应商连接和模型能力绑定；本引导不会保存任何配置。',
+  'guide.ai.steps.ai-demo-notice.title': '查看安全提示',
+  'guide.ai.steps.ai-demo-notice.body':
+    '连接不是 HTTPS 时不能在页面提交 Credential。以下区域是脱敏静态演示，仅用于引导演示，不是实际配置。',
+  'guide.ai.steps.ai-demo-local-provider.title': 'Local Credential Provider',
+  'guide.ai.steps.ai-demo-local-provider.body':
+    '本地 Credential Provider 负责读取受保护的本地配置文件；引导不会读取真实 Credential。',
+  'guide.ai.steps.ai-demo-connections.title': '供应商连接',
+  'guide.ai.steps.ai-demo-connections.body':
+    '这里展示供应商名称、基础地址和脱敏别名。实际项目中应先确认连接安全，再单独维护供应商连接。',
+  'guide.ai.steps.ai-demo-default-bindings.title': '默认能力绑定',
+  'guide.ai.steps.ai-demo-default-bindings.body':
+    '默认绑定用于一次性补齐尚未配置的能力，例如 DashScope、DeepSeek 和阿里云 OSS。演示按钮不可操作。',
+  'guide.ai.steps.ai-demo-capabilities.title': '逐项配置模型能力',
+  'guide.ai.steps.ai-demo-capabilities.body':
+    '知识嵌入、知识问答、音频转写、情绪分析、角色识别和业务分析可以分别绑定供应商与模型。',
+  'guide.ai.steps.ai-demo-legacy-env.title': '旧 .env 导入',
+  'guide.ai.steps.ai-demo-legacy-env.body':
+    '旧 .env 导入只适合迁移阶段，导入前应核对变量和权限；本引导不会执行导入。',
   'guide.runtime.title': '运行模式引导',
   'guide.runtime.description': '理解音频存储、处理与保留策略。',
-  'guide.runtime.1.title': '模式影响范围',
-  'guide.runtime.1.body': '运行模式只影响新上传音频，已有任务保持原来的冻结配置。',
-  'guide.runtime.2.title': '选择运行模式',
-  'guide.runtime.2.body': '比较混合、对象存储与轻量本地模式的处理边界。',
-  'guide.runtime.3.title': '保存需要管理员确认',
-  'guide.runtime.3.body': '只有主动点击保存才会修改配置；引导本身不会写入。',
+  'guide.runtime.steps.runtime-notice.title': '模式影响范围',
+  'guide.runtime.steps.runtime-notice.body':
+    '运行模式只影响新上传音频，已有任务保持原来的冻结配置。',
+  'guide.runtime.steps.runtime-modes.title': '选择运行模式',
+  'guide.runtime.steps.runtime-modes.body': '比较混合、对象存储与轻量本地模式的处理边界。',
+  'guide.runtime.steps.runtime-save.title': '保存需要管理员确认',
+  'guide.runtime.steps.runtime-save.body': '只有主动点击保存才会修改配置；引导本身不会写入。',
   'guide.analysis.title': '查看分析引导',
   'guide.analysis.description': '用销售模板只读示例认识分析报告。',
-  'guide.analysis.1.title': '只读示例概览',
-  'guide.analysis.1.body': '这是稳定的销售通话示例，不依赖真实分析记录，也不包含原始音频。',
-  'guide.analysis.2.title': '转写与角色',
-  'guide.analysis.2.body': '每段包含时间范围、角色和情绪，报告证据会引用这些片段。',
-  'guide.analysis.3.title': '结论与改进建议',
-  'guide.analysis.3.body': '报告同时呈现有效做法、待确认风险和可直接执行的下一步。',
+  'guide.analysis.steps.example-overview.title': '只读示例概览',
+  'guide.analysis.steps.example-overview.body':
+    '这是稳定的销售通话示例，不依赖真实分析记录，也不包含原始音频。',
+  'guide.analysis.steps.example-transcript.title': '转写与角色',
+  'guide.analysis.steps.example-transcript.body':
+    '每段包含时间范围、角色和情绪，报告证据会引用这些片段。',
+  'guide.analysis.steps.example-report.title': '结论与改进建议',
+  'guide.analysis.steps.example-report.body':
+    '报告同时呈现有效做法、待确认风险和可直接执行的下一步。',
   'tour.stepAccessibility': '%{title}，第 %{current} 步，共 %{total} 步',
   'tour.skip': '跳过当前引导',
   'tour.progress': '引导进度 %{current}/%{total}',
@@ -1766,7 +1937,7 @@ export const en = {
   'more.runtime.description': 'View or switch hybrid, object-storage, and lightweight modes.',
   'more.runtime.accessibility': 'Open runtime mode',
   'more.guides.title': 'Getting started',
-  'more.guides.description': 'Start, skip, or replay the six product tours by topic.',
+  'more.guides.description': 'Start, skip, or replay the nine product tours by topic.',
   'more.guides.accessibility': 'Open getting started',
   'language.section': 'Language / 语言',
   'language.zhCN': '简体中文',
@@ -1941,6 +2112,7 @@ export const en = {
   'analysis.allScenes': 'All scenes',
   'analysis.allText': 'All text',
   'analysis.allTags': 'All tags',
+  'analysis.selectedTags': 'Show selected tags only',
   'analysis.skipInvalid': 'Skip invalid audio',
   'analysis.hideSpeakerReview': 'Hide pending speaker reviews',
   'analysis.roleConfidence': '%{speaker} · Role confidence %{confidence}%',
@@ -2055,6 +2227,9 @@ export const en = {
   'player.rewind': 'Back 15 seconds',
   'player.forward': 'Forward 15 seconds',
   'player.errorRetry': '%{error} Tap to retry.',
+  'player.actions': 'Player actions',
+  'player.changeRate': 'Change playback speed (current %{rate}x)',
+  'player.reset': 'Return to the beginning',
   'execution.seconds': '%{value} sec',
   'execution.reasoning': 'Raw reasoning content',
   'execution.waitingReasoning': 'Waiting for model reasoning…',
@@ -2304,6 +2479,8 @@ export const en = {
   'service.connecting': 'Connecting to the EchoWave API…',
   'service.retry': 'Retry connection',
   'service.change': 'Change server',
+  'service.moreActions': 'More service status actions',
+  'service.refreshAll': 'Refresh service status',
   'pushCard.title': 'Push notifications',
   'pushCard.serverCapability': 'Server capability',
   'pushCard.systemPermission': 'System permission',
@@ -2334,10 +2511,10 @@ export const en = {
   'pushCard.failed': 'Failed',
   'runtime.title': 'Runtime mode',
   'runtime.notice':
-    'All three modes support closing the App after the upload completes and the server task is successfully created/submitted; the server continues processing in the background. The difference is not whether processing is asynchronous, but where the original audio is stored and how much can be recovered after a server failure, restart, or migration. Killing the App before upload completes does not mean the server has taken over. Mode and retention changes affect only future uploads; existing assets are not migrated or deleted.',
+    'Hybrid storage is the default, but it requires temporary OSS. Without OSS, hybrid uploads are unavailable; configure OSS first or switch to a ready lightweight-local mode. All modes can continue in the background after upload and task submission; mode and retention changes affect only future uploads.',
   'runtime.hybrid': 'Hybrid storage (default)',
   'runtime.hybridDescription':
-    'Asynchronous processing + persistent local storage + OSS staging; original audio stays in the persistent API directory. Default balance of cost and reliability.',
+    'Asynchronous processing + persistent local storage + OSS staging; original audio stays in the persistent API directory. This is the default, but temporary OSS is required.',
   'runtime.objectStorage': 'Object storage',
   'runtime.objectStorageDescription':
     'Asynchronous processing + persistent OSS storage; original audio goes directly to enterprise OSS. Best for cloud deployment, large collections, and recovery.',
@@ -2354,6 +2531,10 @@ export const en = {
   'runtime.adminToken': 'Administrator token',
   'runtime.saving': 'Saving…',
   'runtime.save': 'Save runtime mode',
+  'runtime.moreActions': 'More runtime mode actions',
+  'runtime.refresh': 'Refresh runtime mode',
+  'runtime.resetDraft': 'Restore current configuration',
+  'runtime.clearToken': 'Clear administrator token',
   'groups.tab.audio': 'Audio analysis',
   'groups.tab.knowledge': 'Linked knowledge',
   'groups.tab.sources': 'Connected sources',
@@ -2364,6 +2545,7 @@ export const en = {
   'groups.loadFailed': 'Groups could not be loaded.',
   'groups.linkFailed': 'Unable to link groups.',
   'groups.createFailed': 'The group could not be created.',
+  'groups.renameFailed': 'The group could not be renamed.',
   'groups.noMatch': 'No content matches “%{query}”',
   'groups.searchInput': 'Enter search terms',
   'groups.searchPlaceholder': 'Search audio, knowledge bases, or data sources',
@@ -2490,6 +2672,15 @@ export const en = {
   'knowledgeDetail.upload': 'Upload document',
   'knowledgeDetail.ask': 'Ask knowledge base',
   'knowledgeDetail.parseAll': 'Parse all',
+  'knowledgeDetail.parseAllConfirm': 'Reparse failed documents?',
+  'knowledgeDetail.parseAllConfirmBody': 'This will resubmit %{count} retryable documents.',
+  'knowledgeDetail.parseAllNone': 'There are no documents available for bulk reparsing.',
+  'knowledgeDetail.parseAllSummary': 'Submitted %{succeeded}; %{failed} failed to submit.',
+  'knowledgeDetail.filterAction': 'Filter documents',
+  'knowledgeDetail.filterAll': 'All documents',
+  'knowledgeDetail.filterReady': 'Parsed only',
+  'knowledgeDetail.filterPending': 'Processing only',
+  'knowledgeDetail.filterFailed': 'Parsing failed only',
   'knowledgeDetail.searchInput': 'Enter knowledge content search terms',
   'knowledgeDetail.searchPlaceholder': 'Search document titles, formats, or parsing status',
   'knowledgeDetail.searchSubtitle': 'Results appear in Files',
@@ -2589,6 +2780,11 @@ export const en = {
   'sourceDetail.refreshFailed': 'Unable to refresh the data source.',
   'sourceDetail.saveFailed': 'Unable to save the data source.',
   'sourceDetail.uploadFailed': 'Audio upload failed.',
+  'sourceDetail.runtimeUnavailable': '%{mode} is unavailable: %{reason}',
+  'sourceDetail.transcribeAllConfirm': 'Retry failed audio in bulk?',
+  'sourceDetail.transcribeAllConfirmBody': 'This will resubmit %{count} retryable audio files.',
+  'sourceDetail.transcribeAllNone': 'There are no audio files available for bulk transcription.',
+  'sourceDetail.transcribeAllSummary': 'Submitted %{succeeded}; %{failed} failed to submit.',
   'sourceDetail.batchLimit': 'You can upload up to 20 audio files at once.',
   'sourceDetail.formatLimit': 'Only MP3, WAV, M4A, AAC, FLAC, OGG, and WebM audio is supported.',
   'sourceDetail.sizeLimit': 'Each file and the whole batch must not exceed 200 MB.',
@@ -2651,6 +2847,7 @@ export const en = {
   'sourceDetail.noUploads': 'No upload records.',
   'sourceDetail.noGroupMatch': 'No linked group matches “%{query}”.',
   'sourceDetail.noGroups': 'No linked groups.',
+  'uploadRecord.details': 'View upload record details',
   'groupSettings.tabBasic': 'Basic',
   'groupSettings.tabKnowledge': 'Knowledge bases',
   'groupSettings.tabSources': 'Data sources',
@@ -2713,6 +2910,8 @@ export const en = {
   'aiSettings.unauthorized': 'The administrator token is invalid or has changed.',
   'aiSettings.operationFailed': 'The configuration operation failed. Try again.',
   'aiSettings.refresh': 'Refresh configuration',
+  'aiSettings.moreActions': 'More AI configuration actions',
+  'aiSettings.clearSession': 'Exit administrator configuration',
   'aiSettings.adminVerification': 'Administrator verification',
   'aiSettings.tokenMemory':
     'The token is kept only in this page’s memory and is cleared when you leave.',
@@ -2808,6 +3007,7 @@ export const en = {
   'documentDetail.downloadAccessibility': 'Download original file',
   'documentDetail.downloadAction': 'Document download',
   'documentDetail.download': 'Download',
+  'documentDetail.downloadFailed': 'Unable to download the original file. Please try again.',
   'documentDetail.noPreview':
     'The original file was deleted after parsing and no normalized text preview is available.',
   'documentDetail.preview': 'Preview',
@@ -2816,16 +3016,24 @@ export const en = {
   'documentDetail.zoomAction': 'Document zoom',
   'documentDetail.exitFullscreen': 'Exit full-screen preview',
   'documentDetail.fullscreen': 'Full-screen preview',
+  'documentDetail.filterAction': 'Filter text blocks',
+  'documentDetail.filterAll': 'All text blocks',
+  'documentDetail.filterImportant': 'Important text blocks only',
   'blockDetail.title': 'Text block details',
   'blockDetail.loadFailed': 'Unable to load the text block.',
   'blockDetail.loadingDescription': 'Reading the text block from the server.',
   'blockDetail.searchAction': 'Text block search',
   'blockDetail.search': 'Search text block',
+  'blockDetail.actions': 'Text block actions',
   'blockDetail.details': 'Block details',
   'blockDetail.sequence': 'Block number',
   'blockDetail.content': 'Block content',
   'blockDetail.copyAccessibility': 'Copy block content',
   'blockDetail.copy': 'Copy content',
+  'blockDetail.copySuccess': 'Content copied to the clipboard.',
+  'blockDetail.copyFailed': 'Copy failed. Check clipboard permissions.',
+  'blockDetail.noSearchMatch': 'No matching text block',
+  'blockDetail.noSearchMatchBody': 'Try another title, content, or Vector ID keyword.',
   'blockDetail.sourcePreview': 'Source preview',
   'blockDetail.sourceLocation': 'Source location: %{location}',
   'blockDetail.fullscreenSource': 'View source in full screen',
@@ -3031,7 +3239,11 @@ export const en = {
   'groupDrawer.template': 'Template',
   'groupDrawer.analysisCount': '%{count} analyses%{current}',
   'groupDrawer.current': ' · Current group',
-  'groupDrawer.settings': 'Open group settings: %{name}',
+  'groupDrawer.actions': 'Group actions: %{name}',
+  'groupDrawer.settings': 'Group settings',
+  'groupDrawer.rename': 'Rename group',
+  'groupDrawer.renameName': 'New group name',
+  'groupDrawer.archive': 'Archive group',
   'groupDrawer.closeOverlay': 'Close group sidebar overlay',
   'guideCenter.title': 'Getting started',
   'guideCenter.subtitle': 'Learn by topic. You can skip or replay any guide.',
@@ -3050,78 +3262,201 @@ export const en = {
   'guideCenter.replayGuide': 'Replay guide',
   'guide.basic.title': 'Basics',
   'guide.basic.description': 'Meet the template groups and prepare your first recording analysis.',
-  'guide.basic.1.title': 'Welcome to EchoWave',
-  'guide.basic.1.body':
+  'guide.basic.steps.group.title': 'Welcome to EchoWave',
+  'guide.basic.steps.group.body':
     'Sales Call Review and Personal Speaking Coach are ready-to-use group templates.',
-  'guide.basic.2.title': 'Start with a template group',
-  'guide.basic.2.body':
+  'guide.basic.steps.group-title.title': 'Start with a template group',
+  'guide.basic.steps.group-title.body':
     'Each template includes analysis priorities for its scenario, and you can adjust them to your goals.',
-  'guide.basic.3.title': 'Preview a template example',
-  'guide.basic.3.body':
+  'guide.basic.steps.group-template-example.title': 'Preview a template example',
+  'guide.basic.steps.group-template-example.body':
     'The read-only example shows transcripts, evidence, and recommendations without affecting your real audio or analysis counts.',
-  'guide.basic.4.title': 'Switch or archive templates',
-  'guide.basic.4.body':
+  'guide.basic.steps.group-menu.title': 'Switch or archive templates',
+  'guide.basic.steps.group-menu.body':
     'Use the group menu to switch templates. Archive templates you do not need from group settings.',
-  'guide.basic.5.title': 'Adjust it to your goals',
-  'guide.basic.5.body': 'Change analysis timing, content focus, report tone, and custom tags here.',
-  'guide.basic.6.title': 'Choose a data source',
-  'guide.basic.6.body':
+  'guide.basic.steps.group-tabs.title': 'Follow the page tabs',
+  'guide.basic.steps.group-tabs.body':
+    'Groups bring together audio, knowledge bases and data sources. Audio supplies analysis material, knowledge bases supply searchable references, and data sources manage files and processing status.',
+  'guide.basic.steps.group-settings.title': 'Adjust it to your goals',
+  'guide.basic.steps.group-settings.body':
+    'Change analysis timing, content focus, report tone, and custom tags here.',
+  'guide.basic.steps.create-source.title': 'Choose a data source',
+  'guide.basic.steps.create-source.body':
     'Choose the source for this recording. Starter templates are linked to Quick Recording Upload by default.',
-  'guide.basic.7.title': 'Choose a template group',
-  'guide.basic.7.body':
+  'guide.basic.steps.create-group.title': 'Choose a template group',
+  'guide.basic.steps.create-group.body':
     'Choose Sales Call Review or Personal Speaking Coach to set the analysis direction.',
-  'guide.basic.8.title': 'Upload your first recording',
-  'guide.basic.8.body':
+  'guide.basic.steps.create-audio.title': 'Upload your first recording',
+  'guide.basic.steps.create-audio.body':
     'Choose a sales call, self-introduction, or presentation recording, then start the full analysis pipeline.',
   'guide.knowledge.title': 'Knowledge base guide',
   'guide.knowledge.description':
     'Learn the knowledge base entry and creation flow without creating content.',
-  'guide.knowledge.1.title': 'Knowledge bases',
-  'guide.knowledge.1.body':
+  'guide.knowledge.steps.knowledge-header.title': 'Knowledge bases',
+  'guide.knowledge.steps.knowledge-header.body':
     'Knowledge bases provide maintained business material for analysis and Q&A.',
-  'guide.knowledge.2.title': 'Creation entry',
-  'guide.knowledge.2.body': 'Open the creation form here.',
-  'guide.knowledge.3.title': 'Review creation fields',
-  'guide.knowledge.3.body':
+  'guide.knowledge.steps.knowledge-create.title': 'Creation entry',
+  'guide.knowledge.steps.knowledge-create.body': 'Open the creation form here.',
+  'guide.knowledge.steps.knowledge-form.title': 'Review creation fields',
+  'guide.knowledge.steps.knowledge-form.body':
     'The form opens temporarily so you can review its fields. The guide never submits or writes a knowledge base.',
+  'guide.knowledge.steps.knowledge-overview.title': 'Review knowledge base details',
+  'guide.knowledge.steps.knowledge-overview.body':
+    'Details show the purpose, document and text block counts, and linked groups. This page uses read-only demo data.',
+  'guide.knowledge.steps.knowledge-files.title': 'Manage knowledge documents',
+  'guide.knowledge.steps.knowledge-files.body':
+    'Review upload, parsing and failure states in the document list. This guide does not upload files or start parsing.',
+  'guide.knowledge.steps.knowledge-upload.title': 'Add documents',
+  'guide.knowledge.steps.knowledge-upload.body':
+    'The fixed action area accepts Markdown, text, Word and spreadsheet documents. Demo buttons are disabled and show their positions only.',
+  'guide.knowledge.steps.knowledge-document-status.title': 'Understand document processing',
+  'guide.knowledge.steps.knowledge-document-status.body':
+    'Document details distinguish the original file, parsing results and text blocks. Text blocks become available after parsing completes.',
+  'guide.knowledge.steps.document-block-list.title': 'Review text blocks',
+  'guide.knowledge.steps.document-block-list.body':
+    'Text blocks are the smallest units used for retrieval and citations. Review the split content and its source locations here.',
+  'guide.knowledge.steps.block-content.title': 'Text block details',
+  'guide.knowledge.steps.block-content.body':
+    'Review the original text, metadata and surrounding context to check whether this block is suitable for citations.',
+  'guide.knowledge.steps.block-source.title': 'Locate the source text',
+  'guide.knowledge.steps.block-source.body':
+    'Return from a citation or text block to the source document location to verify the evidence.',
+  'guide.knowledgeQuery.title': 'Ask knowledge base guide',
+  'guide.knowledgeQuery.description': 'Follow questions, answers and citation verification.',
+  'guide.knowledgeQuery.steps.query-header.title': 'Ask the knowledge base',
+  'guide.knowledgeQuery.steps.query-header.body':
+    'Questions retrieve relevant parsed text blocks and produce answers with citations. This page uses read-only demo data.',
+  'guide.knowledgeQuery.steps.query-hint.title': 'Describe the fact you want to verify',
+  'guide.knowledgeQuery.steps.query-hint.body':
+    'Specific questions narrow retrieval. Ask about rules, processes, project context or explicit conclusions in the documents.',
+  'guide.knowledgeQuery.steps.query-composer.title': 'Enter and send a question',
+  'guide.knowledgeQuery.steps.query-composer.body':
+    'The input and send button are used for real questions. This guide only shows their positions and does not send requests or use model quota.',
+  'guide.knowledgeQuery.steps.query-answer.title': 'Review answer progress and results',
+  'guide.knowledgeQuery.steps.query-answer.body':
+    'Progress appears while an answer is generated. Read the conclusion and citations before deciding whether to ask a follow-up.',
+  'guide.knowledgeQuery.steps.query-citation.title': 'Verify citations against the source',
+  'guide.knowledgeQuery.steps.query-citation.body':
+    'Open a citation to review its text block or document location and check that the answer reflects the source.',
+  'guide.knowledgeQuery.steps.query-history.title': 'Review earlier questions',
+  'guide.knowledgeQuery.steps.query-history.body':
+    'History keeps completed questions for this knowledge base so you can revisit context and common questions.',
   'guide.dataSources.title': 'Data source guide',
   'guide.dataSources.description': 'Learn about audio data sources and connection entries.',
-  'guide.dataSources.1.title': 'Data sources',
-  'guide.dataSources.1.body':
+  'guide.dataSources.steps.data-sources-header.title': 'Data sources',
+  'guide.dataSources.steps.data-sources-header.body':
     'Data sources organize audio entry points, processing status, and group links.',
-  'guide.dataSources.2.title': 'Create a data source',
-  'guide.dataSources.2.body':
+  'guide.dataSources.steps.data-sources-create.title': 'Create a data source',
+  'guide.dataSources.steps.data-sources-create.body':
     'Configure a new source here. The guide explains the flow without creating or saving anything.',
+  'guide.dataSources.steps.data-source-detail-header.title': 'Open data source details',
+  'guide.dataSources.steps.data-source-detail-header.body':
+    'Details bring together source information, linked groups and audio files.',
+  'guide.dataSources.steps.data-source-audio-list.title': 'Review audio status',
+  'guide.dataSources.steps.data-source-audio-list.body':
+    'Each file shows whether it is uploading, processing, transcribed or failed so you can decide what to do next.',
+  'guide.dataSources.steps.data-source-transcribe.title': 'Open transcription and analysis',
+  'guide.dataSources.steps.data-source-transcribe.body':
+    'Processed audio can open transcription and analysis. This guide does not start any task.',
+  'guide.groupSettings.title': 'Group settings guide',
+  'guide.groupSettings.description':
+    'Review basic settings, analysis labels, knowledge bases and data sources.',
+  'guide.groupSettings.steps.group-settings-header.title': 'Group settings overview',
+  'guide.groupSettings.steps.group-settings-header.body':
+    'Settings define how this workspace organizes audio, links knowledge bases and focuses its analysis.',
+  'guide.groupSettings.steps.group-settings-tabs.title': 'Settings tabs',
+  'guide.groupSettings.steps.group-settings-tabs.body':
+    'Basic settings include the name, analysis preferences and analysis labels. Knowledge base settings link reference material, and data source settings manage audio sources.',
+  'guide.groupSettings.steps.group-settings-basic.title': 'Basic settings',
+  'guide.groupSettings.steps.group-settings-basic.body':
+    'Adjust the group name, analysis timing, content focus and report tone for your team.',
+  'guide.groupSettings.steps.group-settings-tags.title': 'Analysis labels',
+  'guide.groupSettings.steps.group-settings-tags.body':
+    'Labels add business dimensions such as customer needs, objection handling and next actions.',
+  'guide.groupSettings.steps.group-settings-knowledge.title': 'Knowledge base settings',
+  'guide.groupSettings.steps.group-settings-knowledge.body':
+    'Linked knowledge bases provide shared reference material for analysis and questions. The guide switches tabs for viewing only.',
+  'guide.groupSettings.steps.group-settings-sources.title': 'Data source settings',
+  'guide.groupSettings.steps.group-settings-sources.body':
+    'Choose which audio sources belong to this group so processing states and results can be reviewed together.',
+  'guide.groupSettings.steps.group-settings-save.title': 'Save settings',
+  'guide.groupSettings.steps.group-settings-save.body':
+    'Save after confirming changes. Settings affect future tasks; this guide does not submit the form.',
+  'guide.groupSettings.steps.group-settings-archive.title': 'Archive a group',
+  'guide.groupSettings.steps.group-settings-archive.body':
+    'Archive groups that are temporarily inactive. Review the confirmation and retention rules before taking this action.',
+  'guide.knowledgeCollection.title': 'Knowledge collection guide',
+  'guide.knowledgeCollection.description':
+    'Open collection from More and review rules, history and candidate cases.',
+  'guide.knowledgeCollection.steps.collection-entry.title': 'Open knowledge collection from More',
+  'guide.knowledgeCollection.steps.collection-entry.body':
+    'Open knowledge collection from the More page. Group settings no longer contain a duplicate entry.',
+  'guide.knowledgeCollection.steps.collection-group.title': 'Choose a group',
+  'guide.knowledgeCollection.steps.collection-group.body':
+    'Choose the group whose knowledge you want to collect. Rules and cases are scoped to that group.',
+  'guide.knowledgeCollection.steps.collection-rules.title': 'Configure collection rules',
+  'guide.knowledgeCollection.steps.collection-rules.body':
+    'Rules select candidate knowledge from analysis results, including selected labels and recurring questions.',
+  'guide.knowledgeCollection.steps.collection-rule-editor.title': 'Edit rule conditions',
+  'guide.knowledgeCollection.steps.collection-rule-editor.body':
+    'Review trigger conditions and collection targets in the editor. This guide does not save rules.',
+  'guide.knowledgeCollection.steps.collection-history.title': 'Review historical collection',
+  'guide.knowledgeCollection.steps.collection-history.body':
+    'Historical collection selects candidates from earlier analysis records. Check the range and impact before running it.',
+  'guide.knowledgeCollection.steps.collection-cases.title': 'Review candidate cases',
+  'guide.knowledgeCollection.steps.collection-cases.body':
+    'Check candidate content, labels and sources before deciding whether to publish it into the knowledge base.',
+  'guide.knowledgeCollection.steps.collection-case-editor.title': 'Edit case content',
+  'guide.knowledgeCollection.steps.collection-case-editor.body':
+    'Case editing corrects text, labels and sources. This guide does not approve, publish or save cases.',
   'guide.ai.title': 'AI configuration guide',
   'guide.ai.description': 'Learn about security checks, providers, and capability bindings.',
-  'guide.ai.1.title': 'Complete the security check first',
-  'guide.ai.1.body':
+  'guide.ai.steps.ai-security.title': 'Complete the security check first',
+  'guide.ai.steps.ai-security.body':
     'AI credentials are sensitive and require an administrator token and a trusted connection.',
-  'guide.ai.2.title': 'Providers and capability bindings',
-  'guide.ai.2.body':
+  'guide.ai.steps.ai-configuration.title': 'Providers and capability bindings',
+  'guide.ai.steps.ai-configuration.body':
     'After verification, review provider connections and model bindings. This guide never saves configuration.',
+  'guide.ai.steps.ai-demo-notice.title': 'Review connection security',
+  'guide.ai.steps.ai-demo-notice.body':
+    'Credentials cannot be submitted over non-HTTPS connections. The following static, masked content is for the guide only and is not your actual configuration.',
+  'guide.ai.steps.ai-demo-local-provider.title': 'Local Credential Provider',
+  'guide.ai.steps.ai-demo-local-provider.body':
+    'The local provider reads protected configuration files. This guide does not read real credentials.',
+  'guide.ai.steps.ai-demo-connections.title': 'Provider connections',
+  'guide.ai.steps.ai-demo-connections.body':
+    'Review provider names, base URLs and masked aliases. Confirm connection security before maintaining actual provider connections.',
+  'guide.ai.steps.ai-demo-default-bindings.title': 'Default capability bindings',
+  'guide.ai.steps.ai-demo-default-bindings.body':
+    'Default bindings fill unconfigured capabilities with providers such as DashScope, DeepSeek and Alibaba Cloud OSS. Demo buttons are disabled.',
+  'guide.ai.steps.ai-demo-capabilities.title': 'Configure each model capability',
+  'guide.ai.steps.ai-demo-capabilities.body':
+    'Knowledge embeddings, questions, transcription, emotion, role recognition and business analysis can each bind a provider and model.',
+  'guide.ai.steps.ai-demo-legacy-env.title': 'Legacy .env import',
+  'guide.ai.steps.ai-demo-legacy-env.body':
+    'Legacy imports are intended for migration. Check variables and permissions first; this guide does not run an import.',
   'guide.runtime.title': 'Runtime mode guide',
   'guide.runtime.description': 'Understand audio storage, processing, and retention policies.',
-  'guide.runtime.1.title': 'What the mode affects',
-  'guide.runtime.1.body':
+  'guide.runtime.steps.runtime-notice.title': 'What the mode affects',
+  'guide.runtime.steps.runtime-notice.body':
     'Runtime mode affects only newly uploaded audio. Existing tasks keep their frozen configuration.',
-  'guide.runtime.2.title': 'Choose a runtime mode',
-  'guide.runtime.2.body':
+  'guide.runtime.steps.runtime-modes.title': 'Choose a runtime mode',
+  'guide.runtime.steps.runtime-modes.body':
     'Compare the processing boundaries of hybrid, object storage, and lightweight local modes.',
-  'guide.runtime.3.title': 'Saving requires administrator confirmation',
-  'guide.runtime.3.body':
+  'guide.runtime.steps.runtime-save.title': 'Saving requires administrator confirmation',
+  'guide.runtime.steps.runtime-save.body':
     'Configuration changes only when you explicitly save. The guide itself never writes anything.',
   'guide.analysis.title': 'Analysis guide',
   'guide.analysis.description':
     'Learn the analysis report through a read-only sales template example.',
-  'guide.analysis.1.title': 'Read-only example overview',
-  'guide.analysis.1.body':
+  'guide.analysis.steps.example-overview.title': 'Read-only example overview',
+  'guide.analysis.steps.example-overview.body':
     'This stable sales call example does not depend on real analysis records and contains no original audio.',
-  'guide.analysis.2.title': 'Transcript and roles',
-  'guide.analysis.2.body':
+  'guide.analysis.steps.example-transcript.title': 'Transcript and roles',
+  'guide.analysis.steps.example-transcript.body':
     'Each segment includes a time range, role, and emotion. Report evidence cites these segments.',
-  'guide.analysis.3.title': 'Conclusions and next steps',
-  'guide.analysis.3.body':
+  'guide.analysis.steps.example-report.title': 'Conclusions and next steps',
+  'guide.analysis.steps.example-report.body':
     'The report shows effective practices, risks to confirm, and directly actionable next steps.',
   'tour.stepAccessibility': '%{title}, step %{current} of %{total}',
   'tour.skip': 'Skip this guide',

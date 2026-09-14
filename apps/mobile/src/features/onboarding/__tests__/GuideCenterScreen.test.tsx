@@ -1,7 +1,7 @@
 /**
  * 引导中心页面测试。
  *
- * 验证六项状态、步骤数、独立开始和已完成项重播。
+ * 验证九项状态、步骤数、独立开始和已完成项重播。
  */
 import { fireEvent, render } from '@testing-library/react-native';
 
@@ -14,7 +14,10 @@ jest.mock('@/shared/onboarding/StarterTourContext', () => ({
     statuses: {
       basic: 'completed',
       knowledge: 'not_started',
+      knowledge_query: 'not_started',
       data_sources: 'skipped',
+      group_settings: 'not_started',
+      knowledge_collection: 'not_started',
       ai_configuration: 'not_started',
       runtime_mode: 'not_started',
       analysis: 'not_started',
@@ -24,12 +27,15 @@ jest.mock('@/shared/onboarding/StarterTourContext', () => ({
 }));
 
 describe('GuideCenterScreen', () => {
-  it('renders six independent guides and starts the selected one', () => {
+  it('renders nine independent guides and starts the selected one', () => {
     const screen = render(<GuideCenterScreen onBack={jest.fn()} />);
     for (const label of [
       '重播基础引导',
       '开始知识库引导',
+      '开始问知识库引导',
       '重播数据源引导',
+      '开始分组设置引导',
+      '开始知识收集引导',
       '开始AI 配置引导',
       '开始运行模式引导',
       '开始查看分析引导',

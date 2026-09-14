@@ -30,6 +30,7 @@ import { PageHeader } from '@/shared/ui/PageHeader';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 
 import {
   colors,
@@ -43,6 +44,8 @@ import { listQueryHistory, queryKnowledge } from '../apiClient';
 import { AnswerProgressCard } from '../components/AnswerProgressCard';
 import { CitationList } from '../components/CitationList';
 import { QueryHistoryModal } from '../components/QueryHistoryModal';
+import { GuideDemoBanner } from '../components/GuideDemoBanner';
+import { guideDemoQueryResponse } from '../guideDemoData';
 
 type Turn = {
   id: number;
@@ -56,18 +59,37 @@ type Turn = {
 
 /** 管理即时发送、动态反馈、只读历史和最终可信回答。 */
 export function KnowledgeQueryScreen({
+  guideDemo = false,
   knowledgeId,
   onBack,
   onOpenCitation,
 }: {
+  guideDemo?: boolean;
   knowledgeId: string;
   onBack: () => void;
   onOpenCitation: (documentId: string, chunkId: string) => void;
 }) {
   const { t } = useAppLanguage();
+  const headerTargetRef = useStarterTourTarget('query-header');
+  const hintTargetRef = useStarterTourTarget('query-hint');
+  const composerTargetRef = useStarterTourTarget('query-composer');
+  const historyTargetRef = useStarterTourTarget('query-history');
+  const answerTargetRef = useStarterTourTarget('query-answer');
+  const citationTargetRef = useStarterTourTarget('query-citation');
   const [question, setQuestion] = useState('');
   const [conversationId, setConversationId] = useState<string>();
-  const [turns, setTurns] = useState<Turn[]>([]);
+  const [turns, setTurns] = useState<Turn[]>(
+    guideDemo
+      ? [
+          {
+            id: 1,
+            question: '复盘规范中需要保留什么证据？',
+            response: guideDemoQueryResponse,
+            status: 'completed',
+          },
+        ]
+      : [],
+  );
   const [activeTurnId, setActiveTurnId] = useState<number>();
   const [historyVisible, setHistoryVisible] = useState(false);
   const [historyItems, setHistoryItems] = useState<RagHistoryItem[]>([]);
@@ -77,6 +99,17 @@ export function KnowledgeQueryScreen({
   const mounted = useRef(true);
   const completionTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
   const scrollRef = useRef<ScrollView>(null);
+  const guideDemoHistory: RagHistoryItem[] = [
+    {
+      id: '00000000-0000-4000-8000-000000000006',
+      conversationId: guideDemoQueryResponse.conversationId,
+      question: '复盘规范中需要保留什么证据？',
+      answer: guideDemoQueryResponse.answer,
+      grounded: true,
+      citationCount: guideDemoQueryResponse.citations.length,
+      createdAt: '2026-09-01T10:05:00.000Z',
+    },
+  ];
 
   useEffect(() => {
     const timers = completionTimers.current;
@@ -97,6 +130,7 @@ export function KnowledgeQueryScreen({
   }, [scrollToLatest, turns]);
 
   const runTurn = async (turnId: number, value: string) => {
+    if (guideDemo) return;
     try {
       const response = await queryKnowledge(knowledgeId, value, conversationId);
       if (!mounted.current) return;
@@ -137,6 +171,7 @@ export function KnowledgeQueryScreen({
   };
 
   const submit = () => {
+    if (guideDemo) return;
     const value = question.trim();
     if (!value || activeTurnId !== undefined) return;
     const turnId = nextTurnId.current;
@@ -160,6 +195,12 @@ export function KnowledgeQueryScreen({
   };
 
   const loadHistory = async () => {
+    if (guideDemo) {
+      setHistoryItems(guideDemoHistory);
+      setHistoryError('');
+      setHistoryLoading(false);
+      return;
+    }
     setHistoryLoading(true);
     setHistoryError('');
     try {
@@ -190,12 +231,15 @@ export function KnowledgeQueryScreen({
         }
         style={styles.flex}
       >
-        <PageHeader
-          moreLabel={t('knowledgeQuery.history')}
-          onBack={onBack}
-          onMore={openHistory}
-          title={t('knowledgeQuery.title')}
-        />
+        <View ref={headerTargetRef} collapsable={false}>
+          <PageHeader
+            moreLabel={t('knowledgeQuery.history')}
+            onBack={onBack}
+            onMore={openHistory}
+            title={t('knowledgeQuery.title')}
+          />
+        </View>
+        {guideDemo ? <GuideDemoBanner /> : null}
         <ScrollView
           alwaysBounceVertical
           contentContainerStyle={styles.content}
@@ -206,7 +250,12 @@ export function KnowledgeQueryScreen({
           refreshControl={<ScreenRefreshControl {...screenRefresh} />}
           style={styles.flex}
         >
-          {turns.length === 0 ? <Text style={styles.hint}>{t('knowledgeQuery.hint')}</Text> : null}
+          <View ref={hintTargetRef} collapsable={false}>
+            <Text style={styles.hint}>{t('knowledgeQuery.hint')}</Text>
+          </View>
+          <View ref={historyTargetRef} collapsable={false} style={styles.historyHint}>
+            <Text style={styles.historyHintText}>{t('knowledgeQuery.history')}</Text>
+          </View>
           {turns.map((turn) => (
             <View key={turn.id} style={styles.turn}>
               <View style={styles.questionBubble}>
@@ -247,21 +296,24 @@ export function KnowledgeQueryScreen({
               {turn.status === 'completed' ? (
                 <View
                   accessibilityLabel={turn.response.citations.length + '条引用来源'}
+                  ref={answerTargetRef}
                   style={styles.answerCard}
                 >
                   <Text selectable style={styles.answerText}>
                     {turn.response.answer}
                   </Text>
-                  <CitationList
-                    citations={turn.response.citations}
-                    onOpenCitation={onOpenCitation}
-                  />
+                  <View collapsable={false} ref={citationTargetRef}>
+                    <CitationList
+                      citations={turn.response.citations}
+                      onOpenCitation={onOpenCitation}
+                    />
+                  </View>
                 </View>
               ) : null}
             </View>
           ))}
         </ScrollView>
-        <View style={styles.composer}>
+        <View ref={composerTargetRef} collapsable={false} style={styles.composer}>
           <TextInput
             accessibilityLabel={t('knowledgeQuery.input')}
             maxLength={2_000}
@@ -311,6 +363,14 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sans,
     textAlign: 'center',
   },
+  historyHint: {
+    alignSelf: 'flex-end',
+    backgroundColor: colors.background,
+    borderRadius: radii.default,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  historyHintText: { ...typography.description, color: textColors.secondary },
   turn: { gap: spacing.sm },
   questionBubble: {
     alignSelf: 'flex-end',

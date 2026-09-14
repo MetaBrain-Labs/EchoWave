@@ -33,20 +33,18 @@ const folder = {
 };
 beforeEach(() => {
   jest.clearAllMocks();
-  jest
-    .mocked(getCollectionFolder)
-    .mockResolvedValue({
-      folder,
-      items: [
-        {
-          caseId: id,
-          documentId: document.id,
-          groupId: groupFixture.id,
-          title: document.title,
-          version: 3,
-        },
-      ],
-    });
+  jest.mocked(getCollectionFolder).mockResolvedValue({
+    folder,
+    items: [
+      {
+        caseId: id,
+        documentId: document.id,
+        groupId: groupFixture.id,
+        title: document.title,
+        version: 3,
+      },
+    ],
+  });
   jest.mocked(listDocuments).mockResolvedValue({ items: [{ ...document, caseId: id }] });
   jest.mocked(listGroups).mockResolvedValue({ items: [groupFixture] });
   jest.mocked(listCollectionRules).mockResolvedValue({

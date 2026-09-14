@@ -244,3 +244,28 @@ test('independent rule editor back uses navigation confirmation only once', asyn
     alert.mockRestore();
   }
 });
+
+test('guide demo editor accepts a missing server rule without a discard dialog', async () => {
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  const onBack = jest.fn();
+  try {
+    const screen = render(
+      <CollectionRulesScreen
+        groupId={groupId}
+        guideDemo
+        navigation={{ dispatch: jest.fn() }}
+        onBack={onBack}
+        onOperation={jest.fn()}
+        view="rule"
+      />,
+    );
+    await screen.findByLabelText('规则名称');
+    await waitFor(() => expect(screen.getByRole('button', { name: '保存规则' })).toBeDisabled());
+    expect(jest.mocked(usePreventRemove).mock.calls.at(-1)?.[0]).toBe(false);
+    fireEvent.press(screen.getByRole('button', { name: '返回' }));
+    expect(onBack).toHaveBeenCalledTimes(1);
+    expect(alert).not.toHaveBeenCalled();
+  } finally {
+    alert.mockRestore();
+  }
+});
