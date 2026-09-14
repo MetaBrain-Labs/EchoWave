@@ -63,6 +63,8 @@ export type AnalysisDetailCanvasProps = {
   onCloseTag: () => void;
   onHideIrrelevantChange: (value: boolean) => void;
   onOpenCitation?: (knowledgeBaseId: string, documentId: string, chunkId: string) => void;
+  onCollectTag?: () => void;
+  onCorrectTag?: () => void;
   selectedTag?: AiTagAnalysis;
   showTagFilter?: boolean;
   summary?: Omit<SummaryContentProps, 'detail'>;
@@ -88,6 +90,8 @@ export function AnalysisDetailCanvas({
   onCloseTag,
   onHideIrrelevantChange,
   onOpenCitation,
+  onCollectTag,
+  onCorrectTag,
   selectedTag,
   showTagFilter = true,
   summary,
@@ -195,6 +199,8 @@ export function AnalysisDetailCanvas({
         onClose={onCloseTag}
         onHideIrrelevantChange={onHideIrrelevantChange}
         onOpenCitation={onOpenCitation}
+        onCollect={onCollectTag}
+        onCorrect={onCorrectTag}
         segments={segments.filter((segment) =>
           selectedTag?.evidenceSegmentIds.includes(segment.id),
         )}

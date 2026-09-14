@@ -58,6 +58,7 @@ function documentStatus(row: Record<string, unknown>) {
 
 function mapDocument(row: Record<string, unknown>): KnowledgeDocument {
   return KnowledgeDocumentSchema.parse({
+    ...(row.knowledge_case_id ? { caseId: row.knowledge_case_id } : {}),
     version: Number(row.version ?? 0),
     activeRevisionId: row.active_revision_id ?? null,
     latestRevision: row.latest_revision ?? null,

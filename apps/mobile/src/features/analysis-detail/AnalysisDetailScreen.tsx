@@ -220,6 +220,7 @@ function hasConvergedToTerminalState(
 }
 
 type AnalysisDetailScreenProps = {
+  onCollect?: (jobId: string, tagId?: string, correct?: boolean) => void;
   detailId: string;
   groupId?: string;
   onBack: () => void;
@@ -232,6 +233,7 @@ export function AnalysisDetailScreen({
   groupId,
   onBack,
   onOpenCitation,
+  onCollect,
 }: AnalysisDetailScreenProps) {
   const { language: appLanguage, t } = useAppLanguage();
   const [detail, setDetail] = useState<AnalysisDetailView>();
@@ -979,7 +981,27 @@ export function AnalysisDetailScreen({
           onOpenCitation?.(knowledgeBaseId, documentId, chunkId);
         }}
         selectedTag={selectedTag}
+        onCollectTag={
+          selectedTag && detail.businessAnalysis.result && onCollect
+            ? () => onCollect(detail.businessAnalysis.result!.jobId, selectedTag.id)
+            : undefined
+        }
+        onCorrectTag={
+          selectedTag && detail.businessAnalysis.result && onCollect
+            ? () => onCollect(detail.businessAnalysis.result!.jobId, selectedTag.id, true)
+            : undefined
+        }
         summary={hasSummary ? screenRefresh : undefined}
+        summaryLeadingContent={
+          detail.businessAnalysis.result && onCollect ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => onCollect(detail.businessAnalysis.result!.jobId)}
+            >
+              <Text style={styles.returnButtonText}>{t('collection.collectDialogue')}</Text>
+            </Pressable>
+          ) : undefined
+        }
         tasksContent={
           <ScrollView
             alwaysBounceVertical

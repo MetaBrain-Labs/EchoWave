@@ -45,6 +45,8 @@ export type ClaimedIngestionJob = {
 };
 /** 已持久写入的版本输入；替换操作必须声明预期版本。 */
 export type CreateIngestionInput = {
+  /** 内部案例版本定位，用于事务内幂等创建检索投影。 */
+  caseVersionId?: string;
   knowledgeBaseId: string;
   documentId?: string;
   expectedVersion?: number;
@@ -131,6 +133,34 @@ export class IngestionRepository {
       );
       if (!kb.rowCount) throw new RagRepositoryError('NOT_FOUND', '知识库不存在。');
       let documentId = input.documentId;
+      if (input.caseVersionId) {
+        const linked = await client.query(
+          `SELECT v.*,c.document_id,c.version AS current_version,c.status AS case_status
+          FROM ${this.table('knowledge_case_versions')} v JOIN ${this.table('knowledge_cases')} c
+            ON c.tenant_id=v.tenant_id AND c.id=v.case_id
+          WHERE v.tenant_id=$1 AND v.id=$2 AND c.knowledge_base_id=$3 FOR UPDATE OF c,v`,
+          [this.tenantId, input.caseVersionId, input.knowledgeBaseId],
+        );
+        const versionRow = linked.rows[0];
+        if (
+          !versionRow ||
+          versionRow.case_status !== 'published' ||
+          versionRow.version !== versionRow.current_version
+        )
+          throw new RagRepositoryError('CONFLICT', '案例版本已变化。');
+        if (versionRow.document_revision_id) {
+          const existing = await client.query(
+            `SELECT id FROM ${this.table('ingestion_jobs')} WHERE tenant_id=$1 AND revision_id=$2`,
+            [this.tenantId, versionRow.document_revision_id],
+          );
+          await client.query('COMMIT');
+          return {
+            documentId: versionRow.document_id as string,
+            jobId: existing.rows[0].id as string,
+          };
+        }
+        documentId = versionRow.document_id ?? undefined;
+      }
       let version = 1;
       if (!documentId) {
         const duplicate = await client.query(
@@ -147,7 +177,13 @@ export class IngestionRepository {
       }
       if (documentId) {
         const document = await this.lockDocument(client, input.knowledgeBaseId, documentId);
-        if (input.documentId && Number(document.version) !== input.expectedVersion)
+        if (document.knowledge_case_id && !input.caseVersionId)
+          throw new RagRepositoryError('CONFLICT', '请通过案例入口编辑该文档。');
+        if (
+          !input.caseVersionId &&
+          input.documentId &&
+          Number(document.version) !== input.expectedVersion
+        )
           throw new RagRepositoryError('CONFLICT', '文档版本已变化，请刷新后重试。');
         version = Number(document.version) + 1;
         await client.query(
@@ -201,6 +237,21 @@ export class IngestionRepository {
         ],
       );
       const revisionId = revision.rows[0].id as string;
+      if (input.caseVersionId) {
+        await client.query(
+          `UPDATE ${this.table('documents')} SET knowledge_case_id=(SELECT case_id FROM ${this.table('knowledge_case_versions')} WHERE tenant_id=$1 AND id=$2) WHERE tenant_id=$1 AND id=$3`,
+          [this.tenantId, input.caseVersionId, documentId],
+        );
+        await client.query(
+          `UPDATE ${this.table('knowledge_case_versions')} SET document_revision_id=$3 WHERE tenant_id=$1 AND id=$2`,
+          [this.tenantId, input.caseVersionId, revisionId],
+        );
+        await client.query(
+          `UPDATE ${this.table('knowledge_cases')} SET document_id=$3 WHERE tenant_id=$1 AND id=(
+          SELECT case_id FROM ${this.table('knowledge_case_versions')} WHERE tenant_id=$1 AND id=$2)`,
+          [this.tenantId, input.caseVersionId, documentId],
+        );
+      }
       const job = await client.query(
         `INSERT INTO ${this.table('ingestion_jobs')}
         (tenant_id,knowledge_base_id,document_id,revision_id,staged_path,status)
@@ -230,6 +281,8 @@ export class IngestionRepository {
     try {
       await client.query('BEGIN');
       const document = await this.lockDocument(client, knowledgeBaseId, documentId);
+      if (document.knowledge_case_id)
+        throw new RagRepositoryError('CONFLICT', '请通过案例入口编辑该文档。');
       const revisions = await client.query(
         `SELECT r.*,j.staged_path FROM ${this.table('document_revisions')} r
         LEFT JOIN ${this.table('ingestion_jobs')} j ON j.tenant_id=r.tenant_id AND j.revision_id=r.id
@@ -506,10 +559,25 @@ export class IngestionRepository {
     }
   }
   /** 仅重新排队最新、有原文件或固化快照且允许重试的失败任务。 */
-  async retryDocument(knowledgeBaseId: string, documentId: string): Promise<void> {
+  async retryDocument(
+    knowledgeBaseId: string,
+    documentId: string,
+    expectedCase?: { id: string; version: number },
+  ): Promise<void> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      if (expectedCase) {
+        const current = await client.query(
+          `SELECT c.id FROM ${this.table('knowledge_cases')} c
+          JOIN ${this.table('knowledge_case_versions')} v ON v.tenant_id=c.tenant_id AND v.case_id=c.id AND v.version=c.version
+          JOIN ${this.table('documents')} d ON d.tenant_id=c.tenant_id AND d.id=c.document_id AND d.latest_revision_id=v.document_revision_id
+          WHERE c.tenant_id=$1 AND c.id=$2 AND c.version=$3 AND c.status='published' AND c.knowledge_base_id=$4 AND c.document_id=$5 FOR UPDATE OF c,v`,
+          [this.tenantId, expectedCase.id, expectedCase.version, knowledgeBaseId, documentId],
+        );
+        if (!current.rowCount)
+          throw new RagRepositoryError('CONFLICT', '案例版本已变化，请读取最新状态后重试。');
+      }
       const document = await this.lockDocument(client, knowledgeBaseId, documentId);
       const result = await client.query(
         `UPDATE ${this.table('ingestion_jobs')} j SET status='queued',progress=0,

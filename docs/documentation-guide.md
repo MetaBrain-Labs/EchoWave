@@ -32,6 +32,8 @@ This guide maps every human-maintained Markdown document to its audience, author
 
 ## Configuration, runtime, and deployment
 
+[Analysis Case Collection](./analysis-case-collection.md) / [中文](./analysis-case-collection.zh-CN.md) serves product, mobile, knowledge and Worker maintainers. Contracts, collection services and migration 037 are authoritative; update both documents when collection, review, playback or projection behavior changes.
+
 | English / Simplified Chinese                                                                                   | Audience                      | Authority                                                     |
 | -------------------------------------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------- |
 | [Configuration and Credentials](./configuration.md) / [中文](./configuration.zh-CN.md)                         | Deployers, API maintainers    | Environment templates, parsers, settings API                  |

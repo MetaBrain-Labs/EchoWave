@@ -30,7 +30,7 @@ export function PageHeader({
   leading?: ReactNode;
   moreLabel?: string;
   onBack: () => void;
-  onMore: () => void;
+  onMore?: () => void;
   onSearch?: () => void;
   searchLabel?: string;
   title: string;
@@ -65,15 +65,17 @@ export function PageHeader({
             <Ionicons color={colors.ink} name="search-outline" size={28} />
           </Pressable>
         ) : null}
-        <Pressable
-          accessibilityLabel={moreLabel ?? t('common.moreActions')}
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={onMore}
-          style={({ pressed }) => [styles.headerIconButton, pressed && styles.pressed]}
-        >
-          <Ionicons color={colors.ink} name="ellipsis-horizontal" size={28} />
-        </Pressable>
+        {onMore ? (
+          <Pressable
+            accessibilityLabel={moreLabel ?? t('common.moreActions')}
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={onMore}
+            style={({ pressed }) => [styles.headerIconButton, pressed && styles.pressed]}
+          >
+            <Ionicons color={colors.ink} name="ellipsis-horizontal" size={28} />
+          </Pressable>
+        ) : null}
       </View>
     </View>
   );

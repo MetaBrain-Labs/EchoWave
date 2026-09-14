@@ -34,6 +34,8 @@ import { registerDashScopeWebhookRoutes } from './routes/dashScopeWebhook.ts';
 import { registerDataSourceRoutes } from './routes/dataSources.ts';
 import { registerGroupRoutes } from './routes/groups.ts';
 import { registerHealthRoutes } from './routes/health.ts';
+import { registerCollectionRoutes } from '../knowledge/collection/routes.ts';
+import type { CollectionService } from '../knowledge/collection/service.ts';
 import { registerKnowledgeRoutes } from './routes/knowledge.ts';
 import { registerSettingsRoutes } from './routes/settings.ts';
 import { registerAudioAutomationRoutes } from './routes/audioAutomation.ts';
@@ -41,6 +43,7 @@ import { registerPushDeviceRoutes } from './routes/pushDevices.ts';
 import { registerAudioAnalysisRunsRoutes } from './routes/audioAnalysisRuns.ts';
 
 export type AppDependencies = {
+  collectionService?: CollectionService;
   dashScopeCallbackService?: DashScopeCallbackService;
   knowledgeService?: KnowledgeService;
   groupService?: GroupService;
@@ -76,6 +79,7 @@ export function createApp(
   );
 
   registerHealthRoutes(app, dependencies.remotePushEnabled ?? false);
+  if (dependencies.collectionService) registerCollectionRoutes(app, dependencies.collectionService);
   if (dependencies.settingsService) {
     registerSettingsRoutes(app, dependencies.settingsService, dependencies.trustedProxyCidrs ?? []);
   }

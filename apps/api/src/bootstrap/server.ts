@@ -31,6 +31,7 @@ if (transcriptionCapabilities.ffmpeg.available && !transcriptionCapabilities.sil
 }
 const app = createApp(config, {
   knowledgeService: ragRuntime.service,
+  collectionService: ragRuntime.collectionService,
   groupService: ragRuntime.groupService,
   dataSourceService: ragRuntime.dataSourceService,
   audioService: ragRuntime.audioService,
@@ -62,6 +63,7 @@ try {
     await ragRuntime.workerWakeup.start();
     await ragRuntime.startSourceCleanup();
     ragRuntime.worker.start();
+    ragRuntime.collectionWorker.start();
     ragRuntime.knowledgeCleanupWorker.start();
     await ragRuntime.transcriptionWorker.start();
     await Promise.all([

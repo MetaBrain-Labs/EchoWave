@@ -10,6 +10,7 @@
  * - 不包含传输实现或应用业务逻辑。
  */
 export { HelloResponseSchema, type HelloResponse } from './hello.ts';
+export * from './collection.ts';
 export {
   ECHOWAVE_API_VERSION,
   HealthCapabilitiesSchema,
@@ -361,3 +362,5 @@ export {
   type PushDevice,
   type PushDeviceRegisterRequest,
 } from './notifications.ts';
+
+export * from './collectionFolders.ts';

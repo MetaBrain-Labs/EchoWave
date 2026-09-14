@@ -70,6 +70,7 @@ describe('Top-level tab screens', () => {
     expect(scroll.findAllByProps({ testID: 'top-level-page-header' })).toHaveLength(0);
 
     for (const card of [
+      screen.getByLabelText('打开知识收集'),
       screen.getByLabelText('打开分析'),
       screen.getByLabelText('打开服务状态'),
       screen.getByLabelText('打开通用设置'),
@@ -88,6 +89,8 @@ describe('Top-level tab screens', () => {
     }
 
     expect(screen.queryByLabelText('打开数据源与音频文件')).toBeNull();
+    fireEvent.press(screen.getByLabelText('打开知识收集'));
+    expect(mockPush).toHaveBeenCalledWith('/collection');
     fireEvent.press(screen.getByLabelText('打开分析'));
     expect(mockPush).toHaveBeenCalledWith('/analysis');
     fireEvent.press(screen.getByLabelText('打开 AI 配置'));

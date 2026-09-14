@@ -102,6 +102,8 @@ export const DocumentChunkSchema = z.object({
 });
 /** 知识文档列表记录 schema。 */
 export const KnowledgeDocumentSchema = z.object({
+  /** 案例生成的文档必须回到案例入口编辑。 */
+  caseId: EntityIdSchema.nullable().optional(),
   id: EntityIdSchema,
   knowledgeBaseId: EntityIdSchema,
   title: z.string(),

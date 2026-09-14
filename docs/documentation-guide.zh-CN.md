@@ -2,6 +2,8 @@
 
 [English](./documentation-guide.md) | **简体中文**
 
+[分析案例收集](./analysis-case-collection.md) / [中文](./analysis-case-collection.zh-CN.md) 面向产品、移动端、知识库及 Worker 维护者。契约、收集服务与迁移 037 是权威来源；收集、审核、回听或投影行为变化时同步更新两种语言。
+
 本文介绍仓库中所有人维护的 Markdown 文档，帮助使用者找到正确入口，也帮助维护者判断某次代码变更需要同步更新哪些说明。无语言后缀的 `.md` 是默认英文入口，简体中文使用 `.zh-CN.md` 同名版本；具体技术事实仍以源码、配置和编号 SQL migration 为准。
 
 ## 首要入口

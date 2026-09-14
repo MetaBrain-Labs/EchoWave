@@ -13,6 +13,7 @@
 - [音频运行模式](./audio-runtime-modes.zh-CN.md)：混合、对象存储、轻量本地及声学情绪与清理流程。
 - [Server 部署指南](./server-deployment.zh-CN.md)：Ubuntu 22.04 x86_64 实测源码部署、Windows Docker Desktop、HTTPS、更新、卸载与受限网络排障。
 - [一键式音频全流程分析](./audio-analysis-automation.zh-CN.md)：批量、定时、断点恢复、取消与 Expo 推送。
+- [分析案例收集与回听](./analysis-case-collection.zh-CN.md)：分组规则、人工纠正、精选审核、检索投影与原声学习。
 - [Android 真机全量回归](./mobile-e2e.zh-CN.md)：Codex + Maestro 的稳定套件、真实集成、证据与修复门禁。
 - [Android E2E 问题汇总](./mobile-e2e-troubleshooting.zh-CN.md)：真机、迁移、seed、Metro、Flow、键盘和进程清理问题的排障结论。
 - [自托管与自行构建](./self-hosting.zh-CN.md)：Server 部署入口、Development Build、APK 与 EAS/Firebase 身份配置。

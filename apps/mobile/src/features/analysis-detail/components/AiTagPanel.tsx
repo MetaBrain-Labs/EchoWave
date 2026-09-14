@@ -58,6 +58,8 @@ export function AiTagPanel({
   onClose,
   onHideIrrelevantChange,
   onOpenCitation,
+  onCollect,
+  onCorrect,
   segments,
 }: {
   allowHideIrrelevant?: boolean;
@@ -67,6 +69,8 @@ export function AiTagPanel({
   onClose: () => void;
   onHideIrrelevantChange?: (value: boolean) => void;
   onOpenCitation?: (knowledgeBaseId: string, documentId: string, chunkId: string) => void;
+  onCollect?: () => void;
+  onCorrect?: () => void;
   segments: readonly TranscriptSegment[];
 }) {
   const { t } = useAppLanguage();
@@ -142,6 +146,16 @@ export function AiTagPanel({
         <Text style={styles.sheetDescription}>{t('analysis.aiDisclaimer')}</Text>
         <Text style={styles.analysisParagraphTitle}>{t('analysis.conclusion')}</Text>
         <Text style={styles.analysisParagraph}>{analysis.summary}</Text>
+        {onCollect ? (
+          <Pressable accessibilityRole="button" onPress={onCollect} style={styles.citationCard}>
+            <Text style={styles.analysisParagraph}>{t('collection.collect')}</Text>
+          </Pressable>
+        ) : null}
+        {onCorrect ? (
+          <Pressable accessibilityRole="button" onPress={onCorrect} style={styles.citationCard}>
+            <Text style={styles.analysisParagraph}>{t('collection.correct')}</Text>
+          </Pressable>
+        ) : null}
         <Text style={styles.confidence}>
           {t('analysis.confidence', { value: analysis.confidence })}
         </Text>

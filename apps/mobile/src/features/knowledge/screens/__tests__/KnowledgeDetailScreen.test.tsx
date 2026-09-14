@@ -10,10 +10,12 @@
  * Notes:
  * - 服务端请求由 feature 级 mock 控制。
  */
+import { StyleSheet } from 'react-native';
 import { fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import type { ComponentProps } from 'react';
 import * as DocumentPicker from 'expo-document-picker';
 
+import { listKnowledgeDirectory } from '@/shared/api/collectionFoldersApi';
 import { KnowledgeDetailScreen } from '../KnowledgeDetailScreen';
 import { getKnowledgeBase, listDocuments, retryDocument } from '../../apiClient';
 import { document, knowledge } from '../../testing/fixtures';
@@ -23,6 +25,7 @@ import { groupFixture } from '@/test/workspaceFixtures';
 
 jest.mock('expo-router', () => ({ useFocusEffect: jest.fn() }));
 jest.mock('../../apiClient');
+jest.mock('@/shared/api/collectionFoldersApi');
 jest.mock('@/shared/api/knowledgeBasesApi');
 jest.mock('@/shared/api/groupsApi');
 jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
@@ -49,6 +52,7 @@ async function renderDetail(props?: Partial<ComponentProps<typeof KnowledgeDetai
 describe('KnowledgeDetailScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.mocked(listKnowledgeDirectory).mockResolvedValue({ items: [] });
     jest.mocked(getKnowledgeBase).mockResolvedValue(knowledge);
     jest.mocked(listDocuments).mockResolvedValue({ items: [document] });
     jest.mocked(listKnowledgeBaseGroups).mockResolvedValue({ items: [] });
@@ -211,4 +215,54 @@ describe('KnowledgeDetailScreen', () => {
     fireEvent.press(screen.getByLabelText('确认切换分组'));
     expect(onSwitchGroup).toHaveBeenCalledWith(groupFixture.id);
   });
+});
+
+test('collection shortcuts stay inside the hero without stretching the detail root', async () => {
+  jest.mocked(getKnowledgeBase).mockResolvedValue(knowledge);
+  jest.mocked(listDocuments).mockResolvedValue({ items: [] });
+  jest.mocked(listKnowledgeBaseGroups).mockResolvedValue({ items: [groupFixture] });
+  const onOpenCases = jest.fn();
+  const onOpenCollection = jest.fn();
+  const screen = await renderDetail({ onOpenCases, onOpenCollection });
+  const overview = within(screen.getByTestId('knowledge-overview-scroll'));
+  const entry = overview.getByTestId('knowledge-collection-entry');
+  expect(StyleSheet.flatten(entry.props.style).flex).toBeUndefined();
+  expect(StyleSheet.flatten(entry.props.style).minHeight).toBe(44);
+  fireEvent.press(entry);
+  expect(onOpenCollection).toHaveBeenCalledWith([groupFixture.id]);
+  fireEvent.press(overview.getByTestId('knowledge-cases-entry'));
+  expect(onOpenCases).toHaveBeenCalledWith();
+});
+
+test('rule folder card and its ellipsis have separate actions in overview and files', async () => {
+  jest.mocked(getKnowledgeBase).mockResolvedValue(knowledge);
+  jest.mocked(listDocuments).mockResolvedValue({ items: [{ ...document, caseId: document.id }] });
+  jest.mocked(listKnowledgeBaseGroups).mockResolvedValue({ items: [] });
+  const folder = {
+    id: document.id,
+    knowledgeBaseId: knowledge.id,
+    kind: 'rule' as const,
+    name: '优秀话术收集',
+    ruleId: document.id,
+    groupId: groupFixture.id,
+    caseCount: 2,
+    updatedAt: document.updatedAt,
+  };
+  jest
+    .mocked(listKnowledgeDirectory)
+    .mockResolvedValue({ items: [{ kind: 'folder', folder, updatedAt: folder.updatedAt }] });
+  const onOpenFolder = jest.fn();
+  const onViewRule = jest.fn();
+  const screen = await renderDetail({ onOpenFolder, onViewRule });
+  const overview = within(screen.getByTestId('knowledge-overview-scroll'));
+  expect(overview.queryByText(document.title)).toBeNull();
+  fireEvent.press(overview.getByLabelText('文件夹操作：优秀话术收集'));
+  expect(onOpenFolder).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByRole('button', { name: '查看收集规则' }));
+  expect(onViewRule).toHaveBeenCalledWith(folder);
+  fireEvent.press(overview.getByLabelText('打开文件夹：优秀话术收集'));
+  expect(onOpenFolder).toHaveBeenCalledWith(folder.id, '');
+  const files = within(screen.getByTestId('knowledge-files-scroll'));
+  fireEvent.press(files.getByLabelText('文件夹操作：优秀话术收集'));
+  expect(onOpenFolder).toHaveBeenCalledTimes(1);
 });

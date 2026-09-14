@@ -24,6 +24,7 @@ export default function GroupSettingsRoute() {
   return (
     <GroupSettingsScreen
       groupId={groupId}
+      onOpenCollection={() => router.push({ pathname: '/collection', params: { groupId } })}
       onArchived={() => router.replace('/')}
       onBack={() => backOrReplace(router, '/')}
     />
