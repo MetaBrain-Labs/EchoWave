@@ -20,6 +20,7 @@ export default function RecordingRoute() {
       sourceId={typeof params.sourceId === 'string' ? params.sourceId : undefined}
       draftId={typeof params.draftId === 'string' ? params.draftId : undefined}
       onBack={() => router.back()}
+      onOpenSettings={() => router.push('/general-settings')}
     />
   );
 }

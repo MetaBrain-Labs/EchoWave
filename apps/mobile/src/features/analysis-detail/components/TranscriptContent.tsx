@@ -23,7 +23,7 @@ import {
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import type { TranslationKey } from '@/shared/i18n/translations';
-import { ActionSheet } from '@/shared/ui/ActionSheet';
+import { ActionSheet, type ActionSheetItem } from '@/shared/ui/ActionSheet';
 
 import {
   colors,
@@ -530,12 +530,13 @@ export function TranscriptContent({
 }: TranscriptContentProps) {
   const { formatDateTime, language, t } = useAppLanguage();
   const [skipInvalid, setSkipInvalid] = useState(false);
-  const [hideSpeakerReview, setHideSpeakerReview] = useState(false);
+  const [hideSpeakerReview, setHideSpeakerReview] = useState(true);
   const [sceneFilterId, setSceneFilterId] = useState<string>();
   const [sceneFilterVisible, setSceneFilterVisible] = useState(false);
   const [textFilterVisible, setTextFilterVisible] = useState(false);
   const [tagFilterVisible, setTagFilterVisible] = useState(false);
   const [tagFilter, setTagFilter] = useState<'all' | 'selected'>('all');
+  const [tagFilterId, setTagFilterId] = useState<string>();
   const pendingReviewFindingCount = detail.speakerReview.findings.filter(
     (finding) => finding.sourceSegmentId !== null && finding.splitAfterWordIndex !== null,
   ).length;
@@ -562,13 +563,23 @@ export function TranscriptContent({
         };
       })
     : selectedScenes;
+  const availableTags = [
+    ...new Map(
+      displayScenes
+        .flatMap((scene) => scene.segments.flatMap((segment) => segment.aiTags))
+        .map((tag) => [tag.id, tag] as const),
+    ).values(),
+  ];
+  const activeTag = availableTags.find((tag) => tag.id === tagFilterId);
+  const highlightIds = activeTag ? new Set(activeTag.evidenceSegmentIds) : selectedIds;
+  const tagSelectionActive = Boolean(activeTag) || tagFilter === 'selected';
   const sceneFiltered = sceneFilterId
     ? displayScenes.filter((scene) => scene.id === sceneFilterId)
     : displayScenes;
   const visibleScenes =
-    hasSelectedTag && hideIrrelevant
+    tagSelectionActive || (hasSelectedTag && hideIrrelevant)
       ? sceneFiltered.filter((scene) =>
-          scene.segments.some((segment) => selectedIds.has(segment.id)),
+          scene.segments.some((segment) => highlightIds.has(segment.id)),
         )
       : sceneFiltered;
   const sceneFilterLabel =
@@ -750,7 +761,11 @@ export function TranscriptContent({
             onPress={() => setTextFilterVisible(true)}
           />
           <FilterButton
-            label={tagFilter === 'selected' ? t('analysis.selectedTags') : t('analysis.allTags')}
+            label={
+              activeTag?.customLabel ??
+              activeTag?.title ??
+              (tagFilter === 'selected' ? t('analysis.selectedTags') : t('analysis.allTags'))
+            }
             onPress={() => setTagFilterVisible(true)}
           />
           <Checkbox
@@ -787,7 +802,7 @@ export function TranscriptContent({
           <Text style={styles.emptyTranscriptText}>{t('analysis.noSpeech')}</Text>
         </View>
       ) : null}
-      {visibleScenes.length === 0 && !skipInvalid && !hasSelectedTag
+      {visibleScenes.length === 0 && !skipInvalid && !hasSelectedTag && !activeTag
         ? detail.invalidSegments.map((invalidSegment) => (
             <InvalidSegmentView invalidSegment={invalidSegment} key={invalidSegment.id} />
           ))
@@ -795,9 +810,9 @@ export function TranscriptContent({
       {visibleScenes.map((scene) => {
         const sceneIndex = displayScenes.indexOf(scene);
         const visibleTimelineItems =
-          tagFilter === 'selected' || (hasSelectedTag && hideIrrelevant)
+          tagSelectionActive || (hasSelectedTag && hideIrrelevant)
             ? scene.timelineItems.filter(
-                (item) => item.kind === 'segment' && selectedIds.has(item.segment.id),
+                (item) => item.kind === 'segment' && highlightIds.has(item.segment.id),
               )
             : skipInvalid
               ? scene.timelineItems.filter((item) => item.kind === 'segment')
@@ -826,7 +841,7 @@ export function TranscriptContent({
                   <SegmentView
                     key={item.id}
                     displayMode={displayMode}
-                    dimmed={hasSelectedTag && !selectedIds.has(item.segment.id)}
+                    dimmed={highlightIds.size > 0 && !highlightIds.has(item.segment.id)}
                     draftText={item.segment.text}
                     editing={editing}
                     hideReviewFindings={hideSpeakerReview}
@@ -900,12 +915,32 @@ export function TranscriptContent({
       />
       <ActionSheet
         items={[
-          { label: t('analysis.allTags'), onPress: () => setTagFilter('all') },
+          {
+            icon: !activeTag && tagFilter === 'all' ? 'radio-button-on' : 'radio-button-off',
+            label: t('analysis.allTags'),
+            onPress: () => {
+              setTagFilter('all');
+              setTagFilterId(undefined);
+            },
+          },
           {
             disabled: !hasSelectedTag,
+            icon: !activeTag && tagFilter === 'selected' ? 'radio-button-on' : 'radio-button-off',
             label: t('analysis.selectedTags'),
-            onPress: () => setTagFilter('selected'),
+            onPress: () => {
+              setTagFilter('selected');
+              setTagFilterId(undefined);
+            },
           },
+          ...availableTags.map((tag): ActionSheetItem => ({
+            icon: activeTag?.id === tag.id ? 'radio-button-on' : 'radio-button-off',
+            id: `ai-tag:${tag.id}`,
+            label: tag.customLabel ?? tag.title,
+            onPress: () => {
+              setTagFilter('all');
+              setTagFilterId(tag.id);
+            },
+          })),
         ]}
         onClose={() => setTagFilterVisible(false)}
         title={t('analysis.allTags')}

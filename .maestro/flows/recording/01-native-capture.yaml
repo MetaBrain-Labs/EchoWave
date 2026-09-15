@@ -33,6 +33,8 @@ tags:
 - assertVisible: '仅当前手机可见'
 - assertVisible: '试听'
 - assertVisible: '导出'
-- assertVisible: '删除手机原件'
+- tapOn: '更多录音操作'
+- assertVisible: '删除本地录音'
+- tapOn: '取消'
 - takeScreenshot: 'recording/01-retained-original'
 # 保留本次原件供人工锁屏、后台与通知停止验收；不上传、不删除。

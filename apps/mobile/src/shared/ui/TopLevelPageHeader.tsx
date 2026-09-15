@@ -31,6 +31,7 @@ export type TopLevelPageAction = {
   icon: keyof typeof Ionicons.glyphMap;
   label?: string;
   onPress: () => void;
+  size?: number;
   targetRef?: Ref<View>;
   testID?: string;
 };
@@ -38,6 +39,7 @@ export type TopLevelPageAction = {
 /** 描述一级页头的标题、说明和操作集合。 */
 export type TopLevelPageHeaderProps = {
   actions?: TopLevelPageAction[];
+  compact?: boolean;
   onBack?: () => void;
   subtitle?: string;
   title: string;
@@ -46,13 +48,14 @@ export type TopLevelPageHeaderProps = {
 /** 渲染安全区之后保持固定的一级页面页头。 */
 export function TopLevelPageHeader({
   actions = [],
+  compact = false,
   onBack,
   subtitle,
   title,
 }: TopLevelPageHeaderProps) {
   const { t } = useAppLanguage();
   return (
-    <View style={styles.header} testID="top-level-page-header">
+    <View style={[styles.header, compact && styles.compactHeader]} testID="top-level-page-header">
       <View style={styles.titleRow}>
         {onBack ? (
           <Pressable
@@ -68,7 +71,7 @@ export function TopLevelPageHeader({
         <Text
           accessibilityRole="header"
           numberOfLines={1}
-          style={[styles.title, onBack && styles.titleWithBack]}
+          style={[styles.title, compact && styles.compactTitle, onBack && styles.titleWithBack]}
         >
           {title}
         </Text>
@@ -96,7 +99,7 @@ export function TopLevelPageHeader({
                   <Ionicons
                     color={colors.ink}
                     name={action.icon}
-                    size={labeled ? typography.body.lineHeight : 30}
+                    size={action.size ?? (labeled ? typography.body.lineHeight : 30)}
                   />
                   {action.label ? <Text style={styles.actionLabel}>{action.label}</Text> : null}
                 </Pressable>
@@ -117,6 +120,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingTop: spacing.lg,
   },
+  compactHeader: {
+    paddingBottom: spacing.base,
+    paddingTop: spacing.base,
+  },
   titleRow: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -136,6 +143,10 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     fontFamily: fontFamilies.sansBold,
     fontWeight: 'bold',
+  },
+  compactTitle: {
+    fontSize: 22,
+    lineHeight: 30,
   },
   titleWithBack: { flex: 1 },
   actions: {

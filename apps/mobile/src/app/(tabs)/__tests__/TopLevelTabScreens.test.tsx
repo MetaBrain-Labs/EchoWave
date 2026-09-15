@@ -127,12 +127,20 @@ describe('Top-level tab screens', () => {
       expect(StyleSheet.flatten(card.props.style)).toEqual(
         expect.objectContaining({
           backgroundColor: colors.card,
-          borderColor: colors.divider,
-          borderRadius: radii.default,
+          borderRadius: spacing.base,
+          minHeight: 112,
           padding: spacing.md,
         }),
       );
     }
+    expect(
+      StyleSheet.flatten(screen.getByTestId('create-hub-icon-analysis').props.style)
+        .backgroundColor,
+    ).toBeUndefined();
+    expect(
+      StyleSheet.flatten(screen.getByTestId('create-hub-icon-recording').props.style)
+        .backgroundColor,
+    ).toBeUndefined();
     fireEvent.press(screen.getByLabelText('打开一键分析'));
     expect(mockPush).toHaveBeenCalledWith('/analysis-create');
     fireEvent.press(screen.getByLabelText('打开手机录音'));

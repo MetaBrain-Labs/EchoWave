@@ -38,6 +38,7 @@ export function CreateHubScreen({
     {
       accessibilityLabel: t('createHub.analysis.accessibility'),
       description: t('createHub.analysis.description'),
+      id: 'analysis',
       icon: 'sparkles-outline' as const,
       onPress: onOpenAnalysis,
       title: t('createHub.analysis.title'),
@@ -45,6 +46,7 @@ export function CreateHubScreen({
     {
       accessibilityLabel: t('createHub.recording.accessibility'),
       description: t('createHub.recording.description'),
+      id: 'recording',
       icon: 'mic-outline' as const,
       onPress: onOpenRecording,
       title: t('createHub.recording.title'),
@@ -62,7 +64,7 @@ export function CreateHubScreen({
             onPress={card.onPress}
             style={({ pressed }) => [styles.navigationCard, pressed && styles.pressed]}
           >
-            <View style={styles.navigationIcon}>
+            <View style={styles.navigationIcon} testID={`create-hub-icon-${card.id}`}>
               <Ionicons color={colors.ink} name={card.icon} size={22} />
             </View>
             <View style={styles.navigationCopy}>
@@ -87,22 +89,19 @@ const styles = StyleSheet.create({
   navigationCard: {
     alignItems: 'center',
     backgroundColor: colors.card,
-    borderColor: colors.divider,
     borderRadius: radii.default,
-    borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     gap: spacing.base,
+    minHeight: 112,
     padding: spacing.md,
   },
   navigationIcon: {
     alignItems: 'center',
-    backgroundColor: colors.background,
-    borderRadius: radii.round,
     height: 40,
     justifyContent: 'center',
     width: 40,
   },
-  navigationCopy: { flex: 1 },
+  navigationCopy: { flex: 1, minHeight: 64, justifyContent: 'center' },
   navigationTitle: {
     ...typography.heading2,
     color: textColors.primary,
