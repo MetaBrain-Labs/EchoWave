@@ -15,9 +15,11 @@ import { useAppLanguage } from './LanguageProvider';
 
 /** 渲染独立于 App 语言的分析语言选择器。 */
 export function AnalysisLanguagePicker({
+  selectionStyle = 'ink',
   value,
   onChange,
 }: {
+  selectionStyle?: 'ink' | 'accent';
   value: SupportedLanguage;
   onChange: (language: SupportedLanguage) => void;
 }) {
@@ -33,10 +35,21 @@ export function AnalysisLanguagePicker({
               accessibilityState={{ checked: selected }}
               key={language}
               onPress={() => onChange(language)}
-              style={[styles.option, selected && styles.selected]}
+              style={[
+                styles.option,
+                selected && (selectionStyle === 'accent' ? styles.selectedAccent : styles.selected),
+              ]}
               testID={`analysis-language-${language}`}
             >
-              <Text style={[styles.label, selected && styles.selectedLabel]}>
+              <Text
+                style={[
+                  styles.label,
+                  selected &&
+                    (selectionStyle === 'accent'
+                      ? styles.selectedAccentLabel
+                      : styles.selectedLabel),
+                ]}
+              >
                 {t(language === 'zh-CN' ? 'analysisLanguage.zhCN' : 'analysisLanguage.en')}
               </Text>
             </Pressable>
@@ -60,7 +73,9 @@ const styles = StyleSheet.create({
     padding: spacing.base,
   },
   selected: { backgroundColor: colors.ink, borderColor: colors.ink },
+  selectedAccent: { backgroundColor: colors.successSurface, borderColor: colors.success },
   label: { ...typography.body, color: textColors.primary, textAlign: 'center' },
   selectedLabel: { color: colors.white },
+  selectedAccentLabel: { color: textColors.primary, fontWeight: 'bold' },
   hint: { ...typography.description, color: textColors.secondary },
 });

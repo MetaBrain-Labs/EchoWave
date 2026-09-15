@@ -127,7 +127,7 @@ describe('Top-level tab screens', () => {
       expect(StyleSheet.flatten(card.props.style)).toEqual(
         expect.objectContaining({
           backgroundColor: colors.card,
-          borderRadius: spacing.base,
+          borderRadius: radii.default,
           minHeight: 112,
           padding: spacing.md,
         }),
@@ -152,10 +152,10 @@ describe('Top-level tab screens', () => {
 
     expect(screen.getByRole('header', { name: '一键分析' })).toBeTruthy();
     expect(screen.getByText('上传后由服务器自动完成转写、情绪、角色和业务分析')).toBeTruthy();
-    expect(await screen.findByText('1. 数据源')).toBeTruthy();
-    expect(screen.queryByRole('radio', { name: '手机录音' })).toBeNull();
-    expect(StyleSheet.flatten(screen.getByRole('radio', { name: '新上传' }).props.style)).toEqual(
-      expect.objectContaining({ borderRadius: radii.default }),
+    expect(await screen.findByText('分析对象')).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: '手机录音' })).toBeNull();
+    expect(StyleSheet.flatten(screen.getByRole('tab', { name: '新上传' }).props.style)).toEqual(
+      expect.objectContaining({ borderRadius: radii.round }),
     );
     fireEvent.press(screen.getByLabelText('返回'));
     expect(mockBack).toHaveBeenCalledTimes(1);
@@ -165,6 +165,7 @@ describe('Top-level tab screens', () => {
     jest.mocked(getAudioRuntime).mockResolvedValueOnce({ mode: 'object_storage' } as never);
     const screen = render(<AnalysisCreateRoute />);
 
+    fireEvent.press(await screen.findByRole('button', { name: '更多设置' }));
     expect(await screen.findByText(/本批次冻结模式：object_storage/)).toBeTruthy();
     await act(async () => focusCallback?.());
     jest.mocked(getAudioRuntime).mockResolvedValue({ mode: 'hybrid' } as never);
