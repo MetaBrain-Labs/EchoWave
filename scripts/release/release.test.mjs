@@ -84,10 +84,24 @@ test('accepts stable tags and compares numeric semantic versions', () => {
 
 test('keeps the checked-in release metadata aligned with repository versions', () => {
   const rootDirectory = path.resolve(import.meta.dirname, '../..');
+
   const version = JSON.parse(
     readFileSync(path.join(rootDirectory, 'package.json'), 'utf8'),
   ).version;
-  assert.equal(validateReleaseConfiguration(rootDirectory, `v${version}`).version, version);
+
+  const releaseMetadata = JSON.parse(
+    readFileSync(path.join(rootDirectory, 'deploy/release/release.json'), 'utf8'),
+  );
+
+  const previousStableTag =
+    releaseMetadata.minimumDirectRollbackVersion === version
+      ? null
+      : `v${releaseMetadata.minimumDirectRollbackVersion}`;
+
+  assert.equal(
+    validateReleaseConfiguration(rootDirectory, `v${version}`, previousStableTag).version,
+    version,
+  );
 });
 
 test('uses stable versioned asset names', () => {
