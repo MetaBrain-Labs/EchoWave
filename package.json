@@ -1,6 +1,6 @@
 {
   "name": "echowave",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Self-hosted cross-platform audio analysis and knowledge workspace.",
   "private": true,
   "license": "Apache-2.0",
@@ -41,7 +41,8 @@
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
     "format": "prettier . --write",
-    "format:check": "prettier . --check"
+    "format:check": "prettier . --check",
+    "release:bump": "node scripts/release/bump-version.mjs"
   },
   "devDependencies": {
     "eslint": "9.39.3",
