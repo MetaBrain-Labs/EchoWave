@@ -800,8 +800,8 @@ describe('AnalysisDetailScreen', () => {
 
     openAnalysisTasks(screen);
     fireEvent.press(screen.getByRole('button', { name: '展开情绪分析与角色识别' }));
-    expect(screen.getByText(/已在转写时完成声学情绪分析/)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: '重新分析' })).toBeNull();
+    expect(screen.getByText(/已完成/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '重新分析' })).toBeTruthy();
 
     fireEvent.press(screen.getByText('愉快'));
     expect(screen.getByText('情绪分析详情')).toBeTruthy();
@@ -1048,7 +1048,7 @@ describe('AnalysisDetailScreen', () => {
     expect(screen.getByText('x1.5')).toBeTruthy();
 
     fireEvent.press(screen.getByLabelText('播放音频'));
-    expect(player.play).toHaveBeenCalled();
+    await waitFor(() => expect(player.play).toHaveBeenCalled());
     expect(screen.getByLabelText('暂停音频')).toBeTruthy();
 
     fireEvent.press(screen.getByText('分析总结'));

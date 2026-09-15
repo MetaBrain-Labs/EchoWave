@@ -36,6 +36,7 @@ type RequestOptions = {
   headers?: Record<string, string>;
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   timeoutMs?: number;
+  expectedServerUrl?: string;
 };
 
 export async function request<T>(
@@ -49,11 +50,19 @@ export async function request<T>(
   schema: RuntimeSchema<T> | null,
   options: RequestOptions = {},
 ): Promise<T | void> {
+  const serverUrl = getApiUrl();
+  if (options.expectedServerUrl && serverUrl !== options.expectedServerUrl) {
+    throw new WorkspaceRequestError(
+      'CONFLICT',
+      localizeRequestError('CONFLICT', '服务器已切换，请返回原服务器或重新选择目标。'),
+      false,
+    );
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 20_000);
   const multipart = options.body instanceof FormData;
   try {
-    const response = await fetch(`${getApiUrl()}${path}`, {
+    const response = await fetch(`${serverUrl}${path}`, {
       body:
         options.body === undefined
           ? undefined

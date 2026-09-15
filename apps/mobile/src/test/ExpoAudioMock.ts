@@ -75,8 +75,77 @@ export class MockAudioPlayer {
 export const mockAudioPlayers: MockAudioPlayer[] = [];
 export const setAudioModeAsync = jest.fn(async () => undefined);
 
+/** 录音状态替身，允许验证暂停与原生停止事件。 */
+export class MockAudioRecorder {
+  /** 更新原生事件回调，避免 hook 将实例作为不可变业务状态修改。 */
+  setListener(listener?: MockAudioRecorder['listener']) {
+    this.listener = listener;
+  }
+
+  uri = 'file:///documents/recording.m4a';
+  status = {
+    isRecording: false,
+    durationMillis: 0,
+    mediaServicesDidReset: false,
+    canRecord: true,
+    url: this.uri,
+  };
+  listener?: (status: {
+    isFinished: boolean;
+    hasError: boolean;
+    error: string | null;
+    url: string | null;
+    mediaServicesDidReset: boolean;
+    id: string;
+  }) => void;
+  listeners = new Set<() => void>();
+  prepareToRecordAsync = jest.fn(async () => undefined);
+  record = jest.fn(() => this.update({ isRecording: true }));
+  pause = jest.fn(() => this.update({ isRecording: false }));
+  stop = jest.fn(async () => this.update({ isRecording: false }));
+  getStatus = () => this.status;
+  update(next: Partial<MockAudioRecorder['status']>) {
+    this.status = { ...this.status, ...next };
+    for (const listener of this.listeners) listener();
+  }
+}
+export const mockAudioRecorders: MockAudioRecorder[] = [];
+export const AudioModule = {
+  requestRecordingPermissionsAsync: jest.fn(async () => ({ granted: true })),
+};
+export const requestNotificationPermissionsAsync = jest.fn(async () => ({ granted: true }));
+export const RecordingPresets = { HIGH_QUALITY: { extension: '.m4a' } };
+
+/** 每个 Provider 持有一个替身实例。 */
+export function useAudioRecorder(_options: unknown, listener?: MockAudioRecorder['listener']) {
+  const [recorder] = useState(() => {
+    const recorder = new MockAudioRecorder();
+    mockAudioRecorders.push(recorder);
+    return recorder;
+  });
+  useEffect(() => {
+    recorder.setListener(listener);
+  }, [recorder, listener]);
+  return recorder;
+}
+/** 订阅替身的原生录音状态。 */
+export function useAudioRecorderState(recorder: MockAudioRecorder) {
+  const [status, setStatus] = useState(recorder.status);
+  useEffect(() => {
+    const listener = () => setStatus({ ...recorder.status });
+    recorder.listeners.add(listener);
+    return () => {
+      recorder.listeners.delete(listener);
+    };
+  }, [recorder]);
+  return status;
+}
+
 export function resetExpoAudioMock(): void {
   mockAudioPlayers.splice(0);
+  mockAudioRecorders.splice(0);
+  AudioModule.requestRecordingPermissionsAsync.mockReset().mockResolvedValue({ granted: true });
+  requestNotificationPermissionsAsync.mockReset().mockResolvedValue({ granted: true });
   setAudioModeAsync.mockClear();
 }
 

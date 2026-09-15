@@ -56,7 +56,7 @@ Stable flows under `.maestro/flows/stable` cover connection, five primary areas,
 
 Real flows under `.maestro/flows/real` cover upload, ASR, speaker/timestamps, emotion/role, business analysis, report publication, knowledge ingestion/embedding, grounded answer, and openable citation. Push validates disabled or registered state but sends no real notification.
 
-Showcase flows organize the same capabilities into five public stories and capture named states. Every run uses an ASCII ID such as `E2E_20260906T010203Z_A1B2C3`. Successful cleanup touches only exact IDs and names recorded in `context.json`; failure preserves evidence. `seed:dev` restoring fixed demo records is a known shared-backend effect. The product analyzes uploaded audio files and has no microphone-recording feature, so the suite does not invent microphone permission tests.
+Showcase flows organize the same capabilities into five public stories and capture named states. Every run uses an ASCII ID such as `E2E_20260906T010203Z_A1B2C3`. Successful cleanup touches only exact IDs and names recorded in `context.json`; failure preserves evidence. `seed:dev` restoring fixed demo records is a known shared-backend effect. Phone recording is available in a rebuilt native application. The separate `flows/recording/01-native-capture.yaml` regression covers permission, pause/resume, page navigation, stop, and original retention without an analysis call. Run it only with the new microphone/background-service native configuration. Lock-screen capture and notification-stop still require device acceptance.
 
 ## Showcase video
 

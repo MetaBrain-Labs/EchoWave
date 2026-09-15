@@ -150,6 +150,34 @@ export class AudioAutomationRepository {
       if (!row) {
         throw new WorkspaceRepositoryError('CONFLICT', '数据源未关联所选分组，或资源已归档。');
       }
+      if (input.idempotencyKey) {
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+          `${this.tenantId}:batch:${input.idempotencyKey}`,
+        ]);
+        const existing = await client.query(
+          `SELECT id, request_snapshot = $3::jsonb AS matches FROM ${this.table('audio_analysis_batches')}
+           WHERE tenant_id = $1 AND idempotency_key = $2`,
+          [this.tenantId, input.idempotencyKey, JSON.stringify(input)],
+        );
+        if (existing.rows[0]) {
+          if (!existing.rows[0].matches)
+            throw new WorkspaceRepositoryError('CONFLICT', '重复请求的分析参数不一致。');
+          const tasks = await client.query(
+            `SELECT id, client_item_id, audio_file_id FROM ${this.table('audio_analysis_tasks')}
+             WHERE tenant_id = $1 AND batch_id = $2 ORDER BY created_at`,
+            [this.tenantId, existing.rows[0].id],
+          );
+          await client.query('COMMIT');
+          return {
+            batchId: String(existing.rows[0].id),
+            tasks: tasks.rows.map((task) => ({
+              id: String(task.id),
+              clientItemId: task.client_item_id ?? null,
+              audioFileId: task.audio_file_id ?? null,
+            })),
+          };
+        }
+      }
       const configuration: ConfigurationSnapshot = {
         groupName: row.group_name,
         language: input.language,
@@ -163,8 +191,8 @@ export class AudioAutomationRepository {
       const created = await client.query(
         `INSERT INTO ${this.table('audio_analysis_batches')}
            (tenant_id, data_source_id, group_id, source_kind, scheduled_for,
-            pipeline_snapshot, configuration_snapshot)
-         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb)
+            pipeline_snapshot, configuration_snapshot, idempotency_key, request_snapshot)
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9::jsonb)
          RETURNING id`,
         [
           this.tenantId,
@@ -174,6 +202,8 @@ export class AudioAutomationRepository {
           input.scheduledFor,
           JSON.stringify(input.pipeline),
           JSON.stringify(configuration),
+          input.idempotencyKey ?? null,
+          JSON.stringify(input),
         ],
       );
       const batchId = String(created.rows[0].id);
@@ -228,16 +258,6 @@ export class AudioAutomationRepository {
             '部分音频不存在、未上传完成或不属于当前数据源。',
           );
         }
-        const mismatched = assets.rows.filter((asset) => asset.runtime_mode !== runtimeMode);
-        if (mismatched.length) {
-          const details = mismatched
-            .map((asset) => `${asset.id}(${asset.runtime_mode ?? 'unknown'})`)
-            .join(', ');
-          throw new WorkspaceRepositoryError(
-            'CONFLICT',
-            `所选音频运行模式与当前模式 ${runtimeMode} 不一致：${details}`,
-          );
-        }
         const lightweightIds = assets.rows
           .filter((asset) => asset.runtime_mode === 'lightweight_local')
           .map((asset) => String(asset.id));
@@ -251,11 +271,13 @@ export class AudioAutomationRepository {
             `轻量本地音频不能定时执行：${lightweightIds.join(', ')}`,
           );
         }
-        if (runtimeMode === 'lightweight_local' && input.pipeline.includeEmotion) {
+        if (input.pipeline.includeEmotion) {
           const remountRequired = assets.rows
             .filter(
               (asset) =>
-                asset.source_state !== 'available' && !Boolean(asset.acoustic_emotion_ready),
+                asset.runtime_mode === 'lightweight_local' &&
+                asset.source_state !== 'available' &&
+                !Boolean(asset.acoustic_emotion_ready),
             )
             .map((asset) => String(asset.id));
           if (remountRequired.length) {
@@ -278,7 +300,7 @@ export class AudioAutomationRepository {
               batchId,
               asset.id,
               asset.title,
-              runtimeMode,
+              asset.runtime_mode,
               scheduled ? 'scheduled' : 'queued',
               input.scheduledFor,
             ],

@@ -1,6 +1,7 @@
 {
   "ios": {
     "CFBundleDisplayName": "EchoWave",
-    "NSLocalNetworkUsageDescription": "EchoWave 需要连接你在本地网络中运行的自托管服务器。"
+    "NSLocalNetworkUsageDescription": "EchoWave 需要连接你在本地网络中运行的自托管服务器。",
+    "NSMicrophoneUsageDescription": "EchoWave 需要使用麦克风录制音频，录音由你选择保存或分析。"
   }
 }

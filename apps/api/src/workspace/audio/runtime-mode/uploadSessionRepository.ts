@@ -27,6 +27,7 @@ export type StoredUploadSession = {
   storageKey: string;
   storageBindingRevisionId: string | null;
   includeAcousticEmotion: boolean;
+  postUploadAction: 'transcribe' | 'store_only';
   status: 'created' | 'uploaded' | 'validating' | 'ready' | 'failed' | 'expired';
   expiresAt: Date;
   analysisTaskId: string | null;
@@ -46,6 +47,29 @@ export class AudioUploadSessionRepository {
 
   private table(name: string): string {
     return `${this.schema}.${quoteIdentifier(name)}`;
+  }
+
+  /** 在读取当前模式前恢复原上传会话，参数或有效目标变化时拒绝重试。 */
+  async findIdempotent(
+    dataSourceId: string,
+    input: AudioUploadSessionCreateRequest,
+    analysisTaskId: string | null,
+  ): Promise<StoredUploadSession | undefined> {
+    const key = input.idempotencyKey ?? (analysisTaskId ? `analysis:${analysisTaskId}` : null);
+    if (!key) return undefined;
+    const result = await this.pool.query(
+      `SELECT session.id, session.request_snapshot = $3::jsonb AS matches,
+              source.deleted_at AS archived_at
+       FROM ${this.table('audio_upload_sessions')} session
+       JOIN ${this.table('data_sources')} source ON source.tenant_id = session.tenant_id AND source.id = session.data_source_id
+       WHERE session.tenant_id = $1 AND session.idempotency_key = $2`,
+      [this.tenantId, key, JSON.stringify({ ...input, dataSourceId, analysisTaskId })],
+    );
+    const row = result.rows[0];
+    if (!row) return undefined;
+    if (!row.matches || row.archived_at)
+      throw new WorkspaceRepositoryError('CONFLICT', '重复请求参数不一致或目标数据源已归档。');
+    return this.get(String(row.id));
   }
 
   /** 原子创建 ingestion run、待上传 AudioAsset 和上传会话。 */
@@ -75,6 +99,25 @@ export class AudioUploadSessionRepository {
       );
       if (!source.rowCount)
         throw new WorkspaceRepositoryError('NOT_FOUND', '数据源不存在或已归档。');
+      const requestKey =
+        input.idempotencyKey ?? (analysisTaskId ? `analysis:${analysisTaskId}` : null);
+      if (requestKey) {
+        // 同租户请求先串行化，再检查参数，避免并发重试创建重复资产。
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+          `${this.tenantId}:upload:${requestKey}`,
+        ]);
+        const existing = await client.query(
+          `SELECT id, request_snapshot = $3::jsonb AS matches FROM ${this.table('audio_upload_sessions')}
+           WHERE tenant_id = $1 AND idempotency_key = $2`,
+          [this.tenantId, requestKey, JSON.stringify({ ...input, dataSourceId, analysisTaskId })],
+        );
+        if (existing.rows[0]) {
+          if (!existing.rows[0].matches)
+            throw new WorkspaceRepositoryError('CONFLICT', '重复请求的上传参数不一致。');
+          await client.query('COMMIT');
+          return await this.get(String(existing.rows[0].id), client);
+        }
+      }
       const run = await client.query(
         `INSERT INTO ${this.table('data_source_ingestion_runs')}
            (tenant_id, data_source_id, trigger_kind, status)
@@ -112,8 +155,8 @@ export class AudioUploadSessionRepository {
         `INSERT INTO ${this.table('audio_upload_sessions')}
            (tenant_id, data_source_id, audio_file_id, runtime_mode, upload_strategy,
             original_filename, mime_type, size_bytes, storage_key,
-            include_acoustic_emotion, expires_at, analysis_task_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now() + interval '1 hour', $11)
+            include_acoustic_emotion, expires_at, analysis_task_id, post_upload_action, idempotency_key, request_snapshot)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now() + interval '1 hour', $11, $12, $13, $14::jsonb)
          RETURNING id, expires_at`,
         [
           this.tenantId,
@@ -127,6 +170,9 @@ export class AudioUploadSessionRepository {
           storage.key,
           input.includeAcousticEmotion,
           analysisTaskId,
+          input.postUploadAction,
+          requestKey,
+          JSON.stringify({ ...input, dataSourceId, analysisTaskId }),
         ],
       );
       if (analysisTaskId) {
@@ -154,6 +200,7 @@ export class AudioUploadSessionRepository {
         storageKey: storage.key,
         storageBindingRevisionId: storage.bindingRevisionId,
         includeAcousticEmotion: input.includeAcousticEmotion,
+        postUploadAction: input.postUploadAction,
         status: 'created',
         expiresAt: new Date(session.rows[0].expires_at),
         analysisTaskId,
@@ -167,8 +214,11 @@ export class AudioUploadSessionRepository {
   }
 
   /** 读取会话及其资产固化的存储绑定。 */
-  async get(id: string): Promise<StoredUploadSession> {
-    const result = await this.pool.query(
+  async get(
+    id: string,
+    client: Pick<DatabasePool, 'query'> = this.pool,
+  ): Promise<StoredUploadSession> {
+    const result = await client.query(
       `SELECT session.*, af.storage_binding_revision_id
        FROM ${this.table('audio_upload_sessions')} session
        JOIN ${this.table('audio_files')} af
@@ -190,10 +240,26 @@ export class AudioUploadSessionRepository {
       storageKey: row.storage_key,
       storageBindingRevisionId: row.storage_binding_revision_id ?? null,
       includeAcousticEmotion: row.include_acoustic_emotion,
+      postUploadAction: row.post_upload_action ?? 'transcribe',
       status: row.status,
       expiresAt: new Date(row.expires_at),
       analysisTaskId: row.analysis_task_id ?? null,
     };
+  }
+
+  /** 延长尚未校验的同一会话，保留资产、模式、上传动作和对象定位键。 */
+  async renewExpired(id: string): Promise<StoredUploadSession> {
+    const renewed = await this.pool.query(
+      `UPDATE ${this.table('audio_upload_sessions')}
+       SET expires_at = now() + interval '1 hour'
+       WHERE tenant_id = $1 AND id = $2 AND status IN ('created', 'uploaded')
+         AND expires_at <= now()
+       RETURNING id`,
+      [this.tenantId, id],
+    );
+    if (!renewed.rowCount)
+      throw new WorkspaceRepositoryError('CONFLICT', '上传会话无法续期，请重新导入原件。');
+    return this.get(id);
   }
 
   /** 标记 API 二进制已经完整写入。 */
@@ -355,7 +421,7 @@ export class AudioUploadSessionRepository {
       const result = await client.query(
         `UPDATE ${this.table('audio_files')}
          SET storage_key = $3, source_state = 'available', source_recovery_state = 'not_required',
-             cleanup_status = 'not_due', source_delete_after = NULL, updated_at = now()
+             cleanup_status = 'pending', source_delete_after = now() + interval '24 hours', updated_at = now()
          WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
            AND runtime_mode = 'lightweight_local' AND source_recovery_state = 'required'`,
         [this.tenantId, audioFileId, storageKey],

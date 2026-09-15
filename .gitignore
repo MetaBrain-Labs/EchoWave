@@ -177,3 +177,4 @@ apps/mobile/@laifqzzrs-team__echowave.jks
 hierarchy.json
 deploy/self-hosted/.data/secrets/credentials.yaml
 apps/mobile/android/
+.npmrc

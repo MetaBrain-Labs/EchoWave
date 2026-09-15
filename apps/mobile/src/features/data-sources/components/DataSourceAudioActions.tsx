@@ -65,12 +65,14 @@ export function DataSourceAudioActions({
   onArchive,
   onClose,
   onTranscribe,
+  onPhoneOriginal,
 }: {
   audio?: SourceAudioItem;
   onAnalysis: () => void;
   onArchive: () => void;
   onClose: () => void;
   onTranscribe: () => void;
+  onPhoneOriginal?: () => void;
 }) {
   const { t } = useAppLanguage();
   const processing = audio?.status.kind === 'uploading' || audio?.status.kind === 'transcribing';
@@ -104,6 +106,13 @@ export function DataSourceAudioActions({
           label={t('sourceActions.analyze')}
           onPress={onAnalysis}
         />
+        {onPhoneOriginal ? (
+          <ActionItem
+            icon="phone-portrait-outline"
+            label={t('recording.manageOriginal')}
+            onPress={onPhoneOriginal}
+          />
+        ) : null}
         <Pressable accessibilityRole="button" onPress={onClose} style={styles.cancel}>
           <Text style={styles.cancelText}>{t('common.cancel')}</Text>
         </Pressable>

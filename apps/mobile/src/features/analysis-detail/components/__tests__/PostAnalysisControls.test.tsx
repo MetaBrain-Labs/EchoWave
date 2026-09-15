@@ -1,10 +1,10 @@
 /**
  * 后置分析控件的轻量模式恢复测试。
  *
- * 验证未请求或最终失败的声学情绪版本不会暴露独立重跑入口，只允许重新选择原音频。
+ * 验证轻量声学补跑入口与匹配原件恢复提示。
  *
  * Responsibilities:
- * - 锁定声学情绪不可补跑的移动端交互边界。
+ * - 锁定确认正文后可补跑且不重新转写的移动端边界。
  */
 import { fireEvent, render } from '@testing-library/react-native';
 
@@ -14,21 +14,22 @@ import { PostAnalysisControls } from '../PostAnalysisControls';
 describe('PostAnalysisControls lightweight acoustic recovery', () => {
   beforeEach(() => setPostAnalysisControlsCollapsedPreference(false));
 
-  it('hides the standalone emotion action when acoustic analysis was not requested', () => {
+  it('allows later emotion on a confirmed transcription-only result', () => {
     const onRemountSource = jest.fn();
+    const onStart = jest.fn();
     const screen = render(
       <PostAnalysisControls
         confirmed
         emotion={{ state: 'not_requested', reason: 'acoustic_emotion_not_enabled' }}
         onRemountSource={onRemountSource}
-        onStart={jest.fn()}
+        onStart={onStart}
         role={{ state: 'idle' }}
       />,
     );
 
-    expect(screen.queryByRole('button', { name: '情绪分析' })).toBeNull();
-    fireEvent.press(screen.getByRole('button', { name: '重新选择源音频并创建新转写' }));
-    expect(onRemountSource).toHaveBeenCalledTimes(1);
+    fireEvent.press(screen.getByRole('button', { name: '情绪分析' }));
+    expect(onStart).toHaveBeenCalledWith('emotion');
+    expect(onRemountSource).not.toHaveBeenCalled();
   });
 
   it('replaces the final bundled-emotion retry with source remount', () => {
@@ -53,11 +54,11 @@ describe('PostAnalysisControls lightweight acoustic recovery', () => {
     );
 
     expect(screen.queryByRole('button', { name: '重新分析' })).toBeNull();
-    expect(screen.getByText(/请重新选择原音频并创建新转写/)).toBeTruthy();
-    expect(screen.getByRole('button', { name: '重新选择源音频并创建新转写' })).toBeTruthy();
+    expect(screen.getByText(/请重新挂载匹配原件后补跑/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '重新挂载原件' })).toBeTruthy();
   });
 
-  it('marks lightweight bundled emotion as completed during transcription', () => {
+  it('allows explicit lightweight emotion reruns after completion', () => {
     const onStart = jest.fn();
     const screen = render(
       <PostAnalysisControls
@@ -76,8 +77,8 @@ describe('PostAnalysisControls lightweight acoustic recovery', () => {
       />,
     );
 
-    expect(screen.getByText(/已在转写时完成声学情绪分析/)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: '重新分析' })).toBeNull();
-    expect(onStart).not.toHaveBeenCalled();
+    expect(screen.getByText(/已完成/)).toBeTruthy();
+    fireEvent.press(screen.getByRole('button', { name: '重新分析' }));
+    expect(onStart).toHaveBeenCalledWith('emotion');
   });
 });

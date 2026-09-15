@@ -37,28 +37,21 @@ function TaskCard({
   confirmed,
   type,
   state,
-  runtimeMode,
   onStart,
-  onRemountSource,
 }: {
   confirmed: boolean;
   type: AudioPostAnalysisType;
   state: AudioPostAnalysisState;
-  runtimeMode: AudioRuntimeMode;
   onStart: (type: AudioPostAnalysisType) => void;
-  onRemountSource?: () => void;
 }) {
   const { formatDateTime, t } = useAppLanguage();
   const emotion = type === 'emotion';
-  const lightweightBundledEmotion = emotion && runtimeMode === 'lightweight_local';
-  const completedDuringTranscription = lightweightBundledEmotion && state.state === 'ready';
   const title = emotion ? t('post.emotionTitle') : t('post.roleTitle');
   const running = state.state === 'queued' || state.state === 'running';
   const remountRequired = state.state === 'failed' && state.requiresSourceRemount === true;
-  const unavailable =
-    state.state === 'not_requested' || state.state === 'source_unavailable' || remountRequired;
+  const unavailable = state.state === 'source_unavailable' || remountRequired;
   const versionLabel =
-    state.state === 'idle' || unavailable
+    state.state === 'idle' || state.state === 'not_requested' || unavailable
       ? ''
       : ` · ${t('post.version', { version: state.confirmationVersion })} · ${t(
           'analysisLanguage.current',
@@ -67,9 +60,8 @@ function TaskCard({
               state.language === 'zh-CN' ? t('analysisLanguage.zhCN') : t('analysisLanguage.en'),
           },
         )}`;
-  const action = lightweightBundledEmotion
-    ? t('post.doneInTranscription')
-    : state.state === 'ready' || state.state === 'failed'
+  const action =
+    state.state === 'ready' || state.state === 'failed'
       ? emotion
         ? t('post.rerunEmotion')
         : t('post.rerunRole')
@@ -96,17 +88,11 @@ function TaskCard({
                   : state.state === 'source_unavailable'
                     ? t('post.sourceUnavailable')
                     : state.state === 'queued'
-                      ? lightweightBundledEmotion
-                        ? t('post.autoQueued')
-                        : t('post.queued')
+                      ? t('post.queued')
                       : state.state === 'running'
-                        ? lightweightBundledEmotion
-                          ? t('post.autoRunning', { progress: state.progress })
-                          : t('post.running', { progress: state.progress })
+                        ? t('post.running', { progress: state.progress })
                         : state.state === 'ready'
-                          ? lightweightBundledEmotion
-                            ? t('post.bundledReady')
-                            : t('post.completed', { date: formatDateTime(state.completedAt) })
+                          ? t('post.completed', { date: formatDateTime(state.completedAt) })
                           : state.state === 'failed'
                             ? remountRequired
                               ? t('post.remountSuffix', {
@@ -125,7 +111,7 @@ function TaskCard({
             <View style={[styles.fill, { width: `${state.progress}%` }]} />
           </View>
         </View>
-      ) : unavailable || completedDuringTranscription || lightweightBundledEmotion ? null : (
+      ) : unavailable ? null : (
         <Pressable
           accessibilityRole="button"
           accessibilityState={{ disabled: !confirmed }}
@@ -196,15 +182,8 @@ export function PostAnalysisControls({
       </Pressable>
       {!collapsed ? (
         <View style={styles.cards}>
-          <TaskCard
-            confirmed={confirmed}
-            onStart={onStart}
-            runtimeMode={runtimeMode}
-            state={emotion}
-            type="emotion"
-          />
-          {(emotion.state === 'not_requested' ||
-            (emotion.state === 'source_unavailable' && emotion.reason !== 'source_expired') ||
+          <TaskCard confirmed={confirmed} onStart={onStart} state={emotion} type="emotion" />
+          {((emotion.state === 'source_unavailable' && emotion.reason !== 'source_expired') ||
             (emotion.state === 'failed' && emotion.requiresSourceRemount === true)) &&
           onRemountSource ? (
             <Pressable
@@ -216,13 +195,7 @@ export function PostAnalysisControls({
               <Text style={styles.actionText}>{t('post.remount')}</Text>
             </Pressable>
           ) : null}
-          <TaskCard
-            confirmed={confirmed}
-            onStart={onStart}
-            runtimeMode={runtimeMode}
-            state={role}
-            type="role"
-          />
+          <TaskCard confirmed={confirmed} onStart={onStart} state={role} type="role" />
         </View>
       ) : null}
     </View>

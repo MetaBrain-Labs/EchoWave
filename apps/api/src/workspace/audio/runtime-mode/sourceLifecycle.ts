@@ -57,34 +57,31 @@ export class AudioSourceLifecycle {
        WHERE tenant_id = $1 AND id = $2`,
       [this.tenantId, audioFileId],
     );
-    const root = path.resolve(this.audioStorageDirectory);
-    const target = path.resolve(root, storageKey);
-    if (!target.startsWith(`${root}${path.sep}`))
-      throw new Error('Invalid lightweight source path.');
-    await rm(target, { force: true });
-    await this.pool.query(
-      `UPDATE ${this.table('audio_files')} af
-       SET storage_key = NULL, source_state = 'cleaned', cleanup_status = 'completed',
-           source_recovery_state = 'required', source_delete_after = NULL, updated_at = now()
-       WHERE tenant_id = $1 AND id = $2 AND runtime_mode = 'lightweight_local'`,
+    // 所有删除都走同一加锁入口，避免排队补跑与原件清理竞态。
+    await this.cleanupDue(async () => {
+      throw new Error('Unexpected object storage source');
+    }, audioFileId);
+    const state = await this.pool.query(
+      `SELECT source_state FROM ${this.table('audio_files')} WHERE tenant_id = $1 AND id = $2`,
       [this.tenantId, audioFileId],
     );
-    await this.pool.query(
-      `UPDATE ${this.table('audio_analysis_revisions')}
-       SET processing_checkpoint = 'cleanup_completed'
+    if (state.rows[0]?.source_state === 'cleaned')
+      await this.pool.query(
+        `UPDATE ${this.table('audio_analysis_revisions')} SET processing_checkpoint = 'cleanup_completed'
        WHERE tenant_id = $1 AND id = $2`,
-      [this.tenantId, revisionId],
-    );
+        [this.tenantId, revisionId],
+      );
   }
 
   /** 清理达到期限的轻量源文件或企业 OSS 原音频，并把失败留给下次补偿。 */
   async cleanupDue(
     resolvePrimary: (bindingRevisionId: string) => Promise<PrimaryOssStore>,
+    audioFileId?: string,
   ): Promise<void> {
     const due = await this.pool.query(
       `SELECT id, storage_key, storage_backend, storage_binding_revision_id
        FROM ${this.table('audio_files')} af
-       WHERE af.tenant_id = $1 AND af.source_state = 'available'
+       WHERE af.tenant_id = $1 AND ($2::uuid IS NULL OR af.id = $2) AND af.source_state = 'available'
          AND af.source_delete_after IS NOT NULL AND af.source_delete_after <= now()
          AND NOT EXISTS (
            SELECT 1 FROM ${this.table('audio_analysis_revisions')} ar
@@ -97,10 +94,39 @@ export class AudioSourceLifecycle {
              AND job.analysis_type = 'emotion' AND job.status IN ('queued', 'running')
          )
        ORDER BY source_delete_after LIMIT 100`,
-      [this.tenantId],
+      [this.tenantId, audioFileId ?? null],
     );
-    for (const row of due.rows) {
+    for (const candidate of due.rows) {
+      const client = await this.pool.connect();
       try {
+        await client.query('BEGIN');
+        const locked = await client.query(
+          `SELECT id, storage_key, storage_backend, storage_binding_revision_id
+           FROM ${this.table('audio_files')} af
+           WHERE af.tenant_id = $1 AND af.id = $2 AND af.source_state = 'available'
+             AND af.source_delete_after <= now() FOR UPDATE OF af`,
+          [this.tenantId, candidate.id],
+        );
+        const row = locked.rows[0];
+        if (!row) {
+          await client.query('COMMIT');
+          continue;
+        }
+        const active = await client.query(
+          `SELECT 1 FROM ${this.table('audio_post_analysis_jobs')} WHERE tenant_id = $1 AND audio_file_id = $2
+             AND analysis_type = 'emotion' AND status IN ('queued', 'running')
+           UNION ALL
+           SELECT 1 FROM ${this.table('audio_analysis_revisions')} WHERE tenant_id = $1 AND audio_file_id = $2
+             AND status IN ('queued', 'transcribing', 'analyzing')
+           UNION ALL
+           SELECT 1 FROM ${this.table('audio_analysis_tasks')} WHERE tenant_id = $1 AND audio_file_id = $2
+             AND status IN ('pending', 'awaiting_upload', 'scheduled', 'queued', 'running', 'hard_blocked') LIMIT 1`,
+          [this.tenantId, candidate.id],
+        );
+        if (active.rowCount) {
+          await client.query('COMMIT');
+          continue;
+        }
         if (row.storage_backend === 'aliyun_oss') {
           if (!row.storage_binding_revision_id) throw new Error('Missing storage binding.');
           await (await resolvePrimary(row.storage_binding_revision_id)).delete(row.storage_key);
@@ -110,7 +136,7 @@ export class AudioSourceLifecycle {
           if (!target.startsWith(`${root}${path.sep}`)) throw new Error('Invalid source path.');
           await rm(target, { force: true });
         }
-        await this.pool.query(
+        await client.query(
           `UPDATE ${this.table('audio_files')}
            SET storage_key = NULL, source_state = 'cleaned', cleanup_status = 'completed',
                source_recovery_state = CASE WHEN runtime_mode = 'lightweight_local'
@@ -119,13 +145,17 @@ export class AudioSourceLifecycle {
            WHERE tenant_id = $1 AND id = $2`,
           [this.tenantId, row.id],
         );
+        await client.query('COMMIT');
       } catch {
-        await this.pool.query(
+        await client.query('ROLLBACK');
+        await client.query(
           `UPDATE ${this.table('audio_files')}
            SET cleanup_status = 'failed', updated_at = now()
            WHERE tenant_id = $1 AND id = $2`,
-          [this.tenantId, row.id],
+          [this.tenantId, candidate.id],
         );
+      } finally {
+        client.release();
       }
     }
   }

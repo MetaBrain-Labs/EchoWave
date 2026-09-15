@@ -13,6 +13,10 @@
  * - 页面不持久化筛选、分页或操作栏交互状态。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useRouter, type Href } from 'expo-router';
+import { RecordingDraftList } from '@/features/recording';
+import { useRecording } from '@/shared/recording/RecordingProvider';
+import { getApiUrl } from '@/shared/api/apiUrl';
 import type {
   AudioTranscriptionCapabilitiesResponse,
   AudioTranscriptionPreprocessing,
@@ -28,6 +32,7 @@ import {
   ActivityIndicator,
   Alert,
   AppState,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -152,6 +157,8 @@ export function DataSourceDetailScreen({
   ] as const;
   const [source, setSource] = useState<DataSourceDetailView>();
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const { drafts: recordingDrafts } = useRecording();
   const [error, setError] = useState('');
   const [operationError, setOperationError] = useState('');
   const [progressRefreshError, setProgressRefreshError] = useState('');
@@ -714,6 +721,27 @@ export function DataSourceDetailScreen({
         onClose={() => setTranscriptionProgressAudioId(undefined)}
       />
       <DataSourceAudioActions
+        onPhoneOriginal={
+          recordingDrafts.some(
+            (draft) =>
+              (draft.audioFileId ?? draft.session?.audioFileId) === audioActionTarget?.id &&
+              draft.serverUrl === getApiUrl(),
+          )
+            ? () => {
+                const draft = recordingDrafts.find(
+                  (item) =>
+                    (item.audioFileId ?? item.session?.audioFileId) === audioActionTarget?.id &&
+                    item.serverUrl === getApiUrl(),
+                );
+                setAudioActionTarget(undefined);
+                if (draft)
+                  router.push({
+                    pathname: '/recording',
+                    params: { sourceId, draftId: draft.id },
+                  } as unknown as Href);
+              }
+            : undefined
+        }
         audio={audioActionTarget}
         onAnalysis={() => {
           const target = audioActionTarget;
@@ -967,6 +995,18 @@ export function DataSourceDetailScreen({
           testID="data-source-audio-scroll"
         >
           {renderTabs()}
+          <RecordingDraftList sourceId={sourceId} />
+          {Platform.OS !== 'web' ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() =>
+                router.push({ pathname: '/recording', params: { sourceId } } as unknown as Href)
+              }
+              style={styles.refreshRetryButton}
+            >
+              <Text>{t('recording.title')}</Text>
+            </Pressable>
+          ) : null}
           <View collapsable={false} ref={audioListTargetRef} style={styles.audioList}>
             {filteredAudioItems.length === 0 ? (
               <Text style={styles.listEmptyText}>

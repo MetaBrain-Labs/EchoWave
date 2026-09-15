@@ -178,6 +178,14 @@ export class AudioAutomationWorker {
       });
       return;
     }
+    // 仅转写在正文发布后结束，保留人工确认边界。
+    if (task.pipeline.confirmation === 'manual') {
+      await this.options.repository.setStageReference(task.id, {
+        stageSources: { emotion: 'skipped', role: 'skipped', businessAnalysis: 'skipped' },
+      });
+      await this.complete(task);
+      return;
+    }
     await this.options.audio.ensureSystemRawTranscriptSnapshot(task.audioFileId, revisionId);
     const review = await this.options.repository.speakerReviewState(revisionId);
     if (review.findingCount > 0) {
@@ -208,7 +216,7 @@ export class AudioAutomationWorker {
       if (emotionJobId) {
         emotionSource = task.stageSources.transcription === 'created' ? 'created' : 'reused';
       }
-      if (!emotionJobId && task.runtimeMode !== 'lightweight_local') {
+      if (!emotionJobId) {
         emotionJobId = (
           await this.options.audio.startAudioPostAnalysis(
             task.audioFileId,
@@ -239,8 +247,7 @@ export class AudioAutomationWorker {
     } else if (!task.pipeline.includeRole) {
       roleSource = 'skipped';
     }
-    // 轻量本地模式只能在 ASR 阶段产出声学情绪；复用没有该结果的旧转写时继续后续阶段，
-    // 但必须留下明确警告，避免批次被误认为完整分析。
+    // 未取得声学任务引用时必须留下明确警告，避免批次被误认为完整分析。
     if (task.pipeline.includeEmotion && !emotionJobId) {
       emotionSource = 'unavailable';
       await this.options.repository.addWarning(task.id, 'EMOTION_UNAVAILABLE');

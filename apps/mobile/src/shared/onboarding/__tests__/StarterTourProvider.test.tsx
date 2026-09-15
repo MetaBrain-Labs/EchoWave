@@ -196,6 +196,7 @@ describe('StarterTourProvider', () => {
     );
     fireEvent.press(screen.getByTestId('starter-tour-next'));
     expect(screen.getByText('选择数据源')).toBeTruthy();
+    expect(mockReplace).toHaveBeenLastCalledWith('/analysis-create');
     await waitFor(() =>
       expect(
         StyleSheet.flatten(

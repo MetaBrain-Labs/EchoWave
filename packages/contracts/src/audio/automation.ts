@@ -44,13 +44,19 @@ export const AudioAnalysisBlockReasonSchema = z.enum([
 
 export const AudioAnalysisPipelineOptionsSchema = z
   .object({
-    confirmation: z.literal('system_raw_snapshot').default('system_raw_snapshot'),
+    confirmation: z.enum(['system_raw_snapshot', 'manual']).default('system_raw_snapshot'),
     includeEmotion: z.boolean().default(true),
     includeRole: z.boolean().default(true),
     includeBusinessAnalysis: z.boolean().default(true),
     transcriptPolicy: z.literal('reuse_or_create').default('reuse_or_create'),
   })
-  .strict();
+  .strict()
+  .refine(
+    (input) =>
+      input.confirmation !== 'manual' ||
+      (!input.includeEmotion && !input.includeRole && !input.includeBusinessAnalysis),
+    { message: 'Manual confirmation requires a transcription-only pipeline.' },
+  );
 
 export const AudioAnalysisUploadItemSchema = z
   .object({
@@ -68,6 +74,7 @@ export const AudioAnalysisUploadItemSchema = z
 const AudioAnalysisBatchBaseSchema = z.object({
   dataSourceId: EntityIdSchema,
   groupId: EntityIdSchema,
+  idempotencyKey: z.string().trim().min(1).max(160).optional(),
   language: SupportedLanguageSchema.default('zh-CN'),
   scheduledFor: z.string().datetime().nullable().default(null),
   pipeline: AudioAnalysisPipelineOptionsSchema.default({

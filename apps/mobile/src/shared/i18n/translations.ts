@@ -11,6 +11,69 @@
  * - 用户内容、文件名、供应商、模型和自定义标签不得进入此目录。
  */
 export const zhCN = {
+  'recording.title': '手机录音',
+  'recording.nativeOnly': '请在 Android 或 iOS 应用中使用手机麦克风录音，Web 可导入音频文件。',
+  'recording.start': '开始录音',
+  'recording.pause': '暂停录音',
+  'recording.resume': '继续录音',
+  'recording.finish': '结束录音',
+  'recording.capturing': '正在录音',
+  'recording.paused': '录音已暂停',
+  'recording.listen': '试听',
+  'recording.pausePlayback': '暂停试听',
+  'recording.name': '录音名称',
+  'recording.export': '导出原件',
+  'recording.deleteOriginal': '删除手机原件',
+  'recording.deleteBody':
+    '删除后无法从本机恢复。服务端音频与分析结果仍保留；轻量模式后续音频分析可能需要重新提供原件。',
+  'recording.store': '暂存到数据源',
+  'recording.saved': '录音已保存',
+  'recording.analyze': '分析 / 继续提交',
+  'recording.openTask': '查看任务',
+  'recording.submitted': '任务已提交',
+  'recording.backgroundAccepted':
+    '音频已上传完成，分析任务已提交，可以关闭应用，由服务端继续处理。',
+  'recording.localOnly': '仅当前手机可见，分析时再上传。手机原件保留至手动删除。',
+  'recording.originalRetained': '音频已上传，手机原件继续保留。',
+  'recording.pendingLocal': '本机待上传',
+  'recording.manageOriginal': '管理手机原件',
+  'recording.assign': '绑定所选数据源',
+  'recording.source': '所属数据源（暂存前必选）',
+  'recording.group': '分析分组（分析前必选）',
+  'recording.defaultTitle': '录音 %{date}',
+  'recording.backgroundRecording':
+    '支持锁屏和切换应用继续录音。来电或音频设备中断时会保留已录内容，强制关闭应用不会继续录音。',
+  'recording.interrupted': '录音已中断，已保留可读取的原件，请试听确认内容。',
+  'recording.permissionDenied': '麦克风权限未授权，请在系统设置中允许后重试。',
+  'recording.notificationPermissionDenied':
+    '通知权限未授权，后台录音需要显示持续通知。请允许通知后重试。',
+  'recording.restoreFailed': '本机草稿读取失败，原件未删除，请重启应用后重试。',
+  'recording.saveFailed': '录音保存失败，原件未删除，请重试结束录音。',
+  'recording.fileUnavailable': '原件不可读取或录音无有效时长，请先试听或导出检查。',
+  'recording.tooLarge': '录音超过 200 MB 或 12 小时限制，请导出并拆分后重新导入。',
+  'recording.serverChanged':
+    '请返回录音绑定的服务器，并选择有效数据源。未上传录音也可明确重新绑定目标。',
+  'recording.sessionExpired':
+    '上传会话已过期或失败，手机原件仍保留。请导出后重新导入以创建新上传。',
+  'recording.selectGroup': '请选择所属数据源关联的分析分组。',
+  'recording.exportUnavailable': '当前设备不支持文件分享。',
+  'recording.operationFailed': '录音操作失败，请重试。',
+  'recording.preference': '默认分析方式',
+  'recording.full': '全流程分析',
+  'recording.transcriptionOnly': '仅转写',
+  'recording.preferenceDescription': '应用内录音和一键分析文件导入统一生效，只影响后续提交。',
+  'recording.preferenceSaveFailed': '分析方式保存失败，已保留原设置。',
+  'recording.fullFlow': '将执行：转写 → 系统正文快照 → 情绪 / 角色 → 业务分析',
+  'recording.transcriptionFlow': '将执行：仅转写；正文由你确认，后续分析由你手动启动',
+  'createHub.title': '新建',
+  'createHub.subtitle': '选择要开始的方式。',
+  'createHub.analysis.title': '一键分析',
+  'createHub.analysis.description': '导入新音频或选择已有音频，按默认分析方式提交。',
+  'createHub.analysis.accessibility': '打开一键分析',
+  'createHub.recording.title': '手机录音',
+  'createHub.recording.description': '直接录制，结束后可分析或暂存到数据源。',
+  'createHub.recording.accessibility': '打开手机录音',
+
   'collection.newRuleHint': '设置收集模式、筛选条件和目标知识库',
   'collection.existingRules': '已有规则',
   'collection.selectRule': '选择收集规则',
@@ -585,7 +648,7 @@ export const zhCN = {
   'post.confirmTranscript': '请先确认转写正文',
   'post.emotionDescription': '使用 Qwen3.5-Omni 分析每个说话轮次',
   'post.roleDescription': '使用 DeepSeek 识别录音级业务角色',
-  'post.notRequested': '本次转写未启用声学情绪分析；需重新选择源文件并新建转写',
+  'post.notRequested': '本次仅转写；确认正文后可使用原件补跑声学情绪。',
   'post.sourceUnavailable': '源音频已清理或过期，无法再次执行声学分析',
   'post.autoQueued': '随本次转写自动执行',
   'post.queued': '等待后台任务',
@@ -594,14 +657,14 @@ export const zhCN = {
   'post.bundledReady': '已在转写时完成声学情绪分析',
   'post.completed': '已完成 · %{date}',
   'post.version': '基于确认版 v%{version}',
-  'post.remountSuffix': '%{message} 请重新选择原音频并创建新转写。',
+  'post.remountSuffix': '%{message} 请重新挂载匹配原件后补跑，无需重新转写。',
   'post.expand': '展开情绪分析与角色识别',
   'post.collapse': '折叠情绪分析与角色识别',
   'post.sectionTitle': '情绪分析与角色识别',
   'post.collapsedDescription': '点击展开分析状态与操作',
-  'post.lightweightDescription': '声学情绪随本次转写自动执行，角色识别可单独运行',
+  'post.lightweightDescription': '原件可用时可补跑声学情绪，角色识别可独立执行',
   'post.expandedDescription': '可分别查看状态或重新运行分析',
-  'post.remount': '重新选择源音频并创建新转写',
+  'post.remount': '重新挂载原件',
   'post.startEmotionTitle': '开始情绪分析？',
   'post.startRoleTitle': '开始角色识别？',
   'post.emotionCost': '将使用 Qwen3.5-Omni-Flash 分析所有转写片段的声学情绪，并产生模型调用费用。',
@@ -660,7 +723,7 @@ export const zhCN = {
   'asr.acoustic': '声学分析',
   'asr.includeEmotion': '同时进行声学情绪分析',
   'asr.includeEmotionDescription': '默认开启。内部按 ASR → 声学情绪 → 临时文件清理执行。',
-  'asr.emotionDisabledWarning': '关闭后本次转写不会提供情绪分析，也不能稍后单独补跑。',
+  'asr.emotionDisabledWarning': '关闭后仅保留转写结果。稍后确认正文并挂载匹配原件可补跑情绪。',
   'asr.model': '转写模型',
   'asr.modelUnavailable': '转写模型目录加载失败，请关闭后重试。',
   'asr.processing': '处理中…',
@@ -1035,9 +1098,9 @@ export const zhCN = {
   'sourceDetail.continuing': '已按数据源设置继续处理',
   'sourceDetail.disableEmotion': '关闭声学情绪分析？',
   'sourceDetail.disableEmotionBody':
-    '本次 ASR 完成后会删除临时音频，并永久关闭该转写版本的情绪分析入口。若以后需要情绪分析，必须重新选择原文件并创建新转写。',
+    '本次 ASR 完成后会删除临时音频。以后可确认正文并挂载匹配原件补跑情绪，无需重新转写。',
   'sourceDetail.disableEmotionBatchBody':
-    '这些音频完成 ASR 后会立即删除临时副本，并且对应转写版本不会提供情绪分析。以后需要时必须重新选择原文件并创建新转写。',
+    '这些音频完成 ASR 后会删除临时副本。以后可确认正文并挂载匹配原件补跑情绪。',
   'sourceDetail.disableAnyway': '仍然关闭',
   'sourceDetail.actions': '数据源操作',
   'sourceDetail.edit': '编辑数据源',
@@ -1722,6 +1785,82 @@ export const zhCN = {
 export type TranslationKey = keyof typeof zhCN;
 
 export const en = {
+  'recording.title': 'Phone recording',
+  'recording.nativeOnly': 'Use the Android or iOS app to record. On the web, import an audio file.',
+  'recording.start': 'Start recording',
+  'recording.pause': 'Pause recording',
+  'recording.resume': 'Resume recording',
+  'recording.finish': 'Finish recording',
+  'recording.capturing': 'Recording',
+  'recording.paused': 'Recording paused',
+  'recording.listen': 'Listen',
+  'recording.pausePlayback': 'Pause playback',
+  'recording.name': 'Recording name',
+  'recording.export': 'Export original',
+  'recording.deleteOriginal': 'Delete phone original',
+  'recording.deleteBody':
+    'This cannot be undone on this phone. Server audio and results remain; later lightweight audio analysis may require the original.',
+  'recording.store': 'Save to data source',
+  'recording.saved': 'Recording saved',
+  'recording.analyze': 'Analyze / resume submission',
+  'recording.openTask': 'View task',
+  'recording.submitted': 'Task submitted',
+  'recording.backgroundAccepted':
+    'Audio is uploaded and the task is submitted. You may close the app while the server continues processing.',
+  'recording.localOnly':
+    'Only visible on this phone. Upload when analyzing. The original remains until you delete it.',
+  'recording.originalRetained': 'Audio uploaded. The original remains on this phone.',
+  'recording.pendingLocal': 'Pending on this phone',
+  'recording.manageOriginal': 'Manage phone original',
+  'recording.assign': 'Assign to selected data source',
+  'recording.source': 'Data source (required before saving)',
+  'recording.group': 'Analysis group (required before analyzing)',
+  'recording.defaultTitle': 'Recording %{date}',
+  'recording.backgroundRecording':
+    'Recording continues when locked or in the background. Interruptions preserve recorded audio; force-quitting ends recording.',
+  'recording.interrupted':
+    'Recording was interrupted. The available original is retained; listen to check its contents.',
+  'recording.permissionDenied':
+    'Microphone access denied. Allow access in system settings and retry.',
+  'recording.notificationPermissionDenied':
+    'Notification access is required to show ongoing background recording. Allow notifications and retry.',
+  'recording.restoreFailed':
+    'Could not read drafts. Originals were not deleted; restart and retry.',
+  'recording.saveFailed':
+    'Could not save recording. The original was not deleted; retry finishing.',
+  'recording.fileUnavailable':
+    'The original is unreadable or has no valid duration. Listen or export to check.',
+  'recording.tooLarge':
+    'Recording exceeds 200 MB or 12 hours. Export and split it before importing.',
+  'recording.serverChanged':
+    'Return to the recording’s server and choose a valid source. Unuploaded recordings can be explicitly reassigned.',
+  'recording.sessionExpired':
+    'The upload session expired or failed. The phone original remains; export and re-import to create a new upload.',
+  'recording.selectGroup': 'Choose an analysis group linked to this data source.',
+  'recording.exportUnavailable': 'File sharing is unavailable on this device.',
+  'recording.operationFailed': 'Recording operation failed. Please retry.',
+  'recording.preference': 'Default analysis workflow',
+  'recording.full': 'Full analysis',
+  'recording.transcriptionOnly': 'Transcription only',
+  'recording.preferenceDescription':
+    'Applies to app recordings and file imports in one-tap analysis. Only affects future submissions.',
+  'recording.preferenceSaveFailed':
+    'Could not save the workflow. The previous setting is retained.',
+  'recording.fullFlow':
+    'Will run: transcription → system snapshot → emotion / roles → business analysis',
+  'recording.transcriptionFlow':
+    'Will run: transcription only. You confirm the transcript and start later analyses.',
+  'createHub.title': 'Create',
+  'createHub.subtitle': 'Choose how you want to start.',
+  'createHub.analysis.title': 'One-tap analysis',
+  'createHub.analysis.description':
+    'Import new audio or choose an existing file, then submit the default workflow.',
+  'createHub.analysis.accessibility': 'Open one-tap analysis',
+  'createHub.recording.title': 'Phone recording',
+  'createHub.recording.description':
+    'Record directly, then analyze it or save it to a data source.',
+  'createHub.recording.accessibility': 'Open phone recording',
+
   'collection.newRuleHint': 'Configure collection mode, filters and target library',
   'collection.existingRules': 'Existing rules',
   'collection.selectRule': 'Select a collection rule',
@@ -2338,7 +2477,7 @@ export const en = {
   'post.emotionDescription': 'Analyze each speaker turn with Qwen3.5-Omni',
   'post.roleDescription': 'Recognize recording-level business roles with DeepSeek',
   'post.notRequested':
-    'Acoustic emotion was not enabled for this transcript. Remount the source and create a new transcript.',
+    'This run transcribed only. Confirm the transcript and provide the original to run acoustic emotion analysis.',
   'post.sourceUnavailable':
     'The source audio was removed or expired, so acoustic analysis cannot run again.',
   'post.autoQueued': 'Runs automatically with this transcription',
@@ -2348,15 +2487,16 @@ export const en = {
   'post.bundledReady': 'Acoustic emotion completed during transcription',
   'post.completed': 'Completed · %{date}',
   'post.version': 'Based on confirmed v%{version}',
-  'post.remountSuffix': '%{message} Remount the original audio and create a new transcript.',
+  'post.remountSuffix':
+    '%{message} Remount the matching original to rerun without retranscription.',
   'post.expand': 'Expand emotion analysis and role recognition',
   'post.collapse': 'Collapse emotion analysis and role recognition',
   'post.sectionTitle': 'Emotion analysis and role recognition',
   'post.collapsedDescription': 'Expand to review status and actions',
   'post.lightweightDescription':
-    'Acoustic emotion runs with transcription; role recognition runs separately',
+    'Acoustic emotion can run when the original is available; roles can run independently.',
   'post.expandedDescription': 'Review status or rerun each analysis independently',
-  'post.remount': 'Remount source audio and create a new transcript',
+  'post.remount': 'Remount original',
   'post.startEmotionTitle': 'Start emotion analysis?',
   'post.startRoleTitle': 'Start role recognition?',
   'post.emotionCost':
@@ -2421,7 +2561,7 @@ export const en = {
   'asr.includeEmotionDescription':
     'Enabled by default. The pipeline runs ASR → acoustic emotion → temporary-file cleanup.',
   'asr.emotionDisabledWarning':
-    'If disabled, this transcript will not include emotion analysis and it cannot be added later.',
+    'If disabled, emotion is deferred. Confirm the transcript and remount its matching original to run it later.',
   'asr.model': 'Transcription model',
   'asr.modelUnavailable': 'The transcription model catalog could not load. Close and try again.',
   'asr.processing': 'Processing…',
@@ -2806,9 +2946,9 @@ export const en = {
   'sourceDetail.continuing': 'Processing continues with the data source settings',
   'sourceDetail.disableEmotion': 'Disable acoustic emotion analysis?',
   'sourceDetail.disableEmotionBody':
-    'Temporary audio will be deleted when ASR finishes, permanently disabling emotion analysis for this transcript version. To add it later, select the original file and create a new transcription.',
+    'Temporary audio is deleted after ASR. Later, confirm the transcript and remount its matching original for emotion without retranscription.',
   'sourceDetail.disableEmotionBatchBody':
-    'Temporary copies will be deleted when ASR finishes, and these transcript versions will not include emotion analysis. To add it later, select the original files and create new transcriptions.',
+    'Temporary copies are deleted after ASR. Later, confirm the transcripts and remount their matching originals for emotion.',
   'sourceDetail.disableAnyway': 'Disable anyway',
   'sourceDetail.actions': 'Data source actions',
   'sourceDetail.edit': 'Edit data source',

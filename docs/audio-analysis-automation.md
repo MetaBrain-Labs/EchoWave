@@ -4,6 +4,8 @@
 
 The Create page can place 1–20 new files or existing audio assets in one batch. A batch fixes one data source and one group. Upload and structural validation happen immediately; `scheduledFor` only controls when ASR, emotion, role, and business-analysis work becomes claimable.
 
+More → General Settings provides a persisted default workflow for phone recordings and Create-page imports. Full analysis is the default. Transcription only freezes `confirmation: manual` with emotion, role, and business analysis disabled; successful ASR completes the batch without confirming the transcript. Later confirmation and individual analysis actions remain explicit. Preference changes affect only later submissions.
+
 ## Runtime-mode boundaries
 
 All three modes support “close the App after upload completes; the Server continues in the background.” The difference is not whether processing is asynchronous, but where the original audio is stored and how much can be recovered after a server failure, restart, or migration. App and background-task lifecycles are decoupled only after the audio upload completes and the server task is successfully created/submitted; killing the App while upload is still in progress does not mean the Server has taken over.

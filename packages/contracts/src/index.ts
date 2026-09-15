@@ -364,3 +364,5 @@ export {
 } from './notifications.ts';
 
 export * from './collectionFolders.ts';
+
+export { RecordingDraftSchema, type RecordingDraft } from './audio/recording.ts';
