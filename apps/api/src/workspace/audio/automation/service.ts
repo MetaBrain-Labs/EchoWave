@@ -65,6 +65,7 @@ export class AudioAutomationService {
               mimeType: item.mimeType,
               sizeBytes: item.sizeBytes,
               includeAcousticEmotion: input.pipeline.includeEmotion,
+              postUploadAction: 'transcribe',
             },
             task.id,
             runtimeMode,

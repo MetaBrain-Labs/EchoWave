@@ -29,17 +29,23 @@ import { colors, fontFamilies, spacing, textColors, typography } from '@/shared/
 import { StatusBarBackdrop } from '@/shared/ui/StatusBarBackdrop';
 import { StarterTourProvider } from '@/shared/onboarding/StarterTourProvider';
 import { LanguageProvider, useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { RecordingProvider } from '@/shared/recording/RecordingProvider';
+import { AnalysisPreferenceProvider } from '@/shared/settings/AnalysisPreferenceProvider';
 
 /** 装载应用级 provider、字体门禁与根路由栈。 */
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <LanguageProvider>
-        <ServerConnectionProvider>
-          <PushNotificationProvider>
-            <RootContent />
-          </PushNotificationProvider>
-        </ServerConnectionProvider>
+        <AnalysisPreferenceProvider>
+          <RecordingProvider>
+            <ServerConnectionProvider>
+              <PushNotificationProvider>
+                <RootContent />
+              </PushNotificationProvider>
+            </ServerConnectionProvider>
+          </RecordingProvider>
+        </AnalysisPreferenceProvider>
       </LanguageProvider>
     </SafeAreaProvider>
   );

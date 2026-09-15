@@ -139,6 +139,7 @@ describe('AudioAutomationService', () => {
       mimeType: 'audio/mpeg',
       sizeBytes: 477584,
       includeAcousticEmotion: true,
+      postUploadAction: 'transcribe',
     });
     assert.equal('clientItemId' in uploadInput, false);
   });

@@ -41,7 +41,7 @@ The mobile client uploads source audio directly to `audio_primary_storage` OSS u
 The mobile client streams source audio into the API temporary audio directory. Initial upload and every manual re-transcription offer an “also run acoustic emotion analysis” switch, enabled by default:
 
 - Enabled: `VAD → ASR → transcript publication → acoustic emotion → cleanup`.
-- Disabled: `VAD → ASR → transcript publication → cleanup`; that ASR revision is permanently `not_requested` for emotion.
+- Disabled: `VAD → ASR → transcript publication → cleanup`; that ASR revision has no emotion request yet; after confirmation, a matching original can be remounted for a later run.
 
 Acoustic analysis cuts windows from the current Raw Transcript timestamps, so it runs sequentially and never in parallel with the ASR provider call. After cleanup, the player reports that source audio was not retained. A new run requires reselecting the original file; the API verifies its saved SHA-256 and size.
 
@@ -56,6 +56,24 @@ ASR revision checkpoints are:
 `source_validated → preprocessing_ready → provider_staged → provider_submitted → provider_terminal → transcript_published → acoustic_emotion_completed → cleanup_completed`
 
 Provider task ID and terminal state are persisted before progression, preventing duplicate submission after restart. A published transcript resumes only emotion or cleanup. Lightweight-local source files for terminal failures remain for at most 24 hours after the last failure; startup and 15-minute compensation jobs remove expired files.
+
+## Phone recording, archive intent, and originals
+
+Android/iOS share an application-level recorder through Create → Phone recording and the data-source recording entry. Capture supports pause, resume, stop, and playback using high-quality M4A/AAC. Web retains import and directs recording users to the phone app. Originals remain in the phone document directory until manually deleted, with size, export, and deletion controls independent of server assets.
+
+| Mode              | Save without analysis                                                        | Analysis and recovery                                                                                                                     |
+| ----------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Lightweight local | Phone only, no upload or server count; explicitly visible only on this phone | Upload on analysis; automatically remount a retained phone original after cleanup; imported files require matching SHA-256 and byte count |
+| Hybrid            | Publish an asset in API persistent storage without analysis                  | Reuse that asset; retain the phone original                                                                                               |
+| Object storage    | Presigned PUT to OSS and publish an asset without analysis                   | Reuse during retention; expiry preserves results and prohibits acoustic reruns                                                            |
+
+Versioned phone metadata binds server URL, data source, session, batch, and frozen submission settings before network operations. Idempotent retries reuse their identities and uploaded rows merge with server assets. New sessions use their creation-time mode; existing assets keep their frozen mode. A changed server or archived target prohibits automatic upload and requires an explicit valid target. Remote operations already started remain bound to their original server.
+
+Lightweight acoustic reruns require published, confirmed transcription and use the corresponding ASR revision's original word timestamps. DashScope temporary upload staging needs no additional OSS configuration. Remounting never silently retranscribes. Queued/running work prevents cleanup; success cleans the server copy, while failure uses the existing deadline.
+
+Rebuild native Development/Production Builds after permission changes. Android uses a recording foreground service and ongoing notification; iOS enables background audio and localized microphone permission text. Interruptions preserve readable content without automatically resuming capture. Force termination does not guarantee ongoing capture; startup recovers readable drafts. Uploads over 200 MB or 12 hours are rejected, but originals remain exportable. Lock-screen, background, and notification-stop behavior require device verification; native iOS verification requires macOS/Xcode.
+
+Upload creation accepts `postUploadAction: transcribe | store_only`, defaulting to `transcribe` for older clients. Lightweight server archive intent is rejected. Upload and batch creation accept optional `idempotencyKey`; conflicting parameters are rejected. Apply migration `039_recording_upload_intent.sql` before deployment.
 
 ## Configuration and API
 

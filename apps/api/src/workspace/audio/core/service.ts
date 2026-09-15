@@ -456,15 +456,6 @@ export class DefaultAudioService implements AudioService {
     frozenBindings?: FrozenAudioCapabilityBindings,
     language: SupportedLanguage = 'zh-CN',
   ) {
-    if (type === 'emotion') {
-      const assetRuntime = await this.audioAnalysisRepository.getAssetRuntime(id);
-      if (assetRuntime.mode === 'lightweight_local') {
-        throw new WorkspaceRepositoryError(
-          'CONFLICT',
-          '轻量本地模式的声学情绪只能在创建 ASR Run 时启用，不能稍后单独补跑。',
-        );
-      }
-    }
     const capability = type === 'emotion' ? 'audio_emotion' : 'audio_role';
     const resolved = await this.settingsService.resolveCapability(
       capability,
@@ -474,11 +465,15 @@ export class DefaultAudioService implements AudioService {
     );
     let stagingRevisionId: string | null = null;
     if (type === 'emotion') {
-      const staging = await this.settingsService.resolveCapability(
-        'audio_staging',
-        frozenBindings?.staging ?? undefined,
-      );
-      stagingRevisionId = staging.revisionId;
+      const assetRuntime = await this.audioAnalysisRepository.getAssetRuntime(id);
+      const staging =
+        assetRuntime.mode === 'lightweight_local'
+          ? null
+          : await this.settingsService.resolveCapability(
+              'audio_staging',
+              frozenBindings?.staging ?? undefined,
+            );
+      stagingRevisionId = staging?.revisionId ?? null;
       const ffmpegAvailable = await this.audioInputPreprocessor.refreshFfmpegAvailability();
       if (!ffmpegAvailable) {
         throw new WorkspaceRepositoryError(

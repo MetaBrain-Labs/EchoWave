@@ -439,6 +439,11 @@ describe('AnalysisDetailScreen', () => {
     const screen = await renderAnalysis();
 
     expect(screen.getByText('本录音仅识别到 1 位说话人。')).toBeTruthy();
+    expect(screen.queryByText('说话人待确认')).toBeNull();
+    expect(
+      screen.getByRole('checkbox', { name: '屏蔽说话人待确认' }).props.accessibilityState,
+    ).toEqual({ checked: true });
+    fireEvent.press(screen.getByRole('checkbox', { name: '屏蔽说话人待确认' }));
     expect(screen.getByText('说话人待确认')).toBeTruthy();
     expect(screen.getByText(/智能说话人复核未完成/)).toBeTruthy();
     fireEvent.press(screen.getByRole('button', { name: '编辑并确认' }));
@@ -510,6 +515,11 @@ describe('AnalysisDetailScreen', () => {
     });
     const screen = await renderAnalysis();
 
+    expect(screen.queryByText('说话人待确认')).toBeNull();
+    expect(
+      screen.getByRole('checkbox', { name: '屏蔽说话人待确认' }).props.accessibilityState,
+    ).toEqual({ checked: true });
+    fireEvent.press(screen.getByRole('checkbox', { name: '屏蔽说话人待确认' }));
     expect(screen.getAllByText('说话人待确认')).toHaveLength(1);
     expect(screen.getByLabelText('还有 1 个说话人疑点')).toBeTruthy();
     expect(screen.getByText('1 / 2')).toBeTruthy();
@@ -800,8 +810,8 @@ describe('AnalysisDetailScreen', () => {
 
     openAnalysisTasks(screen);
     fireEvent.press(screen.getByRole('button', { name: '展开情绪分析与角色识别' }));
-    expect(screen.getByText(/已在转写时完成声学情绪分析/)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: '重新分析' })).toBeNull();
+    expect(screen.getByText(/已完成/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '重新分析' })).toBeTruthy();
 
     fireEvent.press(screen.getByText('愉快'));
     expect(screen.getByText('情绪分析详情')).toBeTruthy();
@@ -1048,7 +1058,7 @@ describe('AnalysisDetailScreen', () => {
     expect(screen.getByText('x1.5')).toBeTruthy();
 
     fireEvent.press(screen.getByLabelText('播放音频'));
-    expect(player.play).toHaveBeenCalled();
+    await waitFor(() => expect(player.play).toHaveBeenCalled());
     expect(screen.getByLabelText('暂停音频')).toBeTruthy();
 
     fireEvent.press(screen.getByText('分析总结'));
@@ -1112,6 +1122,24 @@ describe('AnalysisDetailScreen', () => {
 
     expect(screen.queryByTestId('ai-tag-sheet')).toBeNull();
     expect(screen.getAllByText('高频访谈记录场景')).toHaveLength(1);
+  });
+
+  it('lists AI tags in the transcript filter and isolates matching segments', async () => {
+    const screen = await renderAnalysis();
+
+    fireEvent.press(screen.getByLabelText('全部标签筛选'));
+    const tagOption = screen.getAllByRole('button', { name: '高频访谈记录场景' }).at(-1);
+    expect(tagOption).toBeTruthy();
+
+    fireEvent.press(tagOption!);
+
+    expect(screen.getByLabelText('高频访谈记录场景筛选')).toBeTruthy();
+    expect(
+      screen.getByTestId('transcript-timeline-item-segment-70000000-0000-4000-8000-000000000001'),
+    ).toBeTruthy();
+    expect(
+      screen.queryByTestId('transcript-timeline-item-segment-70000000-0000-4000-8000-000000000002'),
+    ).toBeNull();
   });
 
   it('shows citation excerpts and forwards the complete knowledge location', async () => {

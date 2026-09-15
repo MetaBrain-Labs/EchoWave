@@ -20,6 +20,11 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { audioPlaybackUrl } from '@/shared/api/apiUrl';
+import {
+  configureAudioSession,
+  isRecordingAudioOwner,
+  subscribeAudioOwnership,
+} from './audioSession';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 type PlaybackRange = {
@@ -31,12 +36,16 @@ type PlaybackRange = {
 let audioModeTask: Promise<void> | undefined;
 
 function configureAudioMode(): Promise<void> {
-  audioModeTask ??= setAudioModeAsync({
-    allowsRecording: false,
-    interruptionMode: 'doNotMix',
-    playsInSilentMode: true,
-    shouldPlayInBackground: false,
-    shouldRouteThroughEarpiece: false,
+  if (isRecordingAudioOwner()) return Promise.resolve();
+  audioModeTask ??= configureAudioSession(async () => {
+    if (isRecordingAudioOwner()) return;
+    await setAudioModeAsync({
+      allowsRecording: false,
+      interruptionMode: 'doNotMix',
+      playsInSilentMode: true,
+      shouldPlayInBackground: false,
+      shouldRouteThroughEarpiece: false,
+    });
   }).catch((error: unknown) => {
     audioModeTask = undefined;
     throw error;
@@ -112,7 +121,18 @@ export function useAudioPlayback(
     [player, t],
   );
 
+  useEffect(
+    () =>
+      subscribeAudioOwnership(() => {
+        audioModeTask = undefined;
+        if (isRecordingAudioOwner()) player.pause();
+      }),
+    [player],
+  );
+
   const toggleFullPlayback = useCallback(async () => {
+    if (isRecordingAudioOwner()) return;
+    await configureAudioMode();
     setActiveRange(undefined);
     setOperationError(undefined);
     if (status.playing) {
@@ -120,6 +140,7 @@ export function useAudioPlayback(
       return;
     }
     if (status.didJustFinish) await runSeek(0);
+    if (isRecordingAudioOwner()) return;
     player.play();
   }, [player, runSeek, status.didJustFinish, status.playing]);
 
@@ -142,6 +163,8 @@ export function useAudioPlayback(
 
   const playRange = useCallback(
     async (range: PlaybackRange) => {
+      if (isRecordingAudioOwner()) return;
+      await configureAudioMode();
       setOperationError(undefined);
       if (activeRange?.key === range.key && status.playing && !activeRangeEnded) {
         player.pause();
@@ -156,7 +179,7 @@ export function useAudioPlayback(
           await player.seekTo(range.startSeconds);
         }
         // 页面可能在原生 seek 完成前离开，此时播放器已经由 expo-audio 自动释放。
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || isRecordingAudioOwner()) return;
         setActiveRange(range);
         player.play();
       } catch {
@@ -169,6 +192,20 @@ export function useAudioPlayback(
 
   const toggleAudio = useCallback(
     (audioFileId: string) => {
+      if (isRecordingAudioOwner()) return;
+      // 录音释放后重新配置；失败时不触发播放。
+      if (!audioModeTask) {
+        void configureAudioMode()
+          .then(() => {
+            if (!isRecordingAudioOwner() && mountedRef.current) {
+              player.replace(sourceFor(audioFileId, sourceUrlFor));
+              setActiveAudioFileId(audioFileId);
+              player.play();
+            }
+          })
+          .catch(() => setOperationError(t('audioPlayback.initializeFailed')));
+        return;
+      }
       setOperationError(undefined);
       setActiveRange(undefined);
       if (audioFileId === activeAudioFileId) {
@@ -190,12 +227,20 @@ export function useAudioPlayback(
       setActiveAudioFileId(audioFileId);
       player.play();
     },
-    [activeAudioFileId, player, sourceUrlFor, status.didJustFinish, status.error, status.playing],
+    [
+      activeAudioFileId,
+      player,
+      sourceUrlFor,
+      status.didJustFinish,
+      status.error,
+      status.playing,
+      t,
+    ],
   );
 
   const retry = useCallback(
     (autoplay = false) => {
-      if (!activeAudioFileId) return;
+      if (!activeAudioFileId || isRecordingAudioOwner()) return;
       setOperationError(undefined);
       player.pause();
       player.replace(sourceFor(activeAudioFileId, sourceUrlFor));

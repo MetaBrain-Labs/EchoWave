@@ -336,7 +336,7 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
     },
     sourceTempDirectory: config.rag.audioTranscriptionTempDir,
     onEmotionPublished: async (job) => {
-      if (job.runtimeMode === 'lightweight_local' && job.bundled) {
+      if (job.runtimeMode === 'lightweight_local') {
         await sourceLifecycle.cleanup(job.audioFileId, job.revisionId);
       }
     },

@@ -12,7 +12,7 @@
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, rm, stat } from 'node:fs/promises';
+import { mkdir, rename, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -138,9 +138,22 @@ export class AudioUploadSessionService {
       ...rawInput,
       filename: safeFilename(rawInput.filename),
     });
+    let previous = await this.repository.findIdempotent?.(dataSourceId, input, analysisTaskId);
+    if (
+      previous &&
+      ['created', 'uploaded'].includes(previous.status) &&
+      previous.expiresAt.getTime() <= Date.now()
+    ) {
+      // 响应丢失或应用重启后沿用原资产，重签同一对象定位键，避免重复资产。
+      previous = await this.repository.renewExpired(previous.id);
+    }
+    if (previous) return this.sessionResponse(previous);
     const runtimeSettings = await this.runtimeRepository.get();
     const runtime = { ...runtimeSettings, mode: runtimeModeOverride ?? runtimeSettings.mode };
-    if (this.runtime) {
+    if (runtime.mode === 'lightweight_local' && input.postUploadAction === 'store_only') {
+      throw new WorkspaceRepositoryError('CONFLICT', '轻量模式请在手机保留原件，分析时再上传。');
+    }
+    if (this.runtime && input.postUploadAction !== 'store_only') {
       const availability = await this.runtime.availabilityForMode(runtime.mode);
       if (!availability.available) {
         throw new WorkspaceRepositoryError(
@@ -179,24 +192,34 @@ export class AudioUploadSessionService {
           },
       analysisTaskId,
     );
+    return this.sessionResponse(session);
+  }
+
+  /** 重签固化目标，只改变上传凭证，不改变原会话的模式和动作。 */
+  private async sessionResponse(session: StoredUploadSession) {
+    const store =
+      session.strategy === 'presigned_put'
+        ? await this.objectStore(session.storageBindingRevisionId ?? undefined)
+        : undefined;
     const expiresAt = session.expiresAt.toISOString();
     return AudioUploadSessionResponseSchema.parse({
       id: session.id,
       audioFileId: session.audioFileId,
       mode: session.mode,
+      status: session.status,
       expiresAt,
       upload:
         session.strategy === 'presigned_put'
           ? {
               kind: 'presigned_put',
-              url: store!.signedPutUrl(storageKey, input.mimeType),
-              headers: { 'Content-Type': input.mimeType },
+              url: store!.signedPutUrl(session.storageKey, session.mimeType),
+              headers: { 'Content-Type': session.mimeType },
               expiresAt,
             }
           : {
               kind: 'api_binary',
               url: `/api/audio-upload-sessions/${session.id}/content`,
-              headers: { 'Content-Type': input.mimeType },
+              headers: { 'Content-Type': session.mimeType },
             },
     });
   }
@@ -210,16 +233,18 @@ export class AudioUploadSessionService {
     }
     const target = resolveWithin(this.options.audioStorageDirectory, session.storageKey);
     await mkdir(path.dirname(target), { recursive: true });
+    const partial = `${target}.uploading-${randomUUID()}`;
     try {
       await pipeline(
         Readable.from(body as unknown as AsyncIterable<Uint8Array>),
-        createWriteStream(target, { flags: 'wx', mode: 0o600 }),
+        createWriteStream(partial, { flags: 'wx', mode: 0o600 }),
       );
-      const stored = await stat(target);
+      const stored = await stat(partial);
       if (stored.size !== session.sizeBytes) throw new Error('size mismatch');
+      await rename(partial, target);
       await this.repository.markUploaded(id);
     } catch (error) {
-      await rm(target, { force: true }).catch(() => undefined);
+      await rm(partial, { force: true }).catch(() => undefined);
       throw error;
     }
   }
@@ -228,7 +253,8 @@ export class AudioUploadSessionService {
   async complete(id: string) {
     const session = await this.repository.get(id);
     if (session.status === 'ready') {
-      if (!session.analysisTaskId) await this.ensureInitialTranscription(session);
+      if (!session.analysisTaskId && session.postUploadAction !== 'store_only')
+        await this.ensureInitialTranscription(session);
       return AudioUploadSessionCompleteResponseSchema.parse({
         audioFileId: session.audioFileId,
         status: 'ready',
@@ -268,12 +294,22 @@ export class AudioUploadSessionService {
         );
       }
       await this.repository.complete(id, inspected.durationMs, inspected.sha256);
-      if (!session.analysisTaskId) await this.ensureInitialTranscription(session);
+      if (!session.analysisTaskId && session.postUploadAction !== 'store_only')
+        await this.ensureInitialTranscription(session);
       return AudioUploadSessionCompleteResponseSchema.parse({
         audioFileId: session.audioFileId,
         status: 'ready',
       });
     } catch (error) {
+      const after = await this.repository.get(id);
+      if (after.status === 'ready') {
+        if (!after.analysisTaskId && after.postUploadAction !== 'store_only')
+          await this.ensureInitialTranscription(after);
+        return AudioUploadSessionCompleteResponseSchema.parse({
+          audioFileId: after.audioFileId,
+          status: 'ready',
+        });
+      }
       if (session.analysisTaskId) {
         await this.repository.fail(
           id,

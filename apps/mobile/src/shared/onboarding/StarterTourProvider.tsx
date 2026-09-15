@@ -178,7 +178,7 @@ export function StarterTourProvider({
   const navigateToStep = useCallback(
     (step: GuideStep, knownTemplates = templates) => {
       const routes = {
-        create: '/(tabs)/create',
+        create: '/analysis-create',
         more: '/(tabs)/more',
         knowledge: '/(tabs)/knowledge',
         data_sources: '/(tabs)/sources',

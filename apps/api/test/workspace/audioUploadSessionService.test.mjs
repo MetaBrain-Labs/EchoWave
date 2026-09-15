@@ -25,6 +25,42 @@ const session = {
 };
 
 describe('AudioUploadSessionService', () => {
+  it('never starts transcription when completing a stored recording repeatedly', async () => {
+    for (const mode of ['hybrid', 'object_storage']) {
+      const stored = { ...session, mode, postUploadAction: 'store_only' };
+      const service = new AudioUploadSessionService(
+        { get: async () => stored },
+        {},
+        {},
+        {
+          listAudioTranscriptions: async () => {
+            throw new Error('Archive intent must not inspect or start ASR');
+          },
+        },
+        { audioStorageDirectory: '.', tempDirectory: '.', tenantId: 'tenant' },
+      );
+      await service.complete(session.id);
+      await service.complete(session.id);
+    }
+  });
+  it('rejects server archive intent for lightweight sources before creating assets', async () => {
+    const service = new AudioUploadSessionService(
+      {},
+      { get: async () => ({ mode: 'lightweight_local' }) },
+      {},
+      {},
+      { audioStorageDirectory: '.', tempDirectory: '.', tenantId: 'tenant' },
+    );
+    await assert.rejects(
+      service.create(session.dataSourceId, {
+        filename: 'recording.m4a',
+        mimeType: 'audio/mp4',
+        sizeBytes: 1024,
+        postUploadAction: 'store_only',
+      }),
+      /轻量模式/,
+    );
+  });
   it('repairs the ready-to-ASR interruption without creating duplicate runs', async () => {
     const starts = [];
     let hasRun = false;

@@ -18,7 +18,6 @@ import type {
   AudioTranscriptionRunListResponse,
   SupportedLanguage,
 } from '@echowave/contracts';
-import { DEFAULT_AUDIO_TRANSCRIPTION_MODEL } from '@echowave/contracts';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -49,9 +48,11 @@ import {
   startAudioBusinessAnalysis,
   startAudioEmotionAnalysis,
   startAudioRoleRecognition,
-  startAudioTranscription,
   selectAudioTranscription,
 } from '@/shared/api/audioAnalysisApi';
+import { useRecording } from '@/shared/recording/RecordingProvider';
+import { recordingAsset } from '@/shared/recording/recordingStore';
+import { getApiUrl } from '@/shared/api/apiUrl';
 import { getGroupSettings } from '@/shared/api/groupsApi';
 import { WorkspaceRequestError } from '@/shared/api/request';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
@@ -257,6 +258,7 @@ export function AnalysisDetailScreen({
   const [emotionSegment, setEmotionSegment] = useState<TranscriptSegment>();
   const [confirmAnalysisType, setConfirmAnalysisType] = useState<AudioPostAnalysisType>();
   const [analysisLanguage, setAnalysisLanguage] = useState<SupportedLanguage>(appLanguage);
+  const { drafts: phoneRecordings } = useRecording();
   const [startingAnalysis, setStartingAnalysis] = useState(false);
   const [editingTranscript, setEditingTranscript] = useState(false);
   const [confirmingTranscript, setConfirmingTranscript] = useState(false);
@@ -644,6 +646,7 @@ export function AnalysisDetailScreen({
         emotion.state === 'failed' ||
         ('confirmationVersion' in emotion && emotion.confirmationVersion !== version)
       ) {
+        await ensureSourceForEmotion();
         tasks.push(startAudioEmotionAnalysis(detailId, { language: analysisLanguage }));
       }
       if (
@@ -678,9 +681,10 @@ export function AnalysisDetailScreen({
     }
     setStartingAnalysis(true);
     try {
-      if (confirmAnalysisType === 'emotion')
+      if (confirmAnalysisType === 'emotion') {
+        await ensureSourceForEmotion();
         await startAudioEmotionAnalysis(detailId, { language: analysisLanguage });
-      else await startAudioRoleRecognition(detailId, { language: analysisLanguage });
+      } else await startAudioRoleRecognition(detailId, { language: analysisLanguage });
       setConfirmAnalysisType(undefined);
       await load(false);
       if (analysisTiming === 'automatic' && groupId) {
@@ -704,26 +708,29 @@ export function AnalysisDetailScreen({
     setTranscriptDisplayMode('current');
   };
 
-  const reselectSourceAndTranscribe = async () => {
+  /** 声学分析只重新挂载原件，不创建新的转写版本。 */
+  const ensureSourceForEmotion = async () => {
+    if (!detail || detail.runtimeMode !== 'lightweight_local' || detail.sourceState === 'available')
+      return;
+    const phone = phoneRecordings.find(
+      (draft) => draft.audioFileId === detailId && draft.serverUrl === getApiUrl(),
+    );
+    if (phone) {
+      await remountAudioSource(detailId, recordingAsset(phone));
+      return;
+    }
+    const selection = await pickDocumentAsync({
+      copyToCacheDirectory: true,
+      multiple: false,
+      type: ['audio/*'],
+    });
+    if (!selection || selection.canceled) throw new Error(t('analysisDetail.selectOriginal'));
+    await remountAudioSource(detailId, selection.assets[0]!);
+  };
+
+  const remountOriginalSource = async () => {
     try {
-      const selection = await pickDocumentAsync({
-        copyToCacheDirectory: true,
-        multiple: false,
-        type: ['audio/*'],
-      });
-      if (!selection || selection.canceled) return;
-      await remountAudioSource(detailId, selection.assets[0]!);
-      await startAudioTranscription(detailId, {
-        model: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
-        preprocessing: 'silero_vad',
-        segmentationMode: 'speaker_turn',
-        includeAcousticEmotion: true,
-        language: appLanguage,
-      });
-      Alert.alert(
-        t('analysisDetail.transcriptionCreated'),
-        t('analysisDetail.transcriptionQueued'),
-      );
+      await ensureSourceForEmotion();
       await load(false);
     } catch (reason) {
       Alert.alert(
@@ -1022,7 +1029,7 @@ export function AnalysisDetailScreen({
             <PostAnalysisControls
               confirmed={detail.transcriptConfirmation.status === 'confirmed'}
               emotion={detail.postAnalysis.emotion}
-              onRemountSource={() => void reselectSourceAndTranscribe()}
+              onRemountSource={() => void remountOriginalSource()}
               onStart={(type) => {
                 setAnalysisLanguage(appLanguage);
                 setConfirmAnalysisType(type);

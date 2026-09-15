@@ -51,19 +51,17 @@ import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
 import { AnalysisLanguagePicker } from '@/shared/i18n/AnalysisLanguagePicker';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import {
+  pipelineForPreference,
+  useAnalysisPreference,
+} from '@/shared/settings/AnalysisPreferenceProvider';
 import type { TranslationKey } from '@/shared/i18n/translations';
 
-const pipeline = {
-  confirmation: 'system_raw_snapshot' as const,
-  includeEmotion: true,
-  includeRole: true,
-  includeBusinessAnalysis: true,
-  transcriptPolicy: 'reuse_or_create' as const,
-};
-
-/** 渲染新建标签的一键分析表单。 */
-export function AnalysisBatchCreateScreen() {
+/** 渲染独立的一键分析表单，并由路由层决定是否显示返回操作。 */
+export function AnalysisBatchCreateScreen({ onBack }: { onBack?: () => void }) {
   const router = useRouter();
+  const { preference, hydrated } = useAnalysisPreference();
+  const pipeline = pipelineForPreference(preference);
   const { language: appLanguage, formatDateTime, t } = useAppLanguage();
   const scrollRef = useRef<ScrollView>(null);
   const prepareAudioTourTarget = useCallback(() => {
@@ -178,7 +176,9 @@ export function AnalysisBatchCreateScreen() {
       setSelectedAudioIds((current) =>
         current.filter((id) => {
           const audio = audioResponse.items.find((item) => item.id === id);
-          return audio ? existingAudioDisabledReason(audio, runtime.mode, t) === null : false;
+          return audio
+            ? existingAudioDisabledReason(audio, runtime.mode, t, pipeline.includeEmotion) === null
+            : false;
         }),
       );
       if (nextGroupId) {
@@ -199,7 +199,7 @@ export function AnalysisBatchCreateScreen() {
     } catch (error) {
       setRefreshError(error instanceof Error ? error.message : t('analysisBatch.tryAgain'));
     }
-  }, [appLanguage, groupId, sourceId, t]);
+  }, [appLanguage, groupId, sourceId, t, pipeline.includeEmotion]);
   const screenRefresh = useScreenRefresh(refreshPage);
 
   const selectedCount = sourceKind === 'uploads' ? assets.length : selectedAudioIds.length;
@@ -311,6 +311,7 @@ export function AnalysisBatchCreateScreen() {
     return (
       <SafeAreaView style={styles.page}>
         <TopLevelPageHeader
+          onBack={onBack}
           subtitle={t('analysisBatch.subtitle')}
           title={t('analysisBatch.title')}
         />
@@ -321,7 +322,11 @@ export function AnalysisBatchCreateScreen() {
     );
   return (
     <SafeAreaView style={styles.page}>
-      <TopLevelPageHeader subtitle={t('analysisBatch.subtitle')} title={t('analysisBatch.title')} />
+      <TopLevelPageHeader
+        onBack={onBack}
+        subtitle={t('analysisBatch.subtitle')}
+        title={t('analysisBatch.title')}
+      />
       <ScrollView
         alwaysBounceVertical
         contentContainerStyle={styles.content}
@@ -383,7 +388,12 @@ export function AnalysisBatchCreateScreen() {
               <View style={styles.list}>
                 {audioFiles.map((audio) => {
                   const selected = selectedAudioIds.includes(audio.id);
-                  const disabledReason = existingAudioDisabledReason(audio, runtimeMode, t);
+                  const disabledReason = existingAudioDisabledReason(
+                    audio,
+                    runtimeMode,
+                    t,
+                    pipeline.includeEmotion,
+                  );
                   return (
                     <Pressable
                       accessibilityRole="checkbox"
@@ -469,12 +479,15 @@ export function AnalysisBatchCreateScreen() {
         </View>
         <Section title={t('analysisBatch.previewStep')}>
           <Text style={styles.preview}>{preview}</Text>
+          <Text style={styles.hint}>
+            {t(preference === 'full' ? 'recording.fullFlow' : 'recording.transcriptionFlow')}
+          </Text>
           <Text style={styles.hint}>{t('analysisBatch.previewHint')}</Text>
         </Section>
         <Pressable
           accessibilityRole="button"
-          accessibilityState={{ disabled: submitting }}
-          disabled={submitting}
+          accessibilityState={{ disabled: submitting || !hydrated }}
+          disabled={submitting || !hydrated}
           onPress={() => void submit()}
           style={[styles.primaryButton, submitting && styles.disabled]}
         >
@@ -523,15 +536,12 @@ function existingAudioDisabledReason(
   audio: AudioFileSummary,
   runtimeMode: string,
   t: (key: TranslationKey, options?: Record<string, unknown>) => string,
+  includeEmotion: boolean,
 ): string | null {
   if (!runtimeMode) return t('analysisBatch.readingRuntime');
-  if (audio.runtimeMode !== runtimeMode)
-    return t('analysisBatch.modeMismatch', {
-      mode: audio.runtimeMode ?? t('analysisBatch.unknown'),
-    });
   if (
-    runtimeMode === 'lightweight_local' &&
-    pipeline.includeEmotion &&
+    audio.runtimeMode === 'lightweight_local' &&
+    includeEmotion &&
     audio.sourceState !== 'available' &&
     !audio.acousticEmotionReady
   ) {

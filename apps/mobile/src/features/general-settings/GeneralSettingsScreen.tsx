@@ -13,6 +13,10 @@
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import {
+  useAnalysisPreference,
+  type AnalysisPreference,
+} from '@/shared/settings/AnalysisPreferenceProvider';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import {
   colors,
@@ -27,6 +31,7 @@ import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
 /** 渲染应用级设置，并保留语言保存失败时的当前选择。 */
 export function GeneralSettingsScreen({ onBack }: { onBack: () => void }) {
   const { language, setLanguage, t } = useAppLanguage();
+  const { preference, hydrated, setPreference } = useAnalysisPreference();
 
   const changeLanguage = async (next: 'zh-CN' | 'en') => {
     try {
@@ -44,6 +49,32 @@ export function GeneralSettingsScreen({ onBack }: { onBack: () => void }) {
         title={t('generalSettings.title')}
       />
       <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.card}>
+          <Text accessibilityRole="header" style={styles.title}>
+            {t('recording.preference')}
+          </Text>
+          <View accessibilityRole="radiogroup" style={styles.options}>
+            {(['full', 'transcription_only'] as AnalysisPreference[]).map((option) => (
+              <Pressable
+                key={option}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: preference === option, disabled: !hydrated }}
+                disabled={!hydrated}
+                onPress={() =>
+                  void setPreference(option).catch(() =>
+                    Alert.alert(t('common.saveFailed'), t('recording.preferenceSaveFailed')),
+                  )
+                }
+                style={[styles.option, preference === option && styles.selected]}
+              >
+                <Text style={[styles.label, preference === option && styles.selectedLabel]}>
+                  {t(option === 'full' ? 'recording.full' : 'recording.transcriptionOnly')}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={styles.description}>{t('recording.preferenceDescription')}</Text>
+        </View>
         <View style={styles.card}>
           <Text accessibilityRole="header" style={styles.title}>
             {t('language.section')}
@@ -73,7 +104,7 @@ export function GeneralSettingsScreen({ onBack }: { onBack: () => void }) {
 
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.canvas, flex: 1 },
-  content: { padding: spacing.md, paddingBottom: spacing.xxl },
+  content: { padding: spacing.md, paddingBottom: spacing.xxl, gap: spacing.md },
   card: {
     backgroundColor: colors.card,
     borderColor: colors.divider,
@@ -90,11 +121,14 @@ const styles = StyleSheet.create({
   },
   options: { flexDirection: 'row', gap: spacing.sm },
   option: {
+    alignItems: 'center',
     borderColor: colors.divider,
     borderRadius: radii.default,
     borderWidth: 1,
     flex: 1,
-    padding: spacing.base,
+    height: 56,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
   },
   selected: { backgroundColor: colors.ink, borderColor: colors.ink },
   label: { ...typography.body, color: textColors.primary, textAlign: 'center' },

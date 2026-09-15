@@ -26,8 +26,8 @@
     "android": {
       "icon": "./assets/img/icon.png",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/img/icon.png",
-        "backgroundColor": "#010A20"
+        "foregroundImage": "./assets/img/adaptive-icon-foreground.png",
+        "backgroundColor": "#081221"
       },
       "package": "com.echowave.app",
       "googleServicesFile": "./google-services.json"
@@ -81,6 +81,15 @@
           "android": {
             "usesCleartextTraffic": true
           }
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "EchoWave 需要使用麦克风录制音频，录音由你选择保存或分析。",
+          "recordAudioAndroid": true,
+          "enableBackgroundRecording": true,
+          "enableBackgroundPlayback": false
         }
       ]
     ],

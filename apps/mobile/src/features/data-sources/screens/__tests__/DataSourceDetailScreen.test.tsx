@@ -32,7 +32,10 @@ import {
 } from '@/test/workspaceFixtures';
 import { mockAudioPlayers, resetExpoAudioMock } from '@/test/ExpoAudioMock';
 
-jest.mock('expo-router', () => ({ useFocusEffect: jest.fn() }));
+jest.mock('expo-router', () => ({
+  useFocusEffect: jest.fn(),
+  useRouter: () => ({ push: jest.fn() }),
+}));
 jest.mock('@/shared/api/dataSourcesApi', () => ({
   archiveDataSource: jest.fn(),
   archiveDataSourceAudioFile: jest.fn(),

@@ -110,6 +110,7 @@ export class PostAnalysisRepository {
         `SELECT af.active_analysis_revision_id AS revision_id,
                 ar.active_transcript_confirmation_id AS confirmation_id,
                 tc.version_no AS confirmation_version,
+                af.runtime_mode, af.source_state, af.storage_key,
                 coalesce(ds.custom_business_roles, '[]'::jsonb) AS custom_business_roles
          FROM ${this.table('audio_files')} af
          LEFT JOIN ${this.table('data_sources')} ds
@@ -128,6 +129,9 @@ export class PostAnalysisRepository {
       }
       if (!row.confirmation_id) {
         throw new WorkspaceRepositoryError('CONFLICT', '请先确认转写正文，再开始后续分析。');
+      }
+      if (type === 'emotion' && (row.source_state !== 'available' || !row.storage_key)) {
+        throw new WorkspaceRepositoryError('CONFLICT', '请先重新挂载同一份原音频。');
       }
       const customBusinessRoles = Array.isArray(row.custom_business_roles)
         ? row.custom_business_roles
@@ -216,7 +220,8 @@ export class PostAnalysisRepository {
        RETURNING job.id, job.analysis_type, job.model, job.audio_file_id,
                  job.analysis_revision_id, job.transcript_confirmation_id,
                  job.capability_binding_revision_id, job.staging_binding_revision_id,
-                 tc.version_no AS confirmation_version, job.input_snapshot,
+                 tc.version_no AS confirmation_version,
+                job.input_snapshot,
                  af.storage_key, af.duration_ms, af.deleted_at, af.source_state,
                  af.runtime_mode, af.storage_backend, af.storage_binding_revision_id,
                  job.cancel_requested,
@@ -234,12 +239,21 @@ export class PostAnalysisRepository {
     }
     const segments = await this.pool.query(
       `SELECT confirmed.confirmed_segment_id AS id, confirmed.speaker_key,
-              confirmed.start_ms, confirmed.end_ms, confirmed.text
+              CASE WHEN $3 THEN coalesce((raw.words -> confirmed.start_word_index ->> 'startMs')::bigint, raw.start_ms) ELSE confirmed.start_ms END AS start_ms,
+              CASE WHEN $3 THEN coalesce((raw.words -> (confirmed.end_word_index - 1) ->> 'endMs')::bigint, raw.end_ms) ELSE confirmed.end_ms END AS end_ms, confirmed.text
        FROM ${this.table('transcript_confirmation_segments')} confirmed
+       LEFT JOIN ${this.table('transcript_segments')} raw
+         ON raw.tenant_id = confirmed.tenant_id AND raw.id = confirmed.source_transcript_segment_id
+        AND raw.analysis_revision_id = $4
        WHERE confirmed.tenant_id = $1
          AND confirmed.transcript_confirmation_id = $2
        ORDER BY confirmed.start_ms, confirmed.end_ms, confirmed.part_index`,
-      [this.tenantId, row.transcript_confirmation_id],
+      [
+        this.tenantId,
+        row.transcript_confirmation_id,
+        row.analysis_type === 'emotion' && row.runtime_mode === 'lightweight_local',
+        row.analysis_revision_id,
+      ],
     );
     if (row.analysis_type === 'emotion') {
       const ordered = segments.rows
@@ -389,12 +403,12 @@ export class PostAnalysisRepository {
         );
       }
       await this.publishPointer(client, job, 'active_emotion_job_id');
-      if (job.bundled) {
+      if (job.runtimeMode === 'lightweight_local') {
         await client.query(
           `UPDATE ${this.table('audio_analysis_revisions')}
            SET processing_checkpoint = 'acoustic_emotion_completed'
-           WHERE tenant_id = $1 AND id = $2 AND bundled_emotion_job_id = $3`,
-          [this.tenantId, job.revisionId, job.id],
+           WHERE tenant_id = $1 AND id = $2`,
+          [this.tenantId, job.revisionId],
         );
         await client.query(
           `UPDATE ${this.table('audio_files')}
@@ -565,7 +579,7 @@ export class PostAnalysisRepository {
             ${this.table('audio_analysis_revisions')} ar
        WHERE job.tenant_id = $1 AND job.id = $2
          AND ar.tenant_id = job.tenant_id AND ar.id = job.analysis_revision_id
-         AND ar.bundled_emotion_job_id = job.id
+         AND job.analysis_type = 'emotion'
          AND af.tenant_id = job.tenant_id AND af.id = job.audio_file_id
          AND af.runtime_mode = 'lightweight_local' AND af.source_state = 'available'`,
       [this.tenantId, jobId],

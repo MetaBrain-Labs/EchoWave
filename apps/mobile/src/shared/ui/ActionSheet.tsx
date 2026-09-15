@@ -4,7 +4,7 @@
  * 使用 React Native Modal 呈现一组可访问的动作，统一处理遮罩、取消和危险操作样式。
  *
  * Responsibilities:
- * - 为移动端和 Web 提供一致的底部操作菜单。
+ * - 为移动端和 Web 提供与数据源操作抽屉一致的底部操作菜单。
  * - 将动作执行交给调用方，不承载领域状态或网络请求。
  *
  * Notes:
@@ -12,7 +12,7 @@
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useState } from 'react';
-import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import {
   colors,
@@ -24,10 +24,12 @@ import {
 } from '@/shared/theme/tokens';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
+/** 描述操作菜单中的稳定身份、图标、禁用状态和执行动作。 */
 export type ActionSheetItem = {
   destructive?: boolean;
   disabled?: boolean;
   icon?: keyof typeof Ionicons.glyphMap;
+  id?: string;
   label: string;
   onPress: () => void;
 };
@@ -133,15 +135,23 @@ export function ActionSheet({
           accessibilityViewIsModal
           style={[styles.sheet, { transform: [{ translateY: sheetTranslateY }] }]}
         >
-          {title ? <Text style={styles.title}>{title}</Text> : null}
+          {title ? (
+            <Text accessibilityRole="header" numberOfLines={1} style={styles.title}>
+              {title}
+            </Text>
+          ) : null}
           {message ? <Text style={styles.message}>{message}</Text> : null}
-          <View style={styles.items}>
+          <ScrollView
+            contentContainerStyle={styles.items}
+            keyboardShouldPersistTaps="handled"
+            style={styles.itemScroll}
+          >
             {resolvedItems.map((item) => (
               <Pressable
                 accessibilityRole="button"
                 accessibilityState={{ disabled: item.disabled || busy }}
                 disabled={item.disabled || busy}
-                key={item.label}
+                key={item.id ?? item.label}
                 onPress={() => {
                   if (!preserveLegacyCloseSemantics) onClose();
                   item.onPress();
@@ -155,7 +165,7 @@ export function ActionSheet({
               >
                 {item.icon ? (
                   <Ionicons
-                    color={item.destructive ? colors.danger : colors.ink}
+                    color={item.destructive ? colors.ink : colors.secondary}
                     name={item.icon}
                     size={22}
                   />
@@ -165,7 +175,7 @@ export function ActionSheet({
                 </Text>
               </Pressable>
             ))}
-          </View>
+          </ScrollView>
           <Pressable
             accessibilityRole="button"
             disabled={busy}
@@ -182,21 +192,22 @@ export function ActionSheet({
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { backgroundColor: 'rgba(16, 24, 40, 0.24)' },
+  backdrop: { backgroundColor: 'rgba(16, 24, 40, 0.28)' },
   sheet: {
-    backgroundColor: colors.card,
+    backgroundColor: colors.white,
     borderTopLeftRadius: radii.default,
     borderTopRightRadius: radii.default,
-    gap: spacing.sm,
-    padding: spacing.md,
-    paddingBottom: spacing.lg,
+    maxHeight: '85%',
+    paddingBottom: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
   },
   title: {
-    ...typography.heading3,
+    ...typography.heading2,
     color: textColors.primary,
     fontFamily: fontFamilies.sansBold,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    fontWeight: 'bold',
+    paddingBottom: spacing.sm,
   },
   message: {
     ...typography.description,
@@ -204,30 +215,30 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sans,
     paddingHorizontal: spacing.sm,
   },
-  items: { gap: spacing.xs },
+  items: {},
+  itemScroll: { flexGrow: 0 },
   item: {
     alignItems: 'center',
-    borderRadius: radii.default,
     flexDirection: 'row',
     gap: spacing.md,
     minHeight: 52,
-    paddingHorizontal: spacing.md,
+    borderBottomColor: colors.divider,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   itemText: { ...typography.body, color: textColors.primary, fontFamily: fontFamilies.sans },
-  destructiveItem: { backgroundColor: colors.background },
-  destructiveText: { color: colors.danger, fontFamily: fontFamilies.sansBold },
+  destructiveItem: {},
+  destructiveText: { fontFamily: fontFamilies.sansBold, fontWeight: 'bold' },
   cancel: {
     alignItems: 'center',
-    borderColor: colors.divider,
-    borderRadius: radii.default,
-    borderWidth: 1,
     justifyContent: 'center',
     minHeight: 48,
+    paddingTop: spacing.md,
   },
   cancelText: {
     ...typography.body,
     color: textColors.secondary,
     fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
   },
   disabled: { opacity: 0.45 },
   pressed: { backgroundColor: colors.background },

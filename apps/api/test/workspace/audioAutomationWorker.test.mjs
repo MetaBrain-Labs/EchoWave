@@ -49,6 +49,37 @@ const baseTask = {
 };
 
 describe('AudioAutomationWorker', () => {
+  it('finishes transcription-only runs without confirming or starting downstream jobs', async () => {
+    let completed = 0;
+    const worker = new AudioAutomationWorker({
+      repository: {
+        transcriptionState: async () => ({ status: 'ready' }),
+        setStageReference: async () => true,
+        complete: async () => {
+          completed += 1;
+          return null;
+        },
+      },
+      audio: {
+        ensureSystemRawTranscriptSnapshot: async () => {
+          throw new Error('Manual confirmation must remain pending');
+        },
+      },
+    });
+    await worker.advance({
+      ...baseTask,
+      phase: 'transcription',
+      analysisRevisionId: '50000000-0000-4000-8000-000000000001',
+      pipeline: {
+        ...pipeline,
+        confirmation: 'manual',
+        includeEmotion: false,
+        includeRole: false,
+        includeBusinessAnalysis: false,
+      },
+    });
+    assert.equal(completed, 1);
+  });
   it('creates one ASR run and persists its revision reference', async () => {
     const updates = [];
     const worker = new AudioAutomationWorker({
@@ -95,7 +126,7 @@ describe('AudioAutomationWorker', () => {
     assert.deepEqual(updates[0].stageSources, { transcription: 'reused' });
   });
 
-  it('records skipped and unavailable optional post-analysis stages', async () => {
+  it('queues lightweight acoustic emotion against a restored source and skips role', async () => {
     const updates = [];
     const warnings = [];
     const worker = new AudioAutomationWorker({
@@ -104,7 +135,12 @@ describe('AudioAutomationWorker', () => {
         addWarning: async (_id, code) => warnings.push(code),
         setStageReference: async (_id, update) => updates.push(update),
       },
-      audio: {},
+      audio: {
+        startAudioPostAnalysis: async (_id, type) => {
+          assert.equal(type, 'emotion');
+          return { jobId: 'emotion-job' };
+        },
+      },
     });
 
     await worker.advance({
@@ -115,9 +151,9 @@ describe('AudioAutomationWorker', () => {
       pipeline: { ...baseTask.pipeline, includeRole: false },
     });
 
-    assert.deepEqual(warnings, ['EMOTION_UNAVAILABLE']);
+    assert.deepEqual(warnings, []);
     assert.deepEqual(updates[0].stageSources, {
-      emotion: 'unavailable',
+      emotion: 'created',
       role: 'skipped',
     });
   });

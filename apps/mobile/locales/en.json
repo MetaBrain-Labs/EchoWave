@@ -1,6 +1,7 @@
 {
   "ios": {
     "CFBundleDisplayName": "EchoWave",
-    "NSLocalNetworkUsageDescription": "EchoWave needs to connect to your self-hosted server on the local network."
+    "NSLocalNetworkUsageDescription": "EchoWave needs to connect to your self-hosted server on the local network.",
+    "NSMicrophoneUsageDescription": "EchoWave uses your microphone to record audio that you choose to save or analyze."
   }
 }

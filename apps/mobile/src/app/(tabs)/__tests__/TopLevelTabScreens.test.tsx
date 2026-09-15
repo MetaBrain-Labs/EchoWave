@@ -1,7 +1,7 @@
 /**
  * 一级标签页面视觉测试。
  *
- * 验证“更多”和“一键分析”页面接入统一固定页头，并保持公共卡片与创建表单结构一致。
+ * 验证“更多”、新建入口与一键分析页面接入统一固定页头，并保持卡片和表单结构一致。
  *
  * Responsibilities:
  * - 锁定固定页头与正文滚动容器的兄弟结构。
@@ -16,6 +16,7 @@ import { Pressable as MockPressable, StyleSheet, Text as MockText } from 'react-
 import CreateScreen from '../create';
 import MoreScreen from '../more';
 import AnalysisRoute from '../../analysis';
+import AnalysisCreateRoute from '../../analysis-create';
 import { colors, radii, spacing } from '@/shared/theme/tokens';
 import { getAudioRuntime } from '@/shared/api/audioRuntimeApi';
 
@@ -115,21 +116,54 @@ describe('Top-level tab screens', () => {
     expect(mockBack).toHaveBeenCalledTimes(1);
   });
 
-  it('renders the one-click analysis title and complete pipeline guidance', async () => {
+  it('renders two independent create cards and opens their routes', () => {
     const screen = render(<CreateScreen />);
 
-    expect(screen.getAllByText('一键分析')).toHaveLength(1);
+    expect(screen.getByRole('header', { name: '新建' })).toBeTruthy();
+    for (const card of [
+      screen.getByLabelText('打开一键分析'),
+      screen.getByLabelText('打开手机录音'),
+    ]) {
+      expect(StyleSheet.flatten(card.props.style)).toEqual(
+        expect.objectContaining({
+          backgroundColor: colors.card,
+          borderRadius: spacing.base,
+          minHeight: 112,
+          padding: spacing.md,
+        }),
+      );
+    }
+    expect(
+      StyleSheet.flatten(screen.getByTestId('create-hub-icon-analysis').props.style)
+        .backgroundColor,
+    ).toBeUndefined();
+    expect(
+      StyleSheet.flatten(screen.getByTestId('create-hub-icon-recording').props.style)
+        .backgroundColor,
+    ).toBeUndefined();
+    fireEvent.press(screen.getByLabelText('打开一键分析'));
+    expect(mockPush).toHaveBeenCalledWith('/analysis-create');
+    fireEvent.press(screen.getByLabelText('打开手机录音'));
+    expect(mockPush).toHaveBeenCalledWith('/recording');
+  });
+
+  it('renders the independent one-click analysis form with a back action', async () => {
+    const screen = render(<AnalysisCreateRoute />);
+
     expect(screen.getByRole('header', { name: '一键分析' })).toBeTruthy();
     expect(screen.getByText('上传后由服务器自动完成转写、情绪、角色和业务分析')).toBeTruthy();
     expect(await screen.findByText('1. 数据源')).toBeTruthy();
+    expect(screen.queryByRole('radio', { name: '手机录音' })).toBeNull();
     expect(StyleSheet.flatten(screen.getByRole('radio', { name: '新上传' }).props.style)).toEqual(
       expect.objectContaining({ borderRadius: radii.default }),
     );
+    fireEvent.press(screen.getByLabelText('返回'));
+    expect(mockBack).toHaveBeenCalledTimes(1);
   });
 
   it('refreshes the one-click analysis runtime mode when the tab regains focus', async () => {
     jest.mocked(getAudioRuntime).mockResolvedValueOnce({ mode: 'object_storage' } as never);
-    const screen = render(<CreateScreen />);
+    const screen = render(<AnalysisCreateRoute />);
 
     expect(await screen.findByText(/本批次冻结模式：object_storage/)).toBeTruthy();
     await act(async () => focusCallback?.());

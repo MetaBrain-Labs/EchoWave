@@ -61,6 +61,8 @@ export const AudioUploadSessionCreateRequestSchema = z
       .positive()
       .max(200 * 1024 * 1024),
     includeAcousticEmotion: z.boolean().default(true),
+    postUploadAction: z.enum(['transcribe', 'store_only']).default('transcribe'),
+    idempotencyKey: z.string().trim().min(1).max(160).optional(),
   })
   .strict();
 
@@ -88,6 +90,9 @@ export const AudioUploadSessionResponseSchema = z
     audioFileId: EntityIdSchema,
     mode: AudioRuntimeModeSchema,
     upload: AudioUploadTargetSchema,
+    status: z
+      .enum(['created', 'uploaded', 'validating', 'ready', 'failed', 'expired'])
+      .default('created'),
     expiresAt: z.string().datetime(),
   })
   .strict();

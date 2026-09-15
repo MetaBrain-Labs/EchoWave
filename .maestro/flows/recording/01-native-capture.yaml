@@ -1,0 +1,40 @@
+appId: com.echowave.app
+name: native-recording-capture
+tags:
+  - recording
+---
+# 需要已经重建的录音原生配置和运行中的 Development Build。
+- runFlow: ../../subflows/prepare-e2e-app.yaml
+- tapOn:
+    id: 'e2e-tab-create'
+- tapOn: '手机录音'
+- tapOn: '开始录音'
+- runFlow:
+    when:
+      visible: '.*(使用应用时允许|在使用该应用时|While using the app).*'
+    commands:
+      - tapOn: '.*(使用应用时允许|在使用该应用时|While using the app).*'
+- runFlow:
+    when:
+      visible: '.*(发送通知|send you notifications).*'
+    commands:
+      - tapOn: '.*(允许|Allow).*'
+- extendedWaitUntil:
+    visible: '正在录音.*[1-9][0-9]* s'
+    timeout: 30000
+- tapOn: '暂停'
+- assertVisible: '已暂停.*'
+- tapOn: '继续'
+- assertVisible: '正在录音.*'
+- pressKey: BACK
+- tapOn: '手机录音'
+- assertVisible: '正在录音.*'
+- tapOn: '结束录音'
+- assertVisible: '仅当前手机可见'
+- assertVisible: '试听'
+- assertVisible: '导出'
+- tapOn: '更多录音操作'
+- assertVisible: '删除本地录音'
+- tapOn: '取消'
+- takeScreenshot: 'recording/01-retained-original'
+# 保留本次原件供人工锁屏、后台与通知停止验收；不上传、不删除。
