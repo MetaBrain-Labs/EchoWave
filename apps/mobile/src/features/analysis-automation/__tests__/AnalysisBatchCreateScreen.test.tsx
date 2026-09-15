@@ -1,7 +1,7 @@
 /**
- * 一键分析选择器测试。
+ * 一键分析创建页测试。
  *
- * 验证数据源和分组选择器，以及后台处理交接说明和开始确认行为。
+ * 验证紧凑的数据源和分组菜单、后台处理说明和开始确认行为。
  */
 import type {
   AudioFileSummary,
@@ -80,7 +80,7 @@ jest.mock('@/shared/onboarding/StarterTourContext', () => ({
   useStarterTourTarget: () => undefined,
 }));
 
-describe('AnalysisBatchCreateScreen choice rows', () => {
+describe('AnalysisBatchCreateScreen', () => {
   afterEach(() => {
     jest.restoreAllMocks();
   });
@@ -97,26 +97,23 @@ describe('AnalysisBatchCreateScreen choice rows', () => {
     } as never);
   });
 
-  it('collapses long source and group lists, then keeps a selected hidden item visible', async () => {
+  it('uses bottom sheets for long source and group lists', async () => {
     const screen = render(<AnalysisBatchCreateScreen />);
 
     expect(await screen.findByText('数据源 1')).toBeTruthy();
     expect(await screen.findByText('分组 1')).toBeTruthy();
-    expect(screen.getByText('数据源 4')).toBeTruthy();
     expect(screen.queryByText('数据源 5')).toBeNull();
-    expect(screen.queryByText('分组 5')).toBeNull();
-    expect(screen.getAllByRole('button', { name: '展开其余 2 项' })).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: /展开其余/ })).toBeNull();
 
-    const expanders = screen.getAllByRole('button', { name: '展开其余 2 项' });
-    fireEvent.press(expanders[1]);
-    expect(screen.getByText('分组 6')).toBeTruthy();
-    fireEvent.press(screen.getByRole('radio', { name: '分组 6' }));
-    fireEvent.press(screen.getByRole('button', { name: '收起' }));
+    fireEvent.press(screen.getByRole('button', { name: '选择数据源' }));
+    expect(await screen.findByRole('button', { name: '数据源 5' })).toBeTruthy();
+    fireEvent.press(screen.getByRole('button', { name: '数据源 5' }));
+    await waitFor(() => expect(screen.getByText('数据源 5')).toBeTruthy());
 
-    expect(screen.getByRole('radio', { name: '分组 6' }).props.accessibilityState).toEqual({
-      checked: true,
-    });
-    expect(screen.queryByText('分组 4')).toBeNull();
+    fireEvent.press(screen.getByRole('button', { name: '选择分析分组' }));
+    expect(await screen.findByRole('button', { name: '分组 6' })).toBeTruthy();
+    fireEvent.press(screen.getByRole('button', { name: '分组 6' }));
+    await waitFor(() => expect(screen.getByText('分组 6')).toBeTruthy());
   });
 
   it('does not show an expander when all choices fit within four items', async () => {
@@ -124,7 +121,7 @@ describe('AnalysisBatchCreateScreen choice rows', () => {
     jest.mocked(listDataSourceGroups).mockResolvedValue({ items: groups.slice(0, 4) });
     const screen = render(<AnalysisBatchCreateScreen />);
 
-    expect(await screen.findByText('数据源 4')).toBeTruthy();
+    expect(await screen.findByText('数据源 1')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /展开其余/ })).toBeNull();
   });
 
@@ -136,10 +133,12 @@ describe('AnalysisBatchCreateScreen choice rows', () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
     const screen = render(<AnalysisBatchCreateScreen />);
 
-    expect(await screen.findByText('上传完成后可关闭 App')).toBeTruthy();
-    fireEvent.press(screen.getByRole('radio', { name: '已有音频' }));
+    expect(await screen.findByText('上传完成后可关闭 App，服务器会继续处理')).toBeTruthy();
+    fireEvent.press(screen.getByRole('button', { name: '了解更多' }));
+    expect(await screen.findByText(/三种模式都支持上传完成/)).toBeTruthy();
+    fireEvent.press(screen.getByRole('tab', { name: '已有音频' }));
     fireEvent.press(await screen.findByRole('checkbox', { name: '已上传音频' }));
-    fireEvent.press(screen.getByRole('button', { name: '上传并开始全流程' }));
+    fireEvent.press(screen.getByRole('button', { name: '开始分析' }));
 
     expect(createExistingAudioAnalysisBatch).not.toHaveBeenCalled();
     expect(alert).toHaveBeenCalledWith(
