@@ -29,6 +29,7 @@ import type { KnowledgeAnswerModule } from './answer/knowledgeAnswer.ts';
 import type { IngestionRepository } from './persistence/ingestionRepository.ts';
 import type { KnowledgeRepository } from './catalog/knowledgeRepository.ts';
 import type { ConversationRepository } from './persistence/conversationRepository.ts';
+import { KNOWLEDGE_PARSER_VERSION } from './ingestion/documentParser.ts';
 import { checkedKnowledgeFilePath, knowledgeStoragePath } from './ingestion/storage.ts';
 import { RagRepositoryError } from './persistence/errors.ts';
 import type { LiveUpdateBroker } from '../infrastructure/liveUpdateBroker.ts';
@@ -315,7 +316,7 @@ export class DefaultKnowledgeService implements KnowledgeService {
         stagedPath,
         storageKey,
         rebuildSnapshot,
-        parserVersion: source.revision.parser_version,
+        parserVersion: rebuildSnapshot ? source.revision.parser_version : KNOWLEDGE_PARSER_VERSION,
         embeddingModel: embedding.model,
         embeddingBindingRevisionId: embedding.revisionId,
       });
@@ -355,7 +356,7 @@ export class DefaultKnowledgeService implements KnowledgeService {
         sizeBytes: buffer.byteLength,
         sourceSha256: createHash('sha256').update(buffer).digest('hex'),
         stagedPath,
-        parserVersion: 'echowave-parser-v1',
+        parserVersion: KNOWLEDGE_PARSER_VERSION,
         embeddingModel: embedding.model,
         embeddingBindingRevisionId: embedding.revisionId,
       });
