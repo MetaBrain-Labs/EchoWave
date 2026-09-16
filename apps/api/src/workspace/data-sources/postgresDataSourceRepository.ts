@@ -116,7 +116,8 @@ export class PostgresDataSourceRepository implements DataSourceRepository {
     const result = await this.pool.query(
       `UPDATE ${this.table('data_sources')}
        SET name = coalesce($3, name), description = coalesce($4, description),
-           custom_business_roles = coalesce($5::jsonb, custom_business_roles), updated_at = now()
+           custom_business_roles = coalesce($5::jsonb, custom_business_roles),
+           asr_hotwords = coalesce($6::jsonb, asr_hotwords), updated_at = now()
        WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
        RETURNING id`,
       [
@@ -125,6 +126,7 @@ export class PostgresDataSourceRepository implements DataSourceRepository {
         input.name ?? null,
         input.description ?? null,
         input.customBusinessRoles === undefined ? null : JSON.stringify(input.customBusinessRoles),
+        input.asrHotwords === undefined ? null : JSON.stringify(input.asrHotwords),
       ],
     );
     if (!result.rowCount) {
@@ -336,6 +338,7 @@ export class PostgresDataSourceRepository implements DataSourceRepository {
         sceneSegmentation: row.scene_segmentation_enabled,
         skipInvalidAudio: row.skip_invalid_audio,
         customBusinessRoles: row.custom_business_roles,
+        asrHotwords: row.asr_hotwords ?? [],
       },
     });
   }

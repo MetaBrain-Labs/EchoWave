@@ -16,17 +16,22 @@ import {
   AudioAnalysisBatchSchema,
   DEFAULT_GROUP_ANALYSIS_FOCUS,
   DEFAULT_GROUP_ANALYSIS_TONE,
+  AsrEnhancementSchema,
+  AsrEnhancementSnapshotSchema,
+  AsrHotwordsSchema,
   type AudioAnalysisBatch,
   type AudioAnalysisBatchCreateRequest,
   type AudioAnalysisBlockReason,
   type AudioAnalysisPipelineOptions,
   type AudioAnalysisTaskPhase,
   type AudioRuntimeMode,
+  type AsrPreference,
 } from '@echowave/contracts';
 import type { PoolClient } from 'pg';
 
 import { quoteIdentifier, type DatabasePool } from '../../../infrastructure/postgres.ts';
 import { WorkspaceRepositoryError } from '../../errors.ts';
+import { resolveAsrEnhancement } from '../transcription/asrEnhancement.ts';
 
 type ConfigurationSnapshot = AudioAnalysisBatch['configurationSnapshot'];
 
@@ -89,6 +94,28 @@ function stageSources(value: unknown): AutomationStageSources {
   return result;
 }
 
+function configurationSnapshot(value: unknown): ConfigurationSnapshot {
+  const source =
+    typeof value === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(value) as Record<string, unknown>;
+          } catch {
+            return {};
+          }
+        })()
+      : value && typeof value === 'object' && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {};
+  const enhancement = AsrEnhancementSnapshotSchema.safeParse(source.asrEnhancement);
+  return {
+    ...source,
+    asrEnhancement: enhancement.success
+      ? enhancement.data
+      : { contextText: '', hotwords: [], defaultContextRevision: 0 },
+  } as ConfigurationSnapshot;
+}
+
 /** 管理固定租户下的自动分析批次和任务。 */
 export class AudioAutomationRepository {
   private readonly schema: string;
@@ -110,6 +137,7 @@ export class AudioAutomationRepository {
     input: AudioAnalysisBatchCreateRequest,
     capabilitySnapshot: Pick<ConfigurationSnapshot, 'capabilityBindings' | 'models'>,
     runtimeMode: AudioRuntimeMode,
+    asrPreference: AsrPreference = { defaultContext: '', revision: 0 },
   ): Promise<{
     batchId: string;
     tasks: { id: string; clientItemId: string | null; audioFileId: string | null }[];
@@ -119,6 +147,7 @@ export class AudioAutomationRepository {
       await client.query('BEGIN');
       const context = await client.query(
         `SELECT ds.id AS data_source_id, g.id AS group_id, g.name AS group_name,
+                coalesce(ds.asr_hotwords, '[]'::jsonb) AS asr_hotwords,
                 coalesce(s.analysis_timing, 'manual') AS analysis_timing,
                 coalesce(s.content_focus, $4) AS content_focus,
                 coalesce(s.tone, $5) AS tone,
@@ -136,7 +165,7 @@ export class AudioAutomationRepository {
          LEFT JOIN ${this.table('group_knowledge_bases')} gkb
            ON gkb.tenant_id = g.tenant_id AND gkb.group_id = g.id
          WHERE ds.tenant_id = $1 AND ds.id = $2 AND ds.deleted_at IS NULL
-         GROUP BY ds.id, g.id, g.name, s.analysis_timing,
+         GROUP BY ds.id, ds.asr_hotwords, g.id, g.name, s.analysis_timing,
                   s.content_focus, s.tone, s.custom_tags`,
         [
           this.tenantId,
@@ -186,6 +215,12 @@ export class AudioAutomationRepository {
         tone: row.tone,
         customTags: strings(row.custom_tags),
         knowledgeBaseIds: strings(row.knowledge_base_ids),
+        asrEnhancement: resolveAsrEnhancement(
+          asrPreference.defaultContext,
+          asrPreference.revision,
+          AsrHotwordsSchema.parse(row.asr_hotwords ?? []),
+          input.asrEnhancement ? AsrEnhancementSchema.parse(input.asrEnhancement) : undefined,
+        ),
         ...capabilitySnapshot,
       };
       const created = await client.query(
@@ -440,7 +475,7 @@ export class AudioAutomationRepository {
       groupId: row.group_id,
       source: row.source_kind,
       scheduledFor: iso(row.scheduled_for),
-      configurationSnapshot: row.configuration_snapshot,
+      configurationSnapshot: configurationSnapshot(row.configuration_snapshot),
       counts: { total: mapped.length, active, blocked, completed, partial, failed, canceled },
       tasks: mapped,
       createdAt: iso(row.created_at),
@@ -481,6 +516,7 @@ export class AudioAutomationRepository {
     );
     const row = result.rows[0];
     if (!row || !row.audio_file_id || !row.runtime_mode) return undefined;
+    const config = configurationSnapshot(row.configuration_snapshot);
     return {
       id: row.id,
       batchId: row.batch_id,
@@ -489,10 +525,7 @@ export class AudioAutomationRepository {
       runtimeMode: row.runtime_mode,
       phase: row.phase,
       pipeline: row.pipeline_snapshot,
-      configuration: {
-        ...row.configuration_snapshot,
-        language: row.configuration_snapshot?.language === 'en' ? 'en' : 'zh-CN',
-      },
+      configuration: { ...config, language: config.language === 'en' ? 'en' : 'zh-CN' },
       analysisRevisionId: row.analysis_revision_id ?? null,
       emotionJobId: row.emotion_job_id ?? null,
       roleJobId: row.role_job_id ?? null,

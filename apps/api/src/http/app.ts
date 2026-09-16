@@ -26,6 +26,7 @@ import type { AudioAutomationService } from '../workspace/audio/automation/servi
 import type { PushDeviceService } from '../notifications/service.ts';
 import type { AudioAnalysisRunsService } from '../workspace/audio/analysis-runs/service.ts';
 import type { DashScopeCallbackService } from '../workspace/audio/transcription/dashScopeCallback.ts';
+import type { AsrPreferenceRepository } from '../workspace/audio/transcription/asrPreferenceRepository.ts';
 import { installErrorHandlers } from './errorHandler.ts';
 import { registerAudioRoutes } from './routes/audio.ts';
 import { registerAudioRuntimeRoutes } from './routes/audioRuntime.ts';
@@ -41,6 +42,7 @@ import { registerSettingsRoutes } from './routes/settings.ts';
 import { registerAudioAutomationRoutes } from './routes/audioAutomation.ts';
 import { registerPushDeviceRoutes } from './routes/pushDevices.ts';
 import { registerAudioAnalysisRunsRoutes } from './routes/audioAnalysisRuns.ts';
+import { registerAsrPreferenceRoutes } from './routes/asrPreferences.ts';
 
 export type AppDependencies = {
   collectionService?: CollectionService;
@@ -57,6 +59,7 @@ export type AppDependencies = {
   audioAutomationService?: AudioAutomationService;
   pushDeviceService?: PushDeviceService;
   audioAnalysisRunsService?: AudioAnalysisRunsService;
+  asrPreferenceRepository?: AsrPreferenceRepository;
   remotePushEnabled?: boolean;
 };
 
@@ -82,6 +85,13 @@ export function createApp(
   if (dependencies.collectionService) registerCollectionRoutes(app, dependencies.collectionService);
   if (dependencies.settingsService) {
     registerSettingsRoutes(app, dependencies.settingsService, dependencies.trustedProxyCidrs ?? []);
+  }
+  if (dependencies.asrPreferenceRepository && dependencies.settingsService) {
+    registerAsrPreferenceRoutes(
+      app,
+      dependencies.asrPreferenceRepository,
+      dependencies.settingsService,
+    );
   }
   if (dependencies.dashScopeCallbackService) {
     registerDashScopeWebhookRoutes(app, dependencies.dashScopeCallbackService);

@@ -97,6 +97,7 @@ The hot path relies on pgvector `vector(1024)`, cosine HNSW, session-level retri
 
 - DashScope `qwen3.7-text-embedding` produces fixed 1024-dimensional dense vectors, batches up to 20 documents, and distinguishes document/query input.
 - `qwen-audio-3.0-asr-flash-filetrans` uses `speaker_turn` with explicit `silero_vad` or `whole_file` preprocessing. VAD never silently falls back; manifests, provider task IDs, temporary object keys, and checkpoints support restart-safe completion.
+- ASR context and instant vocabulary are merged from tenant defaults, data-source hotwords, and explicit task overrides, then frozen in the transcription revision. Existing results are reused unless an override explicitly requests a new transcription version; sensitive-word filtering remains disabled for the current product policy.
 - Qwen Filetrans output requires non-empty sentences with `speaker_id` and ordered valid millisecond timestamps. Missing/overlapping/invalid output fails as `INVALID_MODEL_OUTPUT`; it is not guessed or silently repaired through another model.
 - `qwen3.5-omni-flash` handles per-segment acoustic emotion through the Beijing OpenAI-compatible endpoint and signed OSS URLs. Results must cover each target and include the fixed emotion enum, confidence, and acoustic cues.
 - `deepseek-v4-flash` performs non-thinking JSON role recognition, grounded answers, speaker review, and business analysis under task-specific schemas.

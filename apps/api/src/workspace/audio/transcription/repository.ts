@@ -20,6 +20,8 @@ import {
   AudioTranscriptionStartResponseSchema,
   AudioTranscriptionRunListResponseSchema,
   AudioTranscriptSelectionRequestSchema,
+  AsrHotwordsSchema,
+  AsrEnhancementSnapshotSchema,
   SupportedLanguageSchema,
   type AudioFailureDetails,
   type AudioTranscriptionPreprocessing,
@@ -30,6 +32,7 @@ import {
   type AudioTranscriptionSpeakerIdentityScope,
   type AudioTranscriptionStage,
   type SupportedLanguage,
+  type AsrEnhancementSnapshot,
 } from '@echowave/contracts';
 
 import { quoteIdentifier, type DatabasePool } from '../../../infrastructure/postgres.ts';
@@ -86,6 +89,7 @@ export type ClaimedAudioTranscription = {
   runtimeMode: 'hybrid' | 'object_storage' | 'lightweight_local';
   storageBackend: 'local_persistent' | 'local_ephemeral' | 'aliyun_oss';
   storageBindingRevisionId: string | null;
+  asrEnhancement: AsrEnhancementSnapshot;
 };
 
 /** Polling 或 EventBridge 发现并允许写入 revision 的 DashScope 终态。 */
@@ -191,6 +195,29 @@ export class AudioAnalysisRepository {
     };
   }
 
+  /** 返回音频所属数据源词表和租户默认上下文，供直接转写在入队时冻结。 */
+  async getAsrDefaults(audioFileId: string) {
+    const result = await this.pool.query(
+      `SELECT coalesce(ds.asr_hotwords, '[]'::jsonb) AS asr_hotwords,
+              coalesce(pref.default_context, '') AS default_context,
+              coalesce(pref.revision, 0) AS default_context_revision
+       FROM ${this.table('audio_files')} af
+       LEFT JOIN ${this.table('data_sources')} ds
+         ON ds.tenant_id = af.tenant_id AND ds.id = af.data_source_id
+       LEFT JOIN ${this.table('asr_preferences')} pref
+         ON pref.tenant_id = af.tenant_id
+       WHERE af.tenant_id = $1 AND af.id = $2 AND af.deleted_at IS NULL`,
+      [this.tenantId, audioFileId],
+    );
+    const row = result.rows[0];
+    if (!row) throw new WorkspaceRepositoryError('NOT_FOUND', '音频不存在或已归档。');
+    return {
+      defaultContext: String(row.default_context ?? ''),
+      defaultContextRevision: Number(row.default_context_revision ?? 0),
+      defaultHotwords: AsrHotwordsSchema.parse(row.asr_hotwords ?? []),
+    };
+  }
+
   /** 为活动音频创建递增修订；部分唯一索引负责最终阻止并发重复任务。 */
   async queueTranscription(
     audioFileId: string,
@@ -207,6 +234,11 @@ export class AudioAnalysisRepository {
     bundledEmotionBindingRevisionId: string | null = null,
     bundledEmotionModel: string | null = null,
     language: SupportedLanguage = 'zh-CN',
+    asrEnhancement: AsrEnhancementSnapshot = {
+      contextText: '',
+      hotwords: [],
+      defaultContextRevision: 0,
+    },
   ) {
     const client = await this.pool.connect();
     try {
@@ -243,7 +275,8 @@ export class AudioAnalysisRepository {
                                    'segmentationMode', $8::text,
                                     'asyncNotifyMode', $12::text,
                                     'expectedSpeakerCount', $13::integer,
-                                    'speakerReviewModel', $15::text),
+                                    'speakerReviewModel', $15::text,
+                                    'asrEnhancement', $20::jsonb),
                  'queued', 0, 'queued', now(), $9, $10, $11, $14, $16, $17, $18
          FROM ${this.table('audio_analysis_revisions')}
          WHERE tenant_id = $1 AND audio_file_id = $2
@@ -268,6 +301,7 @@ export class AudioAnalysisRepository {
           bundledEmotionBindingRevisionId,
           bundledEmotionModel,
           language,
+          JSON.stringify(asrEnhancement),
         ],
       );
       const response = AudioTranscriptionStartResponseSchema.parse({
@@ -352,6 +386,7 @@ export class AudioAnalysisRepository {
                  ds.id AS data_source_id, ds.name AS data_source_name,
                  ds.source_type, ds.location AS data_source_location,
                  ds.connection_status AS data_source_connection_status,
+                 ar.settings_snapshot AS settings_snapshot,
                  ar.settings_snapshot->>'preprocessingMode' AS preprocessing_mode,
                  ar.settings_snapshot->'preprocessingManifest' AS preprocessing_manifest,
                  ar.settings_snapshot->>'segmentationMode' AS segmentation_mode,
@@ -400,6 +435,7 @@ export class AudioAnalysisRepository {
                  ds.id AS data_source_id, ds.name AS data_source_name,
                  ds.source_type, ds.location AS data_source_location,
                  ds.connection_status AS data_source_connection_status,
+                 ar.settings_snapshot AS settings_snapshot,
                  ar.settings_snapshot->>'preprocessingMode' AS preprocessing_mode,
                  ar.settings_snapshot->'preprocessingManifest' AS preprocessing_manifest,
                  ar.settings_snapshot->>'segmentationMode' AS segmentation_mode,
@@ -451,6 +487,7 @@ export class AudioAnalysisRepository {
                  ds.id AS data_source_id, ds.name AS data_source_name,
                  ds.source_type, ds.location AS data_source_location,
                  ds.connection_status AS data_source_connection_status,
+                 ar.settings_snapshot AS settings_snapshot,
                  ar.settings_snapshot->>'preprocessingMode' AS preprocessing_mode,
                  ar.settings_snapshot->'preprocessingManifest' AS preprocessing_manifest,
                  ar.settings_snapshot->>'segmentationMode' AS segmentation_mode,
@@ -499,6 +536,7 @@ export class AudioAnalysisRepository {
                  ds.id AS data_source_id, ds.name AS data_source_name,
                  ds.source_type, ds.location AS data_source_location,
                  ds.connection_status AS data_source_connection_status,
+                 ar.settings_snapshot AS settings_snapshot,
                  ar.settings_snapshot->>'preprocessingMode' AS preprocessing_mode,
                  ar.settings_snapshot->'preprocessingManifest' AS preprocessing_manifest,
                  ar.settings_snapshot->>'segmentationMode' AS segmentation_mode,
@@ -548,6 +586,19 @@ export class AudioAnalysisRepository {
   }
 
   private mapClaimedTranscription(row: Record<string, any>): ClaimedAudioTranscription {
+    const settingsSnapshot =
+      typeof row.settings_snapshot === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(row.settings_snapshot) as Record<string, unknown>;
+            } catch {
+              return {};
+            }
+          })()
+        : row.settings_snapshot && typeof row.settings_snapshot === 'object'
+          ? row.settings_snapshot
+          : {};
+    const asrEnhancement = AsrEnhancementSnapshotSchema.safeParse(settingsSnapshot.asrEnhancement);
     return {
       audioFileId: row.audio_file_id,
       dataSource: row.data_source_id
@@ -618,6 +669,9 @@ export class AudioAnalysisRepository {
       runtimeMode: row.runtime_mode,
       storageBackend: row.storage_backend,
       storageBindingRevisionId: row.storage_binding_revision_id ?? null,
+      asrEnhancement: asrEnhancement.success
+        ? asrEnhancement.data
+        : { contextText: '', hotwords: [], defaultContextRevision: 0 },
     };
   }
 

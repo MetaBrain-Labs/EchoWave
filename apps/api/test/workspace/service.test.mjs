@@ -349,6 +349,7 @@ describe('DefaultAudioService audio transcription', () => {
       null,
       null,
       'zh-CN',
+      { contextText: '', hotwords: [], defaultContextRevision: 0 },
     ]);
     await assert.rejects(
       () =>

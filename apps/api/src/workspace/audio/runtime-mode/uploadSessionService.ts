@@ -334,6 +334,7 @@ export class AudioUploadSessionService {
         preprocessing: 'silero_vad',
         segmentationMode: 'speaker_turn',
         includeAcousticEmotion: session.includeAcousticEmotion,
+        asrEnhancement: session.asrEnhancement,
       });
     } catch (error) {
       // 并发 complete 可能都观察到空列表；已有 Run 即证明另一请求已完成排队。

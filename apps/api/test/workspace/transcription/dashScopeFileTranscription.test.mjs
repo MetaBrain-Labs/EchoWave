@@ -183,6 +183,35 @@ describe('DashScopeFileTranscription', () => {
     assert.equal(submittedBody.parameters.speaker_count, 3);
   });
 
+  it('sends context and instant vocabulary only for the frozen enhancement snapshot', async () => {
+    const requests = [];
+    const adapter = new DashScopeFileTranscription(
+      'secret',
+      'https://workspace.example.com/api/v1',
+      async (url, init) => {
+        requests.push({ url, init });
+        return new Response(JSON.stringify({ output: { task_id: 'task-context' } }), {
+          status: 200,
+        });
+      },
+      async () => undefined,
+    );
+    await adapter.submit('https://oss.example/audio.mp3', undefined, undefined, 'zh-CN', {
+      contextText: '这是售后回访，产品名包括回声盒。',
+      hotwords: ['回声盒', 'EchoWave'],
+      defaultContextRevision: 3,
+    });
+    const body = JSON.parse(requests[0].init.body);
+    assert.deepEqual(body.input.context, [
+      {
+        role: 'user',
+        content: [{ type: 'input_text', text: '这是售后回访，产品名包括回声盒。' }],
+      },
+    ]);
+    assert.deepEqual(body.parameters.vocabulary, { 回声盒: 4, EchoWave: 4 });
+    assert.deepEqual(body.parameters.special_word_filter, { system_reserved_filter: false });
+  });
+
   it('maps the frozen English analysis language to the provider hint', async () => {
     const requests = [];
     const adapter = new DashScopeFileTranscription(

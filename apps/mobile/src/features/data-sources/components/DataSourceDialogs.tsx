@@ -47,6 +47,7 @@ export type DataSourceFormValue = {
   name: string;
   description: string;
   customBusinessRoles?: string[];
+  asrHotwords?: string[];
 };
 type DataSourceFormSheetProps = {
   error: string;
@@ -115,6 +116,8 @@ function DataSourceFormSheetContent({
   const [customBusinessRoles, setCustomBusinessRoles] = useState(
     initialValue.customBusinessRoles ?? [],
   );
+  const [asrHotwords, setAsrHotwords] = useState((initialValue.asrHotwords ?? []).join('\n'));
+  const [asrHotwordsTouched, setAsrHotwordsTouched] = useState(false);
   const [roleDraft, setRoleDraft] = useState('');
   const [roleError, setRoleError] = useState('');
 
@@ -125,6 +128,18 @@ function DataSourceFormSheetContent({
         name: trimmedName,
         description: description.trim(),
         ...(mode === 'edit' ? { customBusinessRoles } : {}),
+        ...(mode === 'edit' && (initialValue.asrHotwords !== undefined || asrHotwordsTouched)
+          ? {
+              asrHotwords: [
+                ...new Set(
+                  asrHotwords
+                    .split(/[\n,，]+/u)
+                    .map((word) => word.trim())
+                    .filter(Boolean),
+                ),
+              ],
+            }
+          : {}),
       });
   };
   const addRole = () => {
@@ -218,6 +233,22 @@ function DataSourceFormSheetContent({
             />
             {mode === 'edit' ? (
               <View>
+                <Text style={styles.fieldLabel}>{t('sourceForm.asrHotwords')}</Text>
+                <TextInput
+                  accessibilityLabel={t('sourceForm.asrHotwords')}
+                  maxLength={2_000}
+                  multiline
+                  onChangeText={(value) => {
+                    setAsrHotwordsTouched(true);
+                    setAsrHotwords(value);
+                  }}
+                  placeholder={t('sourceForm.asrHotwordsPlaceholder')}
+                  placeholderTextColor={textColors.tertiary}
+                  style={styles.descriptionInput}
+                  textAlignVertical="top"
+                  value={asrHotwords}
+                />
+                <Text style={styles.roleHint}>{t('sourceForm.asrHotwordsHint')}</Text>
                 <Text style={styles.fieldLabel}>{t('sourceForm.roleDictionary')}</Text>
                 <Text style={styles.roleHint}>{t('sourceForm.coreRoles')}</Text>
                 <View style={styles.roleInputRow}>
@@ -548,10 +579,14 @@ export function LightweightUploadConfirmDialog({
 /** 确认唯一的 DashScope 整文件说话人分离转写。 */
 export function AudioTranscriptionConfirmDialog({
   audioTitle,
+  contextText,
   expectedSpeakerCount,
+  hotwords,
   includeAcousticEmotion = true,
   models,
   onCancel,
+  onContextTextChange,
+  onHotwordsChange,
   onConfirm,
   onExpectedSpeakerCountChange,
   onIncludeAcousticEmotionChange,
@@ -565,10 +600,14 @@ export function AudioTranscriptionConfirmDialog({
   onLanguageChange,
 }: {
   audioTitle: string;
+  contextText?: string;
   expectedSpeakerCount: string;
+  hotwords?: string;
   includeAcousticEmotion?: boolean;
   models: AudioTranscriptionModelCapability[];
   onCancel: () => void;
+  onContextTextChange?: (value: string) => void;
+  onHotwordsChange?: (value: string) => void;
   onConfirm: () => void;
   onExpectedSpeakerCountChange: (value: string) => void;
   onIncludeAcousticEmotionChange?: (value: boolean) => void;
@@ -608,6 +647,33 @@ export function AudioTranscriptionConfirmDialog({
             <Text style={styles.dialogBody}>
               {t('asr.confirmDescription', { title: audioTitle })}
             </Text>
+            <Text style={styles.transcriptionSectionTitle}>{t('asr.context')}</Text>
+            <TextInput
+              accessibilityLabel={t('asr.context')}
+              editable={!pending}
+              maxLength={400}
+              multiline
+              onChangeText={onContextTextChange}
+              placeholder={t('asr.contextPlaceholder')}
+              placeholderTextColor={textColors.tertiary}
+              style={styles.contextInput}
+              textAlignVertical="top"
+              value={contextText}
+            />
+            <Text style={styles.transcriptionSectionTitle}>{t('asr.hotwords')}</Text>
+            <TextInput
+              accessibilityLabel={t('asr.hotwords')}
+              editable={!pending}
+              maxLength={2_000}
+              multiline
+              onChangeText={onHotwordsChange}
+              placeholder={t('asr.hotwordsPlaceholder')}
+              placeholderTextColor={textColors.tertiary}
+              style={styles.contextInput}
+              textAlignVertical="top"
+              value={hotwords}
+            />
+            <Text style={styles.secondaryText}>{t('asr.hotwordsHint')}</Text>
             <Text style={styles.transcriptionSectionTitle}>{t('analysisLanguage.title')}</Text>
             <AnalysisLanguagePicker
               value={language}
@@ -848,6 +914,16 @@ const styles = StyleSheet.create({
     color: textColors.primary,
     fontFamily: fontFamilies.sans,
     minHeight: 88,
+    padding: spacing.base,
+  },
+  contextInput: {
+    ...typography.body,
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sans,
+    minHeight: 72,
     padding: spacing.base,
   },
   roleHint: {

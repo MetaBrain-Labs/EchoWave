@@ -10,6 +10,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type {
   AudioAnalysisBatch,
+  AudioAnalysisBatchCreateRequest,
   AudioFileSummary,
   DataSourceSummary,
   LinkedDataSourceGroup,
@@ -41,6 +42,7 @@ import {
   listDataSources,
 } from '@/shared/api/dataSourcesApi';
 import { getGroupSettings } from '@/shared/api/groupsApi';
+import { getAsrPreferences } from '@/shared/api/asrPreferencesApi';
 import { getAudioRuntime } from '@/shared/api/audioRuntimeApi';
 import { pickDocumentAsync } from '@/shared/files/documentPicker';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
@@ -79,6 +81,10 @@ export function AnalysisBatchCreateScreen({ onBack }: { onBack?: () => void }) {
   const [assets, setAssets] = useState<DocumentPicker.DocumentPickerAsset[]>([]);
   const [sourceKind, setSourceKind] = useState<'uploads' | 'existing_audio'>('uploads');
   const [analysisLanguage, setAnalysisLanguage] = useState<SupportedLanguage>(appLanguage);
+  const [asrContext, setAsrContext] = useState('');
+  const [asrContextLoaded, setAsrContextLoaded] = useState(false);
+  const [asrContextDirty, setAsrContextDirty] = useState(false);
+  const [asrHotwords, setAsrHotwords] = useState('');
   const [scheduled, setScheduled] = useState(false);
   const [scheduledText, setScheduledText] = useState('');
   const [runtimeMode, setRuntimeMode] = useState('');
@@ -109,6 +115,16 @@ export function AnalysisBatchCreateScreen({ onBack }: { onBack?: () => void }) {
       )
       .finally(() => setLoading(false));
   }, [t]);
+
+  useEffect(() => {
+    void getAsrPreferences()
+      .then((preference) => {
+        setAsrContext(preference.defaultContext);
+        setAsrContextLoaded(true);
+        setAsrContextDirty(false);
+      })
+      .catch(() => setAsrContextLoaded(false));
+  }, []);
 
   useEffect(() => {
     if (!sourceId) return;
@@ -349,7 +365,27 @@ export function AnalysisBatchCreateScreen({ onBack }: { onBack?: () => void }) {
         groupId,
         language: analysisLanguage,
         scheduledFor: plannedFor,
-        pipeline,
+        pipeline: {
+          ...pipeline,
+          transcriptPolicy:
+            (asrContextDirty || asrHotwords.trim() ? 'create_new' : pipeline.transcriptPolicy) as
+              AudioAnalysisBatchCreateRequest['pipeline']['transcriptPolicy'],
+        },
+        ...(asrContextLoaded || asrHotwords.trim()
+          ? {
+              asrEnhancement: {
+                ...(asrContextLoaded ? { contextText: asrContext } : {}),
+                additionalHotwords: [
+                  ...new Set(
+                    asrHotwords
+                      .split(/[\n,，]+/u)
+                      .map((word) => word.trim())
+                      .filter(Boolean),
+                  ),
+                ],
+              },
+            }
+          : {}),
       };
       const batch =
         sourceKind === 'uploads'
@@ -651,6 +687,37 @@ export function AnalysisBatchCreateScreen({ onBack }: { onBack?: () => void }) {
                   {incompatibility}
                 </Text>
               ) : null}
+              <Text style={styles.contextLabel}>{t('analysisBatch.asrContextLabel')}</Text>
+              <TextInput
+                accessibilityLabel={t('analysisBatch.asrContextLabel')}
+                editable={!submitting}
+                maxLength={400}
+                multiline
+                onChangeText={(value) => {
+                  setAsrContextLoaded(true);
+                  setAsrContextDirty(true);
+                  setAsrContext(value);
+                }}
+                placeholder={t('analysisBatch.asrContextPlaceholder')}
+                placeholderTextColor={textColors.tertiary}
+                style={styles.contextInput}
+                textAlignVertical="top"
+                value={asrContext}
+              />
+              <Text style={styles.contextLabel}>{t('analysisBatch.asrHotwordsLabel')}</Text>
+              <TextInput
+                accessibilityLabel={t('analysisBatch.asrHotwordsLabel')}
+                editable={!submitting}
+                maxLength={2_000}
+                multiline
+                onChangeText={setAsrHotwords}
+                placeholder={t('analysisBatch.asrHotwordsPlaceholder')}
+                placeholderTextColor={textColors.tertiary}
+                style={styles.contextInput}
+                textAlignVertical="top"
+                value={asrHotwords}
+              />
+              <Text style={styles.hint}>{t('analysisBatch.asrEnhancementHint')}</Text>
               <Text style={styles.hint}>
                 {t('analysisBatch.runtimeFrozen', {
                   mode: runtimeMode || t('analysisBatch.unknown'),
@@ -1010,6 +1077,15 @@ const styles = StyleSheet.create({
     borderRadius: radii.default,
     borderWidth: 1,
     color: textColors.primary,
+    padding: spacing.base,
+  },
+  contextInput: {
+    ...typography.body,
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    color: textColors.primary,
+    minHeight: 80,
     padding: spacing.base,
   },
   hint: { ...typography.description, color: textColors.secondary },

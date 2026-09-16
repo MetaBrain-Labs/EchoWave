@@ -10,7 +10,12 @@
  * Notes:
  * - 二进制写入和供应商对象校验由应用服务执行。
  */
-import type { AudioRuntimeMode, AudioUploadSessionCreateRequest } from '@echowave/contracts';
+import {
+  AsrEnhancementSchema,
+  type AudioRuntimeMode,
+  type AudioUploadSessionCreateRequest,
+  type AsrEnhancement,
+} from '@echowave/contracts';
 
 import { quoteIdentifier, type DatabasePool } from '../../../infrastructure/postgres.ts';
 import { WorkspaceRepositoryError } from '../../errors.ts';
@@ -31,6 +36,7 @@ export type StoredUploadSession = {
   status: 'created' | 'uploaded' | 'validating' | 'ready' | 'failed' | 'expired';
   expiresAt: Date;
   analysisTaskId: string | null;
+  asrEnhancement?: AsrEnhancement;
 };
 
 /** 持久化固定租户的上传会话。 */
@@ -204,6 +210,7 @@ export class AudioUploadSessionRepository {
         status: 'created',
         expiresAt: new Date(session.rows[0].expires_at),
         analysisTaskId,
+        asrEnhancement: input.asrEnhancement,
       };
     } catch (error) {
       await client.query('ROLLBACK');
@@ -228,6 +235,22 @@ export class AudioUploadSessionRepository {
     );
     const row = result.rows[0];
     if (!row) throw new WorkspaceRepositoryError('NOT_FOUND', '上传会话不存在。');
+    const requestSnapshot =
+      typeof row.request_snapshot === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(row.request_snapshot) as unknown;
+            } catch {
+              return undefined;
+            }
+          })()
+        : row.request_snapshot;
+    const parsedRequest =
+      requestSnapshot && typeof requestSnapshot === 'object' && !Array.isArray(requestSnapshot)
+        ? AsrEnhancementSchema.safeParse(
+            (requestSnapshot as Record<string, unknown>).asrEnhancement,
+          )
+        : { success: false as const };
     return {
       id: row.id,
       audioFileId: row.audio_file_id,
@@ -244,6 +267,7 @@ export class AudioUploadSessionRepository {
       status: row.status,
       expiresAt: new Date(row.expires_at),
       analysisTaskId: row.analysis_task_id ?? null,
+      asrEnhancement: parsedRequest.success ? parsedRequest.data : undefined,
     };
   }
 

@@ -125,10 +125,13 @@ export class AudioAutomationWorker {
   private async advanceTranscription(task: ClaimedAutomationTask): Promise<void> {
     let revisionId = task.analysisRevisionId;
     if (!revisionId) {
-      revisionId = await this.options.repository.reusableRevision(
-        task.audioFileId,
-        task.configuration.language,
-      );
+      revisionId =
+        (task.pipeline.transcriptPolicy ?? 'reuse_or_create') === 'reuse_or_create'
+          ? await this.options.repository.reusableRevision(
+              task.audioFileId,
+              task.configuration.language,
+            )
+          : null;
       const reused = Boolean(revisionId);
       if (!revisionId) {
         const queued = await this.options.audio.startAudioTranscription(
@@ -141,6 +144,7 @@ export class AudioAutomationWorker {
             language: task.configuration.language,
           },
           task.configuration.capabilityBindings,
+          task.configuration.asrEnhancement,
         );
         revisionId = queued.revisionId;
       }

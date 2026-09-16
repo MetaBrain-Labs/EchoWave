@@ -14,6 +14,7 @@ import { z } from 'zod';
 
 import { AudioFileSummarySchema } from './audio.ts';
 import { EntityIdSchema } from './common.ts';
+import { AsrHotwordsSchema } from './audio/asrEnhancement.ts';
 
 export const DataSourceTypeSchema = z.enum([
   'manual_upload',
@@ -69,12 +70,14 @@ export const DataSourceUpdateRequestSchema = z
     name: DataSourceNameSchema.optional(),
     description: DataSourceDescriptionSchema.optional(),
     customBusinessRoles: CustomBusinessRolesSchema.optional(),
+    asrHotwords: AsrHotwordsSchema.optional(),
   })
   .refine(
     (value) =>
       value.name !== undefined ||
       value.description !== undefined ||
-      value.customBusinessRoles !== undefined,
+      value.customBusinessRoles !== undefined ||
+      value.asrHotwords !== undefined,
     {
       message: '至少提供一个需要更新的字段。',
     },
@@ -118,6 +121,7 @@ export const DataSourceAnalysisSettingsSchema = z.object({
   sceneSegmentation: z.boolean(),
   skipInvalidAudio: z.boolean(),
   customBusinessRoles: CustomBusinessRolesSchema.default([]),
+  asrHotwords: AsrHotwordsSchema.default([]),
 });
 
 export const DataSourceDetailSchema = DataSourceSummarySchema.extend({

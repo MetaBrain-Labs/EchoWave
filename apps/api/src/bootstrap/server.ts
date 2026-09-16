@@ -43,6 +43,7 @@ const app = createApp(config, {
   remotePushEnabled: config.notifications.enabled,
   liveUpdateBroker: ragRuntime.liveUpdates,
   settingsService: ragRuntime.settingsService,
+  asrPreferenceRepository: ragRuntime.asrPreferenceRepository,
   trustedProxyCidrs: config.settingsSecurity.trustedProxyCidrs,
   ...(ragRuntime.dashScopeCallbackService
     ? { dashScopeCallbackService: ragRuntime.dashScopeCallbackService }

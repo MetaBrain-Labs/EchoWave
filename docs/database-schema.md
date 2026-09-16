@@ -28,6 +28,7 @@ tenants
  │   ├─ group_data_sources ─ data_sources
  │   └─ group_audio_links ─ audio_files
  ├─ data_sources ─ data_source_ingestion_runs
+ ├─ asr_preferences
  ├─ tenant_audio_runtime_settings
  ├─ audio_files ─ audio_upload_sessions
  │   └─ audio_analysis_revisions
@@ -121,7 +122,11 @@ Explicit audio sharing. Group-visible audio is the deduplicated union of this ta
 
 ### `data_sources`
 
-Stable business source with tenant identity, type, display metadata, analysis-language and role settings, status, archive state, and timestamps. Provider credentials are never stored on the source.
+Stable business source with tenant identity, type, display metadata, analysis-language, role settings, and a bounded `asr_hotwords` JSON array for source-specific terminology. Status, archive state, and timestamps are retained; provider credentials are never stored on the source.
+
+### `asr_preferences`
+
+One row per tenant for the shared default ASR context. `revision` enables optimistic concurrency for edits from multiple devices. The context is read when a task is created and frozen into its transcription revision; it is not sent to business-analysis models.
 
 ### `data_source_ingestion_runs`
 
@@ -145,7 +150,7 @@ Resumable upload handshake with expected size/hash, mode/backend, object or loca
 
 ### `audio_analysis_revisions`
 
-One versioned ASR pipeline attempt, also serving as the durable transcription queue. It freezes model/provider/binding, preprocessing mode, provider task ID, temporary object, VAD manifest, ordered checkpoints, progress, retries, errors, transcript publication, active confirmation, post-analysis pointers, and source cleanup.
+One versioned ASR pipeline attempt, also serving as the durable transcription queue. It freezes model/provider/binding, preprocessing mode, provider task ID, temporary object, VAD manifest, ordered checkpoints, progress, retries, errors, transcript publication, active confirmation, post-analysis pointers, source cleanup, and the merged `settings_snapshot.asrEnhancement` (context, hotwords, and default-context revision).
 
 Only one live transcription revision per audio is allowed. `FOR UPDATE SKIP LOCKED`, persisted provider deadlines, and checkpoints prevent duplicate submission and resume Polling or EventBridge completion after restart.
 

@@ -368,6 +368,7 @@ export class AudioTranscriptionWorker {
         },
         job.expectedSpeakerCount ?? undefined,
         job.language,
+        job.asrEnhancement,
       ),
     );
     const submittedAt = new Date();

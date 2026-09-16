@@ -80,6 +80,7 @@ export type DataSourceDetailView = {
   sceneSeparation: boolean;
   skipInvalidAudio: boolean;
   customBusinessRoles: string[];
+  asrHotwords: string[];
   audioItems: SourceAudioItem[];
   uploadRecords: UploadRecord[];
   linkedGroups: LinkedDataSourceGroup[];
@@ -190,6 +191,7 @@ export function toDataSourceDetailView(
     sceneSeparation: detail.settings.sceneSegmentation,
     skipInvalidAudio: detail.settings.skipInvalidAudio,
     customBusinessRoles: detail.settings.customBusinessRoles,
+    asrHotwords: detail.settings.asrHotwords,
     totalDuration: formatDuration(detail.metrics.totalDurationMs),
     audioItems: audioItems.map((audio) => toSourceAudioItem(audio, language)),
     uploadRecords: records.map((record) => {

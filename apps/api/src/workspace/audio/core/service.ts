@@ -29,6 +29,7 @@ import {
   type AudioTranscriptionStartRequest,
   type SupportedLanguage,
   type AudioTranscriptionStartResponse,
+  type AsrEnhancementSnapshot,
 } from '@echowave/contracts';
 import { stat } from 'node:fs/promises';
 import path from 'node:path';
@@ -44,6 +45,7 @@ import type { AudioCoreRepository } from './repository.ts';
 import type { SettingsService } from '../../../settings/service.ts';
 import { SettingsError } from '../../../settings/types.ts';
 import { PrimaryOssStore } from '../runtime-mode/primaryOssStore.ts';
+import { resolveAsrEnhancement } from '../transcription/asrEnhancement.ts';
 
 /** HTTP 音频流接口可读取的本地文件描述。 */
 export type AudioPlaybackFile = {
@@ -83,6 +85,7 @@ export interface AudioService {
     id: string,
     input: AudioTranscriptionStartRequest,
     frozenBindings?: FrozenAudioCapabilityBindings,
+    frozenAsrEnhancement?: AsrEnhancementSnapshot,
   ): Promise<AudioTranscriptionStartResponse>;
   listAudioTranscriptions(id: string): ReturnType<AudioAnalysisRepository['listTranscriptions']>;
   selectAudioTranscription(
@@ -293,9 +296,22 @@ export class DefaultAudioService implements AudioService {
     id: string,
     input: AudioTranscriptionStartRequest,
     frozenBindings?: FrozenAudioCapabilityBindings,
+    frozenAsrEnhancement?: AsrEnhancementSnapshot,
   ) {
     const request = AudioTranscriptionStartRequestSchema.parse(input);
     const assetRuntime = await this.audioAnalysisRepository.getAssetRuntime(id);
+    let asrEnhancement = frozenAsrEnhancement;
+    if (!asrEnhancement) {
+      const asrDefaults = this.audioAnalysisRepository.getAsrDefaults
+        ? await this.audioAnalysisRepository.getAsrDefaults(id)
+        : { defaultContext: '', defaultContextRevision: 0, defaultHotwords: [] };
+      asrEnhancement = resolveAsrEnhancement(
+        asrDefaults.defaultContext,
+        asrDefaults.defaultContextRevision,
+        asrDefaults.defaultHotwords,
+        request.asrEnhancement,
+      );
+    }
     const transcription = await this.settingsService.resolveCapability(
       'audio_transcription',
       frozenBindings?.transcription ?? undefined,
@@ -363,6 +379,7 @@ export class DefaultAudioService implements AudioService {
       emotion?.revisionId ?? null,
       emotion?.model ?? null,
       request.language,
+      asrEnhancement,
     );
   }
 

@@ -10,6 +10,7 @@
 import { z } from 'zod';
 
 import { EntityIdSchema, SupportedLanguageSchema } from '../common.ts';
+import { AsrEnhancementSchema } from './asrEnhancement.ts';
 
 export const AUDIO_TRANSCRIPTION_MODELS = ['qwen-audio-3.0-asr-flash-filetrans'] as const;
 export const QWEN_AUDIO_FILETRANS_MODEL = 'qwen-audio-3.0-asr-flash-filetrans' as const;
@@ -95,6 +96,7 @@ export const AudioTranscriptionStartRequestSchema = z
     segmentationMode: z.literal('speaker_turn').default('speaker_turn'),
     expectedSpeakerCount: z.number().int().min(2).max(100).optional(),
     language: SupportedLanguageSchema.default('zh-CN'),
+    asrEnhancement: AsrEnhancementSchema.optional(),
   })
   .superRefine((request, context) => {
     if (request.model !== undefined && request.model !== QWEN_AUDIO_FILETRANS_MODEL) {

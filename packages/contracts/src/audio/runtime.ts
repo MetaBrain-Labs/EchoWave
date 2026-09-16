@@ -13,6 +13,7 @@
 import { z } from 'zod';
 
 import { EntityIdSchema, SupportedLanguageSchema } from '../common.ts';
+import { AsrEnhancementSchema } from './asrEnhancement.ts';
 
 export const AudioRuntimeModeSchema = z.enum(['hybrid', 'object_storage', 'lightweight_local']);
 export const AudioSourceStateSchema = z.enum(['available', 'cleaned', 'missing']);
@@ -63,6 +64,7 @@ export const AudioUploadSessionCreateRequestSchema = z
     includeAcousticEmotion: z.boolean().default(true),
     postUploadAction: z.enum(['transcribe', 'store_only']).default('transcribe'),
     idempotencyKey: z.string().trim().min(1).max(160).optional(),
+    asrEnhancement: AsrEnhancementSchema.optional(),
   })
   .strict();
 
