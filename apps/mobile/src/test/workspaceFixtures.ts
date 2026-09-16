@@ -181,6 +181,7 @@ export const dataSourceDetailFixture: DataSourceDetail = {
     sceneSegmentation: true,
     skipInvalidAudio: true,
     customBusinessRoles: [],
+    asrHotwords: [],
   },
 };
 

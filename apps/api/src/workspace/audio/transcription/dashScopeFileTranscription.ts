@@ -15,7 +15,7 @@
 import { z } from 'zod';
 
 import type { TranscriptDraft } from './repository.ts';
-import type { SupportedLanguage } from '@echowave/contracts';
+import type { AsrEnhancementSnapshot, SupportedLanguage } from '@echowave/contracts';
 import {
   noOpSttRawResponseReporter,
   type SttRawResponseKind,
@@ -232,6 +232,11 @@ export class DashScopeFileTranscription {
     context?: DashScopeRawResponseContext,
     expectedSpeakerCount?: number,
     language: SupportedLanguage = 'zh-CN',
+    asrEnhancement: AsrEnhancementSnapshot = {
+      contextText: '',
+      hotwords: [],
+      defaultContextRevision: 0,
+    },
   ): Promise<string> {
     const response = await this.request(`${this.baseUrl}/services/audio/asr/transcription`, {
       method: 'POST',
@@ -243,12 +248,29 @@ export class DashScopeFileTranscription {
       },
       body: JSON.stringify({
         model: 'qwen-audio-3.0-asr-flash-filetrans',
-        input: { file_urls: [fileUrl] },
+        input: {
+          file_urls: [fileUrl],
+          ...(asrEnhancement.contextText
+            ? {
+                context: [
+                  {
+                    role: 'user',
+                    content: [{ type: 'input_text', text: asrEnhancement.contextText }],
+                  },
+                ],
+              }
+            : {}),
+        },
         parameters: {
           channel_id: [0],
           language_hints: [language === 'zh-CN' ? 'zh' : 'en'],
           diarization_enabled: true,
           special_word_filter: { system_reserved_filter: false },
+          ...(asrEnhancement.hotwords.length
+            ? {
+                vocabulary: Object.fromEntries(asrEnhancement.hotwords.map((word) => [word, 4])),
+              }
+            : {}),
           ...(expectedSpeakerCount === undefined ? {} : { speaker_count: expectedSpeakerCount }),
         },
       }),

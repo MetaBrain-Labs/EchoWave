@@ -12,6 +12,20 @@
 export { HelloResponseSchema, type HelloResponse } from './hello.ts';
 export * from './collection.ts';
 export {
+  AsrContextTextSchema,
+  AsrEnhancementSchema,
+  AsrEnhancementSnapshotSchema,
+  AsrHotwordsSchema,
+  AsrPreferenceSchema,
+  AsrPreferenceUpdateRequestSchema,
+  ASR_MAX_CONTEXT_CHARACTERS,
+  ASR_MAX_HOTWORDS,
+  type AsrEnhancement,
+  type AsrEnhancementSnapshot,
+  type AsrPreference,
+  type AsrPreferenceUpdateRequest,
+} from './audio/asrEnhancement.ts';
+export {
   ECHOWAVE_API_VERSION,
   HealthCapabilitiesSchema,
   HealthResponseSchema,

@@ -78,6 +78,7 @@ import {
   remountAudioSource,
   startAudioTranscription,
 } from '@/shared/api/audioAnalysisApi';
+import { getAsrPreferences } from '@/shared/api/asrPreferencesApi';
 import { getAudioRuntime } from '@/shared/api/audioRuntimeApi';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
@@ -185,6 +186,9 @@ export function DataSourceDetailScreen({
   const [audioRuntime, setAudioRuntime] = useState<AudioRuntimeOverview>();
   const [expectedSpeakerCount, setExpectedSpeakerCount] = useState('');
   const [analysisLanguage, setAnalysisLanguage] = useState<SupportedLanguage>(appLanguage);
+  const [transcriptionContext, setTranscriptionContext] = useState('');
+  const [transcriptionContextLoaded, setTranscriptionContextLoaded] = useState(false);
+  const [transcriptionHotwords, setTranscriptionHotwords] = useState('');
   const [startingTranscription, setStartingTranscription] = useState(false);
   const [unlinkTarget, setUnlinkTarget] = useState<LinkedDataSourceGroup>();
   const [switchTarget, setSwitchTarget] = useState<LinkedDataSourceGroup>();
@@ -477,6 +481,14 @@ export function DataSourceDetailScreen({
         if (!selection || selection.canceled) return;
         await remountAudioSource(target.id, selection.assets[0]!);
       }
+      const temporaryHotwords = [
+        ...new Set(
+          transcriptionHotwords
+            .split(/[\n,，]+/u)
+            .map((word) => word.trim())
+            .filter(Boolean),
+        ),
+      ];
       await startAudioTranscription(target.id, {
         model: DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
         includeAcousticEmotion,
@@ -484,6 +496,14 @@ export function DataSourceDetailScreen({
         segmentationMode: 'speaker_turn',
         language: analysisLanguage,
         ...(expectedSpeakerCount ? { expectedSpeakerCount: Number(expectedSpeakerCount) } : {}),
+        ...(transcriptionContextLoaded || temporaryHotwords.length
+          ? {
+              asrEnhancement: {
+                ...(transcriptionContextLoaded ? { contextText: transcriptionContext } : {}),
+                additionalHotwords: temporaryHotwords,
+              },
+            }
+          : {}),
       });
       setTranscriptionTarget(undefined);
       await load(false);
@@ -593,6 +613,16 @@ export function DataSourceDetailScreen({
     setExpectedSpeakerCount('');
     setIncludeAcousticEmotion(true);
     setAnalysisLanguage(appLanguage);
+    setTranscriptionHotwords('');
+    setTranscriptionContextLoaded(false);
+    void getAsrPreferences()
+      .then((preference) => {
+        setTranscriptionContext(preference.defaultContext);
+        setTranscriptionContextLoaded(true);
+      })
+      .catch(() => {
+        // 网络暂不可用时省略覆盖字段，让服务端继续使用租户默认设置。
+      });
     setTranscriptionTarget(target);
   };
 
@@ -782,6 +812,7 @@ export function DataSourceDetailScreen({
           name: source.name,
           description: source.description,
           customBusinessRoles: source.customBusinessRoles,
+          asrHotwords: source.asrHotwords,
         }}
         mode="edit"
         onClose={() => {
@@ -854,6 +885,13 @@ export function DataSourceDetailScreen({
         visible={Boolean(transcriptionTarget)}
         language={analysisLanguage}
         onLanguageChange={setAnalysisLanguage}
+        contextText={transcriptionContext}
+        hotwords={transcriptionHotwords}
+        onContextTextChange={(value) => {
+          setTranscriptionContextLoaded(true);
+          setTranscriptionContext(value);
+        }}
+        onHotwordsChange={setTranscriptionHotwords}
       />
       <LightweightUploadConfirmDialog
         includeAcousticEmotion={uploadIncludeAcousticEmotion}

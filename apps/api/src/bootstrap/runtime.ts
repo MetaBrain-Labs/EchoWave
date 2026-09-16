@@ -42,6 +42,7 @@ import { PushDeviceService } from '../notifications/service.ts';
 import { PushNotificationWorker } from '../notifications/worker.ts';
 import { AudioAnalysisRunsRepository } from '../workspace/audio/analysis-runs/repository.ts';
 import { AudioAnalysisRunsService } from '../workspace/audio/analysis-runs/service.ts';
+import { AsrPreferenceRepository } from '../workspace/audio/transcription/asrPreferenceRepository.ts';
 
 /** 装配完整 API 运行时，并返回服务器依赖、Worker 与关闭函数。 */
 export function createRagRuntime(config: ApiConfig) {
@@ -121,6 +122,11 @@ export function createRagRuntime(config: ApiConfig) {
     config.settingsSecurity.credentialMasterKey,
     config.settingsSecurity.configurationAdminToken,
     legacyConfiguration,
+  );
+  const asrPreferenceRepository = new AsrPreferenceRepository(
+    pool,
+    config.database.schema,
+    config.rag.tenantId,
   );
   const liveUpdates = new LiveUpdateBroker();
   const workerWakeup = new PostgresWorkerWakeup(pool, config.database.schema, config.rag.tenantId);
@@ -202,6 +208,7 @@ export function createRagRuntime(config: ApiConfig) {
     audioUploadService,
     settingsService,
     audioRuntimeService,
+    asrPreferenceRepository,
   );
   const audioAutomationWorker = new AudioAutomationWorker({
     repository: audioAutomationRepository,
@@ -255,6 +262,7 @@ export function createRagRuntime(config: ApiConfig) {
     liveUpdates,
     workerWakeup,
     settingsService,
+    asrPreferenceRepository,
     async close(): Promise<void> {
       await collection.worker.stop();
       await knowledge.disposeAnswers();

@@ -14,6 +14,7 @@ import { z } from 'zod';
 
 import { EntityIdSchema, SupportedLanguageSchema } from '../common.ts';
 import { AudioRuntimeModeSchema, AudioUploadSessionResponseSchema } from './runtime.ts';
+import { AsrEnhancementSchema, AsrEnhancementSnapshotSchema } from './asrEnhancement.ts';
 
 export const AudioAnalysisTaskStatusSchema = z.enum([
   'awaiting_upload',
@@ -48,7 +49,7 @@ export const AudioAnalysisPipelineOptionsSchema = z
     includeEmotion: z.boolean().default(true),
     includeRole: z.boolean().default(true),
     includeBusinessAnalysis: z.boolean().default(true),
-    transcriptPolicy: z.literal('reuse_or_create').default('reuse_or_create'),
+    transcriptPolicy: z.enum(['reuse_or_create', 'create_new']).default('reuse_or_create'),
   })
   .strict()
   .refine(
@@ -76,6 +77,7 @@ const AudioAnalysisBatchBaseSchema = z.object({
   groupId: EntityIdSchema,
   idempotencyKey: z.string().trim().min(1).max(160).optional(),
   language: SupportedLanguageSchema.default('zh-CN'),
+  asrEnhancement: AsrEnhancementSchema.optional(),
   scheduledFor: z.string().datetime().nullable().default(null),
   pipeline: AudioAnalysisPipelineOptionsSchema.default({
     confirmation: 'system_raw_snapshot',
@@ -176,6 +178,11 @@ export const AudioAnalysisBatchSchema = z
       tone: z.string().min(1),
       customTags: z.array(z.string()),
       knowledgeBaseIds: z.array(EntityIdSchema),
+      asrEnhancement: AsrEnhancementSnapshotSchema.default({
+        contextText: '',
+        hotwords: [],
+        defaultContextRevision: 0,
+      }),
       capabilityBindings: z.object({
         transcription: EntityIdSchema.nullable(),
         staging: EntityIdSchema.nullable(),

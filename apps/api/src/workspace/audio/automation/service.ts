@@ -18,6 +18,7 @@ import {
 import type { AudioUploadSessionService } from '../runtime-mode/uploadSessionService.ts';
 import type { AudioRuntimeService } from '../runtime-mode/service.ts';
 import type { AudioAutomationRepository } from './repository.ts';
+import type { AsrPreferenceRepository } from '../transcription/asrPreferenceRepository.ts';
 import { WorkspaceRepositoryError } from '../../errors.ts';
 import type { SettingsService } from '../../../settings/service.ts';
 import { SettingsError } from '../../../settings/types.ts';
@@ -29,6 +30,7 @@ export class AudioAutomationService {
     private readonly uploads: AudioUploadSessionService,
     private readonly settings: Pick<SettingsService, 'resolveCapability'>,
     private readonly runtime?: Pick<AudioRuntimeService, 'availabilityForMode'>,
+    private readonly asrPreferences?: Pick<AsrPreferenceRepository, 'get'>,
   ) {}
 
   /** 创建最多二十项的批次，并为上传来源返回逐文件上传目标。 */
@@ -50,7 +52,16 @@ export class AudioAutomationService {
       throw new WorkspaceRepositoryError('CONFLICT', '轻量本地模式不支持定时分析。');
     }
     const capabilities = await this.capabilitySnapshot();
-    const created = await this.repository.createBatch(input, capabilities, runtimeMode);
+    const asrPreference = (await this.asrPreferences?.get()) ?? {
+      defaultContext: '',
+      revision: 0,
+    };
+    const created = await this.repository.createBatch(
+      input,
+      capabilities,
+      runtimeMode,
+      asrPreference,
+    );
     const uploadTargets = [];
     if (input.source === 'uploads') {
       for (const item of input.items) {

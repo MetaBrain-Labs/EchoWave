@@ -8,7 +8,7 @@
 
 EchoWave 使用 PostgreSQL 作为权威业务存储，并通过 pgvector 支持知识库向量检索。完整结构分为三部分：
 
-- 应用业务 schema：55 张业务表，以及迁移入口创建的 `schema_migrations`。
+- 应用业务 schema：56 张业务表，以及迁移入口创建的 `schema_migrations`。
 - LangGraph 独立 schema：4 张 checkpoint 表，由 `PostgresSaver.setup()` 管理。
 - `public` schema：安装 `vector` 扩展，为 `document_chunks.embedding` 提供 `vector(1024)` 类型和 HNSW 索引能力。
 
@@ -283,8 +283,13 @@ group_data_sources 所关联数据源下的音频
 - `scene_segmentation_enabled`：是否启用场景分段。
 - `skip_invalid_audio`：是否跳过无效音频。
 - `custom_business_roles`：供角色识别使用的自定义角色 JSON 字符串数组，最多 16 项；核心角色不存入该字段。
+- `asr_hotwords`：数据源级 ASR 默认热词 JSON 字符串数组；只在新建转写版本时生效，不改写历史修订。
 
 数据源使用 `deleted_at` 软删除。API Key、密码、Authorization Header 等第三方凭据禁止写入本表。
+
+### `asr_preferences`
+
+每个租户一行的通用 ASR 默认上下文。`revision` 用于多设备编辑时的乐观并发控制；任务创建时读取并冻结上下文，后续设置变化不会影响已排队任务。该上下文只发给 ASR，不会发送给业务分析模型。
 
 页面指标全部动态计算：
 
@@ -358,7 +363,7 @@ group_data_sources 所关联数据源下的音频
 
 - `revision_no`：音频内递增版本号。
 - `transcription_model`、`analysis_model`：本次请求实际选择并在任务开始时固化的模型，不受后续默认配置变化影响。
-- `settings_snapshot`：对象类型的设置快照，记录预处理方式、固定识别语言、该模型声明的 diarization/时间戳能力，以及发布时实际是否收到 Speaker 和实际响应粒度；角色与情绪能力为 false。历史修订缺少新增实际能力字段时由读取层兼容推导。
+- `settings_snapshot`：对象类型的设置快照，记录预处理方式、固定识别语言、该模型声明的 diarization/时间戳能力，以及发布时实际是否收到 Speaker 和实际响应粒度；`asrEnhancement` 保存本次合并后的上下文、热词和默认上下文 revision。角色与情绪能力为 false。历史修订缺少新增实际能力字段时由读取层兼容推导。
 - `status`：`queued`、`transcribing`、`analyzing`、`ready` 或 `failed`。
 - `progress`：0 到 100。
 - `processing_stage`：进行中修订的 `queued`、`preprocessing`、`transcribing`、`awaiting_result`、`validating` 或 `publishing` 阶段；`correcting`、`splitting`、`merging` 仅兼容历史修订。`awaiting_result` 表示异步任务已提交，正在由 Polling 或 EventBridge 发现终态。Qwen Filetrans 仍接收一个流式生成的整段压缩音频，长音频业务分析另行按窗口保存 checkpoint。

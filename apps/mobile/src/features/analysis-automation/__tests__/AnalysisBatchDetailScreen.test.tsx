@@ -42,6 +42,7 @@ const configurationSnapshot = {
   tone: '专业',
   customTags: [],
   knowledgeBaseIds: [],
+  asrEnhancement: { contextText: '', hotwords: [], defaultContextRevision: 0 },
   capabilityBindings: {
     transcription: null,
     staging: null,
