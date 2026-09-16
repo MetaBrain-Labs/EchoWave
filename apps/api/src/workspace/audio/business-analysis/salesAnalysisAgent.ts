@@ -13,7 +13,8 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import { BUSINESS_ANALYSIS_MAX_LIMITATIONS } from '@echowave/contracts';
+import { BUSINESS_ANALYSIS_MAX_LIMITATIONS, type KnowledgeCategory } from '@echowave/contracts';
+import type { CategorySearchChoice } from '../../../knowledge/retrieval/categoryPolicy.ts';
 import type { AIMessageChunk } from '@langchain/core/messages';
 import { tool } from '@langchain/core/tools';
 import { concat } from '@langchain/core/utils/stream';
@@ -37,7 +38,12 @@ import type {
   BusinessAnalysisWindowResult,
   ClaimedBusinessAnalysisJob,
 } from './repository.ts';
-import { salesAnalysisContext, salesAnalysisInput, salesAnalysisRepairContext } from './CONTEXT.ts';
+import {
+  salesAnalysisContext,
+  salesAnalysisInput,
+  salesAnalysisRepairContext,
+  salesRetrievalPlanningContext,
+} from './CONTEXT.ts';
 import { buildBusinessAnalysisWindows, type BusinessAnalysisWindow } from './windowing.ts';
 
 const CoreSummaryTitleSchema = z.enum(['overall', 'strengths', 'improvements', 'risks', 'actions']);
@@ -110,7 +116,18 @@ const AgentResultSchema = z
   });
 
 const RetrievalPlanSchema = z.object({
-  queries: z.array(z.string().trim().min(1).max(1_500)).min(1).max(3),
+  queries: z
+    .array(
+      z.union([
+        z.string().trim().min(1).max(1_500),
+        z.object({
+          query: z.string().trim().min(1).max(1500),
+          categoryIds: z.array(z.string().uuid()).min(1).max(3),
+        }),
+      ]),
+    )
+    .min(1)
+    .max(3),
 });
 
 export class BusinessAnalysisProviderError extends Error {
@@ -359,7 +376,8 @@ export class SalesAnalysisAgent {
   async planRetrievalQueries(
     job: ClaimedBusinessAnalysisJob,
     recorder: AiExecutionRecorder = noOpAiExecutionRecorder,
-  ): Promise<string[]> {
+    categories: KnowledgeCategory[] = [],
+  ): Promise<(string | { query: string; categoryIds: string[] })[]> {
     const planningSegments =
       job.segments.length > 100
         ? [...job.segments.slice(0, 50), ...job.segments.slice(-50)]
@@ -372,17 +390,15 @@ export class SalesAnalysisAgent {
     const messages = [
       {
         role: 'system' as const,
-        content: [
-          'Extract only terms explicitly present in the confirmed sales transcript.',
-          'Identify product or service names, domain terminology, customer needs, objections, and the apparent sales stage.',
-          'Create one to three concise retrieval queries for a linked internal knowledge base.',
-          'Do not add facts or instructions from outside the transcript.',
-          'Return only JSON: {"queries":["string"]}.',
-        ].join('\n'),
+        content: salesRetrievalPlanningContext(),
       },
       {
         role: 'user' as const,
-        content: JSON.stringify({ transcript, analysisFocus: job.settings.contentFocus }),
+        content: JSON.stringify({
+          transcript,
+          analysisFocus: job.settings.contentFocus,
+          categoryCatalogue: categories,
+        }),
       },
     ];
     const startedAt = Date.now();
@@ -414,7 +430,22 @@ export class SalesAnalysisAgent {
       });
       const parsed = parseJsonObject(extractFinalMessageText([response]).text);
       const plan = RetrievalPlanSchema.safeParse(parsed);
-      return plan.success ? plan.data.queries : [];
+      if (
+        !plan.success ||
+        plan.data.queries.some(
+          (item) =>
+            typeof item !== 'string' &&
+            (new Set(item.categoryIds).size !== item.categoryIds.length ||
+              item.categoryIds.some(
+                (id) =>
+                  !categories.some(
+                    (category) => category.id === id && category.active && category.key !== 'test',
+                  ),
+              )),
+        )
+      )
+        return [];
+      return plan.data.queries;
     } catch (error) {
       modelCall.finish({
         status: 'failed',
@@ -431,7 +462,8 @@ export class SalesAnalysisAgent {
   async analyze(input: {
     job: ClaimedBusinessAnalysisJob;
     preRetrieved: RetrievalChunk[];
-    searchKnowledge: (query: string) => Promise<RetrievalChunk[]>;
+    searchKnowledge: (query: string, choice?: CategorySearchChoice) => Promise<RetrievalChunk[]>;
+    categories?: KnowledgeCategory[];
     recorder?: AiExecutionRecorder;
     windowResults?: BusinessAnalysisWindowResult[];
     onWindowComplete?: (window: BusinessAnalysisWindowResult) => Promise<void>;
@@ -445,7 +477,7 @@ export class SalesAnalysisAgent {
       input.preRetrieved.map((chunk) => [chunk.id, chunk] as const),
     );
     const searchKnowledge = tool(
-      async ({ query }) => {
+      async ({ query, categoryIds, broaden }) => {
         const startedAt = Date.now();
         const toolCall = beginAiToolCall(recorder, {
           name: 'search_knowledge',
@@ -460,7 +492,7 @@ export class SalesAnalysisAgent {
           },
         });
         try {
-          const chunks = await input.searchKnowledge(query);
+          const chunks = await input.searchKnowledge(query, { categoryIds, broaden });
           for (const chunk of chunks) retrievedForRepair.set(chunk.id, chunk);
           toolCall.finish({
             status: 'completed',
@@ -509,7 +541,11 @@ export class SalesAnalysisAgent {
         name: 'search_knowledge',
         description:
           'Search only the knowledge bases linked to the current group for passages relevant to this sales review.',
-        schema: z.object({ query: z.string().trim().min(1).max(1_500) }),
+        schema: z.object({
+          query: z.string().trim().min(1).max(1_500),
+          categoryIds: z.array(z.string().uuid()).min(1).max(3).optional(),
+          broaden: z.boolean().optional(),
+        }),
       },
     );
     const agent = createDeepAgent({
@@ -566,7 +602,12 @@ export class SalesAnalysisAgent {
     try {
       const executionStream = await agent.stream(
         {
-          messages: [{ role: 'user', content: salesAnalysisInput(input.job, input.preRetrieved) }],
+          messages: [
+            {
+              role: 'user',
+              content: salesAnalysisInput(input.job, input.preRetrieved, input.categories),
+            },
+          ],
         },
         {
           recursionLimit: 24,
@@ -726,7 +767,8 @@ export class SalesAnalysisAgent {
   private async analyzeHierarchical(input: {
     job: ClaimedBusinessAnalysisJob;
     preRetrieved: RetrievalChunk[];
-    searchKnowledge: (query: string) => Promise<RetrievalChunk[]>;
+    searchKnowledge: (query: string, choice?: CategorySearchChoice) => Promise<RetrievalChunk[]>;
+    categories?: KnowledgeCategory[];
     recorder: AiExecutionRecorder;
     windows: BusinessAnalysisWindow<ClaimedBusinessAnalysisJob['segments'][number]>[];
     windowResults?: BusinessAnalysisWindowResult[];
@@ -760,7 +802,11 @@ export class SalesAnalysisAgent {
             },
             {
               role: 'user' as const,
-              content: salesAnalysisInput(windowJob, input.preRetrieved.slice(0, 10)),
+              content: salesAnalysisInput(
+                windowJob,
+                input.preRetrieved.slice(0, 10),
+                input.categories,
+              ),
             },
           ],
           { signal: AbortSignal.timeout(ANALYSIS_MODEL_TIMEOUT_MS) },

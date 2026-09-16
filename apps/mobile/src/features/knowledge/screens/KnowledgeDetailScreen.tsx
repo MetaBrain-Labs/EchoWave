@@ -18,7 +18,8 @@ import { ActionSheet } from '@/shared/ui/ActionSheet';
 import { CollectionFolderRow } from '../components/CollectionFolderRow';
 import { KnowledgeCaseActions } from '../components/KnowledgeCaseActions';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   AppState,
@@ -61,7 +62,6 @@ import {
 } from '@/shared/theme/tokens';
 import { DocumentFormatIcon, DocumentStatusView } from '../components/DocumentUi';
 import { KnowledgeDocumentEditor } from '../components/KnowledgeDocumentEditor';
-import { KnowledgeBaseEditor } from '../components/KnowledgeBaseEditor';
 import { EmptyState } from '../components/EmptyState';
 import {
   KnowledgeGroupPicker,
@@ -283,6 +283,7 @@ export function KnowledgeDetailScreen({
   onViewRule,
   onOrganize,
   onEditCase,
+  onEditBase,
 }: {
   guideDemo?: boolean;
   knowledgeId: string;
@@ -296,6 +297,7 @@ export function KnowledgeDetailScreen({
   onViewRule?: (folder: CollectionFolder) => void;
   onOrganize?: (folder: CollectionFolder) => void;
   onEditCase?: (caseId: string) => void;
+  onEditBase?: () => void;
 }) {
   const { formatDateTime, formatNumber, t } = useAppLanguage();
   const [knowledge, setKnowledge] = useState<KnowledgeBaseDetail>();
@@ -317,7 +319,6 @@ export function KnowledgeDetailScreen({
   const [documentFilterVisible, setDocumentFilterVisible] = useState(false);
   const [searchVisible, setSearchVisible] = useState(false);
   const [switchTarget, setSwitchTarget] = useState<GroupSummary>();
-  const [editingBase, setEditingBase] = useState(false);
   const [actionDocument, setActionDocument] = useState<KnowledgeDocument>();
   const runInitialRequest = useInitialRequestLoading();
   const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } = useSwipePager({
@@ -365,6 +366,13 @@ export function KnowledgeDetailScreen({
     const task = setTimeout(() => void runInitialRequest(load), 0);
     return () => clearTimeout(task);
   }, [load, runInitialRequest]);
+  const focusedOnce = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (focusedOnce.current) void load(false);
+      focusedOnce.current = true;
+    }, [load]),
+  );
   const screenRefresh = useScreenRefresh(() => load(false));
 
   useEffect(() => {
@@ -816,15 +824,9 @@ export function KnowledgeDetailScreen({
           if (target) onOpenDocument(target.id);
         }}
       />
-      <KnowledgeBaseEditor
-        knowledge={knowledge}
-        visible={editingBase}
-        onClose={() => setEditingBase(false)}
-        onSaved={() => load()}
-      />
       <PageHeader
         onBack={onBack}
-        onMore={guideDemo ? undefined : () => setEditingBase(true)}
+        onMore={guideDemo ? undefined : onEditBase}
         onSearch={() => setSearchVisible(true)}
         searchLabel={t('knowledgeDetail.searchTitle')}
         title={knowledge.name}

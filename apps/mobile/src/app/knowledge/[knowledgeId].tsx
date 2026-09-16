@@ -21,8 +21,8 @@ import { firstRouteParam } from '@/shared/navigation/routeParams';
 export default function KnowledgeDetailRoute() {
   const router = useRouter();
   const params = useLocalSearchParams<{
-    groupId?: string | string[];
     guideDemo?: string | string[];
+    groupId?: string | string[];
     knowledgeId?: string | string[];
     origin?: string | string[];
   }>();
@@ -89,6 +89,17 @@ export default function KnowledgeDetailRoute() {
             origin: origin ?? 'knowledge-list',
             ...(groupId ? { groupId } : {}),
             ...(guideDemo ? { guideDemo: 'true' } : {}),
+          },
+        })
+      }
+      onEditBase={() =>
+        router.push({
+          pathname: '/knowledge/[knowledgeId]/edit',
+          params: {
+            knowledgeId: id,
+            origin: origin ?? 'knowledge-list',
+            ...(groupId ? { groupId } : {}),
+            ...(params.guideDemo ? { guideDemo: firstRouteParam(params.guideDemo) } : {}),
           },
         })
       }

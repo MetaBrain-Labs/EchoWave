@@ -10,6 +10,7 @@
  * - 当前入库 Graph 不使用持久化 checkpointer。
  */
 import { Annotation } from '@langchain/langgraph';
+import type { ClassificationSuggestion } from '@echowave/contracts';
 
 import type { AiExecutionRecorder } from '../../../ai-observability/executionReporter.ts';
 import type { EmbeddingBatchResult } from '../../embeddings/dashScopeEmbeddings.ts';
@@ -21,6 +22,7 @@ export const IngestionState = Annotation.Root({
   job: Annotation<ClaimedIngestionJob>(),
   source: Annotation<Buffer>(),
   parsed: Annotation<ParsedDocument>(),
+  categorySuggestion: Annotation<ClassificationSuggestion | undefined>(),
   embedding: Annotation<EmbeddingBatchResult>(),
   report: Annotation<AiExecutionRecorder>(),
 });

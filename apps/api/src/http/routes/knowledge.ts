@@ -24,6 +24,7 @@ import { streamSSE } from 'hono/streaming';
 import type { LiveUpdateBroker } from '../../infrastructure/liveUpdateBroker.ts';
 import type { KnowledgeService } from '../../knowledge/service.ts';
 import { entityId, errorBody } from '../response.ts';
+import { registerKnowledgeCategoryRoutes } from './knowledgeCategories.ts';
 import { nextLiveCursor, occurredAt, prepareSse, writeJsonSse } from '../sse.ts';
 
 /** 注册知识库目录、文档和问答路由。 */
@@ -32,6 +33,7 @@ export function registerKnowledgeRoutes(
   service: KnowledgeService,
   liveUpdates: LiveUpdateBroker,
 ): void {
+  if (service.categories) registerKnowledgeCategoryRoutes(app, service.categories);
   app.get('/api/knowledge-bases', async (context) =>
     context.json(await service.listKnowledgeBases()),
   );

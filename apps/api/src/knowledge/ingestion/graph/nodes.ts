@@ -11,15 +11,26 @@
  * - 节点依赖由工厂显式注入，不从组合根或全局配置读取。
  */
 import { readFile } from 'node:fs/promises';
+import type { ClassificationSuggestion } from '@echowave/contracts';
+import type { AiExecutionRecorder } from '../../../ai-observability/executionReporter.ts';
+import type {
+  ClaimedIngestionJob,
+  IngestionRepository,
+} from '../../persistence/ingestionRepository.ts';
+import type { ParsedDocument } from '../documentParser.ts';
 
 import { runReportedStep } from '../../../ai-runtime/reportedStep.ts';
 import type { DashScopeEmbeddings } from '../../embeddings/dashScopeEmbeddings.ts';
-import type { IngestionRepository } from '../../persistence/ingestionRepository.ts';
 import { DocumentParseError, parseKnowledgeDocument } from '../documentParser.ts';
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
 export type IngestionNodeOptions = {
+  suggestCategories?: (
+    job: ClaimedIngestionJob,
+    parsed: ParsedDocument,
+    report: AiExecutionRecorder,
+  ) => Promise<ClassificationSuggestion>;
   repository: IngestionRepository;
   embeddings: DashScopeEmbeddings;
   embeddingModel: string;
@@ -27,6 +38,24 @@ export type IngestionNodeOptions = {
 
 /** 创建由 graph 直接引用的命名入库节点。 */
 export function createIngestionNodes(options: IngestionNodeOptions) {
+  /** 分类失败不能阻断原有解析与向量发布。 */
+  async function classifyNode({ job, parsed, report }: any) {
+    if (job.caseId || !options.suggestCategories) return {};
+    if (job.categorySuggestion) return { categorySuggestion: job.categorySuggestion };
+    let categorySuggestion: ClassificationSuggestion;
+    try {
+      categorySuggestion = await options.suggestCategories(job, parsed, report);
+    } catch {
+      categorySuggestion = {
+        status: 'failed',
+        documentCategoryId: null,
+        sheets: [],
+        message: '类别建议暂时不可用，已保留继承分类，可重试。',
+      };
+    }
+    await options.repository.saveIngestionSuggestion?.(job, categorySuggestion);
+    return { categorySuggestion };
+  }
   async function validateNode({ job, report }: any) {
     const source = await runReportedStep(
       report,
@@ -156,12 +185,13 @@ export function createIngestionNodes(options: IngestionNodeOptions) {
     return { embedding };
   }
 
-  async function publishNode({ job, parsed, embedding, report }: any) {
+  async function publishNode({ job, parsed, embedding, report, categorySuggestion }: any) {
     await runReportedStep(
       report,
       'publish',
       () =>
         options.repository.publishRevision({
+          categorySuggestion,
           job,
           chunks: parsed.chunks,
           vectors: embedding.vectors,
@@ -193,6 +223,7 @@ export function createIngestionNodes(options: IngestionNodeOptions) {
   }
 
   return {
+    classifyNode,
     validateNode,
     parseNode,
     normalizeNode,

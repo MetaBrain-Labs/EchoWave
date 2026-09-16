@@ -30,6 +30,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { DocumentClassificationEditor } from '../components/DocumentClassificationEditor';
 import { PageTabs } from '@/shared/ui/PageTabs';
 
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
@@ -315,6 +316,14 @@ export function DocumentDetailScreen({
         title={document.title}
       />
       {guideDemo ? <GuideDemoBanner /> : null}
+      {!guideDemo && document.activeRevisionId ? (
+        <DocumentClassificationEditor
+          key={document.activeRevisionId}
+          knowledgeId={knowledgeId}
+          documentId={documentId}
+          onChanged={load}
+        />
+      ) : null}
       <PageTabs
         activeTab={activeTab}
         onChange={selectTab}

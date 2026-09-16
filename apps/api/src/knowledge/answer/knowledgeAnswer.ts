@@ -33,6 +33,7 @@ import {
 import type { ConversationRepository } from '../persistence/conversationRepository.ts';
 import { RagRepositoryError } from '../persistence/errors.ts';
 import type { KnowledgeSearchPort } from '../retrieval/port.ts';
+import { CategoryRetrievalPolicy, isTestSampleQuestion } from '../retrieval/categoryPolicy.ts';
 import type { RetrievalChunk } from '../retrieval/types.ts';
 import type { DeepSeekQueryAgent } from './deepSeekQueryAgent.ts';
 
@@ -165,6 +166,24 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
           chatBindingRevisionId: null,
         };
     const now = this.options.now ?? Date.now;
+    const categoryCatalogue = (await this.options.knowledgeRepository.availableCategories?.([
+      command.knowledgeBaseId,
+    ])) ?? { categories: [], versions: [] };
+    let categoryPolicy: CategoryRetrievalPolicy;
+    try {
+      categoryPolicy = new CategoryRetrievalPolicy(
+        categoryCatalogue.categories,
+        request.categoryIds,
+        isTestSampleQuestion(request.question),
+      );
+    } catch {
+      throw new RagRepositoryError('CONFLICT', '类别不属于当前知识库检索范围，请刷新后重试。');
+    }
+    const retrievalAudit: Record<string, unknown>[] = [];
+    const queryEmbeddings = new Map<
+      string,
+      Awaited<ReturnType<KnowledgeAnswerEmbeddings['embedQueryWithUsage']>>
+    >();
     const startedAt = now();
     const report = (this.options.reporter ?? noOpAiExecutionReporter).start({
       kind: 'rag-answer',
@@ -214,6 +233,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
     let runId: string;
     try {
       runId = await this.options.conversationRepository.beginRun({
+        categorySnapshot: categoryCatalogue.versions,
         knowledgeBaseId: command.knowledgeBaseId,
         conversationId: conversation.id,
         question: request.question,
@@ -253,13 +273,17 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
       let generated;
       try {
         generated = await runtime.agent.generate({
+          categories: categoryCatalogue.categories.filter(
+            (item) => item.active && (categoryPolicy.includeTestSamples || item.key !== 'test'),
+          ),
+          explicitCategoryIds: request.categoryIds,
           question: request.question,
           threadId: conversation.threadId,
           signal,
           diagnostics: report,
           maxSearchCalls: MAX_SEARCH_CALLS,
           maxCitations: MAX_CITATIONS,
-          searchKnowledge: async (query) => {
+          searchKnowledge: async (query, choice) => {
             const retrievalStartedAt = now();
             if (retrievalCalls >= MAX_SEARCH_CALLS) {
               retrievalLimited = true;
@@ -292,52 +316,107 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
             });
 
             try {
-              const embeddingStartedAt = now();
-              let embedded;
+              let filter;
               try {
-                embedded = await runtime.embeddings.embedQueryWithUsage(query, signal);
-                report.recordModelCall({
-                  name: 'query-embedding',
-                  provider: embedded.provider,
-                  model: embedded.model,
-                  status: 'completed',
-                  attempt: 1,
-                  durationMs: now() - embeddingStartedAt,
-                  inputTokens: embedded.tokens,
-                  outputTokens: null,
-                  estimatedCost: embedded.estimatedCost,
-                  input: { kind: 'embedding', texts: [query] },
-                  output: {
-                    vectorCount: embedded.vectors.length,
-                    dimensions: embedded.vectors[0]?.length ?? 0,
-                    tokens: embedded.tokens,
-                    estimatedCost: embedded.estimatedCost,
-                  },
-                  metadata: { dimensions: embedded.vectors[0]?.length ?? 0 },
-                });
-              } catch (error) {
-                report.recordModelCall({
-                  name: 'query-embedding',
-                  provider: 'dashscope',
-                  model: runtime.ragConfig.embeddingModel,
+                filter = categoryPolicy.resolve(query, choice);
+              } catch {
+                report.recordStep({
+                  name: 'retrieve-knowledge',
                   status: 'failed',
-                  attempt: 1,
-                  durationMs: now() - embeddingStartedAt,
-                  inputTokens: null,
-                  outputTokens: null,
-                  input: { kind: 'embedding', texts: [query] },
-                  output: { error },
+                  durationMs: now() - retrievalStartedAt,
+                  metadata: { call: retrievalCall, reason: 'invalid-category-scope' },
                 });
-                throw error;
+                return {
+                  chunks: [],
+                  error:
+                    'Select category IDs from the allowed catalogue. Expansion is permitted only once and never for an explicit filter.',
+                };
               }
-              embeddingTokens += embedded.tokens;
-              const chunks = await this.options.knowledgeRepository.search(
+              const embeddingStartedAt = now();
+              let embedded = queryEmbeddings.get(query);
+              if (!embedded) {
+                try {
+                  embedded = await runtime.embeddings.embedQueryWithUsage(query, signal);
+                  report.recordModelCall({
+                    name: 'query-embedding',
+                    provider: embedded.provider,
+                    model: embedded.model,
+                    status: 'completed',
+                    attempt: 1,
+                    durationMs: now() - embeddingStartedAt,
+                    inputTokens: embedded.tokens,
+                    outputTokens: null,
+                    estimatedCost: embedded.estimatedCost,
+                    input: { kind: 'embedding', texts: [query] },
+                    output: {
+                      vectorCount: embedded.vectors.length,
+                      dimensions: embedded.vectors[0]?.length ?? 0,
+                      tokens: embedded.tokens,
+                      estimatedCost: embedded.estimatedCost,
+                    },
+                    metadata: { dimensions: embedded.vectors[0]?.length ?? 0 },
+                  });
+                } catch (error) {
+                  report.recordModelCall({
+                    name: 'query-embedding',
+                    provider: 'dashscope',
+                    model: runtime.ragConfig.embeddingModel,
+                    status: 'failed',
+                    attempt: 1,
+                    durationMs: now() - embeddingStartedAt,
+                    inputTokens: null,
+                    outputTokens: null,
+                    input: { kind: 'embedding', texts: [query] },
+                    output: { error },
+                  });
+                  throw error;
+                }
+                embeddingTokens += embedded.tokens;
+                queryEmbeddings.set(query, embedded);
+              }
+              let chunks = await this.options.knowledgeRepository.search(
                 command.knowledgeBaseId,
                 embedded.vectors[0] ?? [],
                 runtime.ragConfig.embeddingModel,
+                filter,
               );
+              retrievalAudit.push({
+                call: retrievalCall,
+                query,
+                categoryIds: filter.categoryIds ?? null,
+                reason: filter.reason,
+                hitCount: chunks.length,
+                durationMs: now() - retrievalStartedAt,
+              });
+              if (!chunks.length && retrievalCalls < MAX_SEARCH_CALLS) {
+                const fallback = categoryPolicy.fallback('zero-hits');
+                if (fallback) {
+                  retrievalCalls += 1;
+                  const fallbackStartedAt = now();
+                  chunks = await this.options.knowledgeRepository.search(
+                    command.knowledgeBaseId,
+                    embedded.vectors[0] ?? [],
+                    runtime.ragConfig.embeddingModel,
+                    fallback,
+                  );
+                  filter = fallback;
+                  retrievalAudit.push({
+                    call: retrievalCalls,
+                    query,
+                    categoryIds: null,
+                    reason: fallback.reason,
+                    hitCount: chunks.length,
+                    durationMs: now() - fallbackStartedAt,
+                  });
+                }
+              }
               for (const chunk of chunks) retrieved.set(chunk.id, chunk);
               const output = {
+                actualScope: {
+                  categoryIds: filter.categoryIds ?? null,
+                  reason: filter.reason,
+                  includeTestSamples: filter.includeTestSamples,
+                },
                 chunks: chunks.map((chunk) => ({
                   chunkId: chunk.id,
                   documentTitle: chunk.documentTitle,
@@ -346,6 +425,8 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
                 })),
               };
               const summary = {
+                categoryIds: filter.categoryIds ?? null,
+                scopeReason: filter.reason,
                 call: retrievalCall,
                 queryLength: query.length,
                 hitCount: chunks.length,
@@ -520,6 +601,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
       report.recordStep({ name: 'audit-complete', status: 'started' });
       try {
         await this.options.conversationRepository.completeRun(runId, {
+          retrievalAudit,
           answer: response.answer,
           grounded: response.grounded,
           citedChunkIds: validIds,

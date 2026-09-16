@@ -366,3 +366,4 @@ export {
 export * from './collectionFolders.ts';
 
 export { RecordingDraftSchema, type RecordingDraft } from './audio/recording.ts';
+export * from './knowledgeCategory.ts';

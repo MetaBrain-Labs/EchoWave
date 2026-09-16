@@ -27,6 +27,8 @@ export class IngestionLeaseLostError extends Error {
 }
 /** worker 所持有的不可变版本和租约快照。 */
 export type ClaimedIngestionJob = {
+  caseId?: string | null;
+  categorySuggestion?: import('@echowave/contracts').ClassificationSuggestion | null;
   id: string;
   tenantId: string;
   knowledgeBaseId: string;
@@ -45,6 +47,7 @@ export type ClaimedIngestionJob = {
 };
 /** 已持久写入的版本输入；替换操作必须声明预期版本。 */
 export type CreateIngestionInput = {
+  classificationSourceRevisionId?: string;
   /** 内部案例版本定位，用于事务内幂等创建检索投影。 */
   caseVersionId?: string;
   knowledgeBaseId: string;
@@ -63,6 +66,7 @@ export type CreateIngestionInput = {
 };
 /** 全量分块与向量发布输入，任何不完整批次均不得切换 active 指针。 */
 type PublishInput = {
+  categorySuggestion?: import('@echowave/contracts').ClassificationSuggestion;
   job: ClaimedIngestionJob;
   chunks: ParsedChunkDraft[];
   vectors: number[][];
@@ -237,6 +241,13 @@ export class IngestionRepository {
         ],
       );
       const revisionId = revision.rows[0].id as string;
+      if (input.classificationSourceRevisionId) {
+        await client.query(
+          `UPDATE ${this.table('document_revisions')} target SET confirmed_category_id=source.confirmed_category_id,sheet_categories=source.sheet_categories,category_suggestion=source.category_suggestion
+          FROM ${this.table('document_revisions')} source WHERE target.tenant_id=$1 AND target.id=$2 AND source.tenant_id=target.tenant_id AND source.document_id=target.document_id AND source.id=$3`,
+          [this.tenantId, revisionId, input.classificationSourceRevisionId],
+        );
+      }
       if (input.caseVersionId) {
         await client.query(
           `UPDATE ${this.table('documents')} SET knowledge_case_id=(SELECT case_id FROM ${this.table('knowledge_case_versions')} WHERE tenant_id=$1 AND id=$2) WHERE tenant_id=$1 AND id=$3`,
@@ -343,12 +354,15 @@ export class IngestionRepository {
       FROM candidate,${this.table('document_revisions')} r
       WHERE j.id=candidate.id AND r.tenant_id=j.tenant_id AND r.document_id=j.document_id AND r.id=j.revision_id
       RETURNING j.*,r.title,r.format,r.size_bytes,r.storage_key,r.rebuild_snapshot,
-        r.embedding_model,r.embedding_binding_revision_id`,
+        r.embedding_model,r.embedding_binding_revision_id,r.category_suggestion,
+        (SELECT knowledge_case_id FROM ${this.table('documents')} d WHERE d.tenant_id=j.tenant_id AND d.id=j.document_id) AS case_id`,
       [this.tenantId],
     );
     const row = result.rows[0];
     if (!row) return undefined;
     return {
+      caseId: row.case_id ?? null,
+      categorySuggestion: row.category_suggestion ?? null,
       id: row.id,
       tenantId: row.tenant_id,
       knowledgeBaseId: row.knowledge_base_id,
@@ -410,7 +424,28 @@ export class IngestionRepository {
       client.release();
     }
   }
-  /** 全部向量准备完成后，原子切换 active 版本并排队清理旧数据。 */
+  /** 在租约边界内保存一次建议，向量阶段重试不得重复发起分类模型调用。 */
+  async saveIngestionSuggestion(
+    job: ClaimedIngestionJob,
+    suggestion: import('@echowave/contracts').ClassificationSuggestion,
+  ) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await this.ownedJob(client, job);
+      await client.query(
+        `UPDATE ${this.table('document_revisions')} SET category_suggestion=$3::jsonb WHERE tenant_id=$1 AND id=$2 AND category_suggestion IS NULL`,
+        [this.tenantId, job.revisionId, JSON.stringify(suggestion)],
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  /** 全部向量准备完成后原子发布，不让未确认建议覆盖人工分类。 */
   async publishRevision(input: PublishInput): Promise<void> {
     if (
       input.embeddingModel !== input.job.embeddingModel ||
@@ -457,7 +492,7 @@ export class IngestionRepository {
       await client.query(
         `UPDATE ${this.table('document_revisions')} SET status='ready',preview_text=$3,
         warnings=$4::jsonb,published_at=now(),embedding_provider=$5,embedding_tokens=$6,
-        embedding_cost_amount=$7,embedding_cost_currency=$8 WHERE tenant_id=$1 AND id=$2`,
+        embedding_cost_amount=$7,embedding_cost_currency=$8,category_suggestion=coalesce($9::jsonb,category_suggestion) WHERE tenant_id=$1 AND id=$2`,
         [
           this.tenantId,
           input.job.revisionId,
@@ -467,6 +502,7 @@ export class IngestionRepository {
           input.embeddingTokens,
           input.estimatedCost.amount,
           input.estimatedCost.currency,
+          input.categorySuggestion ? JSON.stringify(input.categorySuggestion) : null,
         ],
       );
       await client.query(

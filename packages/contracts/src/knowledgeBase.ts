@@ -18,13 +18,24 @@ import { EntityIdSchema } from './common.ts';
 export const KnowledgeBaseCreateRequestSchema = z.object({
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(1_000).default(''),
+  defaultCategoryId: EntityIdSchema.optional(),
 });
 
 /** 更新知识库的部分字段输入 schema，至少要求一个字段。 */
-export const KnowledgeBaseUpdateRequestSchema = KnowledgeBaseCreateRequestSchema.partial().refine(
-  (value) => Object.keys(value).length > 0,
-  { message: 'At least one field must be provided.' },
-);
+export const KnowledgeBaseUpdateRequestSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional(),
+    description: z.string().trim().max(1_000).optional(),
+    defaultCategoryId: EntityIdSchema.optional(),
+    expectedCategoryVersion: z.number().int().nonnegative().optional(),
+  })
+  .refine(
+    (value) =>
+      value.name !== undefined ||
+      value.description !== undefined ||
+      value.defaultCategoryId !== undefined,
+    { message: 'At least one field must be provided.' },
+  );
 
 /** 知识库当前只读的存储、检索和解析配置。 */
 export const KnowledgeBaseSettingsSchema = z.object({
@@ -46,6 +57,8 @@ export const KnowledgeBaseGroupLinkRequestSchema = z.object({
 
 /** 知识库列表和详情共用的摘要 schema。 */
 export const KnowledgeBaseSummarySchema = z.object({
+  defaultCategoryId: EntityIdSchema.nullable().optional(),
+  categoryVersion: z.number().int().nonnegative().optional(),
   id: EntityIdSchema,
   name: z.string(),
   description: z.string(),

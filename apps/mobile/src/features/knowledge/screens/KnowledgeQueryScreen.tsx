@@ -43,6 +43,7 @@ import {
 import { listQueryHistory, queryKnowledge } from '../apiClient';
 import { AnswerProgressCard } from '../components/AnswerProgressCard';
 import { CitationList } from '../components/CitationList';
+import { CategoryQueryFilter } from '../components/CategoryQueryFilter';
 import { QueryHistoryModal } from '../components/QueryHistoryModal';
 import { GuideDemoBanner } from '../components/GuideDemoBanner';
 import { guideDemoQueryResponse } from '../guideDemoData';
@@ -50,6 +51,7 @@ import { guideDemoQueryResponse } from '../guideDemoData';
 type Turn = {
   id: number;
   question: string;
+  categoryIds?: string[];
 } & (
   | { status: 'pending' }
   | { status: 'verified'; response: RagQueryResponse }
@@ -78,6 +80,7 @@ export function KnowledgeQueryScreen({
   const citationTargetRef = useStarterTourTarget('query-citation');
   const [question, setQuestion] = useState('');
   const [conversationId, setConversationId] = useState<string>();
+  const [categoryIds, setCategoryIds] = useState<string[]>([]);
   const [turns, setTurns] = useState<Turn[]>(
     guideDemo
       ? [
@@ -129,17 +132,17 @@ export function KnowledgeQueryScreen({
     scrollToLatest();
   }, [scrollToLatest, turns]);
 
-  const runTurn = async (turnId: number, value: string) => {
+  const runTurn = async (turnId: number, value: string, selectedCategories?: string[]) => {
     if (guideDemo) return;
     try {
-      const response = await queryKnowledge(knowledgeId, value, conversationId);
+      const response = selectedCategories?.length
+        ? await queryKnowledge(knowledgeId, value, conversationId, selectedCategories)
+        : await queryKnowledge(knowledgeId, value, conversationId);
       if (!mounted.current) return;
       setConversationId(response.conversationId);
       setTurns((items) =>
         items.map((item) =>
-          item.id === turnId
-            ? { id: item.id, question: item.question, status: 'verified', response }
-            : item,
+          item.id === turnId ? { ...item, status: 'verified', response } : item,
         ),
       );
       // 短暂呈现可证实的引用数量，再把同一轮原位替换为最终回答。
@@ -148,9 +151,7 @@ export function KnowledgeQueryScreen({
         if (!mounted.current) return;
         setTurns((items) =>
           items.map((item) =>
-            item.id === turnId
-              ? { id: item.id, question: item.question, status: 'completed', response }
-              : item,
+            item.id === turnId ? { ...item, status: 'completed', response } : item,
           ),
         );
         setActiveTurnId(undefined);
@@ -161,9 +162,7 @@ export function KnowledgeQueryScreen({
       const message = reason instanceof Error ? reason.message : t('knowledgeQuery.failed');
       setTurns((items) =>
         items.map((item) =>
-          item.id === turnId
-            ? { id: item.id, question: item.question, status: 'failed', error: message }
-            : item,
+          item.id === turnId ? { ...item, status: 'failed', error: message } : item,
         ),
       );
       setActiveTurnId(undefined);
@@ -178,20 +177,22 @@ export function KnowledgeQueryScreen({
     nextTurnId.current += 1;
     // 用户消息先进入本地会话，网络响应只更新这一轮的 Assistant 状态。
     setQuestion('');
-    setTurns((items) => [...items, { id: turnId, question: value, status: 'pending' }]);
+    const selectedCategories = categoryIds.length ? [...categoryIds] : undefined;
+    setTurns((items) => [
+      ...items,
+      { id: turnId, question: value, status: 'pending', categoryIds: selectedCategories },
+    ]);
     setActiveTurnId(turnId);
-    void runTurn(turnId, value);
+    void runTurn(turnId, value, selectedCategories);
   };
 
   const retryTurn = (turn: Turn) => {
     if (activeTurnId !== undefined) return;
     setTurns((items) =>
-      items.map((item) =>
-        item.id === turn.id ? { id: item.id, question: item.question, status: 'pending' } : item,
-      ),
+      items.map((item) => (item.id === turn.id ? { ...item, status: 'pending' } : item)),
     );
     setActiveTurnId(turn.id);
-    void runTurn(turn.id, turn.question);
+    void runTurn(turn.id, turn.question, turn.categoryIds);
   };
 
   const loadHistory = async () => {
@@ -240,6 +241,14 @@ export function KnowledgeQueryScreen({
           />
         </View>
         {guideDemo ? <GuideDemoBanner /> : null}
+        {!guideDemo ? (
+          <CategoryQueryFilter
+            knowledgeId={knowledgeId}
+            selected={categoryIds}
+            onChange={setCategoryIds}
+            disabled={activeTurnId !== undefined}
+          />
+        ) : null}
         <ScrollView
           alwaysBounceVertical
           contentContainerStyle={styles.content}
