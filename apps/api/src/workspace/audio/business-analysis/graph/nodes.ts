@@ -21,6 +21,12 @@ import {
 import type { DashScopeEmbeddings } from '../../../../knowledge/embeddings/dashScopeEmbeddings.ts';
 import type { KnowledgeSearchPort } from '../../../../knowledge/retrieval/port.ts';
 import type { RetrievalChunk } from '../../../../knowledge/retrieval/types.ts';
+import {
+  CategoryRetrievalPolicy,
+  type CategoryCatalogue,
+  type CategorySearchChoice,
+  type CategorySearchFilter,
+} from '../../../../knowledge/retrieval/categoryPolicy.ts';
 import type {
   BusinessAnalysisPublication,
   BusinessAnalysisRepository,
@@ -84,6 +90,85 @@ function localizeCoreSummaryTitle(title: string): string {
 
 /** 创建业务分析 Graph 使用的命名节点和条件路由函数。 */
 export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions) {
+  const policies = new Map<
+    string,
+    Promise<{ catalogue: CategoryCatalogue; policy: CategoryRetrievalPolicy }>
+  >();
+  const localCalls = new Map<string, number>();
+  const embeddings = new Map<string, Promise<number[]>>();
+  async function categoryRuntime(job: ClaimedBusinessAnalysisJob) {
+    let pending = policies.get(job.id);
+    if (!pending) {
+      pending = (async () => {
+        await options.repository.assertKnowledgeCurrent(job);
+        const catalogue = (await options.knowledgeRepository.availableCategories?.(
+          job.knowledgeBaseIds,
+        )) ?? { categories: [], versions: [] };
+        await options.repository.recordCategoryCatalogue?.(job.id, catalogue.versions);
+        return {
+          catalogue,
+          policy: new CategoryRetrievalPolicy(catalogue.categories, undefined, false),
+        };
+      })();
+      policies.set(job.id, pending);
+    }
+    return pending;
+  }
+  async function reserve(jobId: string) {
+    if (options.repository.reserveCategoryRetrieval)
+      return options.repository.reserveCategoryRetrieval(jobId);
+    const call = (localCalls.get(jobId) ?? 0) + 1;
+    localCalls.set(jobId, call);
+    return call <= 5 ? call : null;
+  }
+  /** 所有实际 SQL 都走同一额度与审计边界。 */
+  async function executeCategorySearch(
+    job: ClaimedBusinessAnalysisJob,
+    query: string,
+    embedding: number[],
+    filter: CategorySearchFilter,
+    report: AiExecutionRecorder,
+    reservedCall?: number,
+  ) {
+    const call = reservedCall ?? (await reserve(job.id));
+    if (call === null) {
+      report.recordToolCall({
+        name: 'search_knowledge',
+        status: 'failed',
+        summary: { reason: 'run-limit', limit: 5 },
+        input: { query },
+        output: [],
+      });
+      return [];
+    }
+    const startedAt = Date.now();
+    const chunks = await options.knowledgeRepository.searchMany(
+      job.knowledgeBaseIds,
+      embedding,
+      options.embeddingModel,
+      filter,
+    );
+    const audit = {
+      call,
+      query,
+      knowledgeBaseIds: job.knowledgeBaseIds,
+      categoryIds: filter.categoryIds ?? null,
+      includeTestSamples: filter.includeTestSamples,
+      reason: filter.reason,
+      hitCount: chunks.length,
+      durationMs: Date.now() - startedAt,
+    };
+    await options.repository.recordCategoryRetrieval?.(job.id, audit);
+    report.recordToolCall({
+      name: 'search_knowledge',
+      status: 'completed',
+      durationMs: audit.durationMs,
+      summary: audit,
+      input: { query, filter },
+      output: chunks,
+    });
+    return chunks;
+  }
   async function progress(jobId: string, value: number, context: BusinessAnalysisRuntime) {
     await options.repository.updateProgress(jobId, value);
     context.notifyProgress();
@@ -94,22 +179,57 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
     query: string,
     attempt: number,
     report: AiExecutionRecorder,
+    choice: CategorySearchChoice = {},
   ): Promise<RetrievalChunk[]> {
     await options.repository.assertKnowledgeCurrent(job);
     if (job.knowledgeBaseIds.length === 0) return [];
+    const { policy } = await categoryRuntime(job);
+    let filter: CategorySearchFilter;
+    try {
+      filter = policy.resolve(query, choice);
+    } catch {
+      return [];
+    }
+    if (
+      choice.broaden &&
+      options.repository.claimCategoryExpansion &&
+      !(await options.repository.claimCategoryExpansion(job.id))
+    )
+      return [];
+    // 先占用共享额度，再调用向量模型，避免预算耗尽后仍产生新 embedding 调用。
+    const reservedCall = await reserve(job.id);
+    if (reservedCall === null) {
+      report.recordToolCall({
+        name: 'search_knowledge',
+        status: 'failed',
+        summary: { reason: 'run-limit', limit: 5 },
+        input: { query },
+        output: [],
+      });
+      return [];
+    }
     const embeddingStartedAt = Date.now();
-    const embeddingCall = beginAiModelCall(report, {
-      name: 'business-analysis-query-embedding',
-      displayName: '将知识检索问题转换为语义向量',
-      provider: 'dashscope',
-      model: options.embeddingModel,
-      attempt,
-      reasoningMode: 'unsupported',
-    });
+    const cacheKey = `${job.id}:${query}`;
+    const cached = embeddings.get(cacheKey);
+    const embeddingCall = cached
+      ? undefined
+      : beginAiModelCall(report, {
+          name: 'business-analysis-query-embedding',
+          displayName: '将知识检索问题转换为语义向量',
+          provider: 'dashscope',
+          model: options.embeddingModel,
+          attempt,
+          reasoningMode: 'unsupported',
+        });
     let embedding: number[];
     try {
-      embedding = await options.embeddings.embedQuery(query);
-      embeddingCall.finish({
+      let pending = cached;
+      if (!pending) {
+        pending = options.embeddings.embedQuery(query);
+        embeddings.set(cacheKey, pending);
+      }
+      embedding = await pending;
+      embeddingCall?.finish({
         status: 'completed',
         durationMs: Date.now() - embeddingStartedAt,
         inputTokens: null,
@@ -118,7 +238,8 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
         output: { vectorCount: 1, dimensions: embedding.length },
       });
     } catch (error) {
-      embeddingCall.finish({
+      embeddings.delete(cacheKey);
+      embeddingCall?.finish({
         status: 'failed',
         durationMs: Date.now() - embeddingStartedAt,
         inputTokens: null,
@@ -137,17 +258,26 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
     });
     try {
       await options.repository.assertKnowledgeCurrent(job);
-      const chunks = await options.knowledgeRepository.searchMany(
-        job.knowledgeBaseIds,
-        embedding,
-        options.embeddingModel,
-      );
+      let chunks = await executeCategorySearch(job, query, embedding, filter, report, reservedCall);
+      if (!chunks.length) {
+        const fallback = policy.fallback('zero-hits');
+        if (
+          fallback &&
+          (!options.repository.claimCategoryExpansion ||
+            (await options.repository.claimCategoryExpansion(job.id)))
+        ) {
+          chunks = await executeCategorySearch(job, query, embedding, fallback, report);
+          filter = fallback;
+        }
+      }
       await options.repository.assertKnowledgeCurrent(job);
       searchCall.finish({
         status: 'completed',
         durationMs: Date.now() - searchStartedAt,
         summary: {
           attempt,
+          categoryIds: filter.categoryIds ?? null,
+          scopeReason: filter.reason,
           hitCount: chunks.length,
           audit: {
             query,
@@ -247,10 +377,15 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
     const context = runtime(graphRuntime.context);
     context.report.recordStep({ name: 'retrieval-planning', status: 'started' });
     try {
-      const plannedQueries = await options.agent.planRetrievalQueries(job, context.report);
+      const { catalogue } = await categoryRuntime(job);
+      const plannedQueries = await options.agent.planRetrievalQueries(
+        job,
+        context.report,
+        catalogue.categories.filter((item) => item.active && item.key !== 'test'),
+      );
       const queries =
         plannedQueries.length > 0
-          ? plannedQueries
+          ? plannedQueries.map((item) => (typeof item === 'string' ? item : item.query))
           : buildBusinessRetrievalQueries(job.settings.contentFocus, job.segments);
       context.report.recordStep({
         name: 'retrieval-planning',
@@ -258,7 +393,12 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
         metadata: { queryCount: queries.length, usedFallback: plannedQueries.length === 0 },
       });
       await progress(job.id, 15, context);
-      return { queries };
+      const queryCategoryIds = Object.fromEntries(
+        plannedQueries.flatMap((item) =>
+          typeof item === 'string' ? [] : [[item.query, item.categoryIds]],
+        ),
+      );
+      return { queries, queryCategoryIds };
     } catch (error) {
       context.report.recordStep({ name: 'retrieval-planning', status: 'failed' });
       throw error;
@@ -266,12 +406,18 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
   }
 
   async function retrieveQueryNode(
-    { job, retrievalAttempt, retrievalQuery }: any,
+    { job, retrievalAttempt, retrievalQuery, retrievalCategoryIds }: any,
     graphRuntime: any,
   ) {
     const context = runtime(graphRuntime.context);
     return {
-      retrievedChunks: await searchKnowledge(job, retrievalQuery, retrievalAttempt, context.report),
+      retrievedChunks: await searchKnowledge(
+        job,
+        retrievalQuery,
+        retrievalAttempt,
+        context.report,
+        { categoryIds: retrievalCategoryIds },
+      ),
     };
   }
 
@@ -287,11 +433,20 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
     let supplementalAttempt = queries.length;
     try {
       const draft = await options.agent.analyze({
+        categories: (await categoryRuntime(job)).catalogue.categories.filter(
+          (item) => item.active && item.key !== 'test',
+        ),
         job,
         preRetrieved: retrievedChunks,
-        searchKnowledge: async (query) => {
+        searchKnowledge: async (query, choice) => {
           supplementalAttempt += 1;
-          const chunks = await searchKnowledge(job, query, supplementalAttempt, context.report);
+          const chunks = await searchKnowledge(
+            job,
+            query,
+            supplementalAttempt,
+            context.report,
+            choice,
+          );
           additionalChunks.push(...chunks);
           return chunks;
         },
@@ -341,11 +496,16 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
     }
   }
 
-  function routeRetrieval({ job, queries }: any) {
+  function routeRetrieval({ job, queries, queryCategoryIds }: any) {
     if (job.knowledgeBaseIds.length === 0 || queries.length === 0) return 'deep_agent';
     return queries.map(
       (query: string, index: number) =>
-        new Send('retrieve_query', { job, retrievalAttempt: index + 1, retrievalQuery: query }),
+        new Send('retrieve_query', {
+          job,
+          retrievalAttempt: index + 1,
+          retrievalQuery: query,
+          retrievalCategoryIds: queryCategoryIds?.[query],
+        }),
     );
   }
 

@@ -128,7 +128,7 @@ export class KnowledgeRepository {
 
   async listKnowledgeBases() {
     const result = await this.pool.query(
-      `SELECT kb.id, kb.name, kb.description, kb.updated_at,
+      `SELECT kb.id, kb.name, kb.description, kb.updated_at, kb.default_category_id, kb.category_version,
               coalesce(document_stats.document_count, 0)::int AS document_count,
               coalesce(group_stats.linked_group_count, 0)::int AS linked_group_count
        FROM ${this.table('knowledge_bases')} kb
@@ -153,6 +153,8 @@ export class KnowledgeRepository {
         id: row.id,
         name: row.name,
         description: row.description,
+        defaultCategoryId: row.default_category_id ?? null,
+        categoryVersion: row.category_version ?? 0,
         documentCount: row.document_count,
         linkedGroupCount: row.linked_group_count,
         updatedAt: iso(row.updated_at),
@@ -162,7 +164,7 @@ export class KnowledgeRepository {
 
   async getKnowledgeBase(id: string): Promise<KnowledgeBaseDetail> {
     const result = await this.pool.query(
-      `SELECT kb.id, kb.name, kb.description, kb.updated_at,
+      `SELECT kb.id, kb.name, kb.description, kb.updated_at, kb.default_category_id, kb.category_version,
               kb.storage_location, kb.indexing_mode, kb.embedding_model,
               kb.reranker_model, kb.parsing_mode,
               coalesce(document_stats.document_count, 0)::int AS document_count,
@@ -198,6 +200,8 @@ export class KnowledgeRepository {
       id: row.id,
       name: row.name,
       description: row.description,
+      defaultCategoryId: row.default_category_id ?? null,
+      categoryVersion: row.category_version ?? 0,
       documentCount: row.document_count,
       linkedGroupCount: row.linked_group_count,
       updatedAt: iso(row.updated_at),
@@ -215,17 +219,68 @@ export class KnowledgeRepository {
     });
   }
 
+  /** 创建知识库，数据库校验默认类别归属与启用状态。 */
   async createKnowledgeBase(input: KnowledgeBaseCreateRequest) {
-    const result = await this.pool.query(
-      `INSERT INTO ${this.table('knowledge_bases')} (tenant_id, name, description)
-       VALUES ($1, $2, $3)
+    try {
+      const result = await this.pool.query(
+        `INSERT INTO ${this.table('knowledge_bases')} (tenant_id, name, description,default_category_id)
+       VALUES ($1, $2, $3, $4)
        RETURNING id`,
-      [this.tenantId, input.name, input.description],
-    );
-    return this.getKnowledgeBase(result.rows[0].id as string);
+        [this.tenantId, input.name, input.description, input.defaultCategoryId ?? null],
+      );
+      return await this.getKnowledgeBase(result.rows[0].id as string);
+    } catch (error) {
+      if (
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        (error.code === '23514' || error.code === '23503')
+      )
+        throw new RagRepositoryError('CONFLICT', '只能选择当前租户的启用类别。');
+      throw error;
+    }
   }
 
-  async updateKnowledgeBase(id: string, input: Partial<KnowledgeBaseCreateRequest>) {
+  async updateKnowledgeBase(
+    id: string,
+    input: Partial<KnowledgeBaseCreateRequest> & { expectedCategoryVersion?: number },
+  ) {
+    if (input.defaultCategoryId !== undefined) {
+      const client = await this.pool.connect();
+      try {
+        await client.query('BEGIN');
+        const current = await client.query(
+          `SELECT category_version FROM ${this.table('knowledge_bases')} WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NULL FOR UPDATE`,
+          [this.tenantId, id],
+        );
+        if (!current.rowCount) throw new RagRepositoryError('NOT_FOUND', '知识库不存在。');
+        if (current.rows[0].category_version !== input.expectedCategoryVersion)
+          throw new RagRepositoryError('CONFLICT', '知识库分类版本已变化，请刷新后重试。');
+        const category = await client.query(
+          `SELECT id FROM ${this.table('knowledge_categories')} WHERE tenant_id=$1 AND id=$2 AND active FOR SHARE`,
+          [this.tenantId, input.defaultCategoryId],
+        );
+        if (!category.rowCount)
+          throw new RagRepositoryError('CONFLICT', '只能选择当前租户的启用类别。');
+        await client.query(
+          `UPDATE ${this.table('knowledge_bases')} SET name=coalesce($3,name),description=coalesce($4,description),default_category_id=$5,updated_at=now() WHERE tenant_id=$1 AND id=$2`,
+          [
+            this.tenantId,
+            id,
+            input.name ?? null,
+            input.description ?? null,
+            input.defaultCategoryId,
+          ],
+        );
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+      return this.getKnowledgeBase(id);
+    }
     const result = await this.pool.query(
       `UPDATE ${this.table('knowledge_bases')}
        SET name = COALESCE($3, name), description = COALESCE($4, description), updated_at = now()

@@ -28,7 +28,8 @@ import { createDeepAgent } from 'deepagents';
 import { createMiddleware, modelCallLimitMiddleware, toolCallLimitMiddleware } from 'langchain';
 import { z } from 'zod';
 
-import type { SourceLocator } from '@echowave/contracts';
+import type { SourceLocator, KnowledgeCategory } from '@echowave/contracts';
+import type { CategorySearchChoice } from '../retrieval/categoryPolicy.ts';
 
 import {
   noOpAiExecutionRecorder,
@@ -45,6 +46,7 @@ import {
   citationCorrectionInput,
   knowledgeAgentContext,
   knowledgeFinalizationContext,
+  knowledgeCategoryRoutingContext,
 } from './CONTEXT.ts';
 
 const AgentResponseSchema = z.object({
@@ -213,24 +215,36 @@ export class DeepSeekQueryAgent {
   async generate(input: {
     question: string;
     threadId: string;
-    searchKnowledge: (query: string) => Promise<AgentSearchResult>;
+    searchKnowledge: (query: string, choice?: CategorySearchChoice) => Promise<AgentSearchResult>;
+    categories?: KnowledgeCategory[];
+    explicitCategoryIds?: string[];
     maxSearchCalls: number;
     maxCitations: number;
     signal?: AbortSignal;
     diagnostics?: AiExecutionRecorder;
   }): Promise<AgentGenerationResult> {
     const searchKnowledge = tool(
-      async ({ query }) => JSON.stringify(await input.searchKnowledge(query)),
+      async ({ query, categoryIds, broaden }) =>
+        JSON.stringify(await input.searchKnowledge(query, { categoryIds, broaden })),
       {
         name: 'search_knowledge',
         description:
           'Search the current Chinese knowledge base for source passages that can support the answer.',
-        schema: z.object({ query: z.string().min(1).max(2_000) }),
+        schema: z.object({
+          query: z.string().min(1).max(2_000),
+          categoryIds: z.array(z.string().uuid()).min(1).max(3).optional(),
+          broaden: z.boolean().optional(),
+        }),
       },
     );
 
     const responseSchema = boundedAgentResponseSchema(input.maxCitations);
-    const systemPrompt = knowledgeAgentContext(input.maxSearchCalls, input.maxCitations);
+    const systemPrompt = [
+      knowledgeAgentContext(input.maxSearchCalls, input.maxCitations),
+      knowledgeCategoryRoutingContext(),
+      `CATEGORY_CATALOGUE: ${JSON.stringify(input.categories ?? [])}`,
+      `EXPLICIT_CATEGORY_FILTER: ${JSON.stringify(input.explicitCategoryIds ?? null)}`,
+    ].join('\n');
     const agent = createDeepAgent({
       name: 'echowave-knowledge-agent',
       model: this.model,

@@ -30,6 +30,11 @@ export const BusinessAnalysisState = Annotation.Root({
   job: Annotation<ClaimedBusinessAnalysisJob>(),
   queries: Annotation<string[]>({ default: () => [], reducer: (_current, update) => update }),
   retrievalQuery: Annotation<string>(),
+  queryCategoryIds: Annotation<Record<string, string[]>>({
+    default: () => ({}),
+    reducer: (_current, update) => update,
+  }),
+  retrievalCategoryIds: Annotation<string[] | undefined>(),
   retrievalAttempt: Annotation<number>(),
   retrievedChunks: Annotation<RetrievalChunk[]>({
     default: () => [],

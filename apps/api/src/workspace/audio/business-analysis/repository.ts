@@ -181,6 +181,36 @@ export class BusinessAnalysisRepository {
   private table(name: string): string {
     return `${this.schema}.${quoteIdentifier(name)}`;
   }
+  /** 原子领取总共五次 SQL 检索额度，恢复和并行分支也共享同一预算。 */
+  async reserveCategoryRetrieval(jobId: string): Promise<number | null> {
+    const result = await this.pool.query(
+      `UPDATE ${this.table('audio_business_analysis_jobs')} SET category_retrieval_calls=category_retrieval_calls+1 WHERE tenant_id=$1 AND id=$2 AND status='running' AND NOT cancel_requested AND category_retrieval_calls<5 RETURNING category_retrieval_calls`,
+      [this.tenantId, jobId],
+    );
+    return result.rowCount ? Number(result.rows[0].category_retrieval_calls) : null;
+  }
+  /** 零命中及证据不足只可共享一次扩大范围，即使 Graph 恢复也不重置。 */
+  async claimCategoryExpansion(jobId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE ${this.table('audio_business_analysis_jobs')} SET category_fallback_used=true WHERE tenant_id=$1 AND id=$2 AND status='running' AND NOT cancel_requested AND NOT category_fallback_used RETURNING id`,
+      [this.tenantId, jobId],
+    );
+    return Boolean(result.rowCount);
+  }
+  /** 保存类别目录版本，正文仍通过既有 knowledge_version_snapshot 检查过期。 */
+  async recordCategoryCatalogue(jobId: string, snapshot: unknown) {
+    await this.pool.query(
+      `UPDATE ${this.table('audio_business_analysis_jobs')} SET category_snapshot=$3::jsonb WHERE tenant_id=$1 AND id=$2 AND status='running'`,
+      [this.tenantId, jobId, JSON.stringify(snapshot)],
+    );
+  }
+  /** 持久记录每次实际 SQL 范围与命中，避免只记录模型期望范围。 */
+  async recordCategoryRetrieval(jobId: string, audit: Record<string, unknown>) {
+    await this.pool.query(
+      `UPDATE ${this.table('audio_business_analysis_jobs')} SET retrieval_audit=retrieval_audit || $3::jsonb WHERE tenant_id=$1 AND id=$2`,
+      [this.tenantId, jobId, JSON.stringify([audit])],
+    );
+  }
 
   /** 获取检索白名单的版本；发布时共享锁与知识修改事务互斥。 */
   private async knowledgeVersions(

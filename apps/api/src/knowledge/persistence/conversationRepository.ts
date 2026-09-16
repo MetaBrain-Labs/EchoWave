@@ -107,12 +107,13 @@ export class ConversationRepository {
     chatProvider: string;
     embeddingBindingRevisionId: string | null;
     chatBindingRevisionId: string | null;
+    categorySnapshot?: unknown[];
   }): Promise<string> {
     const result = await this.pool.query(
       `INSERT INTO ${this.table('rag_runs')}
          (tenant_id, knowledge_base_id, conversation_id, question, embedding_model, chat_model,
-          chat_provider, status, embedding_binding_revision_id, chat_binding_revision_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,'running',$8,$9) RETURNING id`,
+          chat_provider, status, embedding_binding_revision_id, chat_binding_revision_id,category_snapshot)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'running',$8,$9,$10::jsonb) RETURNING id`,
       [
         this.tenantId,
         input.knowledgeBaseId,
@@ -123,6 +124,7 @@ export class ConversationRepository {
         input.chatProvider,
         input.embeddingBindingRevisionId,
         input.chatBindingRevisionId,
+        JSON.stringify(input.categorySnapshot ?? []),
       ],
     );
     return result.rows[0].id as string;
@@ -140,12 +142,13 @@ export class ConversationRepository {
       inputTokens: number;
       outputTokens: number;
       durationMs: number;
+      retrievalAudit?: Record<string, unknown>[];
     },
   ): Promise<void> {
     await this.pool.query(
       `UPDATE ${this.table('rag_runs')}
        SET answer=$3, grounded=$4, cited_chunk_ids=$5::jsonb, embedding_tokens=$6,
-           input_tokens=$7, output_tokens=$8, duration_ms=$9, status='completed', completed_at=now(), citation_snapshots=$10::jsonb
+           input_tokens=$7, output_tokens=$8, duration_ms=$9, status='completed', completed_at=now(), citation_snapshots=$10::jsonb,retrieval_audit=$11::jsonb
        WHERE tenant_id=$1 AND id=$2`,
       [
         this.tenantId,
@@ -158,6 +161,7 @@ export class ConversationRepository {
         input.outputTokens,
         input.durationMs,
         JSON.stringify(input.citations ?? []),
+        JSON.stringify(input.retrievalAudit ?? []),
       ],
     );
   }

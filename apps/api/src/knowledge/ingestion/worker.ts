@@ -28,10 +28,12 @@ import {
   type ClaimedIngestionJob,
 } from '../persistence/ingestionRepository.ts';
 import { createIngestionGraph } from './graph/graph.ts';
+import type { IngestionNodeOptions } from './graph/nodes.ts';
 
 const SAFETY_POLL_INTERVAL_MS = 15_000;
 
 type WorkerOptions = {
+  suggestCategories?: IngestionNodeOptions['suggestCategories'];
   repository: IngestionRepository;
   createEmbeddings?(job: ClaimedIngestionJob): Promise<DashScopeEmbeddings>;
   embeddings?: DashScopeEmbeddings;
@@ -145,6 +147,7 @@ export class IngestionWorker {
         : this.options.embeddings;
       if (!embeddings) throw new Error('Ingestion embeddings are unavailable.');
       const graph = createIngestionGraph({
+        suggestCategories: this.options.suggestCategories,
         repository: this.options.repository,
         embeddings,
         embeddingModel,

@@ -17,6 +17,9 @@ export const textColors = {
 } as const;
 
 export const colors = {
+  primary: '#2563EB',
+  primarySurface: '#EFF6FF',
+  primaryBorder: '#BFDBFE',
   background: '#f9f9f9',
   canvas: '#f9f9f9',
   card: '#ffffff',

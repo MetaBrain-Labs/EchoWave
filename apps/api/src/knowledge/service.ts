@@ -26,6 +26,7 @@ import {
 } from '@echowave/contracts';
 
 import type { KnowledgeAnswerModule } from './answer/knowledgeAnswer.ts';
+import type { KnowledgeCategoryService } from './categories/categoryService.ts';
 import type { IngestionRepository } from './persistence/ingestionRepository.ts';
 import type { KnowledgeRepository } from './catalog/knowledgeRepository.ts';
 import type { ConversationRepository } from './persistence/conversationRepository.ts';
@@ -50,6 +51,7 @@ export class UploadValidationError extends Error {
 
 /** Hono transport 使用的知识库应用接口。 */
 export type KnowledgeService = {
+  categories?: KnowledgeCategoryService;
   listKnowledgeBases(): ReturnType<KnowledgeRepository['listKnowledgeBases']>;
   getKnowledgeBase(id: string): ReturnType<KnowledgeRepository['getKnowledgeBase']>;
   createKnowledgeBase(
@@ -57,7 +59,7 @@ export type KnowledgeService = {
   ): ReturnType<KnowledgeRepository['createKnowledgeBase']>;
   updateKnowledgeBase(
     id: string,
-    input: Partial<KnowledgeBaseCreateRequest>,
+    input: Partial<KnowledgeBaseCreateRequest> & { expectedCategoryVersion?: number },
   ): ReturnType<KnowledgeRepository['updateKnowledgeBase']>;
   deleteKnowledgeBase(id: string): ReturnType<KnowledgeRepository['deleteKnowledgeBase']>;
   listDocuments(knowledgeBaseId: string): ReturnType<KnowledgeRepository['listDocuments']>;
@@ -157,6 +159,7 @@ export class DefaultKnowledgeService implements KnowledgeService {
     private readonly settings: Pick<SettingsService, 'resolveCapability'>,
     private readonly liveUpdates?: LiveUpdateBroker,
     private readonly legacyTempDirectory?: string,
+    readonly categories?: KnowledgeCategoryService,
   ) {}
 
   listKnowledgeBases() {
@@ -168,7 +171,10 @@ export class DefaultKnowledgeService implements KnowledgeService {
   createKnowledgeBase(input: KnowledgeBaseCreateRequest) {
     return this.repository.createKnowledgeBase(input);
   }
-  updateKnowledgeBase(id: string, input: Partial<KnowledgeBaseCreateRequest>) {
+  updateKnowledgeBase(
+    id: string,
+    input: Partial<KnowledgeBaseCreateRequest> & { expectedCategoryVersion?: number },
+  ) {
     return this.repository.updateKnowledgeBase(id, input);
   }
   deleteKnowledgeBase(id: string) {
@@ -307,6 +313,7 @@ export class DefaultKnowledgeService implements KnowledgeService {
       }
       const embedding = await this.settings.resolveCapability('knowledge_embedding');
       const result = await this.ingestionRepository.createIngestion({
+        classificationSourceRevisionId: source.revision.id,
         knowledgeBaseId,
         documentId,
         ...input,

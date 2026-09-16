@@ -233,3 +233,17 @@ Remove-Item Env:ECHOWAVE_LIVE_KNOWLEDGE_TEST
 ```
 
 The test reads API `.env`, requires existing pgvector, and creates/removes only its random test schema. Ordinary checks skip this opt-in integration.
+
+## Category migration and regression
+
+Migration `040_knowledge_categories.sql` assigns legacy libraries to general knowledge without bulk model classification or re-embedding. Catalogue entries, revision overrides, suggestions and confirmation history are independent of text. Triggers maintain effective chunk category/provenance and atomically advance knowledge versions. Deactivation preserves historical assignments but forbids new ones; the general category remains active.
+
+Back up storage and stop old workers before applying ordered migrations and starting the updated API. Existing documents can request and confirm suggestions from their detail panel. This opt-in test creates and removes only a random isolated schema, leaving the business schema untouched:
+
+```powershell
+$env:ECHOWAVE_LIVE_KNOWLEDGE_TEST = '1'
+pnpm --filter @echowave/api exec node --test --test-isolation=none test/knowledge/categories/category.integration.test.mjs
+Remove-Item Env:ECHOWAVE_LIVE_KNOWLEDGE_TEST
+```
+
+Regression covers mixed-category filters, inheritance precedence, confirmation/version conflicts, cross-tenant rejection, test-fixture exclusion, unchanged text/vectors and filtered SQL query plans.

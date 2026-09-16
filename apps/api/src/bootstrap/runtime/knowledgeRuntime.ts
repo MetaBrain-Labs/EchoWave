@@ -11,6 +11,10 @@
  * - 数据库连接、checkpoint 和报告器由顶层组合根创建。
  */
 import type { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
+import { ChatDeepSeek } from '@langchain/deepseek';
+import { KnowledgeCategoryRepository } from '../../knowledge/categories/categoryRepository.ts';
+import { KnowledgeCategoryService } from '../../knowledge/categories/categoryService.ts';
+import { KnowledgeClassifier } from '../../knowledge/categories/classifier.ts';
 
 import type { AiExecutionReporter } from '../../ai-observability/executionReporter.ts';
 import type { ApiConfig } from '../../config/env.ts';
@@ -49,10 +53,36 @@ export function createKnowledgeRuntime(options: KnowledgeRuntimeOptions) {
     config.database.schema,
     config.rag.tenantId,
   );
+  const categoryRepository = new KnowledgeCategoryRepository(
+    pool,
+    config.database.schema,
+    config.rag.tenantId,
+  );
+  const classifier = new KnowledgeClassifier(async () => {
+    const chat = await settingsService.resolveCapability('knowledge_chat');
+    if (chat.provider.type !== 'deepseek' || !('apiKey' in chat.provider.credential))
+      throw new Error('Resolved classification provider is incompatible.');
+    return {
+      name: chat.model,
+      model: new ChatDeepSeek({
+        apiKey: chat.provider.credential.apiKey,
+        model: chat.model,
+        maxTokens: 1024,
+        configuration: { baseURL: (chat.provider.config as { baseUrl: string }).baseUrl },
+        modelKwargs: { thinking: { type: 'disabled' }, response_format: { type: 'json_object' } },
+      }),
+    };
+  });
   const knowledgeSearch = new PostgresKnowledgeSearch(
     pool,
     config.database.schema,
     config.rag.tenantId,
+  );
+  const categories = new KnowledgeCategoryService(
+    categoryRepository,
+    classifier,
+    reporter,
+    knowledgeSearch,
   );
   const ingestionRepository = new IngestionRepository(
     pool,
@@ -108,6 +138,8 @@ export function createKnowledgeRuntime(options: KnowledgeRuntimeOptions) {
     reporter,
   });
   const worker = new IngestionWorker({
+    suggestCategories: async (job, parsed, report) =>
+      classifier.suggest(job.title, parsed.chunks, (await categoryRepository.list()).items, report),
     repository: ingestionRepository,
     createEmbeddings: async (job) => {
       const resolved = await settingsService.resolveCapability(
@@ -139,6 +171,7 @@ export function createKnowledgeRuntime(options: KnowledgeRuntimeOptions) {
     settingsService,
     liveUpdates,
     config.rag.uploadTempDir,
+    categories,
   );
   const cleanupWorker = new KnowledgeCleanupWorker(
     new KnowledgeCleanupRepository(pool, config.database.schema, config.rag.tenantId),

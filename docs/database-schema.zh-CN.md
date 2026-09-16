@@ -617,3 +617,17 @@ Remove-Item Env:ECHOWAVE_LIVE_KNOWLEDGE_TEST
 ```
 
 测试只读取 API `.env`，要求数据库已安装 pgvector，仅创建及删除随机测试 schema；普通检查默认跳过此显式启用的集成测试。
+
+## 类别迁移与回归
+
+`040_knowledge_categories.sql` 将旧库默认归入通用资料，不触发全量分类或 embedding 重建。类别目录、revision 覆盖、建议和确认历史独立于正文；触发器维护块的有效类别和来源，并原子递增知识版本。停用类别保留历史归属，不允许新分配；通用资料不能停用。
+
+部署时先备份并停止旧 worker，应用有序迁移后启动新版 API。已有文档可在详情内按需获取并确认建议。以下测试只创建、验证并删除随机隔离 schema，不修改业务 schema：
+
+```powershell
+$env:ECHOWAVE_LIVE_KNOWLEDGE_TEST = '1'
+pnpm --filter @echowave/api exec node --test --test-isolation=none test/knowledge/categories/category.integration.test.mjs
+Remove-Item Env:ECHOWAVE_LIVE_KNOWLEDGE_TEST
+```
+
+回归验证混合类别过滤、继承优先级、确认与版本冲突、跨租户拒绝、测试样例隔离、正文和向量不变，以及过滤 SQL 的执行计划。

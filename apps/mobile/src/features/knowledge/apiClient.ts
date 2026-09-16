@@ -27,6 +27,12 @@ import {
   KnowledgeDocumentListResponseSchema,
   RagHistoryResponseSchema,
   RagQueryResponseSchema,
+  KnowledgeCategoryListSchema,
+  KnowledgeCategorySchema,
+  DocumentClassificationSchema,
+  type KnowledgeCategoryCreate,
+  type KnowledgeCategoryUpdate,
+  type DocumentClassificationUpdate,
 } from '@echowave/contracts';
 
 import { request as workspaceRequest } from '@/shared/api/request';
@@ -104,6 +110,56 @@ async function request<T>(
 
 export const listKnowledgeBases = () =>
   request('/api/knowledge-bases', KnowledgeBaseListResponseSchema);
+
+/** 类别目录不是文件夹目录，停用项仍保留历史归属。 */
+export const listKnowledgeCategories = () =>
+  request('/api/knowledge-categories', KnowledgeCategoryListSchema);
+/** 只列出当前知识库实际可检索类别。 */
+export const listRetrievalCategories = (knowledgeId: string) =>
+  request(`/api/knowledge-bases/${knowledgeId}/categories`, KnowledgeCategoryListSchema);
+/** 创建包含用途说明的自定义类别。 */
+export const createKnowledgeCategory = (input: KnowledgeCategoryCreate) =>
+  request('/api/knowledge-categories', KnowledgeCategorySchema, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+/** 类别改名、用途维护及停用必须检查版本。 */
+export const updateKnowledgeCategory = (id: string, input: KnowledgeCategoryUpdate) =>
+  request(`/api/knowledge-categories/${id}`, KnowledgeCategorySchema, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+/** 获取活动 revision 的人工分类和非生效建议。 */
+export const getDocumentClassification = (knowledgeId: string, documentId: string) =>
+  request(
+    `/api/knowledge-bases/${knowledgeId}/documents/${documentId}/classification`,
+    DocumentClassificationSchema,
+  );
+/** 确认分类或恢复继承，不触发 embedding。 */
+export const updateDocumentClassification = (
+  knowledgeId: string,
+  documentId: string,
+  input: DocumentClassificationUpdate,
+) =>
+  request(
+    `/api/knowledge-bases/${knowledgeId}/documents/${documentId}/classification`,
+    DocumentClassificationSchema,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  );
+/** 已有文档的分类建议只在用户请求时生成。 */
+export const suggestDocumentClassification = (knowledgeId: string, documentId: string) =>
+  request(
+    `/api/knowledge-bases/${knowledgeId}/documents/${documentId}/classification/suggest`,
+    DocumentClassificationSchema,
+    { method: 'POST' },
+    40000,
+  );
 export const createKnowledgeBase = (name: string, description: string) =>
   request('/api/knowledge-bases', KnowledgeBaseDetailSchema, {
     method: 'POST',
@@ -218,14 +274,23 @@ export const retryDocument = (knowledgeId: string, documentId: string) =>
   );
 
 /** 提交问题并读取完整、已通过服务器引用校验的最终回答 JSON。 */
-export const queryKnowledge = (knowledgeId: string, question: string, conversationId?: string) =>
+export const queryKnowledge = (
+  knowledgeId: string,
+  question: string,
+  conversationId?: string,
+  categoryIds?: string[],
+) =>
   request(
     `/api/knowledge-bases/${knowledgeId}/query`,
     RagQueryResponseSchema,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question, ...(conversationId ? { conversationId } : {}) }),
+      body: JSON.stringify({
+        question,
+        ...(conversationId ? { conversationId } : {}),
+        ...(categoryIds?.length ? { categoryIds } : {}),
+      }),
     },
     50_000,
   );
@@ -235,11 +300,16 @@ export const listQueryHistory = (knowledgeId: string) =>
   request(`/api/knowledge-bases/${knowledgeId}/query-history`, RagHistoryResponseSchema);
 
 /** 更新知识库已有元信息，不重建向量。 */
-export const updateKnowledgeBase = (knowledgeId: string, name: string, description: string) =>
+export const updateKnowledgeBase = (
+  knowledgeId: string,
+  name: string,
+  description: string,
+  classification?: { defaultCategoryId: string; expectedCategoryVersion: number },
+) =>
   request(`/api/knowledge-bases/${knowledgeId}`, KnowledgeBaseDetailSchema, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, description }),
+    body: JSON.stringify({ name, description, ...classification }),
   });
 /** 文件名参与 embedding，改名返回新版本处理任务。 */
 export const renameDocument = (

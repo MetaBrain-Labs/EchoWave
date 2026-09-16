@@ -165,6 +165,8 @@ create table public.audio_analysis_batches (
   canceled_at timestamp with time zone,
   created_at timestamp with time zone not null default now(),
   updated_at timestamp with time zone not null default now(),
+  idempotency_key text,
+  request_snapshot jsonb,
   foreign key (tenant_id, data_source_id) references public.data_sources (tenant_id, id)
   match simple on update no action on delete no action,
   foreign key (tenant_id) references public.tenants (id)
@@ -173,6 +175,7 @@ create table public.audio_analysis_batches (
   match simple on update no action on delete no action
 );
 create unique index audio_analysis_batches_tenant_id_id_key on audio_analysis_batches using btree (tenant_id, id);
+create unique index audio_analysis_batch_request_identity on audio_analysis_batches using btree (tenant_id, idempotency_key) WHERE (idempotency_key IS NOT NULL);
 
 create table public.audio_analysis_revisions (
   id uuid primary key not null default gen_random_uuid(),
@@ -541,6 +544,9 @@ create table public.audio_upload_sessions (
   created_at timestamp with time zone not null default now(),
   completed_at timestamp with time zone,
   analysis_task_id uuid,
+  post_upload_action text not null default 'transcribe'::text,
+  idempotency_key text,
+  request_snapshot jsonb,
   foreign key (tenant_id, analysis_task_id) references public.audio_analysis_tasks (tenant_id, id)
   match simple on update no action on delete no action,
   foreign key (tenant_id, audio_file_id) references public.audio_files (tenant_id, id)
@@ -550,6 +556,7 @@ create table public.audio_upload_sessions (
 );
 create unique index audio_upload_sessions_tenant_id_id_key on audio_upload_sessions using btree (tenant_id, id);
 create index audio_upload_sessions_expiry_idx on audio_upload_sessions using btree (tenant_id, status, expires_at);
+create unique index audio_upload_session_request_identity on audio_upload_sessions using btree (tenant_id, idempotency_key) WHERE (idempotency_key IS NOT NULL);
 
 create table public.business_analysis_citations (
   tenant_id uuid not null,
@@ -609,6 +616,38 @@ create table public.business_analysis_tags (
 );
 create unique index business_analysis_tags_tenant_id_job_id_tag_index_key on business_analysis_tags using btree (tenant_id, job_id, tag_index);
 create unique index business_analysis_tags_tenant_id_job_id_id_key on business_analysis_tags using btree (tenant_id, job_id, id);
+
+create table public.collection_case_folders (
+  tenant_id uuid not null,
+  folder_id uuid not null,
+  case_id uuid not null,
+  origin text not null,
+  rule_version integer,
+  rule_snapshot jsonb,
+  created_at timestamp with time zone not null default now(),
+  primary key (tenant_id, folder_id, case_id),
+  foreign key (tenant_id, case_id) references public.knowledge_cases (tenant_id, id)
+  match simple on update no action on delete no action,
+  foreign key (tenant_id, folder_id) references public.collection_folders (tenant_id, id)
+  match simple on update no action on delete no action
+);
+create index collection_case_folder_lookup on collection_case_folders using btree (tenant_id, case_id);
+
+create table public.collection_folders (
+  id uuid primary key not null default gen_random_uuid(),
+  tenant_id uuid not null,
+  knowledge_base_id uuid not null,
+  kind text not null,
+  rule_id uuid,
+  created_at timestamp with time zone not null default now(),
+  foreign key (tenant_id, knowledge_base_id) references public.knowledge_bases (tenant_id, id)
+  match simple on update no action on delete no action,
+  foreign key (tenant_id, rule_id) references public.collection_rules (tenant_id, id)
+  match simple on update no action on delete no action
+);
+create unique index collection_folders_tenant_id_id_key on collection_folders using btree (tenant_id, id);
+create unique index collection_folder_rule_identity on collection_folders using btree (tenant_id, knowledge_base_id, rule_id) WHERE (kind = 'rule'::text);
+create unique index collection_folder_special_identity on collection_folders using btree (tenant_id, knowledge_base_id, kind) WHERE (kind <> 'rule'::text);
 
 create table public.collection_rules (
   id uuid primary key not null default gen_random_uuid(),

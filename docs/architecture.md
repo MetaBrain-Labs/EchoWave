@@ -132,3 +132,17 @@ Document writes allocate a monotonic version and immutable revision input. The l
 Deletion commits the document tombstone and durable cleanup tasks together. Retrieval checks tenant, knowledge-base ownership, document lifecycle, active revision and embedding model. PostgreSQL chunks include vectors; the cleanup worker removes them and the version's local original file with retries. Historical document/revision records and AI results remain.
 
 RAG runs and business analyses persist title, quote and locator snapshots. Citation reads use those snapshots and derive source status from document/revision audit records, so cleanup cannot erase historical evidence. Business-analysis fingerprints include knowledge content versions; knowledge changes mark historical results stale and require a new analysis input instead of resuming old evidence.
+
+## Semantic knowledge categories and scoped retrieval
+
+Migration `040_knowledge_categories.sql` adds tenant category catalogues, knowledge-base defaults, revision-level document and worksheet overrides, model suggestions and confirmation history. Confirmed worksheet overrides take precedence over document overrides and knowledge-base defaults. Suggestions do not change effective categories before confirmation. Collection folders remain provenance organization; projected cases inherit the destination knowledge-base default.
+
+The ingestion Graph's `classify` node reuses `knowledge_chat` for one bounded suggestion request, fairly sampling every worksheet within a 12000-character content budget. Persisted suggestions survive ingestion retries; classification failures do not block vector publication. Existing documents request suggestions explicitly. Renames inherit their source revision classification; file replacements do not.
+
+Question-answering selects up to three categories through the existing search tool. Business analysis extends its existing planning request with category choices. The server validates choices within the current or linked knowledge-base whitelist and applies SQL category filters alongside tenant, document lifecycle, active revision and embedding-model checks. Ordinary factual tasks exclude classified test fixtures.
+
+Automatic routing shares one expansion for zero hits or insufficient evidence, reusing query embeddings. Explicit filters never expand. Question-answering retains its four-search budget; business analysis shares five SQL searches across up to three proactive and two supplemental searches, including expansion. Business budgets and expansion flags survive recovery and parallel branches. Knowledge content versions cover classification/catalogue changes so stale analysis cannot publish.
+
+`/api/knowledge-categories` supports creation and versioned maintenance without hard deletion. `/api/knowledge-bases/:knowledgeBaseId/categories` lists retrievable categories. Document `classification` resources read/confirm overrides; `classification/suggest` requests suggestions. Query requests accept optional `categoryIds`. Metadata updates preserve text, embeddings, content hashes and historical citation snapshots.
+
+The category index complements HNSW iterative scans. Fewer irrelevant results do not imply proportional scan-cost reductions; verify with isolated fixtures and query plans.

@@ -10,14 +10,17 @@
  * - 仅使用固定固件和模拟 API，不连接真实服务。
  */
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
-import { updateKnowledgeBase } from '../../apiClient';
+import { updateKnowledgeBase, listKnowledgeCategories } from '../../apiClient';
 import { knowledge } from '../../testing/fixtures';
 import { KnowledgeBaseEditor } from '../KnowledgeBaseEditor';
 
 jest.mock('../../apiClient');
 
 describe('KnowledgeBaseEditor', () => {
-  beforeEach(() => jest.resetAllMocks());
+  beforeEach(() => {
+    jest.resetAllMocks();
+    jest.mocked(listKnowledgeCategories).mockResolvedValue({ items: [] });
+  });
   it('submits metadata without starting document processing', async () => {
     jest.mocked(updateKnowledgeBase).mockResolvedValue(knowledge);
     const onSaved = jest.fn();
@@ -41,6 +44,7 @@ describe('KnowledgeBaseEditor', () => {
     expect(props.onClose).not.toHaveBeenCalled();
     screen.rerender(<KnowledgeBaseEditor {...props} visible={false} />);
     screen.rerender(<KnowledgeBaseEditor {...props} visible />);
+    await waitFor(() => expect(listKnowledgeCategories).toHaveBeenCalledTimes(2));
     expect(screen.getByDisplayValue(knowledge.name)).toBeTruthy();
   });
 });

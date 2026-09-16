@@ -13,12 +13,14 @@
 import { z } from 'zod';
 
 import { EntityIdSchema } from './common.ts';
+import { KnowledgeCategoryFilterSchema } from './knowledgeCategory.ts';
 import { CitationSnapshotFields, SourceLocatorSchema } from './document.ts';
 
 /** 用户提交知识库问题的最终 JSON 请求 schema。 */
 export const RagQueryRequestSchema = z.object({
   question: z.string().trim().min(1).max(2_000),
   conversationId: EntityIdSchema.optional(),
+  categoryIds: KnowledgeCategoryFilterSchema.optional(),
 });
 /** 可信回答中一个已验证引用的 schema。 */
 export const RagCitationSchema = z.object({

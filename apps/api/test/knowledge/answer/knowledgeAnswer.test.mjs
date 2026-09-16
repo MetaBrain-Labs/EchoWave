@@ -113,6 +113,113 @@ function createHarness({
   };
 }
 
+it('counts category expansion in the existing budget, reuses embeddings and persists actual scopes', async () => {
+  const categoryId = '88888888-8888-4888-8888-888888888888';
+  const filters = [];
+  let embeddings = 0;
+  const harness = createHarness({
+    repositoryOverrides: {
+      availableCategories: async () => ({
+        categories: [
+          {
+            id: categoryId,
+            key: 'product',
+            name: '产品',
+            description: 'Product facts',
+            active: true,
+            version: 0,
+          },
+        ],
+        versions: [{ id: knowledgeBaseId, version: 2, categoryVersion: 1 }],
+      }),
+      search: async (_kb, _vector, _model, filter) => {
+        filters.push(filter);
+        return [];
+      },
+    },
+    embeddingOverrides: {
+      embedQueryWithUsage: async () => {
+        embeddings++;
+        return { vectors: [[1]], tokens: 7, provider: 'test', model: 'test' };
+      },
+    },
+    agentOverrides: {
+      generate: async ({ searchKnowledge }) => {
+        await searchKnowledge('价格', { categoryIds: [categoryId] });
+        assert.match((await searchKnowledge('价格', { broaden: true })).error, /Expansion/);
+        await searchKnowledge('价格', { categoryIds: [categoryId] });
+        assert.match((await searchKnowledge('价格')).error, /limit/);
+        return {
+          candidate: { answer: '不足', grounded: false, citedChunkIds: [] },
+          usage: { inputTokens: 0, outputTokens: 0 },
+        };
+      },
+    },
+  });
+  try {
+    await harness.answers.answer({ knowledgeBaseId, request: { question: '产品价格' } });
+    assert.equal(embeddings, 1);
+    assert.equal(filters.length, 3);
+    assert.deepEqual(
+      filters.map((filter) => filter.reason),
+      ['auto', 'zero-hits', 'auto'],
+    );
+    const completed = harness.events.find(
+      (event) => Array.isArray(event) && event[0] === 'complete',
+    )[1];
+    assert.equal(completed.retrievalAudit.length, 3);
+    assert.equal(completed.embeddingTokens, 7);
+  } finally {
+    await harness.answers.dispose();
+  }
+});
+
+it('never broadens an explicit category filter even if the agent asks for expansion', async () => {
+  const categoryId = '88888888-8888-4888-8888-888888888888';
+  const filters = [];
+  const harness = createHarness({
+    repositoryOverrides: {
+      availableCategories: async () => ({
+        categories: [
+          {
+            id: categoryId,
+            key: 'product',
+            name: '产品',
+            description: 'facts',
+            active: true,
+            version: 0,
+          },
+        ],
+        versions: [],
+      }),
+      search: async (_kb, _vector, _model, filter) => {
+        filters.push(filter);
+        return [];
+      },
+    },
+    agentOverrides: {
+      generate: async ({ searchKnowledge }) => {
+        await searchKnowledge('价格', { broaden: true });
+        return {
+          candidate: { answer: '不足', grounded: false, citedChunkIds: [] },
+          usage: { inputTokens: 0, outputTokens: 0 },
+        };
+      },
+    },
+  });
+  try {
+    await harness.answers.answer({
+      knowledgeBaseId,
+      request: { question: '价格', categoryIds: [categoryId] },
+    });
+    assert.equal(filters.length, 1);
+    assert.deepEqual(filters[0].categoryIds, [categoryId]);
+    assert.equal(filters[0].reason, 'explicit');
+  } finally {
+    await harness.answers.dispose();
+  }
+});
+
 describe('trusted knowledge answer module', () => {
   it('resolves dynamic providers only when an answer is requested', async () => {
     const events = [];
