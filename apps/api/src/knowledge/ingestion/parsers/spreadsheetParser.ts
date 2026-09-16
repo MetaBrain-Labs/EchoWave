@@ -5,6 +5,7 @@
  *
  * Responsibilities:
  * - 限制工作表与单元格数量并保留公式警告。
+ * - 将工作表说明和每条数据行转换为互不混杂的语义段。
  *
  * Notes:
  * - 只使用公式缓存结果，不计算公式。
@@ -20,8 +21,9 @@ import { DocumentParseError, type SemanticSection } from '../parserTypes.ts';
 
 const MAX_VISIBLE_WORKSHEETS = 50;
 const MAX_NON_EMPTY_CELLS = 200_000;
-const MAX_CHARS = 1_200;
 const SPREADSHEET_MAIN_NAMESPACE = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+
+type SpreadsheetRow = { number: number; values: string[] };
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -123,6 +125,58 @@ function spreadsheetCellText(cell: ExcelJS.Cell, warnings: string[]): string {
   return String(value);
 }
 
+/** 把表格上方的标题与说明合并为独立语义段，避免在每条记录中重复注入。 */
+function appendPreambleSection(
+  sections: SemanticSection[],
+  sheet: ExcelJS.Worksheet,
+  rows: SpreadsheetRow[],
+): void {
+  if (rows.length === 0) return;
+  const values = [
+    ...new Set(rows.flatMap((row) => row.values.map((value) => value.trim()).filter(Boolean))),
+  ];
+  if (values.length === 0) return;
+  const firstRow = rows[0];
+  const lastRow = rows.at(-1);
+  if (!firstRow || !lastRow) return;
+  sections.push({
+    title: `${sheet.name} · 说明`,
+    headingPath: [sheet.name, '说明'],
+    content: normalizeText(values.map((value) => `说明: ${value}`).join('\n')),
+    locator: {
+      kind: 'spreadsheet',
+      sheet: sheet.name,
+      rowStart: firstRow.number,
+      rowEnd: lastRow.number,
+    },
+  });
+}
+
+/** 将一条数据行转换为带字段名的最小完整知识单元。 */
+function appendDataRowSection(
+  sections: SemanticSection[],
+  sheet: ExcelJS.Worksheet,
+  header: string[],
+  row: SpreadsheetRow,
+): void {
+  const fields = header.flatMap((label, index) => {
+    const value = row.values[index]?.trim();
+    return value ? [`${label}: ${value}`] : [];
+  });
+  if (fields.length === 0) return;
+  sections.push({
+    title: sheet.name,
+    headingPath: [sheet.name],
+    content: normalizeText(fields.join('\n')),
+    locator: {
+      kind: 'spreadsheet',
+      sheet: sheet.name,
+      rowStart: row.number,
+      rowEnd: row.number,
+    },
+  });
+}
+
 export async function parseSpreadsheet(
   buffer: Buffer,
 ): Promise<{ sections: SemanticSection[]; warnings: string[] }> {
@@ -143,7 +197,7 @@ export async function parseSpreadsheet(
 
   let nonEmptyCells = 0;
   for (const sheet of visibleSheets) {
-    const rows: { number: number; values: string[] }[] = [];
+    const rows: SpreadsheetRow[] = [];
     sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
       const values: string[] = [];
       row.eachCell({ includeEmpty: false }, (cell) => {
@@ -163,44 +217,17 @@ export async function parseSpreadsheet(
     const resolvedHeaderIndex = headerIndex >= 0 ? headerIndex : 0;
     const headerRow = rows[resolvedHeaderIndex];
     if (!headerRow) continue;
-    const header = headerRow.values.map((value, index) => value || `列 ${index + 1}`);
-    const preamble = [
-      ...new Set(rows.slice(0, resolvedHeaderIndex).flatMap((row) => row.values.filter(Boolean))),
-    ].map((value) => `说明: ${value}`);
-    let batch: typeof rows = [];
-    let batchChars = 0;
-    const flush = () => {
-      if (batch.length === 0) return;
-      const firstBatchRow = batch[0];
-      if (!firstBatchRow) return;
-      const lines = batch.map((row) =>
-        header
-          .map((label, index) => `${label}: ${row.values[index] ?? ''}`)
-          .filter((item) => !item.endsWith(': '))
-          .join(' | '),
-      );
-      sections.push({
-        title: sheet.name,
-        headingPath: [sheet.name],
-        content: normalizeText([...preamble, `表头: ${header.join(' | ')}`, ...lines].join('\n')),
-        locator: {
-          kind: 'spreadsheet',
-          sheet: sheet.name,
-          rowStart: firstBatchRow.number,
-          rowEnd: batch.at(-1)?.number ?? firstBatchRow.number,
-        },
-      });
-      batch = [];
-      batchChars = 0;
-    };
-
-    for (const row of rows.slice(resolvedHeaderIndex + 1)) {
-      const rowChars = row.values.join(' ').length;
-      if (batch.length >= 20 || (batch.length > 0 && batchChars + rowChars > MAX_CHARS)) flush();
-      batch.push(row);
-      batchChars += rowChars;
-    }
-    flush();
+    const dataRows = rows.slice(resolvedHeaderIndex + 1);
+    const columnCount = Math.max(
+      headerRow.values.length,
+      ...dataRows.map((row) => row.values.length),
+    );
+    const header = Array.from(
+      { length: columnCount },
+      (_, index) => headerRow.values[index]?.trim() || `列 ${index + 1}`,
+    );
+    appendPreambleSection(sections, sheet, rows.slice(0, resolvedHeaderIndex));
+    for (const row of dataRows) appendDataRowSection(sections, sheet, header, row);
   }
   return { sections, warnings };
 }

@@ -21,6 +21,9 @@ export { DocumentParseError, type ParsedChunkDraft, type ParsedDocument } from '
 
 const MAX_EXTRACTED_CHARACTERS = 5_000_000;
 
+/** 当前通用知识文档解析策略版本，用于 revision 审计和重建判定。 */
+export const KNOWLEDGE_PARSER_VERSION = 'echowave-parser-v2';
+
 /** 按文件格式解析并规范化知识文档，返回可追溯的文档块。 */
 export async function parseKnowledgeDocument(
   buffer: Buffer,

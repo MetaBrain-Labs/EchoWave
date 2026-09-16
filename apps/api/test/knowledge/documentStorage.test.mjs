@@ -74,6 +74,7 @@ it('isolates renamed originals and only removes files before a failed commit', a
     assert.notEqual(created.storageKey, originalKey);
     assert.equal(created.title, 'v2.md');
     assert.equal(created.expectedVersion, 1);
+    assert.equal(created.parserVersion, 'echowave-parser-v2');
     const committedKey = created.storageKey;
     assert.equal((await readdir(directory)).length, 2);
     rejectRead = true;
