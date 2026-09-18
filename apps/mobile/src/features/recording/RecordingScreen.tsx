@@ -53,6 +53,7 @@ import {
 } from '@/shared/theme/tokens';
 import { ActionSheet, type ActionSheetItem } from '@/shared/ui/ActionSheet';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
+import { textInputText } from '@/shared/theme/textInput';
 
 type TranslationFunction = ReturnType<typeof useAppLanguage>['t'];
 
@@ -1041,11 +1042,12 @@ const styles = StyleSheet.create({
   },
   renameEditor: { gap: spacing.sm },
   nameInput: {
+    ...textInputText,
     ...typography.body,
     backgroundColor: colors.background,
     borderRadius: radii.default,
     color: textColors.primary,
-    minHeight: 44,
+    height: 44,
     paddingHorizontal: spacing.base,
   },
   renameActions: { flexDirection: 'row', gap: spacing.sm, justifyContent: 'flex-end' },

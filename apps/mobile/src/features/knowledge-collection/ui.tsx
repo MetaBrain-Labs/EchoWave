@@ -27,6 +27,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { CaseContent, CaseTurn } from '@echowave/contracts';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { multilineTextInputText, textInputText } from '@/shared/theme/textInput';
 import {
   colors,
   fontFamilies,
@@ -513,24 +514,23 @@ export const styles = StyleSheet.create({
   pickerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   field: { gap: spacing.xs },
   input: {
+    ...multilineTextInputText,
+    ...typography.body,
+    ...textInputText,
     borderWidth: 1,
     borderColor: colors.divider,
     backgroundColor: colors.background,
     borderRadius: radii.default,
     paddingHorizontal: spacing.sm,
-    paddingVertical: 0,
     height: 44,
-    textAlignVertical: 'center',
-    includeFontPadding: false,
-    fontFamily: fontFamilies.sans,
-    ...typography.body,
-    color: textColors.primary,
+    textAlignVertical: 'top',
   },
+  // 多行变体覆盖单行基础样式：顶部对齐并保留纵向内边距。
   multiline: {
+    ...multilineTextInputText,
     height: undefined,
     minHeight: 96,
     paddingVertical: spacing.sm,
-    textAlignVertical: 'top',
   },
   button: {
     minHeight: 44,

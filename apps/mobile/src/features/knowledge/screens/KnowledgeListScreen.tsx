@@ -30,6 +30,7 @@ import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { SearchSheet } from '@/shared/ui/SearchSheet';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
 import { useStarterTour, useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
+import { multilineTextInputText, textInputText } from '@/shared/theme/textInput';
 
 import {
   colors,
@@ -322,17 +323,18 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   input: {
+    ...textInputText,
     ...typography.body,
     backgroundColor: colors.background,
     borderColor: colors.divider,
     borderRadius: radii.default,
     borderWidth: StyleSheet.hairlineWidth,
     color: textColors.primary,
-    minHeight: 44,
+    height: 44,
     paddingHorizontal: spacing.base,
-    paddingVertical: spacing.sm,
   },
-  descriptionInput: { minHeight: 88, textAlignVertical: 'top' },
+  descriptionInput: {
+    ...multilineTextInputText, minHeight: 88, textAlignVertical: 'top' },
   settingsSection: { gap: spacing.xs },
   settingsTitle: {
     ...typography.heading3,

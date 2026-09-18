@@ -93,6 +93,24 @@ pnpm exec expo start --web --clear
 
 **边界说明**：该错误只在原生渲染器出现，Web 端不会打印同样文案；判定函数放在组件测试中而不是源码里，属于测试侧约束。
 
+## EW-004：多个页面的输入框光标高于文字、且输入内容上下偏移
+
+**现象**：知识问答输入框在 Android 上光标明显高于文字并略微超出输入框；项目内多个页面的单行输入框有同样表现。
+
+**受影响路径**：共 21 个含 `TextInput` 的页面与组件，包括知识问答输入框、分组侧栏、分组设置、知识库与文档编辑、数据源弹层、通用设置与 AI 配置中心。
+
+**根因**：只有部分输入框落实了设计系统第 9 节，其余依赖平台默认行为，并同时声明了通用 `padding`（或 `paddingVertical: spacing.sm`）与 `minHeight`。Android 按字体完整行盒决定光标高度，文字却落在带内边距的盒子里，于是光标超过可见文字高度；部分输入框的纵向对齐还是从基础样式继承而来，并未显式声明。
+
+**修复**：
+
+- `apps/mobile/src/shared/theme/textInput.ts` 新增两个共享文字令牌：`textInputText`（单行：`includeFontPadding: false`、`paddingVertical: 0`、`textAlignVertical: 'center'`）与 `multilineTextInputText`（多行：`includeFontPadding: false`、`textAlignVertical: 'top'`）。
+- 所有 `TextInput` 样式改为展开其中一个令牌；单行输入框显式声明 `height` 而不再依赖 `minHeight`，多行变体显式覆盖纵向对齐。
+- 容器与状态样式（`roleInput`、`invalidInput`、`addTagInput`，以及首轮批量修改误伤的无关样式块）保持原有尺寸：`roleAddButton`、`segmentationOption` 等 `Pressable` 样式仍使用 `minHeight`，其中 `segmentationOption` 由既有数据源测试断言。
+
+**验证**：新增 `apps/mobile/src/shared/theme/__tests__/textInputStyles.test.ts`，扫描 `src` 下全部 `.tsx`，解析每个 `TextInput` 的样式键，缺少共享令牌、也没有显式 `includeFontPadding: false` 与 `textAlignVertical` 时失败；同时锁定令牌本身的关键声明。分组侧栏与 AI 配置中心既有的输入框尺寸断言保持不变并通过。
+
+**边界说明**：光标只在真机渲染，因此本修复以静态扫描加既有交互测试验证，视觉确认仍需 Android 构建。多行文本域刻意保留自己的内边距与顶部对齐。
+
 ## 新增缺陷的登记方式
 
 记录精确命令、所在目录、原始报错，以及实际表现与预期表现的差异。只有验证命令真实通过后才能标记为已修复，否则保持未修复并写明阻塞原因。修改本文时必须同步更新两种语言版本。

@@ -58,6 +58,7 @@ import {
   useAnalysisPreference,
 } from '@/shared/settings/AnalysisPreferenceProvider';
 import type { TranslationKey } from '@/shared/i18n/translations';
+import { multilineTextInputText, textInputText } from '@/shared/theme/textInput';
 
 /** 渲染独立的一键分析表单，并由路由层决定是否显示返回操作。 */
 export function AnalysisBatchCreateScreen({ onBack }: { onBack?: () => void }) {
@@ -1072,6 +1073,7 @@ const styles = StyleSheet.create({
   },
   settingsBody: { gap: spacing.base },
   input: {
+    ...textInputText,
     ...typography.body,
     borderColor: colors.divider,
     borderRadius: radii.default,
@@ -1080,6 +1082,7 @@ const styles = StyleSheet.create({
     padding: spacing.base,
   },
   contextInput: {
+    ...multilineTextInputText,
     ...typography.body,
     borderColor: colors.divider,
     borderRadius: radii.default,
@@ -1087,6 +1090,7 @@ const styles = StyleSheet.create({
     color: textColors.primary,
     minHeight: 80,
     padding: spacing.base,
+    textAlignVertical: 'top',
   },
   hint: { ...typography.description, color: textColors.secondary },
   backgroundNotice: {

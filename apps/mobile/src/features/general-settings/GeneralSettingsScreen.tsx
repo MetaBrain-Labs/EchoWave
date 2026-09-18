@@ -39,6 +39,7 @@ import {
 } from '@/shared/theme/tokens';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
 import { getAsrPreferences, updateAsrPreferences } from '@/shared/api/asrPreferencesApi';
+import { multilineTextInputText, textInputText } from '@/shared/theme/textInput';
 
 /** 渲染应用级设置，并保留语言与 ASR 默认上下文保存失败时的当前选择。 */
 export function GeneralSettingsScreen({ onBack }: { onBack: () => void }) {
@@ -248,6 +249,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   contextInput: {
+    ...multilineTextInputText,
     borderColor: colors.divider,
     borderRadius: radii.default,
     borderWidth: 1,
@@ -257,8 +259,10 @@ const styles = StyleSheet.create({
     lineHeight: typography.body.lineHeight,
     minHeight: 96,
     padding: spacing.sm,
+    textAlignVertical: 'top',
   },
   tokenInput: {
+    ...textInputText,
     borderColor: colors.divider,
     borderRadius: radii.default,
     borderWidth: 1,
@@ -266,7 +270,6 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sans,
     height: 44,
     paddingHorizontal: spacing.sm,
-    paddingVertical: 0,
   },
   saveButton: {
     alignItems: 'center',

@@ -14,6 +14,7 @@ import { useState, useEffect } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { colors, radii, spacing, typography } from '@/shared/theme/tokens';
+import { textInputText } from '@/shared/theme/textInput';
 import { updateKnowledgeBase, listKnowledgeCategories, getKnowledgeBase } from '../apiClient';
 import { CategoryPicker } from './CategoryPicker';
 import { CategoryManager } from './CategoryManager';
@@ -195,11 +196,12 @@ const styles = StyleSheet.create({
   content: { padding: spacing.md, gap: spacing.md },
   heading: { ...typography.heading2 },
   input: {
+    ...textInputText,
     ...typography.body,
     borderWidth: 1,
     borderColor: colors.divider,
     padding: spacing.sm,
-    minHeight: 48,
+    height: 48,
   },
   buttons: { flexDirection: 'row', justifyContent: 'flex-end', gap: spacing.md },
   button: { padding: spacing.sm, minHeight: 48, justifyContent: 'center' },

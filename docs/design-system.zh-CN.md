@@ -132,6 +132,7 @@ EchoWave 使用 Source Han Sans CN 和 KaiTi 两套字体语义。KaiTi 语义�
 - 固定高度输入框不得仅使用 `minHeight` 代替内容高度约束。输入框的行高必须小于可用内容高度，并与本文档定义的排版层级一致。
 - 分组侧边栏的“分组名称”输入框高度为 `44px`。当前分组搜索框的外层高度为 `48px`，内部文本输入区域高度为 `46px`。
 - 占位文字与实际输入文字必须使用相同的字体、字号、行高和垂直对齐规则；不得通过仅针对占位文字的偏移量进行视觉修补。
+- 输入框文字样式统一来自 `apps/mobile/src/shared/theme/textInput.ts`：单行输入框展开 `textInputText`，多行输入框展开 `multilineTextInputText`。光标高度由字体行盒决定，因此两者都必须显式声明 `includeFontPadding: false` 与 `textAlignVertical`；单行输入框不得用通用 `paddingVertical` 替代行盒约束，以免在 Android 上出现光标高于文字的显示问题。
 
 ## 10. 页面背景与内容表面
 

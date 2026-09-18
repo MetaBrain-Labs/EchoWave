@@ -24,6 +24,7 @@ import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import type { TranslationKey } from '@/shared/i18n/translations';
 import { ActionSheet, type ActionSheetItem } from '@/shared/ui/ActionSheet';
+import { multilineTextInputText } from '@/shared/theme/textInput';
 
 import {
   colors,
@@ -1194,6 +1195,7 @@ const styles = StyleSheet.create({
     width: 36,
   },
   transcriptInput: {
+    ...multilineTextInputText,
     ...typography.body,
     backgroundColor: colors.white,
     borderColor: colors.divider,
@@ -1205,6 +1207,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     minHeight: 88,
     padding: spacing.sm,
+    textAlignVertical: 'top',
   },
   aiTagButton: {
     alignItems: 'center',
