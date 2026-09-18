@@ -64,6 +64,8 @@ A side panel slides in from its edge and exits along the same path; it stays mou
 
 Fixed-height inputs use explicit `height`, `paddingVertical: 0`, and `textAlignVertical: 'center'`; Android also uses `includeFontPadding: false`. Do not substitute `minHeight`. Placeholder and value share font, size, line height, and alignment. The group-name field is `44px`; the current-group search wrapper is `48px` and its input is `46px`.
 
+Input text styles come from `apps/mobile/src/shared/theme/textInput.ts`: single-line inputs spread `textInputText` and multiline inputs spread `multilineTextInputText`. The caret height follows the font line box, so both tokens must declare `includeFontPadding: false` and `textAlignVertical`; single-line inputs must not replace the line-box constraint with a generic `paddingVertical`, which produces a caret taller than the text on Android.
+
 ## 10. Surfaces
 
 - `colors.background` and `colors.canvas` are `#F9F9F9`.

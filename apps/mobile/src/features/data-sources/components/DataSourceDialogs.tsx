@@ -42,6 +42,7 @@ import {
 } from '@/shared/theme/tokens';
 import { AnalysisLanguagePicker } from '@/shared/i18n/AnalysisLanguagePicker';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { multilineTextInputText, textInputText } from '@/shared/theme/textInput';
 
 export type DataSourceFormValue = {
   name: string;
@@ -894,6 +895,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   nameInput: {
+    ...textInputText,
     ...typography.body,
     borderColor: colors.divider,
     borderRadius: radii.default,
@@ -903,10 +905,9 @@ const styles = StyleSheet.create({
     height: 44,
     includeFontPadding: false,
     paddingHorizontal: spacing.base,
-    paddingVertical: 0,
-    textAlignVertical: 'center',
   },
   descriptionInput: {
+    ...multilineTextInputText,
     ...typography.body,
     borderColor: colors.divider,
     borderRadius: radii.default,
@@ -915,8 +916,10 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sans,
     minHeight: 88,
     padding: spacing.base,
+    textAlignVertical: 'top',
   },
   contextInput: {
+    ...multilineTextInputText,
     ...typography.body,
     borderColor: colors.divider,
     borderRadius: radii.default,
@@ -925,6 +928,7 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sans,
     minHeight: 72,
     padding: spacing.base,
+    textAlignVertical: 'top',
   },
   roleHint: {
     ...typography.description,
@@ -938,6 +942,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginTop: spacing.sm,
   },
+  // 叠加在 nameInput 之上的窄宽度变体，不再重复声明文字样式。
   roleInput: { flex: 1 },
   roleAddButton: {
     alignItems: 'center',
@@ -1063,15 +1068,17 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sansBold,
   },
   speakerCountInput: {
+    ...textInputText,
     ...typography.body,
     backgroundColor: colors.white,
     borderColor: colors.divider,
     borderRadius: radii.default,
     borderWidth: 1,
     color: textColors.primary,
-    minHeight: 44,
+    height: 44,
     paddingHorizontal: spacing.md,
   },
+  // 错误态只覆盖边框颜色，文字样式沿用 speakerCountInput。
   invalidInput: { borderColor: colors.danger },
   segmentationOptions: { flexDirection: 'row', gap: spacing.sm },
   segmentationOption: {

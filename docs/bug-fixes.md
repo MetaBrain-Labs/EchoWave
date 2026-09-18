@@ -93,6 +93,24 @@ A local execution report reproduces the chain: `retrievedCount: 14`, `citedCount
 
 **Boundaries**: the error only appears on the native renderer, so the web build never prints this exact message. The check lives in the component test rather than in source code.
 
+## EW-004: oversized input caret and drifting input text in several screens
+
+**Symptom**: in the knowledge query composer the Android caret is taller than the input text and slightly overflows the field; the same look appears in other screens' single-line inputs.
+
+**Affected paths**: 21 screen and component files with `TextInput` styles, including the knowledge query composer, group drawer, group settings, knowledge editors, data-source dialogs, general settings and the AI configuration center.
+
+**Root cause**: only some inputs implemented design-system section 9. The rest relied on platform defaults and declared a shared `padding` (or `paddingVertical: spacing.sm`) together with `minHeight`: Android then sizes the caret from the font's full line box while the text sits inside a padded box, so the caret exceeds the visible text height. Several of those inputs also inherited vertical alignment from a base style instead of stating it.
+
+**Resolution**:
+
+- `apps/mobile/src/shared/theme/textInput.ts` adds two shared text tokens, `textInputText` (single line: `includeFontPadding: false`, `paddingVertical: 0`, `textAlignVertical: 'center'`) and `multilineTextInputText` (multiline: `includeFontPadding: false`, `textAlignVertical: 'top'`).
+- Every `TextInput` style now spreads one of those tokens; single-line inputs state an explicit `height` instead of `minHeight`, and multiline variants override vertical alignment explicitly.
+- Container and state styles (`roleInput`, `invalidInput`, `addTagInput`, and unrelated blocks the bulk edit touched in a first pass) keep their original sizing: `roleAddButton`, `segmentationOption` and other `Pressable` styles still use `minHeight`, and `segmentationOption` is asserted by an existing data-source test.
+
+**Verification**: `apps/mobile/src/shared/theme/__tests__/textInputStyles.test.ts` scans every `.tsx` under `src`, resolves each `TextInput` element's style keys and fails when a style has neither the shared token nor an explicit `includeFontPadding: false` plus `textAlignVertical`; it also pins the token rules themselves. Existing metrics assertions for the group drawer and the AI configuration center inputs still pass unchanged.
+
+**Boundaries**: the caret only renders on device, so the fix is verified statically plus through the existing interaction tests; visual confirmation requires an Android build. Multiline text areas intentionally keep their own padding and top alignment.
+
 ## Reporting a new defect
 
 Record the exact command, working directory, verbatim error, and observed versus expected behavior. Mark the status as fixed only after a verification command has actually passed; otherwise keep it open and state the blocker. Keep both language versions of this file in the same change.

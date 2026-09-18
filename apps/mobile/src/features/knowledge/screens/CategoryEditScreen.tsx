@@ -34,6 +34,7 @@ import {
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { colors, spacing, textColors, typography } from '@/shared/theme/tokens';
+import { multilineTextInputText, textInputText } from '@/shared/theme/textInput';
 
 type CategoryEditScreenProps = {
   categoryId: string;
@@ -211,6 +212,7 @@ const styles = StyleSheet.create({
   section: { gap: spacing.sm },
   label: { ...typography.body, color: textColors.primary, fontWeight: '700' },
   input: {
+    ...textInputText,
     backgroundColor: colors.card,
     borderColor: colors.divider,
     borderRadius: 10,
@@ -220,7 +222,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     ...typography.body,
   },
-  descriptionInput: { height: 112, paddingTop: spacing.md },
+  descriptionInput: {
+    ...multilineTextInputText, height: 112, paddingTop: spacing.md },
   helper: { ...typography.description, color: colors.primary },
   muted: { ...typography.description, color: textColors.secondary },
   statusRow: {
@@ -231,6 +234,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     minHeight: 72,
     paddingHorizontal: spacing.md,
+    textAlignVertical: 'top',
   },
   statusCopy: { gap: spacing.xs },
   error: { ...typography.description, color: colors.danger },

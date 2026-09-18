@@ -14,6 +14,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { colors, spacing, typography } from '@/shared/theme/tokens';
+import { textInputText } from '@/shared/theme/textInput';
 import { createKnowledgeCategory, updateKnowledgeCategory } from '../apiClient';
 
 /** 管理共享目录，保存成功后刷新而不是制造本地权威副本。 */
@@ -147,10 +148,11 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   button: { padding: spacing.sm, minHeight: 48, justifyContent: 'center' },
   input: {
+    ...textInputText,
     ...typography.body,
     borderWidth: 1,
     borderColor: colors.divider,
     padding: spacing.sm,
-    minHeight: 48,
+    height: 48,
   },
 });

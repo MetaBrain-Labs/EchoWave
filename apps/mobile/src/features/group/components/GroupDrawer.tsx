@@ -37,6 +37,7 @@ import {
 } from '@/shared/theme/tokens';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { ActionSheet } from '@/shared/ui/ActionSheet';
+import { textInputText } from '@/shared/theme/textInput';
 
 /** 渲染从左侧进入的分组目录。 */
 export function GroupDrawer({
@@ -402,6 +403,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   input: {
+    ...textInputText,
     ...typography.body,
     backgroundColor: colors.card,
     borderColor: colors.divider,
@@ -412,8 +414,6 @@ const styles = StyleSheet.create({
     height: 44,
     includeFontPadding: false,
     paddingHorizontal: spacing.base,
-    paddingVertical: 0,
-    textAlignVertical: 'center',
   },
   createActions: { flexDirection: 'row', gap: spacing.sm, justifyContent: 'flex-end' },
   createSubmitButton: {

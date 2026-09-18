@@ -28,6 +28,7 @@ import { PageHeader } from '@/shared/ui/PageHeader';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { FixedActionButton } from '@/shared/ui/FixedActionButton';
 import { ActionSheet } from '@/shared/ui/ActionSheet';
+import { textInputText } from '@/shared/theme/textInput';
 import {
   colors,
   fontFamilies,
@@ -374,10 +375,9 @@ const styles = StyleSheet.create({
     borderRadius: radii.default,
   },
   input: {
+    ...textInputText,
     height: 44,
-    paddingVertical: 0,
     paddingHorizontal: spacing.sm,
-    textAlignVertical: 'center',
     includeFontPadding: false,
     borderWidth: 1,
     borderColor: colors.divider,

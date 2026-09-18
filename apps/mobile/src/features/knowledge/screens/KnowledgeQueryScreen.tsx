@@ -41,6 +41,7 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import { textInputText } from '@/shared/theme/textInput';
 import { listQueryHistory, listRetrievalCategoriesByBase, queryKnowledge } from '../apiClient';
 import { AnswerProgressCard } from '../components/AnswerProgressCard';
 import { AnswerText } from '../components/AnswerText';
@@ -584,8 +585,10 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     padding: spacing.sm,
   },
+  // 单行问题框，输入变长时升高到 120 为止；光标与文字保持居中行盒。
   input: {
     ...typography.body,
+    ...textInputText,
     borderColor: colors.divider,
     borderRadius: radii.default,
     borderWidth: 1,
@@ -594,7 +597,7 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sans,
     maxHeight: 120,
     minHeight: 48,
-    padding: spacing.sm,
+    paddingHorizontal: spacing.sm,
   },
   send: {
     alignItems: 'center',

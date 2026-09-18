@@ -38,6 +38,7 @@ import { PageHeader } from '@/shared/ui/PageHeader';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import { ActionSheet } from '@/shared/ui/ActionSheet';
+import { textInputText } from '@/shared/theme/textInput';
 
 const modeCopyKeys: Record<
   AudioRuntimeMode,
@@ -356,13 +357,14 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   input: {
+    ...textInputText,
     ...typography.body,
     backgroundColor: colors.background,
     borderColor: colors.divider,
     borderRadius: radii.default,
     borderWidth: 1,
     color: textColors.primary,
-    minHeight: 48,
+    height: 48,
     paddingHorizontal: spacing.md,
   },
   saveButton: {

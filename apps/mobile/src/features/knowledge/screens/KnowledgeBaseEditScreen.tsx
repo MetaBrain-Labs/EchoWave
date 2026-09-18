@@ -22,6 +22,7 @@ import { CategoryPicker } from '../components/CategoryPicker';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { colors, spacing, textColors, typography } from '@/shared/theme/tokens';
+import { textInputText } from '@/shared/theme/textInput';
 
 type KnowledgeBaseEditScreenProps = {
   knowledge: KnowledgeBaseDetail;
@@ -178,6 +179,7 @@ const styles = StyleSheet.create({
   section: { gap: spacing.sm },
   sectionTitle: { ...typography.heading3, color: textColors.primary, fontWeight: '700' },
   input: {
+    ...textInputText,
     backgroundColor: colors.card,
     borderColor: colors.divider,
     borderRadius: 10,

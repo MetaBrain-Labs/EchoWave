@@ -49,6 +49,7 @@ import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
+import { multilineTextInputText, textInputText } from '@/shared/theme/textInput';
 import {
   colors,
   fontFamilies,
@@ -578,19 +579,19 @@ const styles = StyleSheet.create({
   },
   input: {
     ...typography.body,
+    ...textInputText,
     backgroundColor: colors.card,
     borderColor: colors.divider,
     borderRadius: radii.default,
     borderWidth: 1,
     color: textColors.primary,
     fontFamily: fontFamilies.sans,
+    height: 52,
     marginTop: spacing.sm,
-    minHeight: 52,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
   },
-  largeInput: { minHeight: 220 },
-  mediumInput: { minHeight: 160 },
+  largeInput: { ...multilineTextInputText, minHeight: 220 },
+  mediumInput: { ...multilineTextInputText, minHeight: 160 },
   optionRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   option: {
     borderColor: colors.divider,
@@ -614,6 +615,7 @@ const styles = StyleSheet.create({
   },
   chipText: { ...typography.description, color: textColors.primary, fontFamily: fontFamilies.sans },
   addTagRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
+  // 单行标签输入框：沿用 input 的文字样式，只改为占满剩余宽度。
   addTagInput: { flex: 1 },
   addTagButton: {
     borderColor: colors.divider,

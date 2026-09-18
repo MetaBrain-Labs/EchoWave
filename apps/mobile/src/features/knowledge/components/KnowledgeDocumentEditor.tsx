@@ -16,6 +16,7 @@ import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-nativ
 import { pickDocumentAsync } from '@/shared/files/documentPicker';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { colors, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
+import { textInputText } from '@/shared/theme/textInput';
 import {
   deleteDocument,
   getDocument,
@@ -274,12 +275,13 @@ const styles = StyleSheet.create({
   heading: { ...typography.heading2, color: textColors.primary },
   text: { ...typography.body, color: textColors.secondary },
   input: {
+    ...textInputText,
     ...typography.body,
     borderWidth: 1,
     borderColor: colors.divider,
     borderRadius: radii.default,
     padding: spacing.sm,
-    minHeight: 48,
+    height: 48,
   },
   buttons: { flexDirection: 'row', justifyContent: 'flex-end', gap: spacing.md },
   button: { padding: spacing.sm, minHeight: 48, justifyContent: 'center' },

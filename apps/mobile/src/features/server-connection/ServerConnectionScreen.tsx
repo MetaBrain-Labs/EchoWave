@@ -36,6 +36,7 @@ import {
 } from '@/shared/api/serverUrl';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import type { TranslationKey } from '@/shared/i18n/translations';
+import { textInputText } from '@/shared/theme/textInput';
 import {
   colors,
   fontFamilies,
@@ -287,13 +288,14 @@ const styles = StyleSheet.create({
   },
   label: { ...typography.label, color: textColors.secondary, marginBottom: spacing.xs },
   input: {
+    ...textInputText,
     ...typography.body,
     backgroundColor: colors.background,
     borderColor: colors.divider,
     borderRadius: radii.default,
     borderWidth: StyleSheet.hairlineWidth,
     color: textColors.primary,
-    minHeight: 50,
+    height: 50,
     paddingHorizontal: spacing.md,
   },
   warning: { flexDirection: 'row', gap: spacing.xs, marginTop: spacing.sm },

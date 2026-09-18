@@ -15,6 +15,7 @@ import { type RefObject, useRef } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { textInputText } from '@/shared/theme/textInput';
 import {
   colors,
   fontFamilies,
@@ -90,15 +91,14 @@ const styles = StyleSheet.create({
     minHeight: 40,
     paddingHorizontal: spacing.md,
   },
+  // 单行搜索框：令牌已包含字体内边距与纵向居中规则，这里只保留尺寸与配色。
   searchInput: {
     ...typography.body,
+    ...textInputText,
     color: textColors.primary,
     flex: 1,
     fontFamily: fontFamilies.sans,
     height: typography.body.lineHeight,
-    includeFontPadding: false,
-    paddingVertical: 0,
-    textAlignVertical: 'center',
   },
   filterButton: {
     alignItems: 'center',

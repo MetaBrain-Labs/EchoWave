@@ -33,6 +33,7 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { textInputText } from '@/shared/theme/textInput';
 
 /** 渲染可复用的底部搜索表单。 */
 export function SearchSheet({
@@ -185,14 +186,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.base,
   },
   input: {
+    ...textInputText,
     ...typography.body,
     color: textColors.primary,
     flex: 1,
     fontFamily: fontFamilies.sans,
     height: 46,
     includeFontPadding: false,
-    paddingVertical: 0,
-    textAlignVertical: 'center',
   },
   searchButton: {
     alignItems: 'center',

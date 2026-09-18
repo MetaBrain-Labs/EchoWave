@@ -49,6 +49,7 @@ import { PageHeader } from '@/shared/ui/PageHeader';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { useStarterTour, useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import { ActionSheet } from '@/shared/ui/ActionSheet';
+import { textInputText } from '@/shared/theme/textInput';
 
 const capabilities: readonly { id: AiCapability }[] = [
   { id: 'knowledge_embedding' },
@@ -1302,6 +1303,7 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sans,
   },
   input: {
+    ...textInputText,
     ...typography.body,
     backgroundColor: colors.card,
     borderColor: colors.divider,
@@ -1312,8 +1314,6 @@ const styles = StyleSheet.create({
     height: 44,
     includeFontPadding: false,
     paddingHorizontal: spacing.base,
-    paddingVertical: 0,
-    textAlignVertical: 'center',
   },
   staticValue: {
     backgroundColor: colors.card,
