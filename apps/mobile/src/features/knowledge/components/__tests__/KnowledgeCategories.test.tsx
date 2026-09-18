@@ -19,6 +19,7 @@ import { knowledge } from '../../testing/fixtures';
 import {
   listKnowledgeCategories,
   listRetrievalCategories,
+  listRetrievalCategoriesByBase,
   createKnowledgeCategory,
   updateKnowledgeCategory,
   getDocumentClassification,
@@ -146,9 +147,12 @@ describe('knowledge category interactions', () => {
   });
   it('retries catalogue failure and allows unlimited multi-select', async () => {
     jest
-      .mocked(listRetrievalCategories)
-      .mockRejectedValueOnce(new Error('timeout'))
-      .mockResolvedValue({ items: categories });
+      .mocked(listRetrievalCategoriesByBase)
+      .mockResolvedValueOnce({ categories: [], failed: 1 })
+      .mockResolvedValue({
+        failed: 0,
+        categories: categories.map((item) => ({ ...item, knowledgeBaseId: knowledge.id })),
+      });
     const onChange = jest.fn();
     const screen = render(
       <CategoryQueryFilter
@@ -180,6 +184,66 @@ describe('knowledge category interactions', () => {
       categories[3]!.id,
     ]);
   });
+  it('groups categories by knowledge base and marks an excluded base', async () => {
+    const secondBaseId = '22222222-2222-4222-8222-222222222222';
+    const bases = [
+      { id: knowledge.id, name: '产品研究知识库' },
+      { id: secondBaseId, name: '术语知识库' },
+    ];
+    jest.mocked(listRetrievalCategoriesByBase).mockResolvedValue({
+      failed: 0,
+      categories: [
+        { ...categories[1]!, knowledgeBaseId: knowledge.id },
+        { ...categories[3]!, id: 'cat-term', name: '术语纠错', knowledgeBaseId: secondBaseId },
+      ],
+    });
+    const onChange = jest.fn();
+    const screen = render(
+      <CategoryQueryFilter
+        knowledgeId={knowledge.id}
+        knowledgeBases={bases}
+        selected={[]}
+        onChange={onChange}
+        disabled={false}
+      />,
+    );
+
+    // 默认两个关联库都参与检索。
+    await waitFor(() => expect(screen.getByText('参与检索的知识库：2 个')).toBeTruthy());
+    fireEvent.press(screen.getByText('检索类别: 自动选择类别'));
+
+    // 跨库时按知识库分组展示类别，每个库都有独立分组标题与范围开关。
+    expect(screen.getAllByText('产品研究知识库').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText('术语知识库').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByLabelText('术语纠错')).toBeTruthy();
+    expect(
+      screen.getByText('支持多选且不限制数量；可按知识库取消参与检索，手动筛选不会自动扩大。'),
+    ).toBeTruthy();
+    // 跨库不提供“自动选择类别”：取消全部类别只会缩小范围，不会扩大检索。
+    expect(screen.queryByText('自动选择类别')).toBeNull();
+    // 取消单个类别只改变类别选择，不改变参与检索的知识库集合。
+    fireEvent.press(screen.getByLabelText('术语纠错'));
+    expect(onChange).toHaveBeenCalledWith(['cat-term']);
+    expect(screen.getByText('参与检索的知识库：2 个')).toBeTruthy();
+    expect(screen.queryByText('该知识库已取消参与本次检索。')).toBeNull();
+
+    // 取消某个知识库后：范围计数减少，该库分组不再渲染可选类别。
+    screen.rerender(
+      <CategoryQueryFilter
+        knowledgeId={knowledge.id}
+        knowledgeBases={bases}
+        excludedKnowledgeBaseIds={[secondBaseId]}
+        selected={[]}
+        onChange={jest.fn()}
+        disabled={false}
+      />,
+    );
+    expect(screen.getByText('参与检索的知识库：1 个')).toBeTruthy();
+    expect(screen.getByText('该知识库已取消参与本次检索。')).toBeTruthy();
+    expect(screen.queryByLabelText('术语纠错')).toBeNull();
+    expect(screen.getByLabelText('产品资料')).toBeTruthy();
+  });
+
   it('preserves failed custom-category input and sends versions when deactivating', async () => {
     jest
       .mocked(createKnowledgeCategory)

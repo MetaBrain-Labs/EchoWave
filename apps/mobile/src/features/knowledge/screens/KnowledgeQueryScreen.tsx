@@ -41,7 +41,7 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
-import { listQueryHistory, listRetrievalCategories, queryKnowledge } from '../apiClient';
+import { listQueryHistory, listRetrievalCategoriesByBase, queryKnowledge } from '../apiClient';
 import { AnswerProgressCard } from '../components/AnswerProgressCard';
 import { AnswerText } from '../components/AnswerText';
 import { CitationList, type CitationListHandle } from '../components/CitationList';
@@ -54,12 +54,19 @@ type Turn = {
   id: number;
   question: string;
   categoryIds?: string[];
+  /** 该轮实际参与检索的知识库集合，重试时沿用同一范围。 */
+  knowledgeBaseIds?: string[];
 } & (
   | { status: 'pending' }
   | { status: 'verified'; response: RagQueryResponse }
   | { status: 'completed'; response: RagQueryResponse }
   | { status: 'failed'; error: string }
 );
+
+/** 知识库集合的稳定标识，用于避免列表身份变化触发重复预选。 */
+function knowledgeBaseKey(bases?: { id: string }[]) {
+  return bases?.map((base) => base.id).join(',') ?? '';
+}
 
 /** 管理即时发送、动态反馈、只读历史和最终可信回答。 */
 export function KnowledgeQueryScreen({
@@ -68,13 +75,23 @@ export function KnowledgeQueryScreen({
   onBack,
   onOpenCitation,
   preselectCategories = false,
+  knowledgeBases,
+  /** 本次进入的唯一标识，仅用于让页面在重新进入时重新开始。 */
+  sessionId,
 }: {
   guideDemo?: boolean;
   knowledgeId: string;
   onBack: () => void;
   onOpenCitation: (documentId: string, chunkId: string) => void;
-  /** 从分组入口进入时默认勾选该知识库的全部可检索类别。 */
+  /** 从分组入口进入时默认勾选全部参与检索知识库的可检索类别。 */
   preselectCategories?: boolean;
+  /**
+   * 参与检索的知识库集合（含名称）。
+   *
+   * 超过一个库时启用跨库检索：默认全部参与，用户可在类别面板里按库取消。
+   */
+  knowledgeBases?: { id: string; name: string }[];
+  sessionId?: string;
 }) {
   const { t } = useAppLanguage();
   const headerTargetRef = useStarterTourTarget('query-header');
@@ -86,6 +103,8 @@ export function KnowledgeQueryScreen({
   const [question, setQuestion] = useState('');
   const [conversationId, setConversationId] = useState<string>();
   const [categoryIds, setCategoryIds] = useState<string[]>([]);
+  /** 被用户取消参与检索的知识库；其余知识库默认参与跨库检索。 */
+  const [excludedKnowledgeBaseIds, setExcludedKnowledgeBaseIds] = useState<string[]>([]);
   const [turns, setTurns] = useState<Turn[]>(
     guideDemo
       ? [
@@ -141,21 +160,25 @@ export function KnowledgeQueryScreen({
     };
   }, []);
 
-  // 分组入口默认勾选全部类别；失败时保持自动路由，不阻塞提问。
+  // 分组入口默认勾选参与检索的全部启用类别；失败时保持自动路由，不阻塞提问。
+  const knowledgeBaseIdsKey = knowledgeBaseKey(knowledgeBases);
   useEffect(() => {
     if (!preselectCategories || guideDemo || !knowledgeId) return;
     let active = true;
-    void listRetrievalCategories(knowledgeId)
+    const bases = knowledgeBases?.length ? knowledgeBases : [{ id: knowledgeId, name: '' }];
+    void listRetrievalCategoriesByBase(bases)
       .then((result) => {
         if (!active) return;
-        const ids = result.items.filter((item) => item.active).map((item) => item.id);
+        const ids = result.categories.filter((item) => item.active).map((item) => item.id);
         if (ids.length) setCategoryIds(ids);
       })
       .catch(() => undefined);
     return () => {
       active = false;
     };
-  }, [guideDemo, knowledgeId, preselectCategories]);
+    // knowledgeBases 由 knowledgeBaseIdsKey 完整标识，避免数组身份变化触发重复请求。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guideDemo, knowledgeBaseIdsKey, knowledgeId, preselectCategories]);
 
   const scrollToLatest = useCallback(() => {
     if (Date.now() < skipAutoScrollUntil.current) return;
@@ -187,12 +210,21 @@ export function KnowledgeQueryScreen({
     [jump],
   );
 
-  const runTurn = async (turnId: number, value: string, selectedCategories?: string[]) => {
+  const runTurn = async (
+    turnId: number,
+    value: string,
+    selectedCategories?: string[],
+    selectedBaseIds?: string[],
+  ) => {
     if (guideDemo) return;
     try {
-      const response = selectedCategories?.length
-        ? await queryKnowledge(knowledgeId, value, conversationId, selectedCategories)
-        : await queryKnowledge(knowledgeId, value, conversationId);
+      const response = await queryKnowledge(
+        knowledgeId,
+        value,
+        conversationId,
+        selectedCategories,
+        selectedBaseIds,
+      );
       if (!mounted.current) return;
       setConversationId(response.conversationId);
       setTurns((items) =>
@@ -233,12 +265,19 @@ export function KnowledgeQueryScreen({
     // 用户消息先进入本地会话，网络响应只更新这一轮的 Assistant 状态。
     setQuestion('');
     const selectedCategories = categoryIds.length ? [...categoryIds] : undefined;
+    const selectedBaseIds = activeKnowledgeBaseIds;
     setTurns((items) => [
       ...items,
-      { id: turnId, question: value, status: 'pending', categoryIds: selectedCategories },
+      {
+        id: turnId,
+        question: value,
+        status: 'pending',
+        categoryIds: selectedCategories,
+        knowledgeBaseIds: selectedBaseIds,
+      },
     ]);
     setActiveTurnId(turnId);
-    void runTurn(turnId, value, selectedCategories);
+    void runTurn(turnId, value, selectedCategories, selectedBaseIds);
   };
 
   const retryTurn = (turn: Turn) => {
@@ -247,7 +286,7 @@ export function KnowledgeQueryScreen({
       items.map((item) => (item.id === turn.id ? { ...item, status: 'pending' } : item)),
     );
     setActiveTurnId(turn.id);
-    void runTurn(turn.id, turn.question, turn.categoryIds);
+    void runTurn(turn.id, turn.question, turn.categoryIds, turn.knowledgeBaseIds);
   };
 
   const loadHistory = async () => {
@@ -279,6 +318,19 @@ export function KnowledgeQueryScreen({
     void loadHistory();
   };
 
+  /** 本段聊天是否已经开始：开始后冻结检索范围，重新进入才会重新开始。 */
+  const chatStarted = turns.length > 0;
+
+  /** 参与本次检索的知识库集合：路由库必选，其余关联库去掉被用户取消的项。 */ const activeKnowledgeBaseIds =
+    [
+      ...new Set([
+        knowledgeId,
+        ...(knowledgeBases?.map((base) => base.id) ?? []).filter(
+          (id) => !excludedKnowledgeBaseIds.includes(id),
+        ),
+      ]),
+    ].sort();
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
@@ -297,12 +349,24 @@ export function KnowledgeQueryScreen({
         </View>
         {guideDemo ? <GuideDemoBanner /> : null}
         {!guideDemo ? (
-          <CategoryQueryFilter
-            knowledgeId={knowledgeId}
-            selected={categoryIds}
-            onChange={setCategoryIds}
-            disabled={activeTurnId !== undefined}
-          />
+          <>
+            <CategoryQueryFilter
+              knowledgeId={knowledgeId}
+              knowledgeBases={knowledgeBases}
+              excludedKnowledgeBaseIds={excludedKnowledgeBaseIds}
+              onToggleKnowledgeBase={(id) =>
+                setExcludedKnowledgeBaseIds((current) =>
+                  current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
+                )
+              }
+              selected={categoryIds}
+              onChange={setCategoryIds}
+              disabled={activeTurnId !== undefined || chatStarted}
+            />
+            {chatStarted ? (
+              <Text style={styles.frozenNotice}>{t('knowledgeQuery.scopeFrozen')}</Text>
+            ) : null}
+          </>
         ) : null}
         <ScrollView
           alwaysBounceVertical
@@ -455,6 +519,13 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
   },
   historyHintText: { ...typography.description, color: textColors.secondary },
+  // 检索范围冻结提示：说明本段聊天内不可修改，退出后重新进入才会重新开始。
+  frozenNotice: {
+    ...typography.label,
+    color: textColors.tertiary,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.xs,
+  },
   turn: { gap: spacing.sm },
   questionBubble: {
     alignSelf: 'flex-end',

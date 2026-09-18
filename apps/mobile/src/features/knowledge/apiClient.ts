@@ -30,6 +30,7 @@ import {
   KnowledgeCategoryListSchema,
   KnowledgeCategorySchema,
   DocumentClassificationSchema,
+  type KnowledgeCategory,
   type KnowledgeCategoryCreate,
   type KnowledgeCategoryUpdate,
   type DocumentClassificationUpdate,
@@ -279,6 +280,8 @@ export const queryKnowledge = (
   question: string,
   conversationId?: string,
   categoryIds?: string[],
+  /** 跨知识库检索范围；只有一个库或未提供时保持单库检索。 */
+  knowledgeBaseIds?: string[],
 ) =>
   request(
     `/api/knowledge-bases/${knowledgeId}/query`,
@@ -290,10 +293,41 @@ export const queryKnowledge = (
         question,
         ...(conversationId ? { conversationId } : {}),
         ...(categoryIds?.length ? { categoryIds } : {}),
+        ...(knowledgeBaseIds && knowledgeBaseIds.length > 1 ? { knowledgeBaseIds } : {}),
       }),
     },
     50_000,
   );
+
+/**
+ * 按知识库逐个读取可检索类别，并标注类别归属，供跨库检索面板分组展示。
+ *
+ * 单个知识库目录失败不阻塞其余库：返回失败计数，由调用方提示并允许刷新重试。
+ */
+export const listRetrievalCategoriesByBase = async (
+  knowledgeBases: { id: string; name: string }[],
+): Promise<{ categories: (KnowledgeCategory & { knowledgeBaseId: string })[]; failed: number }> => {
+  const results = await Promise.all(
+    knowledgeBases.map(async (item) => {
+      try {
+        const response = await listRetrievalCategories(item.id);
+        return {
+          failed: 0,
+          categories: response.items.map((category) => ({
+            ...category,
+            knowledgeBaseId: item.id,
+          })),
+        };
+      } catch {
+        return { failed: 1, categories: [] };
+      }
+    }),
+  );
+  return {
+    categories: results.flatMap((result) => result.categories),
+    failed: results.reduce((total, result) => total + result.failed, 0),
+  };
+};
 
 /** 读取当前知识库最近六个已完成问答。 */
 export const listQueryHistory = (knowledgeId: string) =>

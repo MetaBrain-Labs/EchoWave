@@ -74,6 +74,11 @@ function createHarness({
 
   const checkpointer = new MemorySaver();
   const repository = {
+    // 检索范围由 availableCategories 的版本行决定，测试桩按请求的库返回版本。
+    availableCategories: async (ids) => ({
+      categories: [],
+      versions: (ids ?? [kbId]).map((id) => ({ id, version: 1, categoryVersion: 1 })),
+    }),
     getOrCreateConversation: async () => ({
       id: conversationId,
       threadId: `thread-${conversationId}`,
@@ -183,6 +188,49 @@ describe('parseJsonObject', () => {
 });
 
 describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
+  it('drops earlier turns retrieval transcripts so stale passages cannot be cited', async () => {
+    const firstAnswer = JSON.stringify({
+      answer: '上一个库的依据。[1]',
+      grounded: true,
+      citedChunkIds: [chunkId],
+    });
+    const secondAnswer = JSON.stringify({
+      answer: '本轮的术语依据。[1]',
+      grounded: true,
+      citedChunkIds: [chunkId],
+    });
+    const { answers, requests } = createHarness({
+      enableThinking: false,
+      scriptedResponses: [
+        chatCompletion({ toolCalls: [searchToolCall('call_1')] }),
+        chatCompletion({ content: firstAnswer }),
+        chatCompletion({ toolCalls: [searchToolCall('call_2')] }),
+        chatCompletion({ content: secondAnswer }),
+      ],
+    });
+
+    const first = await answers.answer({
+      knowledgeBaseId: kbId,
+      request: { question: '第一个库有什么？' },
+    });
+    await answers.answer({
+      knowledgeBaseId: kbId,
+      request: { question: '第二个库有什么？', conversationId: first.conversationId },
+    });
+
+    // 第二轮请求携带的多轮上下文里不得残留上一轮的 tool 消息与工具调用助手消息。
+    const followUp = requests.at(-2);
+    const firstTurn = requests[1];
+    assert.equal(firstTurn.messages.filter((message) => message.role === 'tool').length, 1);
+    assert.deepEqual(
+      followUp.messages.map((message) => message.role),
+      ['system', 'user', 'assistant', 'user'],
+    );
+    assert.equal(followUp.messages.filter((message) => message.role === 'tool').length, 0);
+    // 历史轮次只保留问题及其最终回答，答案正文仍在上下文里。
+    assert.ok(String(followUp.messages[2].content).includes('上一个库'));
+  });
+
   it('blocks a fifth sequential search and completes from the four retrieved results', async () => {
     const toolEvents = [];
     const finishes = [];

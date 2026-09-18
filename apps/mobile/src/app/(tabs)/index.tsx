@@ -50,9 +50,16 @@ export default function GroupRoute() {
         router.push({ pathname: '/groups/[groupId]/template-example', params: { groupId } });
       }}
       onAskKnowledge={(knowledgeId, groupId) => {
+        // 每次从分组进入都是一段新聊天：session 变化会重挂载问答页并重新开始记忆。
         router.push({
           pathname: '/knowledge/[knowledgeId]/ask',
-          params: { knowledgeId, groupId, origin: 'group', preselect: 'all' },
+          params: {
+            knowledgeId,
+            groupId,
+            origin: 'group',
+            preselect: 'all',
+            session: `${Date.now()}`,
+          },
         });
       }}
       onTabChange={(tab) => router.setParams({ tab })}

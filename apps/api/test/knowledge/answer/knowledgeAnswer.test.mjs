@@ -23,6 +23,15 @@ function createHarness({
   let cleanupTask;
   let cancelled = false;
   const repository = {
+    // 检索范围由 availableCategories 的版本行决定：存在且未删除的知识库才会返回。
+    availableCategories: async (ids) => ({
+      categories: [],
+      versions: (ids ?? [knowledgeBaseId]).map((id) => ({
+        id,
+        version: 1,
+        categoryVersion: 1,
+      })),
+    }),
     getOrCreateConversation: async () => {
       events.push('conversation');
       return { id: conversationId, threadId: `thread-${conversationId}` };
@@ -78,6 +87,8 @@ function createHarness({
       candidate,
       usage: { inputTokens: 0, outputTokens: 0 },
     }),
+    // 默认不补齐依据：只有检索到段落且候选未引用任何证据时才会调用。
+    groundAnswer: async () => ({ answer: '', grounded: false, citedChunkIds: [] }),
     ...agentOverrides,
   };
   const checkpointer = {
@@ -190,7 +201,7 @@ it('never broadens an explicit category filter even if the agent asks for expans
             version: 0,
           },
         ],
-        versions: [],
+        versions: [{ id: knowledgeBaseId, version: 1, categoryVersion: 1 }],
       }),
       search: async (_kb, _vector, _model, filter) => {
         filters.push(filter);
@@ -220,10 +231,117 @@ it('never broadens an explicit category filter even if the agent asks for expans
   }
 });
 
+it('retrieves across every requested knowledge base and audits the scope', async () => {
+  const secondBaseId = '22222222-3333-4333-8333-222222222222';
+  const secondChunkId = '33333333-3333-4333-8333-444444444444';
+  const searched = [];
+  const harness = createHarness({
+    repositoryOverrides: {
+      // 只把真实存在的两个库放进版本集合；未请求的范围不得进入检索。
+      availableCategories: async (ids) => ({
+        categories: [],
+        versions: (ids ?? []).map((id) => ({ id, version: 3, categoryVersion: 2 })),
+      }),
+      searchMany: async (ids) => {
+        searched.push([...ids]);
+        return [
+          {
+            id: chunkId,
+            knowledgeBaseId,
+            documentId: '44444444-4444-4444-8444-444444444444',
+            documentTitle: '研究.md',
+            locator: { kind: 'markdown', headingPath: ['结论'], lineStart: 3, lineEnd: 4 },
+            content: '第一个库的依据。',
+          },
+          {
+            id: secondChunkId,
+            knowledgeBaseId: secondBaseId,
+            documentId: '55555555-5555-4555-8555-555555555555',
+            documentTitle: '术语表.md',
+            locator: { kind: 'markdown', headingPath: ['术语'], lineStart: 1, lineEnd: 2 },
+            content: '第二个库的依据。',
+          },
+        ];
+      },
+    },
+    agentOverrides: {
+      generate: async ({ searchKnowledge }) => {
+        await searchKnowledge('跨库问题');
+        return {
+          candidate: {
+            answer: '两个库共同支持结论。[1][2]',
+            grounded: true,
+            citedChunkIds: [chunkId, secondChunkId],
+          },
+          usage: { inputTokens: 5, outputTokens: 6 },
+        };
+      },
+    },
+  });
+
+  try {
+    const response = await harness.answers.answer({
+      knowledgeBaseId,
+      request: { question: '跨库问题', knowledgeBaseIds: [secondBaseId] },
+    });
+
+    // 路由库与请求库合并后按字典序规范化，只检索一次跨库查询。
+    assert.deepEqual(searched, [[knowledgeBaseId, secondBaseId].sort()]);
+    assert.deepEqual(
+      response.citations.map((citation) => citation.knowledgeBaseId),
+      [knowledgeBaseId, secondBaseId],
+    );
+    const completed = harness.events.find(
+      (event) => Array.isArray(event) && event[0] === 'complete',
+    )[1];
+    assert.deepEqual(
+      completed.retrievalAudit[0].knowledgeBaseIds,
+      [knowledgeBaseId, secondBaseId].sort(),
+    );
+  } finally {
+    await harness.answers.dispose();
+  }
+});
+
+it('rejects a knowledge base that is not available to the tenant', async () => {
+  const foreignBaseId = '99999999-9999-4999-8999-999999999999';
+  const harness = createHarness({
+    repositoryOverrides: {
+      // 只解析路由知识库：请求里额外的库在租户范围内不存在。
+      availableCategories: async () => ({
+        categories: [],
+        versions: [{ id: knowledgeBaseId, version: 1, categoryVersion: 1 }],
+      }),
+    },
+  });
+
+  try {
+    await assert.rejects(
+      harness.answers.answer({
+        knowledgeBaseId,
+        request: { question: '跨库问题', knowledgeBaseIds: [foreignBaseId] },
+      }),
+      (error) => error.code === 'NOT_FOUND',
+    );
+    // 越权范围在建立会话与审计之前就被拒绝。
+    assert.deepEqual(harness.events, []);
+  } finally {
+    await harness.answers.dispose();
+  }
+});
+
 describe('trusted knowledge answer module', () => {
   it('resolves dynamic providers only when an answer is requested', async () => {
     const events = [];
     const repository = {
+      availableCategories: async (ids) => ({
+        categories: [],
+        versions: (ids ?? [knowledgeBaseId]).map((id) => ({
+          id,
+          version: 1,
+          categoryVersion: 1,
+        })),
+      }),
       getOrCreateConversation: async () => ({ id: conversationId, threadId: 'thread-dynamic' }),
       beginRun: async () => 'run-dynamic',
       search: async () => [],
@@ -257,6 +375,7 @@ describe('trusted knowledge answer module', () => {
               candidate,
               usage: { inputTokens: 0, outputTokens: 0 },
             }),
+            groundAnswer: async () => ({ answer: '', grounded: false, citedChunkIds: [] }),
           },
           ragConfig: {
             embeddingModel: 'qwen3.7-text-embedding',
@@ -355,6 +474,93 @@ describe('trusted knowledge answer module', () => {
     assert.deepEqual(response.usage, { embeddingTokens: 7, inputTokens: 10, outputTokens: 20 });
     assert.deepEqual(events.slice(0, 4), ['conversation', 'begin', 'generate', 'search']);
     assert.equal(events.at(-1)[0], 'complete');
+  });
+
+  it('grounds the answer from retrieved passages when the model cites nothing', async () => {
+    const steps = [];
+    const reporter = {
+      start: () => ({
+        recordMetadata: () => undefined,
+        recordStep: (value) => steps.push(value),
+        recordModelCall: () => undefined,
+        recordToolCall: () => undefined,
+        recordContext: () => undefined,
+        recordReasoning: () => undefined,
+        recordOutput: () => undefined,
+        finish: async () => undefined,
+      }),
+    };
+    const rescuedIds = [];
+    const { answers } = createHarness({
+      reporter,
+      agentOverrides: {
+        // 模型检索到了段落，却仍然宣布“没有依据”，这正是跨库问答里出现的误拒答。
+        generate: async (input) => {
+          await input.searchKnowledge('测试问题');
+          return {
+            candidate: {
+              answer: '知识库中没有足够依据回答这个问题。',
+              grounded: false,
+              citedChunkIds: [],
+            },
+            usage: { inputTokens: 4, outputTokens: 5 },
+          };
+        },
+        groundAnswer: async ({ passages }) => {
+          rescuedIds.push(...passages.map((passage) => passage.chunkId));
+          return {
+            answer: '依据显示答案为 A。[1]',
+            grounded: true,
+            citedChunkIds: [passages[0].chunkId],
+          };
+        },
+      },
+    });
+
+    const response = await answers.answer({
+      knowledgeBaseId,
+      request: { question: '答案是什么？' },
+    });
+
+    assert.equal(response.grounded, true);
+    assert.equal(response.answer, '依据显示答案为 A。[1]');
+    assert.equal(response.citations[0].chunkId, chunkId);
+    assert.deepEqual(rescuedIds, [chunkId]);
+    // 同名步骤含 started/completed 两条记录，只取带元数据的完成记录。
+    const rescueStep = steps.find(
+      (step) => step.name === 'grounding-rescue' && step.status === 'completed',
+    );
+    assert.equal(rescueStep.metadata.rescued, true);
+    assert.equal(steps.find((step) => step.name === 'citation-validation').metadata.rescued, true);
+  });
+
+  it('still refuses when the grounding rescue finds no usable citation', async () => {
+    const { answers } = createHarness({
+      agentOverrides: {
+        generate: async (input) => {
+          await input.searchKnowledge('测试问题');
+          return {
+            candidate: { answer: '拒答。', grounded: false, citedChunkIds: [] },
+            usage: { inputTokens: 1, outputTokens: 1 },
+          };
+        },
+        // 补齐调用仍引用越权 ID：必须继续降级为稳定拒答。
+        groundAnswer: async () => ({
+          answer: '未经确认的答案。[1]',
+          grounded: true,
+          citedChunkIds: ['99999999-9999-4999-8999-999999999999'],
+        }),
+      },
+    });
+
+    const response = await answers.answer({
+      knowledgeBaseId,
+      request: { question: '答案是什么？' },
+    });
+
+    assert.equal(response.grounded, false);
+    assert.equal(response.answer, '知识库中没有足够依据回答这个问题。');
+    assert.deepEqual(response.citations, []);
   });
 
   it('falls back when citation correction still returns an unknown chunk', async () => {

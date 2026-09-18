@@ -100,6 +100,8 @@ export class ConversationRepository {
   /** 在调用模型前创建 running 审计记录，使失败请求也拥有可追踪的运行标识。 */
   async beginRun(input: {
     knowledgeBaseId: string;
+    /** 本次实际检索的知识库集合；单库时与 knowledgeBaseId 一致。 */
+    knowledgeBaseIds?: string[];
     conversationId: string;
     question: string;
     embeddingModel: string;
@@ -112,8 +114,9 @@ export class ConversationRepository {
     const result = await this.pool.query(
       `INSERT INTO ${this.table('rag_runs')}
          (tenant_id, knowledge_base_id, conversation_id, question, embedding_model, chat_model,
-          chat_provider, status, embedding_binding_revision_id, chat_binding_revision_id,category_snapshot)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,'running',$8,$9,$10::jsonb) RETURNING id`,
+          chat_provider, status, embedding_binding_revision_id, chat_binding_revision_id,category_snapshot,
+          knowledge_base_ids)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'running',$8,$9,$10::jsonb,$11::uuid[]) RETURNING id`,
       [
         this.tenantId,
         input.knowledgeBaseId,
@@ -125,6 +128,7 @@ export class ConversationRepository {
         input.embeddingBindingRevisionId,
         input.chatBindingRevisionId,
         JSON.stringify(input.categorySnapshot ?? []),
+        input.knowledgeBaseIds ?? [input.knowledgeBaseId],
       ],
     );
     return result.rows[0].id as string;
