@@ -42,6 +42,7 @@
 | [一键式音频全流程分析](./audio-analysis-automation.md)  | 产品、移动端与 Worker 维护者           | 批次、定时、恢复、取消、推送和 outbox。以批次契约、Worker 与迁移为准。                                                  |
 | [Android 真机全量回归](./mobile-e2e.md)                 | 移动端、API 与测试维护者               | Maestro 稳定/真实套件、设备前置条件、证据、只读诊断和显式修复门禁。以 `.maestro` 与 E2E 编排器为准。                    |
 | [Android E2E 问题汇总](./mobile-e2e-troubleshooting.md) | 移动端、API 与测试维护者               | 真机回归期间的常见错误、根因、处理结果和证据定位。以 `.artifacts/maestro`、Flow 与 E2E 编排器为准。                     |
+| [缺陷修复记录](./bug-fixes.md)                          | 维护者与负责人                         | 已确认缺陷的复现方式、根因与验证证据；未验证通过前不得标记为已修复。                                                    |
 | [自托管与自行构建](./self-hosting.md)                   | Self-hosted 用户、维护者与 Fork 作者   | Server 部署入口、EAS/Firebase、Development/Production Build 和验收步骤。以部署指南、EAS profiles 与 Expo 官方文档为准。 |
 | [GitHub Release 使用手册](./releases.md)                | App 用户、Self-hosted 用户与发布维护者 | Release 下载校验、App/Server 安装、升级、备份、回退、排障和 Tag 发布流程。以发布工作流与 Release manifest 为准。        |
 | [Release Server 包内说明](../deploy/release/README.md)  | 下载 Server ZIP 的部署者               | 随版本注入镜像 digest 与回退下限的安装、备份和恢复命令；模板变量只能由发布脚本替换。                                    |

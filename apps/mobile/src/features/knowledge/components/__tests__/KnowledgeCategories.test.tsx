@@ -144,7 +144,7 @@ describe('knowledge category interactions', () => {
       { sheet: '纠错测试样例', categoryId: categories[2]!.id },
     ]);
   });
-  it('retries catalogue failure and limits explicit selection to three categories', async () => {
+  it('retries catalogue failure and allows unlimited multi-select', async () => {
     jest
       .mocked(listRetrievalCategories)
       .mockRejectedValueOnce(new Error('timeout'))
@@ -164,6 +164,7 @@ describe('knowledge category interactions', () => {
     await waitFor(() => expect(screen.getByLabelText('产品资料')).toBeTruthy());
     fireEvent.press(screen.getByLabelText('产品资料'));
     expect(onChange).toHaveBeenCalledWith([categories[1]!.id]);
+    // 多选不设数量上限：已选满三个类别时第四个仍可勾选。
     screen.rerender(
       <CategoryQueryFilter
         knowledgeId={knowledge.id}
@@ -174,7 +175,10 @@ describe('knowledge category interactions', () => {
     );
     onChange.mockClear();
     fireEvent.press(screen.getByLabelText('业务规则/SOP'));
-    expect(onChange).not.toHaveBeenCalled();
+    expect(onChange).toHaveBeenCalledWith([
+      ...categories.slice(0, 3).map((item) => item.id),
+      categories[3]!.id,
+    ]);
   });
   it('preserves failed custom-category input and sends versions when deactivating', async () => {
     jest

@@ -1,19 +1,21 @@
 /**
  * 知识语义类别选择器。
  *
- * 在原生和 Web 使用同一可访问选项列表，支持继承与最多三个检索类别。
+ * 在原生和 Web 使用同一可访问选项列表，支持继承、单选分类与不限数量的多选检索。
  *
  * Responsibilities:
  * - 只更新调用方编辑草稿，不保存业务数据。
+ * - 多选模式使用勾选图标与选中底色，与设计令牌保持一致。
  *
  * Notes:
  * - 停用项可展示但不能成为新分类覆盖。
+ * - 多选不设数量上限，用户可自由勾选或取消。
  */
 import type { KnowledgeCategory } from '@echowave/contracts';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
-import { colors, spacing, textColors, typography } from '@/shared/theme/tokens';
+import { colors, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
 
 const categoryDescriptions: Record<string, string> = {
   terminology: '术语、热词、实体和纠错内容',
@@ -71,8 +73,7 @@ export function CategoryPicker({
       ) : null}
       {categories.map((item) => {
         const checked = selected.includes(item.id);
-        const unavailable =
-          disabled || !item.active || (multiple && !checked && selected.length >= 3);
+        const unavailable = disabled || !item.active;
         return (
           <Pressable
             key={item.id}
@@ -110,7 +111,15 @@ export function CategoryPicker({
             </View>
             <Ionicons
               color={checked ? colors.primary : colors.muted}
-              name={checked ? 'radio-button-on' : 'radio-button-off'}
+              name={
+                multiple
+                  ? checked
+                    ? 'checkmark-circle'
+                    : 'ellipse-outline'
+                  : checked
+                    ? 'radio-button-on'
+                    : 'radio-button-off'
+              }
               size={22}
             />
           </Pressable>
@@ -124,7 +133,7 @@ const styles = StyleSheet.create({
   option: {
     alignItems: 'center',
     borderColor: 'transparent',
-    borderRadius: 10,
+    borderRadius: radii.default,
     borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.md,

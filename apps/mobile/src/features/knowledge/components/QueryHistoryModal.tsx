@@ -9,6 +9,7 @@
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { RagHistoryItem } from '@echowave/contracts';
+import { useCallback, useRef } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -19,6 +20,7 @@ import {
   View,
 } from 'react-native';
 
+import { useCitationJump } from '@/shared/hooks/useCitationJump';
 import {
   colors,
   fontFamilies,
@@ -27,7 +29,8 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
-import { CitationList } from './CitationList';
+import { AnswerText } from './AnswerText';
+import { CitationList, type CitationListHandle } from './CitationList';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 /** 渲染最近问答的只读弹层。 */
@@ -51,6 +54,28 @@ export function QueryHistoryModal({
   onOpenCitation?: (documentId: string, chunkId: string) => void;
 }) {
   const { formatDateTime, formatNumber, t } = useAppLanguage();
+  const scrollRef = useRef<ScrollView>(null);
+  const citationListRefs = useRef(new Map<string, CitationListHandle | null>());
+  const answerOffsets = useRef(new Map<string, number>());
+  const jump = useCitationJump(scrollRef);
+
+  /** 引用列表上报卡片偏移后，把历史列表滚动到对应位置。 */
+  const scrollToCitationCard = useCallback(
+    (itemId: string, offset: number) => {
+      const answerOffset = answerOffsets.current.get(itemId);
+      if (answerOffset === undefined) return;
+      jump.onCitationScrollToOffset(answerOffset + offset);
+    },
+    [jump],
+  );
+
+  const openCitationMarker = useCallback(
+    (itemId: string, number: number) => {
+      jump.openCitation(number);
+      citationListRefs.current.get(itemId)?.scrollToCitation(number);
+    },
+    [jump],
+  );
 
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
@@ -94,26 +119,46 @@ export function QueryHistoryModal({
               <Text style={styles.stateText}>{t('queryHistory.empty')}</Text>
             </View>
           ) : (
-            <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              contentContainerStyle={styles.list}
+              ref={scrollRef}
+              showsVerticalScrollIndicator={false}
+            >
               {items.map((item) => (
-                <View key={item.id} style={styles.item}>
+                <View key={item.id} style={styles.item} testID="query-history-item">
                   <Text style={styles.time}>{formatDateTime(item.createdAt)}</Text>
                   <Text style={styles.role}>{t('queryHistory.you')}</Text>
                   <Text selectable style={styles.question}>
                     {item.question}
                   </Text>
                   <Text style={styles.role}>Assistant</Text>
-                  <Text selectable style={styles.answer}>
-                    {item.answer}
-                  </Text>
-                  <CitationList
-                    citations={item.citations ?? []}
-                    knowledgeId={knowledgeId}
-                    onOpenCitation={(documentId, chunkId) => {
-                      onClose();
-                      onOpenCitation?.(documentId, chunkId);
-                    }}
+                  <AnswerText
+                    answer={item.answer}
+                    citationCount={(item.citations ?? []).length}
+                    onOpenCitationMarker={(number) => openCitationMarker(item.id, number)}
+                    style={styles.answer}
                   />
+                  <View
+                    onLayout={(event) => {
+                      // 同一处布局同时服务引用跳转定位与本条历史记录的位置记录。
+                      jump.setListOffset(event.nativeEvent.layout.y);
+                      answerOffsets.current.set(item.id, event.nativeEvent.layout.y);
+                    }}
+                  >
+                    <CitationList
+                      citations={item.citations ?? []}
+                      highlightedNumber={jump.highlightedNumber}
+                      knowledgeId={knowledgeId}
+                      onOpenCitation={(documentId, chunkId) => {
+                        onClose();
+                        onOpenCitation?.(documentId, chunkId);
+                      }}
+                      onScrollToOffset={(offset) => scrollToCitationCard(item.id, offset)}
+                      ref={(node) => {
+                        citationListRefs.current.set(item.id, node);
+                      }}
+                    />
+                  </View>
                   {item.citationCount > (item.citations?.length ?? 0) ? (
                     <Text style={styles.meta}>{t('knowledgeEdit.source.unavailable')}</Text>
                   ) : null}

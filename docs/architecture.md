@@ -103,13 +103,15 @@ The hot path relies on pgvector `vector(1024)`, cosine HNSW, session-level retri
 - `deepseek-v4-flash` performs non-thinking JSON role recognition, grounded answers, speaker review, and business analysis under task-specific schemas.
 - Retrieval uses cosine HNSW with `ef_search=100`, initial top 30, deduplication/document quotas, and at most 8 chunks or 12,000 characters for the Agent.
 - DeepAgent has no filesystem, skills, long-term memory, or subagents. Its only business tool is tenant-scoped `search_knowledge`, with at most four executions per turn.
-- The Server accepts citations only from the current retrieval allowlist. Insufficient evidence returns `grounded=false`; common knowledge cannot fill the gap.
+- The Server accepts citations only from the current retrieval allowlist. Insufficient evidence returns `grounded=false`; common knowledge cannot fill the gap. Eight citations is prompt guidance, not a Server truncation threshold: every allowlist-valid citation is returned, because a `[9]` marker denotes a real ninth source and trimming it would silently delete evidence. Citation correction runs only for IDs outside the allowlist and may replace those IDs, never shorten the answer or break the marker-to-citation mapping. Markers map to citation order, so the Server renumbers them sequentially and removes a marker only when it exceeds the retained citation count. The mobile client shows four citations by default and expands the complete list on demand.
 
 ### Why knowledge answers are not streamed yet
 
 The answer boundary completes `DeepAgent invoke → JSON recovery/correction → citation allowlist validation → usage aggregation → run audit` before returning one `RagQueryResponseSchema` JSON response. Streaming would need a product event contract separating provisional text, final citations, usage, cancellation, and failure, including the case where displayed text later fails citation validation. It must not be implemented by simply replacing `invoke` and bypassing trust checks.
 
 The mobile progress card is client interaction feedback, not server telemetry. Only the final result contains verified sources. The read-only recent-history endpoint returns up to six completed summaries from `rag_runs`; it does not revive them as editable conversations.
+
+The query screen and history panel render each `[n]` in the answer as a tappable marker: tapping it expands the collapsed citation area, scrolls the container to the matching citation card, and highlights that card temporarily. Offsets come from measured card heights rather than assumed ones. Tapping a citation card still only opens the citation snapshot modal and never navigates to the source document; only the modal's explicit action opens the original location.
 
 ## AI execution diagnostics
 
@@ -140,7 +142,9 @@ Migration `040_knowledge_categories.sql` adds tenant category catalogues, knowle
 
 The ingestion Graph's `classify` node reuses `knowledge_chat` for one bounded suggestion request, fairly sampling every worksheet within a 12000-character content budget. Persisted suggestions survive ingestion retries; classification failures do not block vector publication. Existing documents request suggestions explicitly. Renames inherit their source revision classification; file replacements do not.
 
-Question-answering selects up to three categories through the existing search tool. Business analysis extends its existing planning request with category choices. The server validates choices within the current or linked knowledge-base whitelist and applies SQL category filters alongside tenant, document lifecycle, active revision and embedding-model checks. Ordinary factual tasks exclude classified test fixtures.
+Question-answering selects up to three categories through the existing search tool, while mobile users may select any number of categories explicitly with no upper bound; both paths share the same server-side validation. Business analysis extends its existing planning request with category choices. The server validates choices within the current or linked knowledge-base whitelist and applies SQL category filters alongside tenant, document lifecycle, active revision and embedding-model checks. Ordinary factual tasks exclude classified test fixtures.
+
+Entering Q&A from the group top bar preselects every active category of that knowledge base (inactive categories never join the default filter) and the user may adjust the selection freely. When the catalogue fails to load the client falls back to automatic routing instead of blocking the question.
 
 Automatic routing shares one expansion for zero hits or insufficient evidence, reusing query embeddings. Explicit filters never expand. Question-answering retains its four-search budget; business analysis shares five SQL searches across up to three proactive and two supplemental searches, including expansion. Business budgets and expansion flags survive recovery and parallel branches. Knowledge content versions cover classification/catalogue changes so stale analysis cannot publish.
 

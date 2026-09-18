@@ -35,13 +35,20 @@ import { RagRepositoryError } from '../persistence/errors.ts';
 import type { KnowledgeSearchPort } from '../retrieval/port.ts';
 import { CategoryRetrievalPolicy, isTestSampleQuestion } from '../retrieval/categoryPolicy.ts';
 import type { RetrievalChunk } from '../retrieval/types.ts';
+import { resolveCitationMarkers } from './citationMarkers.ts';
 import type { DeepSeekQueryAgent } from './deepSeekQueryAgent.ts';
 
 const INSUFFICIENT_EVIDENCE = '知识库中没有足够依据回答这个问题。';
 const RETRIEVAL_LIMIT_NOTICE =
   '提示：本轮检索已达到上限，回答仅基于当前已检索到的内容，证据可能不完整。';
 const MAX_SEARCH_CALLS = 4;
-const MAX_CITATIONS = 8;
+/**
+ * 引用数量的安全上限，只用于防御异常输出。
+ *
+ * 这里不再是"质量预算"：正文标记与引用清单必须一一对应，裁剪合法引用会让正文出现
+ * 无来源的 [n]，因此合法引用一律保留，长清单由移动端折叠展开承担。
+ */
+const MAX_CITATIONS = 24;
 const KNOWLEDGE_ANSWER_TIMEOUT_MS = 45_000;
 const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1_000;
 
@@ -500,9 +507,8 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
       let validIds = candidate.citedChunkIds.filter((id) => retrieved.has(id));
       let correctionUsage = { inputTokens: 0, outputTokens: 0 };
 
-      const needsCitationCorrection =
-        validIds.length !== candidate.citedChunkIds.length ||
-        candidate.citedChunkIds.length > MAX_CITATIONS;
+      // 只有越权 ID 才需要纠正；合法引用一律保留，否则正文中的 [n] 会失去对应来源。
+      const needsCitationCorrection = validIds.length !== candidate.citedChunkIds.length;
       if (needsCitationCorrection) {
         const correctionStartedAt = now();
         report.recordStep({ name: 'citation-correction', status: 'started' });
@@ -534,7 +540,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
             allowedCount: retrieved.size,
             validCount: validIds.length,
             citationCount: candidate.citedChunkIds.length,
-            maxCitations: MAX_CITATIONS,
+            safeLimit: MAX_CITATIONS,
             limitStillExceeded: candidate.citedChunkIds.length > MAX_CITATIONS,
           },
         });
@@ -559,6 +565,10 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
           answer: appendRetrievalLimitNotice(candidate.answer),
         };
       }
+      // 模型标记只影响编号展示，因此以答案正文为准重建连续编号，保证每个 [n] 都有对应来源。
+      const aligned = resolveCitationMarkers(candidate.answer, validIds);
+      candidate = { ...candidate, answer: aligned.answer };
+      validIds = aligned.citationIds;
       report.recordStep({
         name: 'citation-validation',
         status: 'completed',
@@ -567,6 +577,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
           citedCount: validIds.length,
           grounded: candidate.grounded,
           fellBack,
+          droppedMarkerCount: aligned.droppedMarkerCount,
         },
       });
 

@@ -49,6 +49,12 @@ export default function GroupRoute() {
       onOpenTemplateExample={(groupId) => {
         router.push({ pathname: '/groups/[groupId]/template-example', params: { groupId } });
       }}
+      onAskKnowledge={(knowledgeId, groupId) => {
+        router.push({
+          pathname: '/knowledge/[knowledgeId]/ask',
+          params: { knowledgeId, groupId, origin: 'group', preselect: 'all' },
+        });
+      }}
       onTabChange={(tab) => router.setParams({ tab })}
     />
   );

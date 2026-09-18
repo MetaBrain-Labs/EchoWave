@@ -16,6 +16,7 @@
 - [Analysis Case Collection](./analysis-case-collection.md): group rules, corrections, review, retrieval projections, and original audio learning.
 - [Android Device E2E](./mobile-e2e.md): Codex + Maestro suites, real integrations, evidence, and repair gates.
 - [Android E2E Troubleshooting](./mobile-e2e-troubleshooting.md): device, migration, seed, Metro, Flow, keyboard, and process-cleanup findings.
+- [Bug Fix Record](./bug-fixes.md): verified defects with reproduction, root cause, resolution, and verification evidence.
 - [Self-hosting and App Builds](./self-hosting.md): Server entry points, Development Builds, APKs, EAS, and Firebase identity.
 - [GitHub Release Guide](./releases.md): download verification, App/Server installation, backups, rollback, and maintainer publishing.
 - [Design System](./design-system.md): mobile visual tokens, typography, layout, and interaction rules.

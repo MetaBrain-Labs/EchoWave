@@ -408,7 +408,7 @@ export class DeepSeekQueryAgent {
   }
 
   /**
-   * 仅纠正引用 ID，不允许引入新的事实；调用方仍需再次执行白名单校验。
+   * 仅替换越权引用 ID，不允许引入新事实或缩短答案；调用方仍需再次执行白名单校验。
    */
   async correctCitations(
     candidate: AgentAnswerCandidate,
@@ -475,7 +475,8 @@ export class DeepSeekQueryAgent {
       input: correctionInput,
       output: modelMessageForReport(correction.raw),
       metadata: {
-        sourceCitationLimitExceeded: candidate.citedChunkIds.length > maxCitations,
+        // 纠正只处理越权 ID；被判定的候选引用数量另行记录，便于判断是否需要人工复核。
+        candidateCitationCount: candidate.citedChunkIds.length,
         parsed: recovered.candidate !== null,
         citationLimitExceeded: recovered.citationLimitExceeded,
         validationIssues: recovered.validationIssues,

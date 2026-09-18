@@ -32,7 +32,7 @@ export const zhCN = {
   'knowledgeCategory.confirmed': '建议已确认',
   'knowledgeCategory.refresh': '刷新类别',
   'knowledgeCategory.hint': '分类调整只更新检索范围，不重新生成向量。',
-  'knowledgeCategory.limit': '最多选择三个类别；手动筛选不会自动扩大。',
+  'knowledgeCategory.limit': '支持多选且不限制数量；手动筛选不会自动扩大。',
   'knowledgeCategory.keepHistory': '停用不删除历史内容；普通检索不会使用测试样例。',
   'knowledgeCategory.editBaseTitle': '编辑知识库',
   'knowledgeCategory.editGuide':
@@ -983,6 +983,8 @@ export const zhCN = {
   'groups.menu': '菜单',
   'groups.template': '模板',
   'groups.settings': '分组设置',
+  'groups.askKnowledge': '问知识库',
+  'groups.askNeedsKnowledge': '当前分组还没有关联知识库，先在“关联知识库”里关联一个。',
   'groups.loading': '正在加载分组',
   'groups.empty': '暂无分组',
   'groups.loadingDirectory': '正在加载分组目录',
@@ -1857,6 +1859,7 @@ export const zhCN = {
   'knowledgeQuery.failed': '问答请求失败。',
   'knowledgeQuery.historyFailed': '历史记录加载失败。',
   'knowledgeQuery.history': '查看历史记录',
+  'knowledgeQuery.historyShortcut': '查看最近问答',
   'knowledgeQuery.title': '问知识库',
   'knowledgeQuery.hint': '回答只基于已完成解析的知识库文档；依据不足时会明确拒答。',
   'knowledgeQuery.incomplete': '请求未完成',
@@ -1878,6 +1881,8 @@ export const zhCN = {
   'citation.expand': '展开其余 %{count} 条引用来源',
   'citation.collapseShort': '收起引用',
   'citation.expandShort': '展开其余 %{count} 条引用',
+  'citation.marker': '引用 %{number}',
+  'citation.markerHint': '跳转到下方对应的引用来源',
   'answerProgress.wake': '唤醒 AI',
   'answerProgress.connect': '连接知识库',
   'answerProgress.retrieve': '检索知识库',
@@ -1941,7 +1946,7 @@ export const en = {
   'knowledgeCategory.hint':
     'Category changes update retrieval scope without regenerating embeddings.',
   'knowledgeCategory.limit':
-    'Select up to three categories. Explicit filters are never expanded automatically.',
+    'Multiple selection is unlimited. Explicit filters are never expanded automatically.',
   'knowledgeCategory.keepHistory':
     'Deactivation preserves historical content. Ordinary retrieval excludes test fixtures.',
   'knowledgeCategory.editBaseTitle': 'Edit knowledge base',
@@ -2970,6 +2975,9 @@ export const en = {
   'groups.menu': 'Menu',
   'groups.template': 'Template',
   'groups.settings': 'Group settings',
+  'groups.askKnowledge': 'Ask knowledge base',
+  'groups.askNeedsKnowledge':
+    'This group has no linked knowledge base yet. Link one in “Linked knowledge bases” first.',
   'groups.loading': 'Loading groups',
   'groups.empty': 'No group selected',
   'groups.loadingDirectory': 'Loading group directory',
@@ -3887,6 +3895,7 @@ export const en = {
   'knowledgeQuery.failed': 'Knowledge Q&A request failed.',
   'knowledgeQuery.historyFailed': 'Unable to load history.',
   'knowledgeQuery.history': 'View history',
+  'knowledgeQuery.historyShortcut': 'View recent questions',
   'knowledgeQuery.title': 'Ask knowledge base',
   'knowledgeQuery.hint':
     'Answers use only fully parsed knowledge base documents and explicitly refuse when evidence is insufficient.',
@@ -3909,6 +3918,8 @@ export const en = {
   'citation.expand': 'Expand %{count} more citation sources',
   'citation.collapseShort': 'Collapse citations',
   'citation.expandShort': 'Expand %{count} more citations',
+  'citation.marker': 'Citation %{number}',
+  'citation.markerHint': 'Jumps to the matching citation below',
   'answerProgress.wake': 'Starting AI',
   'answerProgress.connect': 'Connecting to knowledge base',
   'answerProgress.retrieve': 'Retrieving knowledge',

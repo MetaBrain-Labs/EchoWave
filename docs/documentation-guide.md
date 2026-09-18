@@ -42,6 +42,7 @@ This guide maps every human-maintained Markdown document to its audience, author
 | [Automated Audio Analysis](./audio-analysis-automation.md) / [中文](./audio-analysis-automation.zh-CN.md)      | Product/mobile/workers        | Batch contracts, workers, migrations, push outbox             |
 | [Android Device E2E](./mobile-e2e.md) / [中文](./mobile-e2e.zh-CN.md)                                          | Mobile/API/test maintainers   | `.maestro` and Android orchestration                          |
 | [Android E2E Troubleshooting](./mobile-e2e-troubleshooting.md) / [中文](./mobile-e2e-troubleshooting.zh-CN.md) | Mobile/API/test maintainers   | Preserved run evidence and current runner behavior            |
+| [Bug Fix Record](./bug-fixes.md) / [中文](./bug-fixes.zh-CN.md)                                                | Maintainers and owners        | Verified defects with root cause and fix evidence             |
 | [Self-hosting and App Builds](./self-hosting.md) / [中文](./self-hosting.zh-CN.md)                             | Self-hosted users and forks   | Server entry, EAS/Firebase, Development/Production Builds     |
 | [GitHub Releases](./releases.md) / [中文](./releases.zh-CN.md)                                                 | Users and release maintainers | Release workflow, manifest, upgrade and rollback              |
 | [Bundled Server README](../deploy/release/README.md) / [中文](../deploy/release/README.zh-CN.md)               | Server ZIP users              | Version/digest/template variables injected by release tooling |

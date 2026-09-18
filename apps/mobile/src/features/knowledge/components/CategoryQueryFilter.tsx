@@ -1,23 +1,27 @@
 /**
  * 问答类别筛选面板。
  *
- * 延迟读取当前知识库可检索类别，支持自动路由与最多三个显式类别。
+ * 读取当前知识库可检索类别，支持自动路由与不限数量的显式多选类别；
+ * 从分组入口进入时展示默认选中的全部类别。
  *
  * Responsibilities:
  * - 显式筛选只作为每轮请求草稿，不成为本地业务权威数据。
+ * - 类别未就绪时给出明确加载状态，而不是回退显示类别 ID。
  *
  * Notes:
  * - 发送中禁止改变筛选，失败重试由页面保留原轮次筛选。
  */
 import type { KnowledgeCategory } from '@echowave/contracts';
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
-import { colors, radii, spacing } from '@/shared/theme/tokens';
+import { colors, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
 import { listRetrievalCategories } from '../apiClient';
 import { CategoryPicker } from './CategoryPicker';
 
-/** 自动路由和显式筛选共存；目录加载失败提供明确重试。 */
+const EMPTY_CATEGORIES: KnowledgeCategory[] = [];
+
+/** 自动路由和显式多选筛选共存；目录加载失败提供明确重试。 */
 export function CategoryQueryFilter({
   knowledgeId,
   selected,
@@ -31,20 +35,36 @@ export function CategoryQueryFilter({
 }) {
   const { t } = useAppLanguage();
   const [visible, setVisible] = useState(false);
-  const [categories, setCategories] = useState<KnowledgeCategory[]>([]);
+  const [categories, setCategories] = useState<KnowledgeCategory[]>(EMPTY_CATEGORIES);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const load = async () => {
+  /** 已按知识库完成一次目录加载，避免挂载期重复请求。 */
+  const loadedFor = useRef<string | undefined>(undefined);
+
+  const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
       setCategories((await listRetrievalCategories(knowledgeId)).items);
+      loadedFor.current = knowledgeId;
     } catch {
       setError(t('knowledgeCategory.loadFailed'));
     } finally {
       setLoading(false);
     }
-  };
+  }, [knowledgeId, t]);
+
+  // 挂载即拉取一次：筛选摘要需要类别名称，否则只能回退显示类别 ID。
+  useEffect(() => {
+    if (!knowledgeId || loadedFor.current === knowledgeId) return;
+    void load();
+  }, [knowledgeId, load]);
+
+  const selectedNames = selected.map(
+    (id) => categories.find((item) => item.id === id)?.name ?? t('common.loading'),
+  );
+  const summary = selected.length ? selectedNames.join(' / ') : t('knowledgeCategory.auto');
+
   return (
     <>
       <Pressable
@@ -53,16 +73,11 @@ export function CategoryQueryFilter({
         style={styles.button}
         onPress={() => {
           setVisible(true);
-          void load();
+          if (!categories.length) void load();
         }}
       >
-        <Text>
-          {t('knowledgeCategory.filter')}:{' '}
-          {selected.length
-            ? selected
-                .map((id) => categories.find((item) => item.id === id)?.name ?? id)
-                .join(' / ')
-            : t('knowledgeCategory.auto')}
+        <Text style={styles.summaryText} numberOfLines={2}>
+          {t('knowledgeCategory.filter')}: {summary}
         </Text>
       </Pressable>
       <Modal transparent visible={visible} onRequestClose={() => setVisible(false)}>
@@ -72,9 +87,11 @@ export function CategoryQueryFilter({
             contentContainerStyle={styles.content}
             keyboardShouldPersistTaps="handled"
           >
-            <Text accessibilityRole="header">{t('knowledgeCategory.filter')}</Text>
-            <Text>{t('knowledgeCategory.limit')}</Text>
-            {loading ? <Text>{t('documentActions.processing')}</Text> : null}
+            <Text accessibilityRole="header" style={styles.title}>
+              {t('knowledgeCategory.filter')}
+            </Text>
+            <Text style={styles.hint}>{t('knowledgeCategory.limit')}</Text>
+            {loading ? <Text style={styles.hint}>{t('documentActions.processing')}</Text> : null}
             <CategoryPicker
               categories={categories}
               selected={selected}
@@ -83,21 +100,25 @@ export function CategoryQueryFilter({
               emptyLabel={t('knowledgeCategory.auto')}
               disabled={disabled || loading}
             />
-            {error ? <Text accessibilityRole="alert">{error}</Text> : null}
+            {error ? (
+              <Text accessibilityRole="alert" style={styles.error}>
+                {error}
+              </Text>
+            ) : null}
             <Pressable
               accessibilityRole="button"
               disabled={loading}
               onPress={() => void load()}
-              style={styles.button}
+              style={styles.action}
             >
-              <Text>{t('knowledgeCategory.refresh')}</Text>
+              <Text style={styles.actionText}>{t('knowledgeCategory.refresh')}</Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
               onPress={() => setVisible(false)}
-              style={styles.button}
+              style={styles.action}
             >
-              <Text>{t('common.close')}</Text>
+              <Text style={styles.actionText}>{t('common.close')}</Text>
             </Pressable>
           </ScrollView>
         </View>
@@ -106,20 +127,26 @@ export function CategoryQueryFilter({
   );
 }
 const styles = StyleSheet.create({
-  button: { padding: spacing.sm, minHeight: 48, justifyContent: 'center' },
+  button: { justifyContent: 'center', minHeight: 48, padding: spacing.sm },
+  summaryText: { ...typography.description, color: textColors.primary },
+  title: { ...typography.heading3, color: textColors.primary },
+  hint: { ...typography.description, color: textColors.secondary },
+  error: { ...typography.description, color: colors.danger },
   overlay: {
-    flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
     backgroundColor: 'rgba(16,24,40,0.28)',
+    flex: 1,
+    justifyContent: 'center',
     padding: spacing.md,
   },
   sheet: {
-    width: '100%',
-    maxWidth: 480,
-    maxHeight: '90%',
     backgroundColor: colors.white,
     borderRadius: radii.default,
+    maxHeight: '90%',
+    maxWidth: 480,
+    width: '100%',
   },
-  content: { padding: spacing.md, gap: spacing.sm },
+  content: { gap: spacing.sm, padding: spacing.md },
+  action: { justifyContent: 'center', minHeight: 48, padding: spacing.sm },
+  actionText: { ...typography.description, color: textColors.primary },
 });

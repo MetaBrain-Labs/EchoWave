@@ -28,6 +28,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
+import { useCitationJump } from '@/shared/hooks/useCitationJump';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
@@ -40,9 +41,10 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
-import { listQueryHistory, queryKnowledge } from '../apiClient';
+import { listQueryHistory, listRetrievalCategories, queryKnowledge } from '../apiClient';
 import { AnswerProgressCard } from '../components/AnswerProgressCard';
-import { CitationList } from '../components/CitationList';
+import { AnswerText } from '../components/AnswerText';
+import { CitationList, type CitationListHandle } from '../components/CitationList';
 import { CategoryQueryFilter } from '../components/CategoryQueryFilter';
 import { QueryHistoryModal } from '../components/QueryHistoryModal';
 import { GuideDemoBanner } from '../components/GuideDemoBanner';
@@ -65,11 +67,14 @@ export function KnowledgeQueryScreen({
   knowledgeId,
   onBack,
   onOpenCitation,
+  preselectCategories = false,
 }: {
   guideDemo?: boolean;
   knowledgeId: string;
   onBack: () => void;
   onOpenCitation: (documentId: string, chunkId: string) => void;
+  /** 从分组入口进入时默认勾选该知识库的全部可检索类别。 */
+  preselectCategories?: boolean;
 }) {
   const { t } = useAppLanguage();
   const headerTargetRef = useStarterTourTarget('query-header');
@@ -102,6 +107,18 @@ export function KnowledgeQueryScreen({
   const mounted = useRef(true);
   const completionTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
   const scrollRef = useRef<ScrollView>(null);
+  const citationListRefs = useRef(new Map<number, CitationListHandle | null>());
+  const answerContainerOffsets = useRef(new Map<number, number>());
+  const jump = useCitationJump(scrollRef);
+  /** 标记跳转期间暂停自动滚到底部，避免与跳转目标互相打断。 */
+  const skipAutoScrollUntil = useRef(0);
+
+  const registerCitationList = useCallback(
+    (turnId: number) => (node: CitationListHandle | null) => {
+      citationListRefs.current.set(turnId, node);
+    },
+    [],
+  );
   const guideDemoHistory: RagHistoryItem[] = [
     {
       id: '00000000-0000-4000-8000-000000000006',
@@ -124,13 +141,51 @@ export function KnowledgeQueryScreen({
     };
   }, []);
 
+  // 分组入口默认勾选全部类别；失败时保持自动路由，不阻塞提问。
+  useEffect(() => {
+    if (!preselectCategories || guideDemo || !knowledgeId) return;
+    let active = true;
+    void listRetrievalCategories(knowledgeId)
+      .then((result) => {
+        if (!active) return;
+        const ids = result.items.filter((item) => item.active).map((item) => item.id);
+        if (ids.length) setCategoryIds(ids);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [guideDemo, knowledgeId, preselectCategories]);
+
   const scrollToLatest = useCallback(() => {
+    if (Date.now() < skipAutoScrollUntil.current) return;
     requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
   }, []);
 
   useEffect(() => {
     scrollToLatest();
   }, [scrollToLatest, turns]);
+
+  /** 引用列表完成布局后的回调：把卡片位置换算成页面滚动位置。 */
+  const scrollToCitationCard = useCallback(
+    (turnId: number, offset: number) => {
+      const containerOffset = answerContainerOffsets.current.get(turnId);
+      if (containerOffset === undefined) return;
+      skipAutoScrollUntil.current = Date.now() + 1_200;
+      jump.onCitationScrollToOffset(containerOffset + offset);
+    },
+    [jump],
+  );
+
+  /** 正文标记点击：先高亮，再让引用列表在展开完成后回报卡片位置。 */
+  const openCitationMarker = useCallback(
+    (turnId: number, number: number) => {
+      skipAutoScrollUntil.current = Date.now() + 1_200;
+      jump.openCitation(number);
+      citationListRefs.current.get(turnId)?.scrollToCitation(number);
+    },
+    [jump],
+  );
 
   const runTurn = async (turnId: number, value: string, selectedCategories?: string[]) => {
     if (guideDemo) return;
@@ -262,9 +317,16 @@ export function KnowledgeQueryScreen({
           <View ref={hintTargetRef} collapsable={false}>
             <Text style={styles.hint}>{t('knowledgeQuery.hint')}</Text>
           </View>
-          <View ref={historyTargetRef} collapsable={false} style={styles.historyHint}>
+          <Pressable
+            accessibilityLabel={t('knowledgeQuery.historyShortcut')}
+            accessibilityRole="button"
+            onPress={openHistory}
+            ref={historyTargetRef}
+            style={({ pressed }) => [styles.historyHint, pressed && styles.pressed]}
+            testID="query-history-shortcut"
+          >
             <Text style={styles.historyHintText}>{t('knowledgeQuery.history')}</Text>
-          </View>
+          </Pressable>
           {turns.map((turn) => (
             <View key={turn.id} style={styles.turn}>
               <View style={styles.questionBubble}>
@@ -306,15 +368,28 @@ export function KnowledgeQueryScreen({
                 <View
                   accessibilityLabel={turn.response.citations.length + '条引用来源'}
                   ref={answerTargetRef}
+                  onLayout={(event) => {
+                    answerContainerOffsets.current.set(turn.id, event.nativeEvent.layout.y);
+                  }}
                   style={styles.answerCard}
                 >
-                  <Text selectable style={styles.answerText}>
-                    {turn.response.answer}
-                  </Text>
-                  <View collapsable={false} ref={citationTargetRef}>
+                  <AnswerText
+                    answer={turn.response.answer}
+                    citationCount={turn.response.citations.length}
+                    onOpenCitationMarker={(number) => openCitationMarker(turn.id, number)}
+                    style={styles.answerText}
+                  />
+                  <View
+                    collapsable={false}
+                    onLayout={(event) => jump.setListOffset(event.nativeEvent.layout.y)}
+                    ref={citationTargetRef}
+                  >
                     <CitationList
                       citations={turn.response.citations}
+                      highlightedNumber={jump.highlightedNumber}
                       onOpenCitation={onOpenCitation}
+                      onScrollToOffset={(offset) => scrollToCitationCard(turn.id, offset)}
+                      ref={registerCitationList(turn.id)}
                     />
                   </View>
                 </View>

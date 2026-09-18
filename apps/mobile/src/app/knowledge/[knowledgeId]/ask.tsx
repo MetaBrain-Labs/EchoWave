@@ -25,10 +25,12 @@ export default function KnowledgeQueryRoute() {
     guideDemo?: string | string[];
     knowledgeId?: string | string[];
     origin?: string | string[];
+    preselect?: string | string[];
   }>();
   const knowledgeId = firstRouteParam(params.knowledgeId);
   const guideDemo = firstRouteParam(params.guideDemo) === 'true';
   const groupId = firstRouteParam(params.groupId);
+  const preselectCategories = firstRouteParam(params.preselect) === 'all';
   const origin = parseResourceOrigin(params.origin) ?? 'knowledge-list';
   return (
     <KnowledgeQueryScreen
@@ -59,6 +61,7 @@ export default function KnowledgeQueryRoute() {
           },
         })
       }
+      preselectCategories={preselectCategories}
     />
   );
 }
