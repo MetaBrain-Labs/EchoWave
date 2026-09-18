@@ -82,11 +82,13 @@ export default function KnowledgeDetailRoute() {
       }
       onBack={goBack}
       onAsk={() =>
+        // 从知识库详情进入同样开始一段新聊天。
         router.push({
           pathname: '/knowledge/[knowledgeId]/ask',
           params: {
             knowledgeId: id,
             origin: origin ?? 'knowledge-list',
+            session: `${Date.now()}`,
             ...(groupId ? { groupId } : {}),
             ...(guideDemo ? { guideDemo: 'true' } : {}),
           },

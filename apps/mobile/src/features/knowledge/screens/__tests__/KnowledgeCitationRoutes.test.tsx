@@ -112,6 +112,7 @@ describe('knowledge citation routes', () => {
 
     fireEvent.press(screen.getByText('打开引用'));
 
+    // 查看引用原文属于同一次聊天：路由必须带上 session，返回后记忆与冻结范围仍在。
     expect(mockRouter.push).toHaveBeenCalledWith({
       pathname: '/knowledge/[knowledgeId]/files/[fileId]/blocks/[blockId]',
       params: {
@@ -120,6 +121,7 @@ describe('knowledge citation routes', () => {
         blockId: 'chunk-id',
         origin: 'knowledge-list',
         returnTo: 'knowledge-query',
+        session: 'default',
       },
     });
   });

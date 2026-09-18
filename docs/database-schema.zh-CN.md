@@ -203,7 +203,7 @@ erDiagram
 
 ### `rag_conversations`
 
-知识库问答会话表，把业务会话与 LangGraph `thread_id` 关联起来。一个会话固定属于一个租户和一个知识库，并通过 `expires_at` 限制生命周期。
+知识库问答会话表，把业务会话与 LangGraph `thread_id` 关联起来。一个会话固定属于一个租户和一个知识库，并通过 `expires_at` 限制生命周期。`knowledge_base_ids` 记录该会话覆盖过的知识库集合（迁移 042 回填为单库数组），首个元素与 `knowledge_base_id` 一致。
 
 它只记录业务会话边界，不直接保存 LangGraph 的内部状态快照。
 
@@ -216,6 +216,7 @@ erDiagram
 - `question`、`answer`：问题和最终回答。
 - `grounded`：回答是否具有知识库证据。
 - `cited_chunk_ids`：最终引用的文档块。
+- `knowledge_base_ids`：本次实际检索的知识库集合；单库时等于 `knowledge_base_id`（迁移 042 新增）。
 - embedding、输入和输出 token 数量。
 - embedding 与聊天模型、供应商。
 - `duration_ms`、`status`、`completed_at`：耗时和运行结果。

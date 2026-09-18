@@ -44,6 +44,8 @@ import type { RagConfig } from '../../config/workspace.ts';
 import {
   citationCorrectionContext,
   citationCorrectionInput,
+  groundedRescueContext,
+  groundedRescueInput,
   knowledgeAgentContext,
   knowledgeFinalizationContext,
   knowledgeCategoryRoutingContext,
@@ -133,6 +135,14 @@ type QueryAgentOptions = {
   fetchImplementation?: typeof fetch;
 };
 
+/**
+ * 只保留最近六轮问答，并清掉历史轮次的检索过程。
+ *
+ * 历史轮次的 search_knowledge 结果里含有当时检索到的段落与 chunk ID：如果继续留在上下文，
+ * 模型会把它们当成本次可用证据（跨库问答尤其明显：只勾术语纠错却复述上一个库的内容），
+ * 而这些 chunk 并不在本次引用的白名单里，最终会被引用校验否决。
+ * 因此每个历史轮次只保留“用户问题 + 最终回答”，历史回答里的标记也不代表本轮来源。
+ */
 const shortConversationMiddleware = createMiddleware({
   name: 'KeepSixConversationTurns',
   beforeAgent: (state) => {
@@ -144,6 +154,16 @@ const shortConversationMiddleware = createMiddleware({
     const removals = messages
       .slice(0, keepFrom)
       .flatMap((message) => (message.id ? [new RemoveMessage({ id: message.id })] : []));
+    const historyStart = keepFrom;
+    const currentRunStart = humanIndexes.at(-1) ?? keepFrom;
+    for (const [index, message] of messages.entries()) {
+      // 只清理历史轮次；当前轮次的检索过程必须保留，否则模型看不到本轮证据。
+      if (index < historyStart || index >= currentRunStart || !message.id) continue;
+      const isToolTranscript =
+        message instanceof ToolMessage ||
+        (message instanceof AIMessage && (message.tool_calls?.length ?? 0) > 0);
+      if (isToolTranscript) removals.push(new RemoveMessage({ id: message.id }));
+    }
     return removals.length ? { messages: removals } : undefined;
   },
 });
@@ -408,7 +428,7 @@ export class DeepSeekQueryAgent {
   }
 
   /**
-   * 仅纠正引用 ID，不允许引入新的事实；调用方仍需再次执行白名单校验。
+   * 仅替换越权引用 ID，不允许引入新事实或缩短答案；调用方仍需再次执行白名单校验。
    */
   async correctCitations(
     candidate: AgentAnswerCandidate,
@@ -475,7 +495,8 @@ export class DeepSeekQueryAgent {
       input: correctionInput,
       output: modelMessageForReport(correction.raw),
       metadata: {
-        sourceCitationLimitExceeded: candidate.citedChunkIds.length > maxCitations,
+        // 纠正只处理越权 ID；被判定的候选引用数量另行记录，便于判断是否需要人工复核。
+        candidateCitationCount: candidate.citedChunkIds.length,
         parsed: recovered.candidate !== null,
         citationLimitExceeded: recovered.citationLimitExceeded,
         validationIssues: recovered.validationIssues,
@@ -488,5 +509,82 @@ export class DeepSeekQueryAgent {
       candidate: recovered.candidate ?? candidate,
       usage,
     };
+  }
+
+  /**
+   * 用已检索到的段落补齐一次依据，供检索有结果但候选回答仍未引用的场景使用。
+   *
+   * 只允许引用传入的段落 ID；调用方仍会再做一次白名单与引用校验。
+   */
+  async groundAnswer(input: {
+    question: string;
+    passages: { chunkId: string; documentTitle: string; content: string }[];
+    maxCitations: number;
+    signal?: AbortSignal;
+    diagnostics?: AiExecutionRecorder;
+  }): Promise<AgentAnswerCandidate> {
+    const systemPrompt = groundedRescueContext();
+    const userPrompt = groundedRescueInput(input.question, input.passages);
+    const callInput = {
+      kind: 'chat',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+    };
+    input.diagnostics?.recordContext({ systemPrompt, reason: 'grounding-rescue' });
+    const startedAt = Date.now();
+    try {
+      const result = await this.model
+        .withStructuredOutput(boundedAgentResponseSchema(input.maxCitations), {
+          method: 'jsonMode',
+          includeRaw: true,
+        })
+        .invoke(
+          [
+            ['system', systemPrompt],
+            ['user', userPrompt],
+          ],
+          { signal: input.signal ?? AbortSignal.timeout(18_000) },
+        );
+      const raw = extractFinalMessageText([result.raw]);
+      const value = result.parsed ?? parseJsonObject(raw.text) ?? parseJsonObject(raw.reasoning);
+      const recovered = recoverAgentCandidate(value, input.maxCitations);
+      input.diagnostics?.recordModelCall({
+        name: 'grounding-rescue',
+        provider: 'deepseek',
+        model: this.options.ragConfig.deepSeekChatModel,
+        status: 'completed',
+        attempt: 1,
+        durationMs: Date.now() - startedAt,
+        inputTokens: usageFromMessages([result.raw]).inputTokens,
+        outputTokens: usageFromMessages([result.raw]).outputTokens,
+        input: callInput,
+        output: modelMessageForReport(result.raw),
+        metadata: {
+          passageCount: input.passages.length,
+          parsed: recovered.candidate !== null,
+          validationIssues: recovered.validationIssues,
+        },
+      });
+      input.diagnostics?.recordReasoning(raw.reasoning);
+      input.diagnostics?.recordOutput({ rawText: raw.text });
+      return recovered.candidate ?? { answer: '', grounded: false, citedChunkIds: [] };
+    } catch (error) {
+      input.diagnostics?.recordModelCall({
+        name: 'grounding-rescue',
+        provider: 'deepseek',
+        model: this.options.ragConfig.deepSeekChatModel,
+        status: 'failed',
+        attempt: 1,
+        durationMs: Date.now() - startedAt,
+        inputTokens: null,
+        outputTokens: null,
+        input: callInput,
+        output: { error },
+      });
+      // 补齐失败不应覆盖原始回答：由调用方按原有降级规则处理。
+      return { answer: '', grounded: false, citedChunkIds: [] };
+    }
   }
 }

@@ -21,6 +21,12 @@ export const RagQueryRequestSchema = z.object({
   question: z.string().trim().min(1).max(2_000),
   conversationId: EntityIdSchema.optional(),
   categoryIds: KnowledgeCategoryFilterSchema.optional(),
+  /**
+   * 跨知识库检索范围；缺省时只检索路由里指定的单个知识库。
+   *
+   * 集合语义：同一集合始终产生同一批结果，与顺序无关。
+   */
+  knowledgeBaseIds: z.array(EntityIdSchema).min(1).max(20).optional(),
 });
 /** 可信回答中一个已验证引用的 schema。 */
 export const RagCitationSchema = z.object({

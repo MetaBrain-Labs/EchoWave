@@ -33,15 +33,28 @@ import {
 import type { ConversationRepository } from '../persistence/conversationRepository.ts';
 import { RagRepositoryError } from '../persistence/errors.ts';
 import type { KnowledgeSearchPort } from '../retrieval/port.ts';
-import { CategoryRetrievalPolicy, isTestSampleQuestion } from '../retrieval/categoryPolicy.ts';
+import {
+  CategoryRetrievalPolicy,
+  isTestSampleQuestion,
+  type CategorySearchFilter,
+} from '../retrieval/categoryPolicy.ts';
 import type { RetrievalChunk } from '../retrieval/types.ts';
+import { resolveCitationMarkers } from './citationMarkers.ts';
 import type { DeepSeekQueryAgent } from './deepSeekQueryAgent.ts';
 
 const INSUFFICIENT_EVIDENCE = '知识库中没有足够依据回答这个问题。';
 const RETRIEVAL_LIMIT_NOTICE =
   '提示：本轮检索已达到上限，回答仅基于当前已检索到的内容，证据可能不完整。';
 const MAX_SEARCH_CALLS = 4;
-const MAX_CITATIONS = 8;
+/** 补齐依据时最多回传的段落数，避免超出模型上下文与回答预算。 */
+const MAX_GROUNDING_PASSAGES = 8;
+/**
+ * 引用数量的安全上限，只用于防御异常输出。
+ *
+ * 这里不再是"质量预算"：正文标记与引用清单必须一一对应，裁剪合法引用会让正文出现
+ * 无来源的 [n]，因此合法引用一律保留，长清单由移动端折叠展开承担。
+ */
+const MAX_CITATIONS = 24;
 const KNOWLEDGE_ANSWER_TIMEOUT_MS = 45_000;
 const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1_000;
 
@@ -69,7 +82,10 @@ export class KnowledgeAnswerError extends Error {
 }
 
 type KnowledgeAnswerEmbeddings = Pick<DashScopeEmbeddings, 'embedQueryWithUsage'>;
-type KnowledgeAnswerAgent = Pick<DeepSeekQueryAgent, 'generate' | 'correctCitations'>;
+type KnowledgeAnswerAgent = Pick<
+  DeepSeekQueryAgent,
+  'generate' | 'correctCitations' | 'groundAnswer'
+>;
 type KnowledgeAnswerCheckpointer = {
   deleteThread(threadId: string): Promise<void>;
 };
@@ -166,9 +182,35 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
           chatBindingRevisionId: null,
         };
     const now = this.options.now ?? Date.now;
-    const categoryCatalogue = (await this.options.knowledgeRepository.availableCategories?.([
-      command.knowledgeBaseId,
-    ])) ?? { categories: [], versions: [] };
+    /**
+     * 本次检索范围：路由知识库始终参与，请求可追加同租户的其他知识库。
+     *
+     * 去重且按字典序规范化，保证同一集合的审计与结果稳定；单库时保持原有检索预算。
+     */
+    const requestedIds = [
+      ...new Set([command.knowledgeBaseId, ...(request.knowledgeBaseIds ?? [])]),
+    ].sort();
+    const categoryCatalogue = (await this.options.knowledgeRepository.availableCategories?.(
+      requestedIds,
+    )) ?? { categories: [], versions: [] };
+    /**
+     * 只有真实存在且未删除的知识库才会进入检索范围；越权或已删除的 ID 直接拒绝。
+     *
+     * `availableCategories` 只为存在且未删除的知识库返回版本行，因此版本集合同时充当
+     * “该知识库可检索”的判定依据，并让跨库检索集合与审计快照保持一致。
+     */
+    const searchBaseIds = categoryCatalogue.versions.map((entry) => entry.id);
+    if (!searchBaseIds.length) {
+      throw new RagRepositoryError('NOT_FOUND', '知识库不存在或已删除。');
+    }
+    // 请求中任何一个越权或已删除的知识库都拒绝整次检索，避免静默缩小范围。
+    if (searchBaseIds.length !== requestedIds.length) {
+      const resolved = new Set(searchBaseIds);
+      const missing = requestedIds.filter((id) => !resolved.has(id));
+      console.warn('Knowledge answer rejected unknown knowledge bases', { missing });
+      throw new RagRepositoryError('NOT_FOUND', '知识库不存在或已删除。');
+    }
+    const crossBase = searchBaseIds.length > 1;
     let categoryPolicy: CategoryRetrievalPolicy;
     try {
       categoryPolicy = new CategoryRetrievalPolicy(
@@ -190,6 +232,8 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
       name: 'EchoWave trusted knowledge answer',
       metadata: {
         knowledgeBaseId: command.knowledgeBaseId,
+        knowledgeBaseIds: searchBaseIds,
+        crossBase,
         requestedConversationId: request.conversationId,
         questionLength: request.question.length,
         embeddingModel: runtime.ragConfig.embeddingModel,
@@ -235,6 +279,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
       runId = await this.options.conversationRepository.beginRun({
         categorySnapshot: categoryCatalogue.versions,
         knowledgeBaseId: command.knowledgeBaseId,
+        knowledgeBaseIds: searchBaseIds,
         conversationId: conversation.id,
         question: request.question,
         embeddingModel: runtime.ragConfig.embeddingModel,
@@ -316,7 +361,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
             });
 
             try {
-              let filter;
+              let filter: CategorySearchFilter;
               try {
                 filter = categoryPolicy.resolve(query, choice);
               } catch {
@@ -374,17 +419,28 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
                 embeddingTokens += embedded.tokens;
                 queryEmbeddings.set(query, embedded);
               }
-              let chunks = await this.options.knowledgeRepository.search(
-                command.knowledgeBaseId,
-                embedded.vectors[0] ?? [],
-                runtime.ragConfig.embeddingModel,
-                filter,
-              );
+              // 单库沿用原有召回与上下文预算；多库使用跨库检索的全局配额。
+              const retrieve = () =>
+                crossBase
+                  ? this.options.knowledgeRepository.searchMany(
+                      searchBaseIds,
+                      embedded.vectors[0] ?? [],
+                      runtime.ragConfig.embeddingModel,
+                      filter,
+                    )
+                  : this.options.knowledgeRepository.search(
+                      command.knowledgeBaseId,
+                      embedded.vectors[0] ?? [],
+                      runtime.ragConfig.embeddingModel,
+                      filter,
+                    );
+              let chunks = await retrieve();
               retrievalAudit.push({
                 call: retrievalCall,
                 query,
                 categoryIds: filter.categoryIds ?? null,
                 reason: filter.reason,
+                knowledgeBaseIds: searchBaseIds,
                 hitCount: chunks.length,
                 durationMs: now() - retrievalStartedAt,
               });
@@ -393,18 +449,26 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
                 if (fallback) {
                   retrievalCalls += 1;
                   const fallbackStartedAt = now();
-                  chunks = await this.options.knowledgeRepository.search(
-                    command.knowledgeBaseId,
-                    embedded.vectors[0] ?? [],
-                    runtime.ragConfig.embeddingModel,
-                    fallback,
-                  );
                   filter = fallback;
+                  chunks = crossBase
+                    ? await this.options.knowledgeRepository.searchMany(
+                        searchBaseIds,
+                        embedded.vectors[0] ?? [],
+                        runtime.ragConfig.embeddingModel,
+                        fallback,
+                      )
+                    : await this.options.knowledgeRepository.search(
+                        command.knowledgeBaseId,
+                        embedded.vectors[0] ?? [],
+                        runtime.ragConfig.embeddingModel,
+                        fallback,
+                      );
                   retrievalAudit.push({
                     call: retrievalCalls,
                     query,
                     categoryIds: null,
                     reason: fallback.reason,
+                    knowledgeBaseIds: searchBaseIds,
                     hitCount: chunks.length,
                     durationMs: now() - fallbackStartedAt,
                   });
@@ -500,9 +564,8 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
       let validIds = candidate.citedChunkIds.filter((id) => retrieved.has(id));
       let correctionUsage = { inputTokens: 0, outputTokens: 0 };
 
-      const needsCitationCorrection =
-        validIds.length !== candidate.citedChunkIds.length ||
-        candidate.citedChunkIds.length > MAX_CITATIONS;
+      // 只有越权 ID 才需要纠正；合法引用一律保留，否则正文中的 [n] 会失去对应来源。
+      const needsCitationCorrection = validIds.length !== candidate.citedChunkIds.length;
       if (needsCitationCorrection) {
         const correctionStartedAt = now();
         report.recordStep({ name: 'citation-correction', status: 'started' });
@@ -534,7 +597,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
             allowedCount: retrieved.size,
             validCount: validIds.length,
             citationCount: candidate.citedChunkIds.length,
-            maxCitations: MAX_CITATIONS,
+            safeLimit: MAX_CITATIONS,
             limitStillExceeded: candidate.citedChunkIds.length > MAX_CITATIONS,
           },
         });
@@ -545,7 +608,54 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         !candidate.grounded ||
         validIds.length === 0 ||
         validIds.length !== candidate.citedChunkIds.length;
-      if (fellBack) {
+
+      /**
+       * 检索已经拿到合法段落、但候选回答仍未引用任何证据时，先补齐一次依据再决定是否拒答。
+       *
+       * 否则会把“模型漏引用”误报成“知识库没有依据”（跨库检索更容易触发）。
+       */
+      const needsGroundingRescue = fellBack && retrieved.size > 0 && validIds.length === 0;
+      if (needsGroundingRescue) {
+        const rescueStartedAt = now();
+        report.recordStep({ name: 'grounding-rescue', status: 'started' });
+        const passages = [...retrieved.values()].slice(0, MAX_GROUNDING_PASSAGES).map((chunk) => ({
+          chunkId: chunk.id,
+          documentTitle: chunk.documentTitle,
+          content: chunk.content,
+        }));
+        const rescued = await runtime.agent.groundAnswer({
+          question: request.question,
+          passages,
+          maxCitations: MAX_CITATIONS,
+          signal,
+          diagnostics: report,
+        });
+        const rescuedIds = rescued.citedChunkIds.filter((id) => retrieved.has(id));
+        const rescuedAccepted =
+          rescued.grounded &&
+          rescuedIds.length > 0 &&
+          rescuedIds.length === rescued.citedChunkIds.length;
+        if (rescuedAccepted) {
+          candidate = rescued;
+          validIds = rescuedIds;
+        }
+        report.recordStep({
+          name: 'grounding-rescue',
+          status: 'completed',
+          durationMs: now() - rescueStartedAt,
+          metadata: {
+            passageCount: passages.length,
+            rescued: rescuedAccepted,
+            citedCount: rescuedIds.length,
+          },
+        });
+      }
+
+      const stillFellBack =
+        !candidate.grounded ||
+        validIds.length === 0 ||
+        validIds.length !== candidate.citedChunkIds.length;
+      if (stillFellBack) {
         candidate = {
           answer: INSUFFICIENT_EVIDENCE,
           grounded: false,
@@ -559,6 +669,10 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
           answer: appendRetrievalLimitNotice(candidate.answer),
         };
       }
+      // 模型标记只影响编号展示，因此以答案正文为准重建连续编号，保证每个 [n] 都有对应来源。
+      const aligned = resolveCitationMarkers(candidate.answer, validIds);
+      candidate = { ...candidate, answer: aligned.answer };
+      validIds = aligned.citationIds;
       report.recordStep({
         name: 'citation-validation',
         status: 'completed',
@@ -566,7 +680,9 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
           retrievedCount: retrieved.size,
           citedCount: validIds.length,
           grounded: candidate.grounded,
-          fellBack,
+          fellBack: stillFellBack,
+          rescued: needsGroundingRescue && !stillFellBack,
+          droppedMarkerCount: aligned.droppedMarkerCount,
         },
       });
 

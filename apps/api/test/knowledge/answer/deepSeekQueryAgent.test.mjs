@@ -5,6 +5,7 @@ import { MemorySaver } from '@langchain/langgraph';
 
 import { createKnowledgeAnswerModule } from '../../../dist/knowledge/answer/knowledgeAnswer.js';
 import { DeepSeekQueryAgent } from '../../../dist/knowledge/answer/deepSeekQueryAgent.js';
+import { answerCitationNumbers } from '../../../dist/knowledge/answer/citationMarkers.js';
 import { parseJsonObject } from '../../../dist/knowledge/answer/structuredOutput.js';
 
 const kbId = '11111111-1111-4111-8111-111111111111';
@@ -73,6 +74,11 @@ function createHarness({
 
   const checkpointer = new MemorySaver();
   const repository = {
+    // 检索范围由 availableCategories 的版本行决定，测试桩按请求的库返回版本。
+    availableCategories: async (ids) => ({
+      categories: [],
+      versions: (ids ?? [kbId]).map((id) => ({ id, version: 1, categoryVersion: 1 })),
+    }),
     getOrCreateConversation: async () => ({
       id: conversationId,
       threadId: `thread-${conversationId}`,
@@ -182,6 +188,49 @@ describe('parseJsonObject', () => {
 });
 
 describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
+  it('drops earlier turns retrieval transcripts so stale passages cannot be cited', async () => {
+    const firstAnswer = JSON.stringify({
+      answer: '上一个库的依据。[1]',
+      grounded: true,
+      citedChunkIds: [chunkId],
+    });
+    const secondAnswer = JSON.stringify({
+      answer: '本轮的术语依据。[1]',
+      grounded: true,
+      citedChunkIds: [chunkId],
+    });
+    const { answers, requests } = createHarness({
+      enableThinking: false,
+      scriptedResponses: [
+        chatCompletion({ toolCalls: [searchToolCall('call_1')] }),
+        chatCompletion({ content: firstAnswer }),
+        chatCompletion({ toolCalls: [searchToolCall('call_2')] }),
+        chatCompletion({ content: secondAnswer }),
+      ],
+    });
+
+    const first = await answers.answer({
+      knowledgeBaseId: kbId,
+      request: { question: '第一个库有什么？' },
+    });
+    await answers.answer({
+      knowledgeBaseId: kbId,
+      request: { question: '第二个库有什么？', conversationId: first.conversationId },
+    });
+
+    // 第二轮请求携带的多轮上下文里不得残留上一轮的 tool 消息与工具调用助手消息。
+    const followUp = requests.at(-2);
+    const firstTurn = requests[1];
+    assert.equal(firstTurn.messages.filter((message) => message.role === 'tool').length, 1);
+    assert.deepEqual(
+      followUp.messages.map((message) => message.role),
+      ['system', 'user', 'assistant', 'user'],
+    );
+    assert.equal(followUp.messages.filter((message) => message.role === 'tool').length, 0);
+    // 历史轮次只保留问题及其最终回答，答案正文仍在上下文里。
+    assert.ok(String(followUp.messages[2].content).includes('上一个库'));
+  });
+
   it('blocks a fifth sequential search and completes from the four retrieved results', async () => {
     const toolEvents = [];
     const finishes = [];
@@ -382,7 +431,7 @@ describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
     assert.deepEqual(requests[0].thinking, { type: 'disabled' });
   });
 
-  it('compacts more than eight valid citations instead of falling back to insufficient evidence', async () => {
+  it('keeps every valid citation when the model cites more than eight chunks', async () => {
     const chunks = Array.from({ length: 9 }, (_, index) => {
       const number = index + 1;
       return {
@@ -394,20 +443,6 @@ describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
       };
     });
     const allIds = chunks.map((chunk) => chunk.id);
-    const compactIds = allIds.slice(0, 8);
-    const modelEvents = [];
-    const reporter = {
-      start: () => ({
-        recordMetadata: () => undefined,
-        recordStep: () => undefined,
-        recordModelCall: (value) => modelEvents.push(value),
-        recordToolCall: () => undefined,
-        recordContext: () => undefined,
-        recordReasoning: () => undefined,
-        recordOutput: () => undefined,
-        finish: async () => undefined,
-      }),
-    };
     const { answers, requests } = createHarness({
       enableThinking: false,
       finalAnswer: JSON.stringify({
@@ -415,12 +450,6 @@ describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
         grounded: true,
         citedChunkIds: allIds,
       }),
-      correctionAnswer: JSON.stringify({
-        answer: '知识库的核心内容可由八条主要依据概括。[1][2][3][4][5][6][7][8]',
-        grounded: true,
-        citedChunkIds: compactIds,
-      }),
-      reporter,
       searchChunks: chunks,
     });
 
@@ -430,21 +459,24 @@ describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
     });
 
     assert.equal(result.grounded, true);
-    assert.equal(result.citations.length, 8);
-    assert.doesNotMatch(result.answer, /没有足够依据/);
-    assert.ok(JSON.stringify(requests[0].messages).includes('no more than 8 citedChunkIds'));
-    assert.ok(JSON.stringify(requests.at(-1).messages).includes('Keep at most 8'));
-    const generation = modelEvents.find(
-      (event) => event.metadata?.sourceCitationLimitExceeded === true,
+    // 合法引用不得被裁剪，否则正文里的 [9] 会失去对应来源。
+    assert.equal(result.citations.length, 9);
+    assert.equal(result.answer, '知识库包含九类核心内容。[1][2][3][4][5][6][7][8][9]');
+    assert.deepEqual(
+      answerCitationNumbers(result.answer),
+      Array.from({ length: 9 }, (_, index) => index + 1),
     );
-    assert.ok(generation);
-    assert.equal(generation.name, 'citation-correction');
-    assert.equal(generation.input.messages[0].role, 'system');
-    assert.equal(generation.input.messages[1].role, 'user');
-    assert.match(generation.output.content, /citedChunkIds/);
+    assert.deepEqual(
+      result.citations.map((citation) => citation.number),
+      Array.from({ length: 9 }, (_, index) => index + 1),
+    );
+    assert.doesNotMatch(result.answer, /没有足够依据/);
+    // 全部引用都在白名单内时不应再触发纠正调用。
+    assert.equal(requests.length, 2);
+    assert.ok(JSON.stringify(requests[0].messages).includes('no more than 24 citedChunkIds'));
   });
 
-  it('preserves verified citations when the compaction response still exceeds the soft limit', async () => {
+  it('preserves verified citations when the model exceeds the prompt guidance', async () => {
     const chunks = Array.from({ length: 9 }, (_, index) => {
       const number = index + 1;
       return {
@@ -476,6 +508,114 @@ describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
     assert.equal(result.grounded, true);
     assert.equal(result.citations.length, 9);
     assert.doesNotMatch(result.answer, /没有足够依据/);
+  });
+
+  it('keeps the complete citation list when the answer references only part of it', async () => {
+    const chunks = Array.from({ length: 9 }, (_, index) => {
+      const number = index + 1;
+      return {
+        id: `55555555-5555-4555-8555-${String(number).padStart(12, '0')}`,
+        documentId: '44444444-4444-4444-8444-444444444444',
+        documentTitle: `制度 ${number}.md`,
+        locator: { kind: 'markdown', headingPath: ['规则'], lineStart: number, lineEnd: number },
+        content: `第 ${number} 条业务规则。`,
+      };
+    });
+    const { answers, requests } = createHarness({
+      enableThinking: false,
+      // 正文只用了 [1]..[8]，模型却回传了九个 ID。
+      finalAnswer: JSON.stringify({
+        answer: '八类规则覆盖了销售全流程。[1][2][3][4][5][6][7][8]',
+        grounded: true,
+        citedChunkIds: chunks.map((chunk) => chunk.id),
+      }),
+      searchChunks: chunks,
+    });
+
+    const result = await answers.answer({
+      knowledgeBaseId: kbId,
+      request: { question: '销售有哪些业务规则？' },
+    });
+
+    assert.equal(result.grounded, true);
+    // 全部 ID 都合法，因此不触发纠正调用；正文未提及的合法来源仍保留在完整清单末尾。
+    assert.equal(requests.length, 2);
+    assert.equal(result.citations.length, 9);
+    assert.deepEqual(
+      result.citations.map((citation) => citation.chunkId),
+      chunks.map((chunk) => chunk.id),
+    );
+    assert.deepEqual(
+      answerCitationNumbers(result.answer),
+      Array.from({ length: 8 }, (_, index) => index + 1),
+    );
+    assert.deepEqual(
+      result.citations.map((citation) => citation.number),
+      Array.from({ length: 9 }, (_, index) => index + 1),
+    );
+  });
+
+  it('keeps every answer marker pointing at a returned citation source', async () => {
+    const chunks = Array.from({ length: 9 }, (_, index) => {
+      const number = index + 1;
+      return {
+        id: `66666666-6666-4666-8666-${String(number).padStart(12, '0')}`,
+        documentId: '44444444-4444-4444-8444-444444444444',
+        documentTitle: `制度 ${number}.md`,
+        locator: { kind: 'markdown', headingPath: ['规则'], lineStart: number, lineEnd: number },
+        content: `第 ${number} 条业务规则。`,
+      };
+    });
+    const steps = [];
+    const reporter = {
+      start: () => ({
+        recordMetadata: () => undefined,
+        recordStep: (value) => steps.push(value),
+        recordModelCall: () => undefined,
+        recordToolCall: () => undefined,
+        recordContext: () => undefined,
+        recordReasoning: () => undefined,
+        recordOutput: () => undefined,
+        finish: async () => undefined,
+      }),
+    };
+    const unknownId = '99999999-9999-4999-8999-999999999999';
+    const { answers } = createHarness({
+      enableThinking: false,
+      // 第九个 ID 越权，纠正后只剩八个合法 ID，正文却仍有九个标记。
+      finalAnswer: JSON.stringify({
+        answer: '九类规则覆盖了销售全流程。[1][2][3][4][5][6][7][8][9]',
+        grounded: true,
+        citedChunkIds: [...chunks.slice(0, 8).map((chunk) => chunk.id), unknownId],
+      }),
+      correctionAnswer: JSON.stringify({
+        answer: '八类规则覆盖了销售全流程。[1][2][3][4][5][6][7][8][9]',
+        grounded: true,
+        citedChunkIds: chunks.slice(0, 8).map((chunk) => chunk.id),
+      }),
+      reporter,
+      searchChunks: chunks,
+    });
+
+    const result = await answers.answer({
+      knowledgeBaseId: kbId,
+      request: { question: '销售有哪些业务规则？' },
+    });
+
+    assert.equal(result.grounded, true);
+    assert.equal(result.citations.length, 8);
+    // 越界标记必须被移除，其余标记与来源编号保持一一对应。
+    assert.ok(!result.answer.includes('[9]'));
+    assert.deepEqual(
+      answerCitationNumbers(result.answer),
+      Array.from({ length: 8 }, (_, index) => index + 1),
+    );
+    assert.deepEqual(
+      result.citations.map((citation) => citation.number),
+      Array.from({ length: 8 }, (_, index) => index + 1),
+    );
+    const validation = steps.find((step) => step.name === 'citation-validation');
+    assert.equal(validation.metadata.droppedMarkerCount, 1);
   });
 
   it('sends thinking enabled when DEEPSEEK_ENABLE_THINKING is true', async () => {

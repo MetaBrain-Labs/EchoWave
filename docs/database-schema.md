@@ -98,7 +98,7 @@ Durable queue rows with lease, attempts, retry schedule, progress, and error fac
 
 ### `rag_conversations` and `rag_runs`
 
-Conversations hold bounded multi-turn context in one knowledge base. Runs audit one question, final grounded answer, validated citations, usage, status, and errors. Recent history reads only completed run summaries and does not revive old conversations.
+Conversations hold bounded multi-turn context anchored to one knowledge base; `knowledge_base_ids` records the set of knowledge bases the conversation covered (migration 042 backfills it as a single-element array) and its first element matches `knowledge_base_id`. Runs audit one question, final grounded answer, validated citations, usage, status, and errors, and `knowledge_base_ids` records the effective retrieval scope of that run (single-base runs keep it equal to `knowledge_base_id`). Recent history reads only completed run summaries and does not revive old conversations.
 
 ## Groups and relationships
 

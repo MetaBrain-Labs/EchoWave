@@ -125,6 +125,18 @@ describe('GroupScreen', () => {
     jest.mocked(workspaceApi.replaceGroupDataSources).mockResolvedValue({ items: sourceFixtures });
   });
 
+  it('opens the linked knowledge base Q&A from the top bar', async () => {
+    const onAskKnowledge = jest.fn();
+    const screen = await renderGroup({ onAskKnowledge });
+
+    fireEvent.press(screen.getByLabelText('问知识库'));
+
+    // 以当前分组第一个关联知识库进入问答，由路由层补充分组与默认类别。
+    await waitFor(() =>
+      expect(onAskKnowledge).toHaveBeenCalledWith(knowledgeFixtures[0]!.id, groupFixture.id),
+    );
+  });
+
   it('uses the special group title and inline icon sizing rules', async () => {
     const screen = await renderGroup();
 

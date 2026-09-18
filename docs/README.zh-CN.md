@@ -16,6 +16,7 @@
 - [分析案例收集与回听](./analysis-case-collection.zh-CN.md)：分组规则、人工纠正、精选审核、检索投影与原声学习。
 - [Android 真机全量回归](./mobile-e2e.zh-CN.md)：Codex + Maestro 的稳定套件、真实集成、证据与修复门禁。
 - [Android E2E 问题汇总](./mobile-e2e-troubleshooting.zh-CN.md)：真机、迁移、seed、Metro、Flow、键盘和进程清理问题的排障结论。
+- [缺陷修复记录](./bug-fixes.zh-CN.md)：已确认缺陷的复现方式、根因、修复方案与验证证据。
 - [自托管与自行构建](./self-hosting.zh-CN.md)：Server 部署入口、Development Build、APK 与 EAS/Firebase 身份配置。
 - [GitHub Release 使用手册](./releases.zh-CN.md)：稳定版本下载、校验、App/Server 安装、备份、回退与维护者发布流程。
 - [设计规范](./design-system.zh-CN.md)：移动端视觉令牌、排版、布局与交互约束。

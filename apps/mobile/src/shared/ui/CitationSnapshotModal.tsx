@@ -15,7 +15,14 @@ import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { getKnowledgeCitationSource } from '@/shared/api/knowledgeBasesApi';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
-import { colors, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
+import {
+  colors,
+  fontFamilies,
+  radii,
+  spacing,
+  textColors,
+  typography,
+} from '@/shared/theme/tokens';
 
 /** 引用快照的展示接口，同时适配问答和业务分析。 */
 export type CitationSnapshot = Omit<BusinessAnalysisCitation, 'knowledgeBaseId'> & {
@@ -117,9 +124,9 @@ function CitationSnapshotSession({ citation, onClose, onOpenCurrent }: CitationS
                   setStatus('unavailable');
                   setAttempt((value) => value + 1);
                 }}
-                style={styles.button}
+                style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
               >
-                <Text>{t('common.retry')}</Text>
+                <Text style={styles.primaryButtonText}>{t('common.retry')}</Text>
               </Pressable>
             </>
           ) : null}
@@ -130,13 +137,17 @@ function CitationSnapshotSession({ citation, onClose, onOpenCurrent }: CitationS
                 onClose();
                 onOpenCurrent();
               }}
-              style={styles.button}
+              style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
             >
-              <Text>{t('knowledgeEdit.openCurrent')}</Text>
+              <Text style={styles.primaryButtonText}>{t('knowledgeEdit.openCurrent')}</Text>
             </Pressable>
           ) : null}
-          <Pressable accessibilityRole="button" onPress={onClose} style={styles.button}>
-            <Text>{t('common.close')}</Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={onClose}
+            style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
+          >
+            <Text style={styles.secondaryButtonText}>{t('common.close')}</Text>
           </Pressable>
         </View>
       </View>
@@ -164,5 +175,35 @@ const styles = StyleSheet.create({
   meta: { ...typography.description, color: textColors.secondary },
   quote: { ...typography.body, color: textColors.primary },
   quoteScroll: { flexShrink: 1 },
-  button: { padding: spacing.sm, minHeight: 48, justifyContent: 'center' },
+  // 操作按钮沿用项目统一的深色主按钮与描边次按钮，避免裸文字按钮。
+  primaryButton: {
+    alignItems: 'center',
+    backgroundColor: colors.ink,
+    borderRadius: radii.default,
+    justifyContent: 'center',
+    minHeight: 48,
+    paddingHorizontal: spacing.md,
+  },
+  primaryButtonText: {
+    ...typography.description,
+    color: colors.card,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  secondaryButton: {
+    alignItems: 'center',
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 48,
+    paddingHorizontal: spacing.md,
+  },
+  secondaryButtonText: {
+    ...typography.description,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  pressed: { opacity: 0.72 },
 });

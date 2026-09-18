@@ -105,8 +105,9 @@ const IconButton = forwardRef<
     icon: keyof typeof Ionicons.glyphMap;
     label: string;
     onPress: () => void;
+    testID?: string;
   }
->(function IconButton({ disabled = false, icon, label, onPress }, ref) {
+>(function IconButton({ disabled = false, icon, label, onPress, testID }, ref) {
   return (
     <Pressable
       accessibilityLabel={label}
@@ -120,6 +121,7 @@ const IconButton = forwardRef<
         disabled && styles.disabled,
         pressed && styles.pressed,
       ]}
+      testID={testID}
     >
       <Ionicons color={colors.ink} name={icon} size={29} />
     </Pressable>
@@ -135,6 +137,7 @@ export function GroupScreen({
   onOpenSource,
   onOpenSettings,
   onOpenTemplateExample,
+  onAskKnowledge,
   onGroupChange,
   onTabChange,
 }: {
@@ -145,6 +148,8 @@ export function GroupScreen({
   onOpenSource?: (id: string, groupId: string) => void;
   onOpenSettings?: (id: string) => void;
   onOpenTemplateExample?: (id: string) => void;
+  /** 从分组直接进入某个关联知识库的问答；由路由层决定目标知识库。 */
+  onAskKnowledge?: (knowledgeId: string, groupId: string) => void;
   onGroupChange?: (groupId?: string) => void;
   onTabChange?: (tab: TabKey) => void;
 }) {
@@ -304,6 +309,31 @@ export function GroupScreen({
     },
     [t],
   );
+
+  /**
+   * 顶栏“问知识库”：优先使用当前分组的关联知识库，未取到时按需再拉取一次。
+   *
+   * 没有关联知识库时给出明确提示，不进入空白问答页。
+   */
+  const askKnowledge = useCallback(async () => {
+    if (!group) return;
+    let linked = knowledgeBases;
+    if (!linked.length) {
+      try {
+        linked = (await listGroupKnowledgeBases(group.id)).items;
+        if (selectedGroupId.current === group.id) setKnowledgeBases(linked);
+      } catch (reason) {
+        Alert.alert(reason instanceof Error ? reason.message : t('groups.loadKnowledgeFailed'));
+        return;
+      }
+    }
+    const target = linked[0];
+    if (!target) {
+      Alert.alert(t('groups.askNeedsKnowledge'));
+      return;
+    }
+    onAskKnowledge?.(target.id, group.id);
+  }, [group, knowledgeBases, onAskKnowledge, t]);
 
   const clearSelection = useCallback(() => {
     selectedGroupId.current = undefined;
@@ -808,6 +838,13 @@ export function GroupScreen({
             icon="search"
             label={t('common.search')}
             onPress={() => setSearchVisible(true)}
+          />
+          <IconButton
+            disabled={!group || knowledgeLoading}
+            icon="chatbubble-ellipses-outline"
+            label={t('groups.askKnowledge')}
+            onPress={() => void askKnowledge()}
+            testID="group-ask-knowledge"
           />
           <IconButton
             disabled={!group}

@@ -40,11 +40,11 @@ export const KnowledgeCategoryUpdateSchema = KnowledgeCategoryCreateSchema.parti
       value.name !== undefined || value.description !== undefined || value.active !== undefined,
     { message: 'At least one category field must be provided.' },
   );
-/** 一次检索最多选择三个不重复类别。 */
+/** 一次检索可显式选择任意数量的不重复类别；数量上限由服务端目录规模决定。 */
 export const KnowledgeCategoryFilterSchema = z
   .array(EntityIdSchema)
   .min(1)
-  .max(3)
+  .max(200)
   .refine((ids) => new Set(ids).size === ids.length, { message: 'Category IDs must be unique.' });
 /** 工作表覆盖类别。 */
 export const SheetCategoryAssignmentSchema = z.object({
