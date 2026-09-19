@@ -2,7 +2,7 @@
 
 **English** | [简体中文](./configuration.zh-CN.md)
 
-EchoWave separates configuration into three boundaries: `apps/api/.env` holds startup configuration, PostgreSQL holds ordinary tenant configuration, and Credential Providers hold secrets. The mobile client separately stores the current Server origin. Use **More → AI Configuration** for AI settings and **More → Service Status** for the Server address.
+EchoWave separates configuration into three boundaries: `apps/api/.env` holds startup configuration, PostgreSQL holds ordinary tenant configuration, and Credential Providers hold secrets. The mobile client separately stores the current Server origin. Verify the administrator token once under **More → Service configuration**; that page's tenant ASR default context and its entry cards for AI configuration and runtime mode share the verification. While unverified, AI configuration and runtime mode show only a verification prompt instead of loading content. The Server address and push registration live under **More → Service Status**, and device-level preferences such as language and the default analysis workflow live under **More → General settings**.
 
 ## Current model and platform choice
 

@@ -42,7 +42,10 @@ import type { TranslationKey } from '@/shared/i18n/translations';
 import { analyzeRecording, storeRecording } from '@/shared/recording/recordingOperations';
 import { useRecording } from '@/shared/recording/RecordingProvider';
 import { recordingFile, type RecordingDraft } from '@/shared/recording/recordingStore';
-import { useAnalysisPreference } from '@/shared/settings/AnalysisPreferenceProvider';
+import {
+  useAnalysisPreference,
+  type AnalysisPreference,
+} from '@/shared/settings/AnalysisPreferenceProvider';
 import {
   colors,
   fontFamilies,
@@ -449,6 +452,7 @@ export function RecordingScreen({
 }) {
   const recording = useRecording();
   const { t } = useAppLanguage();
+  const { preference, hydrated, setPreference } = useAnalysisPreference();
   const [sources, setSources] = useState<DataSourceSummary[]>([]);
   const [sourceId, setSourceId] = useState(initialSourceId);
   const [groups, setGroups] = useState<LinkedDataSourceGroup[]>([]);
@@ -511,6 +515,15 @@ export function RecordingScreen({
     label: source.name,
     onPress: () => selectSource(source.id),
   }));
+
+  /** 就地切换默认分析方式；写入失败时保留原选择并提示。 */
+  const changeAnalysisPreference = async (option: AnalysisPreference) => {
+    try {
+      await setPreference(option);
+    } catch {
+      Alert.alert(t('common.saveFailed'), t('recording.preferenceSaveFailed'));
+    }
+  };
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.page}>
@@ -604,6 +617,38 @@ export function RecordingScreen({
                 ) : (
                   <Text style={styles.metadata}>{t('analysisBatch.noGroups')}</Text>
                 )}
+              </View>
+            </View>
+
+            <View style={styles.fieldBlock}>
+              <Text style={styles.fieldLabel}>{t('recording.preference')}</Text>
+              <Text style={styles.secondaryText}>{t('recording.preferenceDescription')}</Text>
+              <View style={styles.preferenceChoices}>
+                {(['full', 'transcription_only'] as AnalysisPreference[]).map((option) => (
+                  <Pressable
+                    accessibilityLabel={t(
+                      option === 'full' ? 'recording.full' : 'recording.transcriptionOnly',
+                    )}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: preference === option, disabled: !hydrated }}
+                    disabled={!hydrated}
+                    key={option}
+                    onPress={() => void changeAnalysisPreference(option)}
+                    style={[
+                      styles.preferenceChoice,
+                      preference === option && styles.groupChipSelected,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.groupChipText,
+                        preference === option && styles.groupChipTextSelected,
+                      ]}
+                    >
+                      {t(option === 'full' ? 'recording.full' : 'recording.transcriptionOnly')}
+                    </Text>
+                  </Pressable>
+                ))}
               </View>
             </View>
 
@@ -854,6 +899,17 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sans,
   },
   groupChoices: { gap: spacing.sm, paddingRight: spacing.md },
+  // 分析方式就地切换：两个等宽选项，和设备偏好页保持同一选择语义。
+  preferenceChoices: { flexDirection: 'row', gap: spacing.sm },
+  preferenceChoice: {
+    alignItems: 'center',
+    backgroundColor: colors.divider,
+    borderRadius: radii.default,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 44,
+    paddingHorizontal: spacing.sm,
+  },
   groupChip: {
     alignItems: 'center',
     backgroundColor: colors.divider,

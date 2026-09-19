@@ -584,6 +584,38 @@ describe('GroupScreen', () => {
     expect(screen.getByText('共连接 2 个数据源')).toBeTruthy();
   });
 
+  it('reserves the description slot only for real descriptions and keeps empty cards compact', async () => {
+    jest.mocked(workspaceApi.listGroupKnowledgeBases).mockResolvedValue({
+      items: [
+        { ...knowledgeFixtures[0], description: '' },
+        { ...knowledgeFixtures[1], description: '团队资料' },
+      ],
+    });
+    jest.mocked(workspaceApi.listGroupDataSources).mockResolvedValue({
+      items: [{ ...sourceFixtures[0], description: '' }],
+    });
+    const screen = await renderGroup();
+
+    fireEvent.press(screen.getByText('关联知识库'));
+    await waitFor(() => expect(screen.getByText('产品研究知识库')).toBeTruthy());
+    // 空描述显示占位文案，且不再占满两行正文槽位（各分页同时挂载，按样式定位）。
+    expect(
+      screen.getAllByText('暂无描述').some((node) => {
+        const style = StyleSheet.flatten(node.props.style);
+        return style?.minHeight === undefined && style?.fontSize === 12;
+      }),
+    ).toBe(true);
+    // 有描述的知识库仍保留两行正文高度，避免元信息随描述有无上下跳动。
+    expect(StyleSheet.flatten(screen.getByText('团队资料').props.style)).toEqual(
+      expect.objectContaining({ minHeight: 40, fontSize: 14 }),
+    );
+
+    fireEvent.press(screen.getByText('连接数据源'));
+    await waitFor(() => expect(screen.getByText('团队录音空间')).toBeTruthy());
+    // 连接标签与最近上传合并到同一行，不再各占一行。
+    expect(screen.getByText(/HTTPS API \/ team-audio · 最近上传/)).toBeTruthy();
+  });
+
   it('synchronizes a user-selected tab to routing', async () => {
     const onTabChange = jest.fn();
     const screen = await renderGroup({ onTabChange });

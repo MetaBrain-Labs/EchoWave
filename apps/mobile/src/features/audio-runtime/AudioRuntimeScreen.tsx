@@ -1,12 +1,15 @@
 /**
  * 音频运行模式管理页面。
  *
- * 展示三种租户级运行模式、配置就绪状态和对象生命周期策略，并通过管理员口令保存变更。
+ * 展示三种租户级运行模式、配置就绪状态和对象生命周期策略，并通过共享管理员会话保存变更。
  *
  * Responsibilities:
  * - 清楚说明模式切换只影响新上传音频。
  * - 阻止选择服务端判定为不可用的模式。
  * - 处理加载、认证、冲突和网络失败。
+ *
+ * Notes:
+ * - 管理员口令来自根级共享内存会话，换服务器时统一失效。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { AudioRuntimeMode, AudioRuntimeOverview } from '@echowave/contracts';
@@ -24,6 +27,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getAudioRuntime, updateAudioRuntime } from '@/shared/api/audioRuntimeApi';
 import { WorkspaceRequestError } from '@/shared/api/request';
+import { AdminSessionGate } from '@/shared/auth/AdminSessionGate';
+import { useAdminSession } from '@/shared/auth/AdminSessionProvider';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import {
@@ -74,7 +79,13 @@ function errorText(error: unknown, fallback: string): string {
 }
 
 /** 渲染运行模式选择与管理员保存流程。 */
-export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
+export function AudioRuntimeScreen({
+  onBack,
+  onOpenServiceConfiguration,
+}: {
+  onBack: () => void;
+  onOpenServiceConfiguration: () => void;
+}) {
   const { t } = useAppLanguage();
   const noticeTourRef = useStarterTourTarget('runtime-notice');
   const modesTourRef = useStarterTourTarget('runtime-modes');
@@ -83,7 +94,7 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
   const [selected, setSelected] = useState<AudioRuntimeMode>('hybrid');
   const [originalDays, setOriginalDays] = useState('');
   const [intermediateHours, setIntermediateHours] = useState('24');
-  const [token, setToken] = useState('');
+  const { token, clearSession } = useAdminSession();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
@@ -101,11 +112,13 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
   };
 
   useEffect(() => {
+    // 未通过校验时只显示门禁，不请求公开模式，避免为不可见内容付出一次请求。
+    if (!token) return;
     getAudioRuntime()
       .then(applyOverview)
       .catch((reason) => setError(errorText(reason, t('runtime.operationFailed'))))
       .finally(() => setLoading(false));
-  }, [t]);
+  }, [t, token]);
 
   const refreshPage = async () => {
     try {
@@ -124,11 +137,12 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
   const screenRefresh = useScreenRefresh(refreshPage);
 
   const save = async () => {
-    if (!overview || !baseRevision || !token.trim()) return;
+    // 口令校验集中在“服务配置”页；本页只使用已建立共享会话的口令。
+    if (!overview || !baseRevision || !token) return;
     setSaving(true);
     setError(undefined);
     try {
-      const updated = await updateAudioRuntime(token.trim(), {
+      const updated = await updateAudioRuntime(token, {
         mode: selected,
         expectedRevision: baseRevision,
         retention: {
@@ -137,9 +151,10 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
         },
       });
       applyOverview(updated);
-      setToken('');
     } catch (reason) {
       setError(errorText(reason, t('runtime.operationFailed')));
+      // 共享会话可能已被其他页面作废；失效时立即回到未验证状态。
+      if (reason instanceof WorkspaceRequestError && reason.code === 'UNAUTHORIZED') clearSession();
     } finally {
       setSaving(false);
     }
@@ -148,7 +163,6 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
   const resetDraft = () => {
     if (!overview) return;
     applyOverview(overview);
-    setToken('');
     setError(undefined);
   };
 
@@ -160,114 +174,115 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
         onMore={() => setActionsVisible(true)}
         title={t('runtime.title')}
       />
-      <ScrollView
-        alwaysBounceVertical
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-        refreshControl={<ScreenRefreshControl {...screenRefresh} />}
-        testID="audio-runtime-scroll"
-      >
-        <View collapsable={false} ref={noticeTourRef} style={styles.notice}>
-          <Ionicons color={colors.secondary} name="information-circle-outline" size={22} />
-          <Text style={styles.noticeText}>{t('runtime.notice')}</Text>
-        </View>
-        {loading ? <ActivityIndicator color={colors.ink} /> : null}
-        <View collapsable={false} ref={modesTourRef} style={styles.modeList}>
-          {overview
-            ? overview.modes.map((availability) => {
-                const copy = modeCopyKeys[availability.mode];
-                const active = selected === availability.mode;
-                return (
-                  <Pressable
-                    accessibilityLabel={t(copy.title)}
-                    accessibilityRole="radio"
-                    accessibilityState={{ checked: active, disabled: !availability.available }}
-                    disabled={!availability.available || saving}
-                    key={availability.mode}
-                    onPress={() => {
-                      setSelected(availability.mode);
-                      setDirty(true);
-                    }}
-                    style={[
-                      styles.modeCard,
-                      active && styles.selectedCard,
-                      !availability.available && styles.disabled,
-                    ]}
-                  >
-                    <Ionicons color={colors.ink} name={copy.icon} size={24} />
-                    <View style={styles.modeCopy}>
-                      <Text style={styles.title}>{t(copy.title)}</Text>
-                      <Text style={styles.description}>{t(copy.description)}</Text>
-                      {!availability.available ? (
-                        <Text style={styles.warning}>{availability.unavailableReason}</Text>
-                      ) : null}
-                    </View>
-                    <Ionicons
-                      color={colors.ink}
-                      name={active ? 'radio-button-on' : 'radio-button-off'}
-                      size={22}
-                    />
-                  </Pressable>
-                );
-              })
-            : null}
-        </View>
-        {selected === 'object_storage' ? (
-          <View style={styles.formCard}>
-            <Text style={styles.title}>{t('runtime.lifecycle')}</Text>
-            <Text style={styles.label}>{t('runtime.originalDays')}</Text>
-            <TextInput
-              accessibilityLabel={t('runtime.originalDays')}
-              inputMode="numeric"
-              onChangeText={(value) => {
-                setOriginalDays(value);
-                setDirty(true);
-              }}
-              style={styles.input}
-              value={originalDays}
-            />
-            <Text style={styles.label}>{t('runtime.intermediateHours')}</Text>
-            <TextInput
-              accessibilityLabel={t('runtime.intermediateHours')}
-              inputMode="numeric"
-              onChangeText={(value) => {
-                setIntermediateHours(value);
-                setDirty(true);
-              }}
-              style={styles.input}
-              value={intermediateHours}
-            />
+      {!token ? (
+        <ScrollView contentContainerStyle={styles.content}>
+          <AdminSessionGate onOpenServiceConfiguration={onOpenServiceConfiguration} />
+        </ScrollView>
+      ) : (
+        <ScrollView
+          alwaysBounceVertical
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={<ScreenRefreshControl {...screenRefresh} />}
+          testID="audio-runtime-scroll"
+        >
+          <View collapsable={false} ref={noticeTourRef} style={styles.notice}>
+            <Ionicons color={colors.secondary} name="information-circle-outline" size={22} />
+            <Text style={styles.noticeText}>{t('runtime.notice')}</Text>
           </View>
-        ) : null}
-        <View collapsable={false} ref={saveTourRef} style={styles.formCard}>
-          <Text style={styles.title}>{t('runtime.adminConfirmation')}</Text>
-          <Text style={styles.description}>{t('runtime.adminDescription')}</Text>
-          <TextInput
-            accessibilityLabel={t('runtime.adminToken')}
-            onChangeText={setToken}
-            placeholder="CONFIGURATION_ADMIN_TOKEN"
-            secureTextEntry
-            style={styles.input}
-            value={token}
-          />
-          {error ? (
-            <Text accessibilityRole="alert" style={styles.warning}>
-              {error}
-            </Text>
+          {loading ? <ActivityIndicator color={colors.ink} /> : null}
+          <View collapsable={false} ref={modesTourRef} style={styles.modeList}>
+            {overview
+              ? overview.modes.map((availability) => {
+                  const copy = modeCopyKeys[availability.mode];
+                  const active = selected === availability.mode;
+                  return (
+                    <Pressable
+                      accessibilityLabel={t(copy.title)}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: active, disabled: !availability.available }}
+                      disabled={!availability.available || saving}
+                      key={availability.mode}
+                      onPress={() => {
+                        setSelected(availability.mode);
+                        setDirty(true);
+                      }}
+                      style={[
+                        styles.modeCard,
+                        active && styles.selectedCard,
+                        !availability.available && styles.disabled,
+                      ]}
+                    >
+                      <Ionicons color={colors.ink} name={copy.icon} size={24} />
+                      <View style={styles.modeCopy}>
+                        <Text style={styles.title}>{t(copy.title)}</Text>
+                        <Text style={styles.description}>{t(copy.description)}</Text>
+                        {!availability.available ? (
+                          <Text style={styles.warning}>{availability.unavailableReason}</Text>
+                        ) : null}
+                      </View>
+                      <Ionicons
+                        color={colors.ink}
+                        name={active ? 'radio-button-on' : 'radio-button-off'}
+                        size={22}
+                      />
+                    </Pressable>
+                  );
+                })
+              : null}
+          </View>
+          {selected === 'object_storage' ? (
+            <View style={styles.formCard}>
+              <Text style={styles.title}>{t('runtime.lifecycle')}</Text>
+              <Text style={styles.label}>{t('runtime.originalDays')}</Text>
+              <TextInput
+                accessibilityLabel={t('runtime.originalDays')}
+                inputMode="numeric"
+                onChangeText={(value) => {
+                  setOriginalDays(value);
+                  setDirty(true);
+                }}
+                style={styles.input}
+                value={originalDays}
+              />
+              <Text style={styles.label}>{t('runtime.intermediateHours')}</Text>
+              <TextInput
+                accessibilityLabel={t('runtime.intermediateHours')}
+                inputMode="numeric"
+                onChangeText={(value) => {
+                  setIntermediateHours(value);
+                  setDirty(true);
+                }}
+                style={styles.input}
+                value={intermediateHours}
+              />
+            </View>
           ) : null}
-          <Pressable
-            accessibilityRole="button"
-            disabled={saving || !overview || !token.trim()}
-            onPress={() => void save()}
-            style={[styles.saveButton, (saving || !token.trim()) && styles.disabled]}
-          >
-            <Text style={styles.saveText}>{saving ? t('runtime.saving') : t('runtime.save')}</Text>
-          </Pressable>
-        </View>
-      </ScrollView>
+          <View collapsable={false} ref={saveTourRef} style={styles.formCard}>
+            <Text style={styles.title}>{t('runtime.adminConfirmation')}</Text>
+            <Text style={styles.description}>{t('runtime.sessionActive')}</Text>
+            {error ? (
+              <Text accessibilityRole="alert" style={styles.warning}>
+                {error}
+              </Text>
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              disabled={saving || !overview}
+              onPress={() => void save()}
+              style={[styles.saveButton, (saving || !overview) && styles.disabled]}
+            >
+              <Text style={styles.saveText}>
+                {saving ? t('runtime.saving') : t('runtime.save')}
+              </Text>
+            </Pressable>
+          </View>
+        </ScrollView>
+      )}
       <ActionSheet
         items={[
           {
+            disabled: !token,
             icon: 'refresh-outline',
             label: t('runtime.refresh'),
             onPress: screenRefresh.onRefresh,
@@ -282,7 +297,7 @@ export function AudioRuntimeScreen({ onBack }: { onBack: () => void }) {
             disabled: !token || saving,
             icon: 'key-outline',
             label: t('runtime.clearToken'),
-            onPress: () => setToken(''),
+            onPress: clearSession,
           },
         ]}
         onClose={() => setActionsVisible(false)}

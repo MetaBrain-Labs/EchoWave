@@ -94,7 +94,7 @@ apps/api/src/
 - 新音频在创建时固化 `hybrid`、`object_storage` 或 `lightweight_local`。混合模式把原音频持久化到 `AUDIO_STORAGE_DIR`；对象模式通过预签名 PUT 直接进入权威 OSS；轻量模式以流式 API 上传到临时本地目录并在任务完成后删除。上传会话与 SHA-256 指纹支持中断后的确认和重新挂载。
 - 音频播放始终使用租户隔离的稳定内容路由。混合/轻量资产读取受控本地路径，对象资产由 API 代理 OSS Range；客户端只使用音频 ID。源文件清理后路由返回明确不可用状态，已发布 Transcript 和分析结果不受影响。
 - 音频转写使用 `audio_analysis_revisions` 作为 PostgreSQL 队列，并持久化供应商任务、VAD Manifest 与阶段 Checkpoint。`silero_vad` 流式检测并压缩无效区间，生成单个 16kHz 单声道文件，避免把完整音频载入内存或拆散录音级 Speaker ID。混合/对象模式使用临时 OSS，轻量模式使用 DashScope Instant 临时文件区。
-- ASR 上下文和即时热词按“租户通用设置 → 数据源默认热词 → 本次任务临时覆盖”合并，并随转写 revision 冻结；默认优先复用已有结果，用户实际修改上下文或热词时才创建新版本。当前产品策略继续关闭敏感词过滤，避免误伤业务术语。
+- ASR 上下文和即时热词按“租户服务配置 → 数据源默认热词 → 本次任务临时覆盖”合并，并随转写 revision 冻结；默认优先复用已有结果，用户实际修改上下文或热词时才创建新版本。当前产品策略继续关闭敏感词过滤，避免误伤业务术语。
 - `transcript_segments.text` 永久保存供应商 Raw Transcript；人工确认通过 `transcript_confirmations` 与 `transcript_confirmation_segments` 保存完整不可变快照，并由 ASR revision 上的 active 指针选择当前 Confirmed Transcript。确认只替换正文快照，不重建片段或修改 Speaker、时间戳和既有分析指针。
 - 情绪分析和角色识别使用 `audio_post_analysis_jobs`。混合/对象模式从已确认 revision 独立创建；轻量模式可在 ASR Run 创建时默认绑定声学情绪，Transcript 发布后用 Raw 时间戳自动生成系统快照并顺序执行情绪与清理。角色识别始终只读 Transcript，因此不受源音频清理影响。
 - 分组通过关联表连接知识库和数据源；分组可见音频由显式分享与关联数据源两条关系合并去重，页面计数不作为可写字段保存。

@@ -103,6 +103,8 @@ export type AnalysisDetailView = {
   postAnalysis: { emotion: AudioPostAnalysisState; role: AudioPostAnalysisState };
   businessAnalysis: AudioBusinessAnalysisState;
   runtimeMode: AudioRuntimeMode;
+  /** 音频所属数据源；自定义业务角色词典挂在该数据源上，无数据源时为空。 */
+  sourceId: string | null;
   sourceState: AudioSourceState;
   sourceRecoveryState: AudioSourceRecoveryState;
   sourceDeleteAfter: string | null;
@@ -257,6 +259,7 @@ export function toAnalysisDetailView(
     postAnalysis: detail.postAnalysis,
     businessAnalysis: detail.businessAnalysis,
     runtimeMode: detail.runtimeMode,
+    sourceId: detail.sourceId,
     sourceState: detail.sourceState,
     sourceRecoveryState: detail.sourceRecoveryState,
     sourceDeleteAfter: detail.sourceDeleteAfter,

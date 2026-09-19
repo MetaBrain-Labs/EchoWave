@@ -9,7 +9,7 @@
  * - 处理认证、冲突、超时、网络失败与显式重试。
  *
  * Notes:
- * - 管理口令和 Secret 只保存在当前组件内存，页面卸载后立即丢失。
+ * - 管理口令保存在根级共享内存会话，页面卸载不恢复；换服务器时由 Provider 统一失效。
  */
 import {
   AI_CAPABILITY_DEFAULTS,
@@ -35,6 +35,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { settingsApi } from '@/shared/api/settingsApi';
 import { WorkspaceRequestError } from '@/shared/api/request';
+import { AdminSessionGate } from '@/shared/auth/AdminSessionGate';
+import { useAdminSession } from '@/shared/auth/AdminSessionProvider';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import {
@@ -354,14 +356,19 @@ function AiConfigurationGuideDemo() {
   );
 }
 
-/** 渲染配置中心并将返回行为交给路由层。 */
-export function SettingsScreen({ onBack }: { onBack: () => void }) {
+/** 渲染配置中心并将返回与校验入口交给路由层。 */
+export function SettingsScreen({
+  onBack,
+  onOpenServiceConfiguration,
+}: {
+  onBack: () => void;
+  onOpenServiceConfiguration: () => void;
+}) {
   const { formatDateTime, formatNumber, t } = useAppLanguage();
   const { activeGuide } = useStarterTour();
   const securityTourRef = useStarterTourTarget('ai-security');
   const configurationTourRef = useStarterTourTarget('ai-configuration');
-  const [tokenInput, setTokenInput] = useState('');
-  const [token, setToken] = useState<string | null>(null);
+  const { token, clearSession } = useAdminSession();
   const [overview, setOverview] = useState<SettingsOverview | null>(null);
   const [transportMode, setTransportMode] = useState<TransportSecurityMode | null>(null);
   const [secretAllowed, setSecretAllowed] = useState(false);
@@ -400,7 +407,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
     } catch (reason) {
       setError(errorMessage(reason, t));
       if (reason instanceof WorkspaceRequestError && reason.code === 'UNAUTHORIZED') {
-        setToken(null);
+        clearSession();
         setOverview(null);
       }
     } finally {
@@ -420,26 +427,38 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
   };
   const screenRefresh = useScreenRefresh(refreshPage);
 
-  const login = async () => {
-    const candidate = tokenInput.trim();
-    if (!candidate) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await settingsApi.verify(candidate);
-      setToken(candidate);
-      setTokenInput('');
-      await refresh(candidate);
-    } catch (reason) {
-      setError(errorMessage(reason, t));
-    } finally {
-      setBusy(false);
-    }
-  };
+  // 共享会话可能由其他配置页建立；进入本页时用已校验口令补拉概览，避免重复输入。
+  // 先 await 再写入状态，避免在 effect 内同步触发级联渲染。
+  useEffect(() => {
+    if (!token) return;
+    let active = true;
+    void settingsApi
+      .overview(token)
+      .then((value) => {
+        if (!active) return;
+        setOverview(value);
+        setTransportMode(value.transport.mode);
+        setSecretAllowed(value.transport.secretSubmissionAllowed);
+        setError(null);
+      })
+      .catch((reason: unknown) => {
+        if (!active) return;
+        setError(errorMessage(reason, t));
+        if (reason instanceof WorkspaceRequestError && reason.code === 'UNAUTHORIZED') {
+          clearSession();
+          setOverview(null);
+        }
+      });
+    return () => {
+      active = false;
+    };
+    // 只在口令变化时补拉；页面内的保存与刷新仍走 refresh/refreshPage。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
+  // 口令校验集中在“服务配置”页；本页只消费已建立的共享会话。
   const clearAdminSession = () => {
-    setToken(null);
-    setTokenInput('');
+    clearSession();
     setOverview(null);
     setDraft(emptyDraft());
     setProviderEditorExpanded(false);
@@ -586,20 +605,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
         ) : null}
         <View collapsable={false} ref={configurationTourRef}>
           {!token ? (
-            <Section title={t('aiSettings.adminVerification')}>
-              <Text style={styles.help}>{t('aiSettings.tokenMemory')}</Text>
-              <Field
-                label="CONFIGURATION_ADMIN_TOKEN"
-                onChangeText={setTokenInput}
-                secureTextEntry
-                value={tokenInput}
-              />
-              <ActionButton
-                disabled={busy || !tokenInput.trim()}
-                label={t('aiSettings.enter')}
-                onPress={login}
-              />
-            </Section>
+            <AdminSessionGate onOpenServiceConfiguration={onOpenServiceConfiguration} />
           ) : overview ? (
             <>
               <LocalProviderCard overview={overview} />

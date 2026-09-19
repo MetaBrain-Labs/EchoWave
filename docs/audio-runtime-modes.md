@@ -77,7 +77,7 @@ Upload creation accepts `postUploadAction: transcribe | store_only`, defaulting 
 
 ## Configuration and API
 
-More contains **Service Status / AI Configuration / Runtime Mode**. Anyone may read the mode; updates require `CONFIGURATION_ADMIN_TOKEN`. Object-storage activation requires `audio_primary_storage`, `audio_staging`, DashScope ASR, FFmpeg, and VAD. Lightweight activation requires DashScope ASR/acoustic emotion, FFmpeg, and VAD.
+More contains **Server status / General settings / Service configuration**, and its first card summarises Server connectivity and the current runtime mode without opening a detail page. AI configuration and runtime mode are reached from Service configuration instead of duplicated entries. Anyone may read the mode; updates require `CONFIGURATION_ADMIN_TOKEN`, verified once under Service configuration, and this page stays locked behind a verification prompt until then. Object-storage activation requires `audio_primary_storage`, `audio_staging`, DashScope ASR, FFmpeg, and VAD. Lightweight activation requires DashScope ASR/acoustic emotion, FFmpeg, and VAD.
 
 Main endpoints:
 

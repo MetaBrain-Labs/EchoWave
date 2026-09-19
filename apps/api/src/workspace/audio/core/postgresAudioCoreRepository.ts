@@ -189,7 +189,8 @@ export class PostgresAudioCoreRepository implements AudioCoreRepository {
               ar.speaker_review_resolved_at,
               tc.version_no AS confirmation_version, tc.confirmed_at, tc.origin AS confirmation_origin,
               af.title, coalesce(af.duration_ms, 0)::bigint AS duration_ms,
-              af.runtime_mode, af.source_state, af.source_recovery_state, af.source_delete_after
+              af.runtime_mode, af.source_state, af.source_recovery_state, af.source_delete_after,
+              af.data_source_id
        FROM ${this.table('audio_files')} af
        JOIN ${this.table('audio_analysis_revisions')} ar
          ON ar.tenant_id = af.tenant_id AND ar.id = af.active_analysis_revision_id
@@ -576,6 +577,7 @@ export class PostgresAudioCoreRepository implements AudioCoreRepository {
     return AudioAnalysisDetailSchema.parse({
       id: row.id,
       audioFileId: row.audio_file_id,
+      sourceId: row.data_source_id ?? null,
       revision: row.revision_no,
       title: row.title,
       durationMs: integer(row.duration_ms),

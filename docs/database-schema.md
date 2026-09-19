@@ -176,6 +176,7 @@ Results are versioned and published through revision pointers; a failure or reru
 
 - `group_analysis_settings` stores the group's versioned template/role configuration.
 - `audio_business_analysis_jobs` is the durable status, progress, retry, checkpoint-thread, and error authority.
+- `audio_business_analysis_jobs` also carries the category retrieval audit added by migration 040: `category_snapshot` (content/category versions for publish-time staleness checks), `category_retrieval_calls` and `category_fallback_used` (retrieval budget and the single expansion, both shared across resumes), and the append-only `retrieval_audit` JSONB. Each real SQL retrieval appends `{call, query, knowledgeBaseIds, categoryIds, categories, includeTestSamples, reason, hitCount, durationMs}`, where `categories` freezes the category `id` and `name` so a report keeps showing the categories actually used even after a rename, and `reason` explains whether the scope came from an explicit filter, model choice, default routing, or the zero-hit/insufficient-evidence fallback. Requests that cannot reserve budget write no audit entry.
 - `audio_business_analysis_windows` stores long-transcript window results so resume reruns only the earliest incomplete window.
 - `audio_group_business_analysis_heads` selects the current published result per audio/group.
 - `business_analysis_summary_sections` and structured tag/evidence tables store the immutable report publication.

@@ -17,12 +17,15 @@ import {
   listAudioAnalysisBatches,
 } from '@/shared/api/audioAutomationApi';
 import {
+  getDataSource,
   listDataSourceAudioFiles,
   listDataSourceGroups,
   listDataSources,
+  updateDataSource,
 } from '@/shared/api/dataSourcesApi';
 import { getAudioRuntime } from '@/shared/api/audioRuntimeApi';
 import { getGroupSettings } from '@/shared/api/groupsApi';
+import { AnalysisPreferenceProvider } from '@/shared/settings/AnalysisPreferenceProvider';
 
 const sources = Array.from(
   { length: 6 },
@@ -71,9 +74,11 @@ jest.mock('@/shared/api/audioAutomationApi', () => ({
 }));
 jest.mock('@/shared/api/audioRuntimeApi', () => ({ getAudioRuntime: jest.fn() }));
 jest.mock('@/shared/api/dataSourcesApi', () => ({
+  getDataSource: jest.fn(),
   listDataSourceAudioFiles: jest.fn(),
   listDataSourceGroups: jest.fn(),
   listDataSources: jest.fn(),
+  updateDataSource: jest.fn(),
 }));
 jest.mock('@/shared/api/groupsApi', () => ({ getGroupSettings: jest.fn() }));
 jest.mock('@/shared/onboarding/StarterTourContext', () => ({
@@ -95,6 +100,17 @@ describe('AnalysisBatchCreateScreen', () => {
     jest.mocked(getGroupSettings).mockResolvedValue({
       analysis: { contentFocus: 'focus', tone: 'tone', customTags: [] },
     } as never);
+    jest.mocked(getDataSource).mockResolvedValue({
+      id: 'source-1',
+      settings: { customBusinessRoles: ['售后'] },
+    } as never);
+    jest.mocked(updateDataSource).mockImplementation(
+      async (_id, input) =>
+        ({
+          id: 'source-1',
+          settings: { customBusinessRoles: input.customBusinessRoles ?? [] },
+        }) as never,
+    );
   });
 
   it('uses bottom sheets for long source and group lists', async () => {
@@ -153,5 +169,72 @@ describe('AnalysisBatchCreateScreen', () => {
     });
 
     await waitFor(() => expect(createExistingAudioAnalysisBatch).toHaveBeenCalled());
+  });
+
+  it('exposes the default analysis workflow inside more settings', async () => {
+    const screen = render(
+      <AnalysisPreferenceProvider>
+        <AnalysisBatchCreateScreen />
+      </AnalysisPreferenceProvider>,
+    );
+
+    fireEvent.press(await screen.findByRole('button', { name: '更多设置' }));
+    const transcriptionOnly = await screen.findByRole('radio', { name: '仅转写' });
+
+    // 默认全流程；就地切换后写入与录音页共用的同一偏好。
+    expect(screen.getByRole('radio', { name: '全流程分析' }).props.accessibilityState).toEqual(
+      expect.objectContaining({ checked: true }),
+    );
+    fireEvent.press(transcriptionOnly);
+
+    await waitFor(() =>
+      expect(screen.getByRole('radio', { name: '仅转写' }).props.accessibilityState).toEqual(
+        expect.objectContaining({ checked: true }),
+      ),
+    );
+  });
+
+  it('shows the selected data source role dictionary and persists an added role', async () => {
+    jest.mocked(updateDataSource).mockResolvedValueOnce({
+      id: 'source-1',
+      settings: { customBusinessRoles: ['售后', '技术顾问'] },
+    } as never);
+    const screen = render(<AnalysisBatchCreateScreen />);
+
+    // 词典属于当前所选数据源，提交分析前即可确认角色白名单。
+    expect(await screen.findByText('角色识别词典')).toBeTruthy();
+    expect(getDataSource).toHaveBeenCalledWith('source-1');
+    expect(screen.getByText('销售')).toBeTruthy();
+    expect(screen.getByText('售后')).toBeTruthy();
+
+    fireEvent.changeText(screen.getByLabelText('新增自定义角色'), '技术顾问');
+    fireEvent.press(screen.getByLabelText('添加'));
+
+    await waitFor(() =>
+      expect(updateDataSource).toHaveBeenCalledWith('source-1', {
+        customBusinessRoles: ['售后', '技术顾问'],
+      }),
+    );
+    expect(await screen.findByText('技术顾问')).toBeTruthy();
+  });
+
+  it('follows the selected data source when switching sources', async () => {
+    jest.mocked(getDataSource).mockImplementation(
+      async (id) =>
+        ({
+          id,
+          settings: { customBusinessRoles: id === 'source-2' ? ['技术顾问'] : ['售后'] },
+        }) as never,
+    );
+    const screen = render(<AnalysisBatchCreateScreen />);
+    await screen.findByText('角色识别词典');
+
+    fireEvent.press(screen.getByRole('button', { name: '选择数据源' }));
+    fireEvent.press(await screen.findByRole('button', { name: '数据源 2' }));
+
+    await waitFor(() => expect(getDataSource).toHaveBeenCalledWith('source-2'));
+    // 切换数据源后词典随之更新，不会残留上一个数据源的角色。
+    expect(await screen.findByText('技术顾问')).toBeTruthy();
+    expect(screen.queryByText('售后')).toBeNull();
   });
 });

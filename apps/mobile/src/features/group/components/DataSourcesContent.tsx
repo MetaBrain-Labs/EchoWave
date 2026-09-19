@@ -95,25 +95,33 @@ export function DataSourcesContent({
                   name="git-network-outline"
                   size={typography.heading3.lineHeight}
                 />
-                <Text style={styles.cardTitle}>{source.name}</Text>
+                <Text numberOfLines={1} style={styles.cardTitle}>
+                  {source.name}
+                </Text>
               </View>
               <View style={styles.cardActions}>
-                <View style={styles.connectedBadge}>
-                  <Text style={styles.connectedText}>{t('sources.connected')}</Text>
-                </View>
+                {/* 只有服务端确认连接时才显示成功标记，避免把其他状态误报为已连接。 */}
+                {source.connectionStatus === 'connected' ? (
+                  <View style={styles.connectedBadge}>
+                    <Text style={styles.connectedText}>{t('sources.connected')}</Text>
+                  </View>
+                ) : null}
                 <Ionicons color={colors.secondary} name="chevron-forward" size={20} />
               </View>
             </View>
-            <Text numberOfLines={2} style={styles.description}>
-              {source.description}
+            {/* 描述区固定两行正文高度（40px），空描述显示占位文案以避免卡片出现无意义空白。 */}
+            <Text
+              numberOfLines={2}
+              style={[styles.description, !source.description && styles.emptyDescription]}
+            >
+              {source.description || t('sources.noDescription')}
             </Text>
-            <Text style={styles.metaText}>{source.connectionLabel}</Text>
             <Text style={styles.metaText}>
-              {t('sources.lastUpload', {
+              {`${source.connectionLabel} · ${t('sources.lastUpload', {
                 date: source.lastUploadedAt
                   ? formatDateTime(source.lastUploadedAt)
                   : t('sources.none'),
-              })}
+              })}`}
             </Text>
           </Pressable>
         ))
@@ -236,11 +244,20 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   description: {
-    ...typography.description,
+    ...typography.body,
     color: textColors.secondary,
     fontFamily: fontFamilies.sans,
     marginBottom: spacing.sm,
-    marginTop: spacing.md,
+    marginTop: spacing.base,
+    // 有描述时保留两行正文高度，避免下方元信息随描述有无而上下跳动。
+    minHeight: 40,
+  },
+  // 空描述只保留一行占位说明，不再用占位文字占满 40px 槽位造成空白。
+  emptyDescription: {
+    ...typography.description,
+    color: textColors.tertiary,
+    marginTop: spacing.sm,
+    minHeight: undefined,
   },
   pressed: {
     opacity: 0.65,

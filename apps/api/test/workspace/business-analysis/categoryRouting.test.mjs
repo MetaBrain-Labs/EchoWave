@@ -96,6 +96,18 @@ it('uses one planning call and one expansion across parallel category searches',
   assert.equal(scopes.length, 5);
   assert.equal(embeddingCalls, 3);
   assert.equal(audits.length, 5);
+  // 真实检索冻结当时的分类名（只保留 id 与 name），供分析报告头部展示。
+  assert.equal(
+    audits.filter(
+      (audit) => JSON.stringify(audit.categories) === JSON.stringify([{ id, name: '产品' }]),
+    ).length,
+    4,
+  );
+  // 零命中兜底不限定分类，因此没有分类可展示。
+  assert.deepEqual(
+    audits.filter((audit) => audit.reason === 'zero-hits').map((audit) => audit.categories),
+    [[]],
+  );
 });
 it('reserves persisted SQL and expansion budgets atomically for running tenant jobs', async () => {
   const sql = [];

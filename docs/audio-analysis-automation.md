@@ -4,7 +4,9 @@
 
 The Create page can place 1–20 new files or existing audio assets in one batch. A batch fixes one data source and one group. Upload and structural validation happen immediately; `scheduledFor` only controls when ASR, emotion, role, and business-analysis work becomes claimable.
 
-More → General Settings provides a persisted default workflow for phone recordings and Create-page imports. Full analysis is the default. Transcription only freezes `confirmation: manual` with emotion, role, and business analysis disabled; successful ASR completes the batch without confirming the transcript. Later confirmation and individual analysis actions remain explicit. Preference changes affect only later submissions.
+One persisted default workflow applies to both phone recordings and Create-page imports, and it can be changed in place: on the recording page under **默认分析方式** (Default analysis workflow), and inside the Create page's **More settings** section. Full analysis is the default. Transcription only freezes `confirmation: manual` with emotion, role, and business analysis disabled; successful ASR completes the batch without confirming the transcript. Later confirmation and individual analysis actions remain explicit. Preference changes affect only later submissions, and **More → General Settings** edits the same setting.
+
+The **Analysis tasks** tab of the analysis detail page shows the role dictionary of the data source the audio belongs to: the four core roles are always available, and custom roles can be added or removed on that page. The Create page's one-click analysis shows the same dictionary once a data source is selected, and switching data sources switches the dictionary with it. Custom roles live on the data source and are frozen into a task's input snapshot when role recognition starts, so a change applies only to tasks started afterwards; published results are never rewritten and require rerunning role recognition. The section is hidden when the audio belongs to no data source or the data source cannot be read.
 
 ## Runtime-mode boundaries
 

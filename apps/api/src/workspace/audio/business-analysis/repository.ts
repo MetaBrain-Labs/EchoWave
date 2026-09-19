@@ -31,6 +31,7 @@ import type { RetrievalChunk } from '../../../knowledge/retrieval/types.ts';
 import { WorkspaceRepositoryError } from '../../errors.ts';
 import { resolveCitationSources } from '../../../knowledge/persistence/citationSources.ts';
 import { buildBusinessAnalysisWindows } from './windowing.ts';
+import { aggregateRetrievalCategories } from './retrievalCategories.ts';
 
 export const BUSINESS_ANALYSIS_WORKFLOW_VERSION = 'langgraph-v1';
 export const BUSINESS_ANALYSIS_MAX_RECOVERY_ATTEMPTS = 2;
@@ -926,7 +927,8 @@ export class BusinessAnalysisRepository {
     const head = await this.pool.query(
       `SELECT job.id, job.model, job.published_at, job.input_fingerprint,
               job.confirmation_version, job.knowledge_base_ids,
-              job.settings_snapshot, job.limitations,job.knowledge_version_snapshot
+              job.settings_snapshot, job.limitations,job.knowledge_version_snapshot,
+              job.retrieval_audit
        FROM ${this.table('audio_group_business_analysis_heads')} head
        JOIN ${this.table('audio_business_analysis_jobs')} job
          ON job.tenant_id = head.tenant_id AND job.id = head.active_job_id
@@ -992,6 +994,7 @@ export class BusinessAnalysisRepository {
             : citations.rows.length > 0
               ? 'used'
               : 'linked_not_used',
+        retrievalCategories: aggregateRetrievalCategories(published.retrieval_audit),
         limitations,
         summarySections: sections.rows.map((section) => ({
           id: section.id,

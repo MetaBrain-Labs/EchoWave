@@ -14,7 +14,7 @@ import type {
   AudioRuntimeMode,
   SupportedLanguage,
 } from '@echowave/contracts';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
@@ -38,11 +38,16 @@ function TaskCard({
   type,
   state,
   onStart,
+  runtimeMode,
+  supplemental,
 }: {
   confirmed: boolean;
   type: AudioPostAnalysisType;
   state: AudioPostAnalysisState;
   onStart: (type: AudioPostAnalysisType) => void;
+  runtimeMode?: AudioRuntimeMode;
+  /** 追加在卡片底部的任务相关说明区，例如角色识别的角色词典。 */
+  supplemental?: ReactNode;
 }) {
   const { formatDateTime, t } = useAppLanguage();
   const emotion = type === 'emotion';
@@ -102,6 +107,10 @@ function TaskCard({
                             : t('post.queued')}
             {confirmed ? versionLabel : ''}
           </Text>
+          {/* 说明情绪分析的执行路径：非轻量模式不随转写捆绑，避免与 ASR 版本属性混淆。 */}
+          {emotion && confirmed && runtimeMode !== 'lightweight_local' ? (
+            <Text style={styles.hint}>{t('post.emotionSeparateHint')}</Text>
+          ) : null}
         </View>
       </View>
       {running ? (
@@ -126,6 +135,7 @@ function TaskCard({
           <Text style={styles.actionText}>{action}</Text>
         </Pressable>
       )}
+      {supplemental}
     </View>
   );
 }
@@ -135,6 +145,7 @@ export function PostAnalysisControls({
   confirmed,
   emotion,
   role,
+  roleDictionary,
   runtimeMode = 'hybrid',
   onStart,
   onRemountSource,
@@ -142,6 +153,8 @@ export function PostAnalysisControls({
   confirmed: boolean;
   emotion: AudioPostAnalysisState;
   role: AudioPostAnalysisState;
+  /** 角色词典面板由页面注入，避免本组件直连数据源接口。 */
+  roleDictionary?: ReactNode;
   runtimeMode?: AudioRuntimeMode;
   onStart: (type: AudioPostAnalysisType) => void;
   onRemountSource?: () => void;
@@ -182,7 +195,13 @@ export function PostAnalysisControls({
       </Pressable>
       {!collapsed ? (
         <View style={styles.cards}>
-          <TaskCard confirmed={confirmed} onStart={onStart} state={emotion} type="emotion" />
+          <TaskCard
+            confirmed={confirmed}
+            onStart={onStart}
+            runtimeMode={runtimeMode}
+            state={emotion}
+            type="emotion"
+          />
           {((emotion.state === 'source_unavailable' && emotion.reason !== 'source_expired') ||
             (emotion.state === 'failed' && emotion.requiresSourceRemount === true)) &&
           onRemountSource ? (
@@ -195,7 +214,13 @@ export function PostAnalysisControls({
               <Text style={styles.actionText}>{t('post.remount')}</Text>
             </Pressable>
           ) : null}
-          <TaskCard confirmed={confirmed} onStart={onStart} state={role} type="role" />
+          <TaskCard
+            confirmed={confirmed}
+            onStart={onStart}
+            state={role}
+            supplemental={roleDictionary}
+            type="role"
+          />
         </View>
       ) : null}
     </View>
@@ -283,6 +308,12 @@ const styles = StyleSheet.create({
   cardCopy: { flex: 1 },
   title: { ...typography.heading3, color: textColors.primary, fontFamily: fontFamilies.sansBold },
   meta: { ...typography.description, color: textColors.secondary, fontFamily: fontFamilies.sans },
+  hint: {
+    ...typography.label,
+    color: textColors.tertiary,
+    fontFamily: fontFamilies.sans,
+    marginTop: spacing.xs,
+  },
   runningRow: {
     alignItems: 'center',
     flexDirection: 'row',

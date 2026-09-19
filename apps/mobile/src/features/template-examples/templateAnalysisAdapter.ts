@@ -165,6 +165,8 @@ export function toTemplateAnalysisView(
     postAnalysis: { emotion: createPostAnalysisState(), role: createPostAnalysisState() },
     businessAnalysis: createBusinessAnalysisState(language),
     runtimeMode: 'hybrid',
+    // 模板示例不来自任何数据源，因此没有自定义角色词典。
+    sourceId: null,
     sourceState: 'missing',
     sourceRecoveryState: 'not_required',
     sourceDeleteAfter: null,

@@ -191,6 +191,26 @@ describe('workspace contracts', () => {
         ),
       }),
     );
+    // 旧报告没有分类审计：缺省为空数组而不是解析失败。
+    assert.deepEqual(BusinessAnalysisResultSchema.parse(result).retrievalCategories, []);
+    assert.deepEqual(
+      BusinessAnalysisResultSchema.parse({
+        ...result,
+        retrievalCategories: [{ id: thirdId, name: '产品资料', lookupReason: 'auto', hitCount: 6 }],
+      }).retrievalCategories,
+      [{ id: thirdId, name: '产品资料', lookupReason: 'auto', hitCount: 6 }],
+    );
+    for (const invalid of [
+      { id: thirdId, name: '产品资料', lookupReason: 'unknown', hitCount: 6 },
+      { id: thirdId, name: '', lookupReason: 'auto', hitCount: 6 },
+      { id: thirdId, name: '产品资料', lookupReason: 'auto', hitCount: -1 },
+      { id: thirdId, name: '产品资料', lookupReason: 'auto', hitCount: 6, extra: true },
+    ]) {
+      assert.throws(
+        () => BusinessAnalysisResultSchema.parse({ ...result, retrievalCategories: [invalid] }),
+        `Expected rejection for ${JSON.stringify(invalid)}`,
+      );
+    }
     const state = AudioBusinessAnalysisStateSchema.parse({
       state: 'ready',
       groupId: secondId,
@@ -644,6 +664,13 @@ describe('workspace contracts', () => {
     };
 
     assert.equal(AudioAnalysisDetailSchema.parse(detail).scenes.length, 1);
+    // 音频可能不属于任何数据源；缺省必须解析为 null 而不是失败。
+    assert.equal(AudioAnalysisDetailSchema.parse(detail).sourceId, null);
+    assert.equal(
+      AudioAnalysisDetailSchema.parse({ ...detail, sourceId: thirdId }).sourceId,
+      thirdId,
+    );
+    assert.throws(() => AudioAnalysisDetailSchema.parse({ ...detail, sourceId: 'not-an-id' }));
     assert.deepEqual(AudioAnalysisDetailSchema.parse(detail).transcription, {
       ...detail.transcription,
       expectedSpeakerCount: null,

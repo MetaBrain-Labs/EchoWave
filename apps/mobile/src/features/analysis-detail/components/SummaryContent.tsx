@@ -8,13 +8,17 @@
  * - 页面级状态和导航仍由 AnalysisDetailScreen 统一协调。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
+import type { BusinessAnalysisRetrievalCategory } from '@echowave/contracts';
 import { useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import type { TranslationKey } from '@/shared/i18n/translations';
 import { colors, fontFamilies, spacing, textColors, typography } from '@/shared/theme/tokens';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import type { AnalysisDetailView } from '../model';
+
+type TranslationFunction = ReturnType<typeof useAppLanguage>['t'];
 
 export type SummaryContentProps = {
   detail: AnalysisDetailView;
@@ -39,7 +43,7 @@ export function SummaryContent({
   recommendationsTitle,
   refreshing = false,
 }: SummaryContentProps) {
-  const { t } = useAppLanguage();
+  const { language, t } = useAppLanguage();
   const [limitationsState, setLimitationsState] = useState({ detailId: '', expanded: false });
   const businessResult = detail.businessAnalysis.result;
   const displayLimitations = limitations ?? businessResult?.limitations ?? [];
@@ -52,6 +56,9 @@ export function SummaryContent({
             count: businessResult.knowledgeBaseIds.length,
           })
         : t('analysis.knowledgeNotLinked')
+    : null;
+  const retrievalCategoryLabel = businessResult
+    ? retrievalCategorySummary(businessResult.retrievalCategories, t, language)
     : null;
   return (
     <ScrollView
@@ -82,6 +89,9 @@ export function SummaryContent({
       ) : null}
       {knowledgeStatusLabel ? (
         <Text style={styles.knowledgeStatus}>{knowledgeStatusLabel}</Text>
+      ) : null}
+      {retrievalCategoryLabel ? (
+        <Text style={styles.knowledgeStatus}>{retrievalCategoryLabel}</Text>
       ) : null}
       <View style={styles.summaryDivider} />
       {displayLimitations.length ? (
@@ -137,10 +147,49 @@ export function SummaryContent({
   );
 }
 
+/**
+ * 组合“使用分类”摘要行：分类名 + 检索原因 + 命中总数。
+ *
+ * Notes:
+ * - 分类名与分析结果一起冻结，改名的分类在历史报告里仍显示分析当时的名称。
+ * - 没有审计（旧报告或未做向量检索）时返回 null，不渲染空行。
+ * - 标签接入点：`hitCount` 省略 0 命中段，避免出现“命中 0 条”的噪声。
+ */
+function retrievalCategorySummary(
+  categories: readonly BusinessAnalysisRetrievalCategory[],
+  t: TranslationFunction,
+  language: 'zh-CN' | 'en',
+): string | null {
+  if (!categories.length) return null;
+  const names = categories.slice(0, 3).map((category) => category.name);
+  const remainder = categories.length > names.length ? categories.length - names.length : 0;
+  const joined = [
+    ...names,
+    ...(remainder ? [t('analysis.retrievalMoreCategories', { count: remainder })] : []),
+  ].join(language === 'en' ? ', ' : '、');
+  const reasonKeys = {
+    explicit: 'analysis.retrievalReasonUserFiltered',
+    auto: 'analysis.retrievalReasonModelSelected',
+    'default-route': 'analysis.retrievalReasonDefaultRoute',
+    'zero-hits': 'analysis.retrievalReasonModelSelected',
+    'evidence-insufficient': 'analysis.retrievalReasonModelSelected',
+  } as const satisfies Record<BusinessAnalysisRetrievalCategory['lookupReason'], TranslationKey>;
+  // 多个分类可能来自不同选择方式；只声明最能解释本次范围的单一原因。
+  const reason = categories.every((category) => category.lookupReason === 'explicit')
+    ? 'explicit'
+    : categories.some((category) => category.lookupReason === 'auto')
+      ? 'auto'
+      : 'default-route';
+  const hitCount = categories.reduce((total, category) => total + category.hitCount, 0);
+  return [
+    t('analysis.retrievalCategories', { categories: joined }),
+    t(reasonKeys[reason]),
+    ...(hitCount ? [t('analysis.retrievalCategoryHits', { count: hitCount })] : []),
+  ].join(' · ');
+}
+
 const styles = StyleSheet.create({
-  pageScroll: {
-    flex: 1,
-  },
+  pageScroll: { flex: 1 },
   summaryContent: {
     paddingBottom: spacing.xxl,
     paddingHorizontal: spacing.md,

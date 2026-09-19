@@ -1,19 +1,21 @@
 /**
  * 更多标签页面。
  *
- * 展示当前应用与 API 连接状态，为开发和用户提供可观察的 HelloWorld 健康检查。
+ * 在首屏直接给出服务器连通与运行模式摘要，并提供通往产品功能区、设置与引导的入口。
  *
  * Responsibilities:
- * - 组合页面说明、服务状态、AI 配置与新手引导入口。
+ * - 组合服务器状态摘要、页面说明、配置入口与新手引导入口。
+ * - 只绑定导航回调，不持有服务器状态。
  *
  * Notes:
- * - 不保存服务器健康状态。
+ * - 摘要卡只读观测，权威状态仍由服务端与各配置页持有。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter, type Href } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ServiceSummaryCard } from '@/features/system-status/ServiceSummaryCard';
 import {
   colors,
   fontFamilies,
@@ -31,19 +33,24 @@ export default function MoreScreen() {
   const router = useRouter();
   const { t } = useAppLanguage();
   const collectionEntryRef = useStarterTourTarget('collection-entry');
+  // AI 配置与运行模式都属于租户级服务配置，由“服务配置”页统一承载，避免重复入口。
   const navigationCards = [
     { key: 'collection', href: '/collection' as Href, icon: 'library-outline' as const },
     { key: 'analysis', href: '/analysis' as Href, icon: 'pulse-outline' as const },
     { key: 'service', href: '/service-status' as Href, icon: 'options-outline' as const },
     { key: 'general', href: '/general-settings' as Href, icon: 'settings-outline' as const },
-    { key: 'ai', href: '/settings' as Href, icon: 'build-outline' as const },
-    { key: 'runtime', href: '/audio-runtime' as Href, icon: 'layers-outline' as const },
+    {
+      key: 'serviceConfig',
+      href: '/service-configuration' as Href,
+      icon: 'construct-outline' as const,
+    },
   ] as const;
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <TopLevelPageHeader subtitle={t('more.subtitle')} title={t('more.title')} />
       <ScrollView contentContainerStyle={styles.content} testID="more-scroll">
+        <ServiceSummaryCard onOpenDetails={() => router.push('/service-status' as Href)} />
         {navigationCards.map((card) => (
           <Pressable
             accessibilityLabel={t(`more.${card.key}.accessibility`)}

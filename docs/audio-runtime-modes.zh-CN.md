@@ -77,7 +77,7 @@ Android/iOS 的“新建 → 手机录音”与数据源“录音”入口共用
 
 ## 配置与接口
 
-“更多”页提供“服务状态 / AI 配置 / 运行模式”三个入口。运行模式公开可查看，修改必须提交 `CONFIGURATION_ADMIN_TOKEN`。启用对象模式要求 `audio_primary_storage`、`audio_staging`、DashScope ASR、FFmpeg 和 VAD 就绪；启用轻量模式要求 DashScope ASR/声学情绪、FFmpeg 和 VAD 就绪。
+“更多”页提供“服务状态 / 通用设置 / 服务配置”等入口，首屏摘要卡直接显示服务器连通状态与当前运行模式，不必先进入详情页；AI 配置与运行模式从“服务配置”进入，不再在“更多”页重复出现。运行模式公开可查看，修改必须提交 `CONFIGURATION_ADMIN_TOKEN`，该口令在“服务配置”校验一次后共用，未校验时本页只显示校验引导。启用对象模式要求 `audio_primary_storage`、`audio_staging`、DashScope ASR、FFmpeg 和 VAD 就绪；启用轻量模式要求 DashScope ASR/声学情绪、FFmpeg 和 VAD 就绪。
 
 主要接口：
 
