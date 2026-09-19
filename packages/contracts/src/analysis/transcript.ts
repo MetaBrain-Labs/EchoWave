@@ -185,6 +185,8 @@ export const AnalysisSummarySectionSchema = z.object({
 export const AudioAnalysisDetailSchema = z.object({
   id: EntityIdSchema,
   audioFileId: EntityIdSchema,
+  // 音频可能不属于任何数据源；自定义业务角色词典挂在数据源上，因此这里必须可空。
+  sourceId: EntityIdSchema.nullable().default(null),
   revision: z.number().int().positive(),
   title: z.string(),
   durationMs: z.number().int().nonnegative(),

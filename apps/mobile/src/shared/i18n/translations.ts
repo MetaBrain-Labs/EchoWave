@@ -794,6 +794,15 @@ export const zhCN = {
   'post.confirmTranscript': '请先确认转写正文',
   'post.emotionDescription': '使用 Qwen3.5-Omni 分析每个说话轮次',
   'post.emotionSeparateHint': '当前模式下声学情绪不随转写执行，请在确认转写版本后单独运行。',
+  'roleDictionary.title': '角色识别词典',
+  'roleDictionary.coreRolesHint': '固定核心角色（始终可用，不可修改）',
+  'roleDictionary.customRolesHint': '数据源自定义角色',
+  'roleDictionary.emptyCustomRoles': '该数据源尚未添加自定义角色，识别时只会使用上面四个核心角色。',
+  'roleDictionary.addPlaceholder': '新增自定义角色',
+  'roleDictionary.add': '添加',
+  'roleDictionary.saveFailed': '角色词典保存失败',
+  'roleDictionary.scopeHint':
+    '自定义角色保存在该音频所属的数据源上，对之后启动的角色识别生效；已发布的结果不会改变，需要重新运行角色识别。',
   'post.roleDescription': '使用 DeepSeek 识别录音级业务角色',
   'post.notRequested': '本次仅转写；确认正文后可使用原件补跑声学情绪。',
   'post.sourceUnavailable': '源音频已清理或过期，无法再次执行声学分析',
@@ -2827,6 +2836,16 @@ export const en = {
   'post.emotionDescription': 'Analyze each speaker turn with Qwen3.5-Omni',
   'post.emotionSeparateHint':
     'Acoustic emotion does not run with transcription in this mode; start it separately after confirming a transcript version.',
+  'roleDictionary.title': 'Role recognition dictionary',
+  'roleDictionary.coreRolesHint': 'Fixed core roles (always available, not editable)',
+  'roleDictionary.customRolesHint': 'Custom roles from the data source',
+  'roleDictionary.emptyCustomRoles':
+    'This data source has no custom roles yet; recognition uses only the four core roles above.',
+  'roleDictionary.addPlaceholder': 'Add a custom role',
+  'roleDictionary.add': 'Add',
+  'roleDictionary.saveFailed': 'Saving the role dictionary failed',
+  'roleDictionary.scopeHint':
+    'Custom roles are stored on the data source this audio belongs to and apply to role recognition started later. Published results do not change; rerun role recognition to apply them.',
   'post.roleDescription': 'Recognize recording-level business roles with DeepSeek',
   'post.notRequested':
     'This run transcribed only. Confirm the transcript and provide the original to run acoustic emotion analysis.',

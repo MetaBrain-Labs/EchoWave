@@ -89,6 +89,7 @@ import { type TranscriptDisplayMode } from './components/TranscriptContent';
 import { EmotionAnalysisPanel } from './components/EmotionAnalysisPanel';
 import { ModelExecutionContent } from './components/ModelExecutionContent';
 import { PostAnalysisConfirmDialog, PostAnalysisControls } from './components/PostAnalysisControls';
+import { RoleDictionaryPanel } from '@/shared/ui/RoleDictionaryPanel';
 import { TranscriptionRunSelector } from './components/TranscriptionRunSelector';
 import {
   BusinessAnalysisControls,
@@ -1036,6 +1037,19 @@ export function AnalysisDetailScreen({
                 setConfirmAnalysisType(type);
               }}
               role={detail.postAnalysis.role}
+              roleDictionary={
+                detail.sourceId ? (
+                  <RoleDictionaryPanel
+                    onError={(reason) =>
+                      Alert.alert(
+                        t('roleDictionary.saveFailed'),
+                        reason instanceof Error ? reason.message : t('analysisBatch.tryAgain'),
+                      )
+                    }
+                    sourceId={detail.sourceId}
+                  />
+                ) : undefined
+              }
               runtimeMode={detail.runtimeMode}
             />
             {groupId ? (

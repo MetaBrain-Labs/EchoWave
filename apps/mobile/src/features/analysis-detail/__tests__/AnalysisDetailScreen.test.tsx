@@ -20,12 +20,13 @@ import {
   setPostAnalysisControlsCollapsedPreference,
 } from '../preferences';
 import * as audioAnalysisApi from '@/shared/api/audioAnalysisApi';
+import * as dataSourcesApi from '@/shared/api/dataSourcesApi';
 import * as groupsApi from '@/shared/api/groupsApi';
 import { getKnowledgeCitationSource } from '@/shared/api/knowledgeBasesApi';
 import * as requestApi from '@/shared/api/request';
 import * as executionStreamApi from '@/shared/api/audioExecutionStream';
 import * as liveUpdateApi from '@/shared/api/liveUpdateStreams';
-import { analysisFixture } from '@/test/workspaceFixtures';
+import { analysisFixture, sourceFixtures } from '@/test/workspaceFixtures';
 import { mockAudioPlayers, resetExpoAudioMock } from '@/test/ExpoAudioMock';
 
 jest.mock('expo-router', () => ({ useFocusEffect: jest.fn() }));
@@ -61,8 +62,36 @@ jest.mock('@/shared/api/liveUpdateStreams', () => ({
       new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve())),
   ),
 }));
+jest.mock('@/shared/api/dataSourcesApi', () => ({
+  ...jest.requireActual('@/shared/api/dataSourcesApi'),
+  getDataSource: jest.fn(),
+  updateDataSource: jest.fn(),
+}));
 
 const workspaceApi = { ...audioAnalysisApi, ...groupsApi, ...requestApi };
+
+/** 角色词典读取用的数据源详情替身；只覆盖面板需要的字段。 */
+function dataSourceFixture(customBusinessRoles: string[]) {
+  return {
+    ...sourceFixtures[0],
+    metrics: {
+      audioCount: 1,
+      totalDurationMs: 1_000,
+      transcribedCount: 1,
+      pendingCount: 0,
+    },
+    settings: {
+      transcriptionModel: 'qwen-audio-3.0-asr-flash-filetrans',
+      autoTranscribe: false,
+      emotionAnalysis: false,
+      speakerDiarization: true,
+      sceneSegmentation: true,
+      skipInvalidAudio: false,
+      customBusinessRoles,
+      asrHotwords: [],
+    },
+  } as never;
+}
 
 async function renderAnalysis(
   detailId = analysisFixture.audioFileId,
@@ -79,6 +108,8 @@ async function renderAnalysis(
     />,
   );
   await waitFor(() => expect(screen.queryByLabelText('正在加载分析详情')).toBeNull());
+  // 角色词典面板自身也会读取数据源；等它的待处理请求收敛，避免测试结束后的状态写入。
+  await act(async () => {});
   return screen;
 }
 
@@ -90,6 +121,8 @@ describe('AnalysisDetailScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.mocked(getKnowledgeCitationSource).mockResolvedValue({ status: 'active' });
+    jest.mocked(dataSourcesApi.getDataSource).mockResolvedValue(dataSourceFixture(['售后']));
+    jest.mocked(dataSourcesApi.updateDataSource).mockResolvedValue(dataSourceFixture(['售后']));
     resetExpoAudioMock();
     setHideIrrelevantSegmentsPreference(false);
     setPostAnalysisControlsCollapsedPreference(true);
@@ -1630,5 +1663,83 @@ describe('AnalysisDetailScreen', () => {
     expect(screen.getByText('未找到分析详情')).toBeTruthy();
     fireEvent.press(screen.getByText('返回分组'));
     expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the data source role dictionary in the analysis task tab', async () => {
+    const screen = await renderAnalysis(analysisFixture.audioFileId);
+
+    openAnalysisTasks(screen);
+    fireEvent.press(screen.getByRole('button', { name: '展开情绪分析与角色识别' }));
+
+    // 词典来自音频所属数据源；核心角色固定展示，自定义角色来自服务端。
+    expect(await screen.findByText('角色识别词典')).toBeTruthy();
+    expect(dataSourcesApi.getDataSource).toHaveBeenCalledWith(analysisFixture.sourceId);
+    expect(screen.getByText('销售')).toBeTruthy();
+    expect(screen.getByText('售后')).toBeTruthy();
+  });
+
+  it('persists an added role through the data source and keeps the returned list', async () => {
+    jest
+      .mocked(dataSourcesApi.updateDataSource)
+      .mockResolvedValueOnce(dataSourceFixture(['售后', '技术顾问']));
+    const screen = await renderAnalysis(analysisFixture.audioFileId);
+    openAnalysisTasks(screen);
+    fireEvent.press(screen.getByRole('button', { name: '展开情绪分析与角色识别' }));
+    await screen.findByText('角色识别词典');
+
+    fireEvent.changeText(screen.getByLabelText('新增自定义角色'), '技术顾问');
+    fireEvent.press(screen.getByLabelText('添加'));
+
+    await waitFor(() =>
+      expect(dataSourcesApi.updateDataSource).toHaveBeenCalledWith(analysisFixture.sourceId, {
+        customBusinessRoles: ['售后', '技术顾问'],
+      }),
+    );
+    expect(await screen.findByText('技术顾问')).toBeTruthy();
+  });
+
+  it('keeps the previous roles and reports the failure when saving fails', async () => {
+    jest.mocked(dataSourcesApi.updateDataSource).mockRejectedValueOnce(new Error('保存失败。'));
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    const screen = await renderAnalysis(analysisFixture.audioFileId);
+    openAnalysisTasks(screen);
+    fireEvent.press(screen.getByRole('button', { name: '展开情绪分析与角色识别' }));
+    await screen.findByText('角色识别词典');
+
+    fireEvent.changeText(screen.getByLabelText('新增自定义角色'), '技术顾问');
+    fireEvent.press(screen.getByLabelText('添加'));
+
+    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('角色词典保存失败', '保存失败。'));
+    // 失败时不乐观更新：界面仍显示保存前的角色。
+    expect(screen.getByText('售后')).toBeTruthy();
+    expect(screen.queryByText('技术顾问')).toBeNull();
+    alertSpy.mockRestore();
+  });
+
+  it('omits the role dictionary when the audio belongs to no data source', async () => {
+    jest
+      .mocked(workspaceApi.getAudioAnalysis)
+      .mockResolvedValue({ ...analysisFixture, sourceId: null });
+    const screen = await renderAnalysis(analysisFixture.audioFileId);
+
+    openAnalysisTasks(screen);
+
+    expect(screen.getByText('情绪分析与角色识别')).toBeTruthy();
+    expect(screen.queryByText('角色识别词典')).toBeNull();
+    expect(dataSourcesApi.getDataSource).not.toHaveBeenCalled();
+  });
+
+  it('degrades silently when the data source cannot be read', async () => {
+    jest.mocked(dataSourcesApi.getDataSource).mockRejectedValueOnce(new Error('数据源不可用。'));
+    const screen = await renderAnalysis(analysisFixture.audioFileId);
+
+    openAnalysisTasks(screen);
+    // 等待词典自身的读取失败收敛，避免卸载后的状态写入。
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: '展开情绪分析与角色识别' }));
+    });
+
+    expect(screen.getByText('情绪分析与角色识别')).toBeTruthy();
+    expect(screen.queryByText('角色识别词典')).toBeNull();
   });
 });

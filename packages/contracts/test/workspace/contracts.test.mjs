@@ -664,6 +664,13 @@ describe('workspace contracts', () => {
     };
 
     assert.equal(AudioAnalysisDetailSchema.parse(detail).scenes.length, 1);
+    // 音频可能不属于任何数据源；缺省必须解析为 null 而不是失败。
+    assert.equal(AudioAnalysisDetailSchema.parse(detail).sourceId, null);
+    assert.equal(
+      AudioAnalysisDetailSchema.parse({ ...detail, sourceId: thirdId }).sourceId,
+      thirdId,
+    );
+    assert.throws(() => AudioAnalysisDetailSchema.parse({ ...detail, sourceId: 'not-an-id' }));
     assert.deepEqual(AudioAnalysisDetailSchema.parse(detail).transcription, {
       ...detail.transcription,
       expectedSpeakerCount: null,

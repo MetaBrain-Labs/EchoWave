@@ -14,7 +14,7 @@ import type {
   AudioRuntimeMode,
   SupportedLanguage,
 } from '@echowave/contracts';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
@@ -39,12 +39,15 @@ function TaskCard({
   state,
   onStart,
   runtimeMode,
+  supplemental,
 }: {
   confirmed: boolean;
   type: AudioPostAnalysisType;
   state: AudioPostAnalysisState;
   onStart: (type: AudioPostAnalysisType) => void;
   runtimeMode?: AudioRuntimeMode;
+  /** 追加在卡片底部的任务相关说明区，例如角色识别的角色词典。 */
+  supplemental?: ReactNode;
 }) {
   const { formatDateTime, t } = useAppLanguage();
   const emotion = type === 'emotion';
@@ -132,6 +135,7 @@ function TaskCard({
           <Text style={styles.actionText}>{action}</Text>
         </Pressable>
       )}
+      {supplemental}
     </View>
   );
 }
@@ -141,6 +145,7 @@ export function PostAnalysisControls({
   confirmed,
   emotion,
   role,
+  roleDictionary,
   runtimeMode = 'hybrid',
   onStart,
   onRemountSource,
@@ -148,6 +153,8 @@ export function PostAnalysisControls({
   confirmed: boolean;
   emotion: AudioPostAnalysisState;
   role: AudioPostAnalysisState;
+  /** 角色词典面板由页面注入，避免本组件直连数据源接口。 */
+  roleDictionary?: ReactNode;
   runtimeMode?: AudioRuntimeMode;
   onStart: (type: AudioPostAnalysisType) => void;
   onRemountSource?: () => void;
@@ -207,7 +214,13 @@ export function PostAnalysisControls({
               <Text style={styles.actionText}>{t('post.remount')}</Text>
             </Pressable>
           ) : null}
-          <TaskCard confirmed={confirmed} onStart={onStart} state={role} type="role" />
+          <TaskCard
+            confirmed={confirmed}
+            onStart={onStart}
+            state={role}
+            supplemental={roleDictionary}
+            type="role"
+          />
         </View>
       ) : null}
     </View>

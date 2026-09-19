@@ -51,6 +51,7 @@ import { colors, radii, spacing, textColors, typography } from '@/shared/theme/t
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
 import { ActionSheet, type ActionSheetItem } from '@/shared/ui/ActionSheet';
+import { RoleDictionaryPanel } from '@/shared/ui/RoleDictionaryPanel';
 import { AnalysisLanguagePicker } from '@/shared/i18n/AnalysisLanguagePicker';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import {
@@ -503,6 +504,18 @@ export function AnalysisBatchCreateScreen({ onBack }: { onBack?: () => void }) {
               <Ionicons color={colors.secondary} name="chevron-forward" size={20} />
             </View>
           </Pressable>
+          {/* 角色词典属于所选数据源；提交分析前可直接确认或补充角色白名单。 */}
+          {sourceId ? (
+            <RoleDictionaryPanel
+              onError={(reason) =>
+                Alert.alert(
+                  t('roleDictionary.saveFailed'),
+                  reason instanceof Error ? reason.message : t('analysisBatch.tryAgain'),
+                )
+              }
+              sourceId={sourceId}
+            />
+          ) : null}
         </View>
         <View collapsable={false} ref={audioTourRef}>
           <View style={styles.section}>

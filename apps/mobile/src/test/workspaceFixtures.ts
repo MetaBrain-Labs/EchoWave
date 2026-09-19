@@ -241,6 +241,7 @@ export const analysisFixture: AudioAnalysisDetail = {
   durationMs: 1_104_000,
   generatedAt: '2026-08-15T10:51:24.000Z',
   runtimeMode: 'hybrid',
+  sourceId: sourceFixtures[0].id,
   sourceState: 'available',
   sourceRecoveryState: 'not_required',
   sourceDeleteAfter: null,

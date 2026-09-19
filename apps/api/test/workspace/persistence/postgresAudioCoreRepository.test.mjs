@@ -198,12 +198,50 @@ describe('PostgresAudioCoreRepository audio analysis metadata', () => {
     assert.equal(response.speakerReview.resolvedAt, '2026-08-25T01:03:00.000Z');
     assert.equal(response.scenes[0].segments[0].rawText, '您好呀。');
     assert.equal(response.scenes[0].segments[0].confirmedText, '您好。');
+    // 行里没有 data_source_id 时必须投影为 null，而不是漏字段或抛错。
+    assert.equal(response.sourceId, null);
+    const headQuery = calls.find(({ sql }) => /JOIN .*audio_analysis_revisions/.test(sql));
+    assert.ok(headQuery);
+    assert.match(headQuery.sql, /af\.data_source_id/);
     const confirmedSegmentsQuery = calls.find(({ sql }) =>
       /FROM .*transcript_confirmation_segments.* confirmed/s.test(sql),
     );
     assert.ok(confirmedSegmentsQuery);
     assert.doesNotMatch(confirmedSegmentsQuery.sql, /\$5/);
     assert.deepEqual(confirmedSegmentsQuery.values, [tenantId, undefined, undefined, knowledgeId]);
+  });
+
+  it('projects the owning data source so the client can show its role dictionary', async () => {
+    const pool = {
+      query: async (sql) => {
+        if (/JOIN .*audio_analysis_revisions/.test(sql)) {
+          return {
+            rows: [
+              {
+                id: knowledgeId,
+                audio_file_id: audioId,
+                data_source_id: groupId,
+                revision_no: 1,
+                published_at: new Date('2026-08-25T01:00:00.000Z'),
+                transcription_model: 'qwen-audio-3.0-asr-flash-filetrans',
+                settings_snapshot: {},
+                active_transcript_confirmation_id: null,
+                confirmation_version: null,
+                confirmed_at: null,
+                title: '客户通话',
+                duration_ms: 45_000,
+              },
+            ],
+          };
+        }
+        return { rows: [] };
+      },
+    };
+    const repository = new PostgresAudioCoreRepository(pool, 'echowave', tenantId);
+
+    const response = await repository.getAudioAnalysis(audioId);
+
+    assert.equal(response.sourceId, groupId);
   });
 
   it('projects lightweight bundled acoustic emotion onto the active confirmation', async () => {
