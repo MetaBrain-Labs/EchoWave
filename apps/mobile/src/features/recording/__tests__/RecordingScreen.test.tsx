@@ -14,6 +14,7 @@ import type { RecordingDraft } from '@echowave/contracts';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 
+import { AnalysisPreferenceProvider } from '@/shared/settings/AnalysisPreferenceProvider';
 import { RecordingScreen } from '../RecordingScreen';
 import { colors, radii } from '@/shared/theme/tokens';
 
@@ -70,7 +71,12 @@ const translations: Record<string, string> = {
   'recording.name': '录音名称',
   'recording.noRecent': '完成录音后，手机原件会显示在这里。',
   'recording.noSource': '尚未选择数据源',
-  'recording.openSettings': '打开录音设置',
+  'recording.openSettings': '打开设备设置',
+  'recording.preference': '默认分析方式',
+  'recording.preferenceDescription': '应用内录音和一键分析文件导入统一生效，只影响后续提交。',
+  'recording.preferenceSaveFailed': '分析方式保存失败，已保留原设置。',
+  'recording.full': '全流程分析',
+  'recording.transcriptionOnly': '仅转写',
   'recording.recent': '最近录音',
   'recording.rename': '重命名',
   'recording.seconds': '%{count} 秒',
@@ -130,7 +136,11 @@ jest.mock('@/shared/i18n/LanguageProvider', () => ({
 }));
 
 function renderRecordingScreen(onOpenSettings = jest.fn()) {
-  const screen = render(<RecordingScreen onBack={jest.fn()} onOpenSettings={onOpenSettings} />);
+  const screen = render(
+    <AnalysisPreferenceProvider>
+      <RecordingScreen onBack={jest.fn()} onOpenSettings={onOpenSettings} />
+    </AnalysisPreferenceProvider>,
+  );
   return {
     onOpenSettings,
     screen,
@@ -178,7 +188,7 @@ describe('RecordingScreen', () => {
     );
     expect(screen.getByRole('header', { name: '最近录音' })).toBeTruthy();
 
-    const settings = screen.getByLabelText('打开录音设置');
+    const settings = screen.getByLabelText('打开设备设置');
     expect(StyleSheet.flatten(settings.props.style)).toEqual(
       expect.objectContaining({ height: 44, width: 44 }),
     );
@@ -188,6 +198,27 @@ describe('RecordingScreen', () => {
     );
     fireEvent.press(settings);
     expect(onOpenSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('switches the default analysis workflow in place without leaving the recording page', async () => {
+    const { screen } = renderRecordingScreen();
+
+    const full = await screen.findByRole('radio', { name: '全流程分析' });
+    await waitFor(() =>
+      expect(full.props.accessibilityState).toEqual(expect.objectContaining({ checked: true })),
+    );
+
+    fireEvent.press(screen.getByRole('radio', { name: '仅转写' }));
+
+    // 选择立即生效：不需要回到“更多 → 通用设置”再重新进入录音。
+    await waitFor(() =>
+      expect(screen.getByRole('radio', { name: '仅转写' }).props.accessibilityState).toEqual(
+        expect.objectContaining({ checked: true }),
+      ),
+    );
+    expect(screen.getByRole('radio', { name: '全流程分析' }).props.accessibilityState).toEqual(
+      expect.objectContaining({ checked: false }),
+    );
   });
 
   it('moves export, storage and destructive actions into the recording overflow menu', async () => {

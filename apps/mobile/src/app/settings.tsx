@@ -7,9 +7,9 @@
  * - 保持路由层无业务状态。
  *
  * Notes:
- * - 管理员会话随功能页面卸载而销毁。
+ * - 管理员会话由根级共享 Provider 持有，随服务器切换失效。
  */
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 
 import { SettingsScreen } from '@/features/settings/SettingsScreen';
 import { backOrReplace } from '@/shared/navigation/routeBack';
@@ -17,5 +17,10 @@ import { backOrReplace } from '@/shared/navigation/routeBack';
 /** 渲染 AI 配置中心。 */
 export default function SettingsRoute() {
   const router = useRouter();
-  return <SettingsScreen onBack={() => backOrReplace(router, '/')} />;
+  return (
+    <SettingsScreen
+      onBack={() => backOrReplace(router, '/')}
+      onOpenServiceConfiguration={() => router.push('/service-configuration' as Href)}
+    />
+  );
 }

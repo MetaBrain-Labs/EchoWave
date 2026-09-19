@@ -334,7 +334,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.base,
   },
   descriptionInput: {
-    ...multilineTextInputText, minHeight: 88, textAlignVertical: 'top' },
+    ...multilineTextInputText,
+    minHeight: 88,
+    textAlignVertical: 'top',
+  },
   settingsSection: { gap: spacing.xs },
   settingsTitle: {
     ...typography.heading3,

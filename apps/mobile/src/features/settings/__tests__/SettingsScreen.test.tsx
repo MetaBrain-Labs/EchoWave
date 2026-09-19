@@ -12,10 +12,12 @@
  * - 所有 API 都使用内存替身，不发起网络请求。
  */
 import { fireEvent, render, waitFor, within } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import type { ReactElement } from 'react';
+import { StyleSheet, Text } from 'react-native';
 
 import { settingsApi } from '@/shared/api/settingsApi';
 import { WorkspaceRequestError } from '@/shared/api/request';
+import { AdminSessionProvider, useAdminSession } from '@/shared/auth/AdminSessionProvider';
 import {
   StarterTourContext,
   type StarterTourContextValue,
@@ -38,9 +40,29 @@ jest.mock('@/shared/api/settingsApi', () => ({
 
 const mockedApi = jest.mocked(settingsApi);
 
+/** 通过真实上下文写入共享会话，模拟用户已在“服务配置”完成校验。 */
+function SeedSession({ token }: { token: string }) {
+  const { setSession } = useAdminSession();
+  return (
+    <Text accessibilityRole="button" onPress={() => setSession(token)}>
+      建立共享会话
+    </Text>
+  );
+}
+
+/** 在共享会话内渲染 AI 配置页；authorized 为 false 时保持未校验状态。 */
+function renderWithSession(node: ReactElement, { authorized = true } = {}) {
+  const screen = render(
+    <AdminSessionProvider serverRevision={0}>
+      {authorized ? <SeedSession token="admin-token" /> : null}
+      {node}
+    </AdminSessionProvider>,
+  );
+  if (authorized) fireEvent.press(screen.getByText('建立共享会话'));
+  return screen;
+}
+
 async function enterConfigurationCenter(screen: ReturnType<typeof render>) {
-  fireEvent.changeText(screen.getByLabelText('CONFIGURATION_ADMIN_TOKEN'), 'admin-token');
-  fireEvent.press(screen.getByText('进入配置中心'));
   await waitFor(() => expect(screen.getByText('默认能力配置')).toBeTruthy());
 }
 
@@ -113,21 +135,25 @@ describe('SettingsScreen', () => {
       },
       templates: {},
     };
-    const screen = render(
+    const screen = renderWithSession(
       <StarterTourContext.Provider value={context}>
-        <SettingsScreen onBack={jest.fn()} />
+        <SettingsScreen onBack={jest.fn()} onOpenServiceConfiguration={jest.fn()} />
       </StarterTourContext.Provider>,
     );
     await waitFor(() => expect(screen.getByTestId('ai-configuration-guide-demo')).toBeTruthy());
     expect(screen.getByTestId('ai-configuration-guide-demo')).toBeTruthy();
     expect(screen.getByText('仅用于引导演示，不是实际配置')).toBeTruthy();
     expect(screen.getByText(/LdFu/)).toBeTruthy();
-    expect(mockedApi.overview).not.toHaveBeenCalled();
+    // 演示区域不触发任何真实保存请求。
     expect(mockedApi.saveCapability).not.toHaveBeenCalled();
+    expect(mockedApi.createProvider).not.toHaveBeenCalled();
+    expect(mockedApi.importLegacy).not.toHaveBeenCalled();
   });
 
   it('disables Secret entry but keeps Local alias configuration available on remote HTTP', async () => {
-    const screen = render(<SettingsScreen onBack={jest.fn()} />);
+    const screen = renderWithSession(
+      <SettingsScreen onBack={jest.fn()} onOpenServiceConfiguration={jest.fn()} />,
+    );
 
     await waitFor(() =>
       expect(
@@ -136,8 +162,6 @@ describe('SettingsScreen', () => {
         ),
       ).toBeTruthy(),
     );
-    fireEvent.changeText(screen.getByLabelText('CONFIGURATION_ADMIN_TOKEN'), 'admin-token');
-    fireEvent.press(screen.getByText('进入配置中心'));
 
     await waitFor(() => expect(screen.getByText('dashscope-main · DashScope · 可用')).toBeTruthy());
     fireEvent.press(screen.getByText('修改'));
@@ -151,9 +175,9 @@ describe('SettingsScreen', () => {
       name: '更新后的连接',
       revision: 2,
     });
-    const screen = render(<SettingsScreen onBack={jest.fn()} />);
-    fireEvent.changeText(screen.getByLabelText('CONFIGURATION_ADMIN_TOKEN'), 'admin-token');
-    fireEvent.press(screen.getByText('进入配置中心'));
+    const screen = renderWithSession(
+      <SettingsScreen onBack={jest.fn()} onOpenServiceConfiguration={jest.fn()} />,
+    );
 
     await waitFor(() => expect(screen.getByText('修改')).toBeTruthy());
     fireEvent.press(screen.getByText('修改'));
@@ -175,20 +199,26 @@ describe('SettingsScreen', () => {
     expect(submitted).not.toHaveProperty('credential');
   });
 
-  it('returns to the in-memory login gate after an unauthorized refresh', async () => {
+  it('falls back to the shared-session gate after an unauthorized refresh', async () => {
     mockedApi.overview.mockRejectedValueOnce(
       new WorkspaceRequestError('UNAUTHORIZED', '管理口令无效。'),
     );
-    const screen = render(<SettingsScreen onBack={jest.fn()} />);
-    fireEvent.changeText(screen.getByLabelText('CONFIGURATION_ADMIN_TOKEN'), 'expired-token');
-    fireEvent.press(screen.getByText('进入配置中心'));
+    const onOpenServiceConfiguration = jest.fn();
+    const screen = renderWithSession(
+      <SettingsScreen onBack={jest.fn()} onOpenServiceConfiguration={onOpenServiceConfiguration} />,
+    );
 
-    await waitFor(() => expect(screen.getByText('管理员口令无效或已变更。')).toBeTruthy());
-    expect(screen.getByLabelText('CONFIGURATION_ADMIN_TOKEN')).toBeTruthy();
+    // 共享会话失效后不再要求在本页重复输入口令，而是给出唯一校验入口。
+    await waitFor(() => expect(screen.getByText('需要管理员校验')).toBeTruthy());
+    expect(screen.queryByLabelText('CONFIGURATION_ADMIN_TOKEN')).toBeNull();
+    fireEvent.press(screen.getByLabelText('前往服务配置校验'));
+    expect(onOpenServiceConfiguration).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the provider editor collapsed until adding or editing a connection', async () => {
-    const screen = render(<SettingsScreen onBack={jest.fn()} />);
+    const screen = renderWithSession(
+      <SettingsScreen onBack={jest.fn()} onOpenServiceConfiguration={jest.fn()} />,
+    );
     await enterConfigurationCenter(screen);
 
     expect(screen.queryByLabelText('名称')).toBeNull();
@@ -212,7 +242,9 @@ describe('SettingsScreen', () => {
       type: 'deepseek',
       revision: 2,
     });
-    const screen = render(<SettingsScreen onBack={jest.fn()} />);
+    const screen = renderWithSession(
+      <SettingsScreen onBack={jest.fn()} onOpenServiceConfiguration={jest.fn()} />,
+    );
     await enterConfigurationCenter(screen);
 
     fireEvent.press(screen.getByText('修改'));
@@ -254,7 +286,9 @@ describe('SettingsScreen', () => {
   });
 
   it('uses stable single-line input metrics and the standard app radius', async () => {
-    const screen = render(<SettingsScreen onBack={jest.fn()} />);
+    const screen = renderWithSession(
+      <SettingsScreen onBack={jest.fn()} onOpenServiceConfiguration={jest.fn()} />,
+    );
     await enterConfigurationCenter(screen);
     fireEvent.press(screen.getByLabelText('添加连接'));
 
@@ -272,7 +306,9 @@ describe('SettingsScreen', () => {
   });
 
   it('renders the active binding editor directly below its capability row and toggles it', async () => {
-    const screen = render(<SettingsScreen onBack={jest.fn()} />);
+    const screen = renderWithSession(
+      <SettingsScreen onBack={jest.fn()} onOpenServiceConfiguration={jest.fn()} />,
+    );
     await enterConfigurationCenter(screen);
 
     const embeddingRow = screen.getByTestId('capability-row-knowledge_embedding');
@@ -303,7 +339,9 @@ describe('SettingsScreen', () => {
       ],
     });
     mockedApi.overview.mockClear();
-    const screen = render(<SettingsScreen onBack={jest.fn()} />);
+    const screen = renderWithSession(
+      <SettingsScreen onBack={jest.fn()} onOpenServiceConfiguration={jest.fn()} />,
+    );
     await enterConfigurationCenter(screen);
 
     expect(screen.getByLabelText('应用默认配置（0 项）')).toBeDisabled();
@@ -337,7 +375,9 @@ describe('SettingsScreen', () => {
         updatedAt: '2026-09-01T00:00:00.000Z',
       };
     });
-    const screen = render(<SettingsScreen onBack={jest.fn()} />);
+    const screen = renderWithSession(
+      <SettingsScreen onBack={jest.fn()} onOpenServiceConfiguration={jest.fn()} />,
+    );
     await enterConfigurationCenter(screen);
 
     fireEvent.press(screen.getByText('应用默认配置（2 项）'));

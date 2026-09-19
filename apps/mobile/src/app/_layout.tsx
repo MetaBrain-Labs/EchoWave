@@ -23,6 +23,7 @@ import {
   ServerConnectionProvider,
   useServerConnection,
 } from '@/shared/api/ServerConnectionProvider';
+import { AdminSessionProvider } from '@/shared/auth/AdminSessionProvider';
 import { subscribeToNotificationNavigation } from '@/shared/notifications/pushNotifications';
 import { PushNotificationProvider } from '@/shared/notifications/PushNotificationProvider';
 import { colors, fontFamilies, spacing, textColors, typography } from '@/shared/theme/tokens';
@@ -114,11 +115,13 @@ function RootContent() {
     <View style={styles.stage} testID="echowave-ready">
       <View style={styles.canvas}>
         <StarterTourProvider key={connection.revision} serverUrl={connection.serverUrl}>
-          <NavigationLoadingProvider>
-            <Stack screenOptions={{ headerShown: false }} />
-            <StatusBar style="dark" />
-            <StatusBarBackdrop />
-          </NavigationLoadingProvider>
+          <AdminSessionProvider serverRevision={connection.revision}>
+            <NavigationLoadingProvider>
+              <Stack screenOptions={{ headerShown: false }} />
+              <StatusBar style="dark" />
+              <StatusBarBackdrop />
+            </NavigationLoadingProvider>
+          </AdminSessionProvider>
         </StarterTourProvider>
       </View>
     </View>

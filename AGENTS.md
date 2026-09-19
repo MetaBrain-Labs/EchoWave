@@ -45,6 +45,9 @@ Before editing:
 5. Identify the authoritative source for each affected datum or contract.
 
 - Inspect `git status --short` before running per-file diffs. If relevant changes are staged, inspect them with one scoped `git diff --cached -- <paths>` call; do not run repeated unstaged diffs that cannot contain the changes.
+- Treat the Git index as user-owned state. Do not run `git add`, `git add -u`, `git add -A`, `git reset`, `git restore --staged`, `git stash`, or `git commit` unless the user explicitly requests that exact operation. Inspecting and reading staged content is always allowed; changing what is staged is not.
+- Never widen staging to clear formatting or stat-cache noise. `git add -u` and `git add -A` stage unrelated user work as a side effect; if a formatter or tool leaves tracked files reported as modified without content changes, report it and leave the index untouched.
+- Do not undo or normalize a user's staging state, even when it looks accidental, inconsistent, or partially staged. Surface the observation and let the user decide.
 - Use targeted searches and bounded source ranges first. Do not dump an entire large file when the relevant symbol, callers, and surrounding control flow can be inspected with `rg` and scoped reads.
 
 Use the repository's pinned toolchain and existing scripts. Do not change dependency versions, lockfiles, generated files, or repository-wide configuration unless the task requires it.

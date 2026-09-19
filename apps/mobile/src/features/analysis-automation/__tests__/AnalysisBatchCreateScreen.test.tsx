@@ -23,6 +23,7 @@ import {
 } from '@/shared/api/dataSourcesApi';
 import { getAudioRuntime } from '@/shared/api/audioRuntimeApi';
 import { getGroupSettings } from '@/shared/api/groupsApi';
+import { AnalysisPreferenceProvider } from '@/shared/settings/AnalysisPreferenceProvider';
 
 const sources = Array.from(
   { length: 6 },
@@ -153,5 +154,28 @@ describe('AnalysisBatchCreateScreen', () => {
     });
 
     await waitFor(() => expect(createExistingAudioAnalysisBatch).toHaveBeenCalled());
+  });
+
+  it('exposes the default analysis workflow inside more settings', async () => {
+    const screen = render(
+      <AnalysisPreferenceProvider>
+        <AnalysisBatchCreateScreen />
+      </AnalysisPreferenceProvider>,
+    );
+
+    fireEvent.press(await screen.findByRole('button', { name: '更多设置' }));
+    const transcriptionOnly = await screen.findByRole('radio', { name: '仅转写' });
+
+    // 默认全流程；就地切换后写入与录音页共用的同一偏好。
+    expect(screen.getByRole('radio', { name: '全流程分析' }).props.accessibilityState).toEqual(
+      expect.objectContaining({ checked: true }),
+    );
+    fireEvent.press(transcriptionOnly);
+
+    await waitFor(() =>
+      expect(screen.getByRole('radio', { name: '仅转写' }).props.accessibilityState).toEqual(
+        expect.objectContaining({ checked: true }),
+      ),
+    );
   });
 });

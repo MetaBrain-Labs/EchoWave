@@ -63,7 +63,7 @@ import { multilineTextInputText, textInputText } from '@/shared/theme/textInput'
 /** 渲染独立的一键分析表单，并由路由层决定是否显示返回操作。 */
 export function AnalysisBatchCreateScreen({ onBack }: { onBack?: () => void }) {
   const router = useRouter();
-  const { preference, hydrated } = useAnalysisPreference();
+  const { preference, hydrated, setPreference } = useAnalysisPreference();
   const pipeline = pipelineForPreference(preference);
   const { language: appLanguage, formatDateTime, t } = useAppLanguage();
   const scrollRef = useRef<ScrollView>(null);
@@ -224,6 +224,15 @@ export function AnalysisBatchCreateScreen({ onBack }: { onBack?: () => void }) {
   }, [appLanguage, groupId, sourceId, t, pipeline.includeEmotion]);
   const screenRefresh = useScreenRefresh(refreshPage);
 
+  /** 就地切换默认分析方式；写入失败时保留原选择并提示。 */
+  const changeAnalysisPreference = async (value: string) => {
+    try {
+      await setPreference(value === 'transcription_only' ? 'transcription_only' : 'full');
+    } catch {
+      Alert.alert(t('common.saveFailed'), t('recording.preferenceSaveFailed'));
+    }
+  };
+
   const selectedCount = sourceKind === 'uploads' ? assets.length : selectedAudioIds.length;
   const incompatibility = useMemo(
     () =>
@@ -368,9 +377,9 @@ export function AnalysisBatchCreateScreen({ onBack }: { onBack?: () => void }) {
         scheduledFor: plannedFor,
         pipeline: {
           ...pipeline,
-          transcriptPolicy:
-            (asrContextDirty || asrHotwords.trim() ? 'create_new' : pipeline.transcriptPolicy) as
-              AudioAnalysisBatchCreateRequest['pipeline']['transcriptPolicy'],
+          transcriptPolicy: (asrContextDirty || asrHotwords.trim()
+            ? 'create_new'
+            : pipeline.transcriptPolicy) as AudioAnalysisBatchCreateRequest['pipeline']['transcriptPolicy'],
         },
         ...(asrContextLoaded || asrHotwords.trim()
           ? {
@@ -659,6 +668,16 @@ export function AnalysisBatchCreateScreen({ onBack }: { onBack?: () => void }) {
           </Pressable>
           {moreSettingsExpanded ? (
             <View style={styles.settingsBody}>
+              <Text style={styles.contextLabel}>{t('analysisBatch.workflowLabel')}</Text>
+              <ChoiceRow
+                items={[
+                  { id: 'full', label: t('recording.full') },
+                  { id: 'transcription_only', label: t('recording.transcriptionOnly') },
+                ]}
+                selected={preference}
+                onSelect={(id) => void changeAnalysisPreference(id)}
+              />
+              <Text style={styles.hint}>{t('recording.preferenceDescription')}</Text>
               <Text style={styles.contextLabel}>{t('analysisBatch.languageLabel')}</Text>
               <AnalysisLanguagePicker
                 selectionStyle="accent"

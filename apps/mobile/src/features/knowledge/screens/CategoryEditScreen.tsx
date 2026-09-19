@@ -223,7 +223,10 @@ const styles = StyleSheet.create({
     ...typography.body,
   },
   descriptionInput: {
-    ...multilineTextInputText, height: 112, paddingTop: spacing.md },
+    ...multilineTextInputText,
+    height: 112,
+    paddingTop: spacing.md,
+  },
   helper: { ...typography.description, color: colors.primary },
   muted: { ...typography.description, color: textColors.secondary },
   statusRow: {
