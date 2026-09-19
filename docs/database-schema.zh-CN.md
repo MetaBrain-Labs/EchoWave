@@ -441,6 +441,8 @@ ASR 确认后的情绪分析和角色识别任务。每条任务固化 `analysis
 
 迁移 030 为业务分析和后处理 job 增加 `cancel_requested`。取消已提交外部调用时只标记请求，等待当前调用收敛后停止后续步骤；领取索引排除已请求取消的 job。
 
+迁移 040 为该表增加分类检索审计三列：`category_snapshot` 保存分析开始时白名单知识库的 `content_version` 与 `category_version`，用于发布时的过期判定；`category_retrieval_calls` 与 `category_fallback_used` 是跨恢复共享的检索额度与一次性扩大标记，领取和扩大都通过带 `status='running'` 条件的原子 UPDATE 完成。`retrieval_audit` 是 append 式 JSONB，每次真实 SQL 检索追加一条 `{call, query, knowledgeBaseIds, categoryIds, categories, includeTestSamples, reason, hitCount, durationMs}`；其中 `categories` 冻结分类当时的 `id` 与 `name`，使分析报告在分类改名或停用后仍能显示分析当时使用的分类，而 `reason` 解释本次范围来自显式筛选、模型选择、默认路由还是零命中/证据不足兜底。未占用到额度的请求不写审计。
+
 ### `audio_business_analysis_windows`
 
 长转写销售复盘的窗口级 checkpoint。结构与后处理窗口一致，以租户、job 和窗口序号保证幂等；最终汇总只消费已完成窗口结果。它补充 LangGraph 节点级 checkpoint，不替代最终业务表。

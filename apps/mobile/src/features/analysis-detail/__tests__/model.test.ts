@@ -125,6 +125,7 @@ describe('toAnalysisDetailView invalid audio timeline', () => {
           generatedAt: '2026-08-28T08:00:00.000Z',
           knowledgeBaseIds: [],
           knowledgeStatus: 'not_linked',
+          retrievalCategories: [],
           limitations: ['本次分析未使用知识库。'],
           summarySections: [
             {

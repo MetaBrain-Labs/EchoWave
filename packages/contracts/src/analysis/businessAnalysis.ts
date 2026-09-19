@@ -77,6 +77,20 @@ export const BusinessAnalysisTagSchema = z
       });
     }
   });
+export const BusinessAnalysisRetrievalCategorySchema = z
+  .object({
+    id: EntityIdSchema,
+    name: z.string().min(1).max(120),
+    lookupReason: z.enum([
+      'explicit',
+      'auto',
+      'default-route',
+      'zero-hits',
+      'evidence-insufficient',
+    ]),
+    hitCount: z.number().int().nonnegative(),
+  })
+  .strict();
 export const BusinessAnalysisResultSchema = z
   .object({
     jobId: EntityIdSchema,
@@ -86,6 +100,8 @@ export const BusinessAnalysisResultSchema = z
     generatedAt: z.string().datetime(),
     knowledgeBaseIds: z.array(EntityIdSchema),
     knowledgeStatus: z.enum(['not_linked', 'linked_not_used', 'used']),
+    // 分析当时冻结的分类名与选择方式；旧报告没有该审计时按空数组处理。
+    retrievalCategories: z.array(BusinessAnalysisRetrievalCategorySchema).default([]),
     limitations: z.array(z.string().trim().min(1).max(500)).max(BUSINESS_ANALYSIS_MAX_LIMITATIONS),
     summarySections: z.array(
       z.object({
@@ -146,6 +162,9 @@ export const AudioBusinessAnalysisStartResponseSchema = z.object({
 export type BusinessAnalysisTagCategory = z.infer<typeof BusinessAnalysisTagCategorySchema>;
 export type BusinessAnalysisCitation = z.infer<typeof BusinessAnalysisCitationSchema>;
 export type BusinessAnalysisTag = z.infer<typeof BusinessAnalysisTagSchema>;
+export type BusinessAnalysisRetrievalCategory = z.infer<
+  typeof BusinessAnalysisRetrievalCategorySchema
+>;
 export type BusinessAnalysisResult = z.infer<typeof BusinessAnalysisResultSchema>;
 export type AudioBusinessAnalysisState = z.infer<typeof AudioBusinessAnalysisStateSchema>;
 export type AudioBusinessAnalysisStartRequest = z.infer<

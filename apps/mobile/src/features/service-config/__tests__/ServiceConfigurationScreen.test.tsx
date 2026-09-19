@@ -10,7 +10,7 @@
  * Notes:
  * - 所有 API 都使用内存替身，不发起网络请求。
  */
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 
 import { getAsrPreferences, updateAsrPreferences } from '@/shared/api/asrPreferencesApi';
@@ -74,8 +74,11 @@ describe('ServiceConfigurationScreen', () => {
     const screen = renderScreen();
     await screen.findByDisplayValue('售后回访');
     fireEvent.changeText(screen.getByLabelText('管理员口令'), 'admin-token');
-    fireEvent.press(screen.getByText('校验口令'));
-    await waitFor(() => expect(screen.queryByLabelText('管理员口令')).toBeNull());
+    // 校验是异步的：在 act 内等待完成，避免共享会话的写入逃出测试的刷新边界。
+    await act(async () => {
+      fireEvent.press(screen.getByText('校验口令'));
+    });
+    expect(screen.queryByLabelText('管理员口令')).toBeNull();
 
     fireEvent.changeText(screen.getByLabelText('默认上下文（可选）'), '新上下文');
     fireEvent.press(screen.getByText('保存默认上下文'));
@@ -96,8 +99,10 @@ describe('ServiceConfigurationScreen', () => {
     const screen = renderScreen();
     await screen.findByDisplayValue('售后回访');
     fireEvent.changeText(screen.getByLabelText('管理员口令'), 'admin-token');
-    fireEvent.press(screen.getByText('校验口令'));
-    await waitFor(() => expect(screen.queryByLabelText('管理员口令')).toBeNull());
+    await act(async () => {
+      fireEvent.press(screen.getByText('校验口令'));
+    });
+    expect(screen.queryByLabelText('管理员口令')).toBeNull();
 
     fireEvent.press(screen.getByText('保存默认上下文'));
 

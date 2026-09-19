@@ -1168,6 +1168,20 @@ describe('AnalysisDetailScreen', () => {
           generatedAt: '2026-08-29T01:00:00.000Z',
           knowledgeBaseIds: [knowledgeBaseId],
           knowledgeStatus: 'used',
+          retrievalCategories: [
+            {
+              id: 'c1000000-0000-4000-8000-000000000001',
+              name: '产品资料',
+              lookupReason: 'auto',
+              hitCount: 4,
+            },
+            {
+              id: 'c1000000-0000-4000-8000-000000000002',
+              name: '话术案例',
+              lookupReason: 'auto',
+              hitCount: 2,
+            },
+          ],
           limitations: [],
           summarySections: [],
           tags: [

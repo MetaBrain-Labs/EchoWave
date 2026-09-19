@@ -11,7 +11,7 @@
  * - 节点名称、错误语义和发布事务保持现有行为。
  */
 import { Send } from '@langchain/langgraph';
-import { BUSINESS_ANALYSIS_MAX_LIMITATIONS } from '@echowave/contracts';
+import { BUSINESS_ANALYSIS_MAX_LIMITATIONS, type KnowledgeCategory } from '@echowave/contracts';
 
 import {
   beginAiModelCall,
@@ -128,6 +128,7 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
     embedding: number[],
     filter: CategorySearchFilter,
     report: AiExecutionRecorder,
+    categories: readonly KnowledgeCategory[],
     reservedCall?: number,
   ) {
     const call = reservedCall ?? (await reserve(job.id));
@@ -148,11 +149,17 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
       options.embeddingModel,
       filter,
     );
+    // 分类名随本次检索一起冻结：目录改名或停用后，历史报告仍能显示分析当时使用的分类。
+    const frozenCategories = (filter.categoryIds ?? [])
+      .map((id) => categories.find((item) => item.id === id))
+      .filter((item): item is KnowledgeCategory => item !== undefined)
+      .map(({ id, name }) => ({ id, name }));
     const audit = {
       call,
       query,
       knowledgeBaseIds: job.knowledgeBaseIds,
       categoryIds: filter.categoryIds ?? null,
+      categories: frozenCategories,
       includeTestSamples: filter.includeTestSamples,
       reason: filter.reason,
       hitCount: chunks.length,
@@ -183,7 +190,7 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
   ): Promise<RetrievalChunk[]> {
     await options.repository.assertKnowledgeCurrent(job);
     if (job.knowledgeBaseIds.length === 0) return [];
-    const { policy } = await categoryRuntime(job);
+    const { catalogue, policy } = await categoryRuntime(job);
     let filter: CategorySearchFilter;
     try {
       filter = policy.resolve(query, choice);
@@ -258,7 +265,15 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
     });
     try {
       await options.repository.assertKnowledgeCurrent(job);
-      let chunks = await executeCategorySearch(job, query, embedding, filter, report, reservedCall);
+      let chunks = await executeCategorySearch(
+        job,
+        query,
+        embedding,
+        filter,
+        report,
+        catalogue.categories,
+        reservedCall,
+      );
       if (!chunks.length) {
         const fallback = policy.fallback('zero-hits');
         if (
@@ -266,7 +281,14 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
           (!options.repository.claimCategoryExpansion ||
             (await options.repository.claimCategoryExpansion(job.id)))
         ) {
-          chunks = await executeCategorySearch(job, query, embedding, fallback, report);
+          chunks = await executeCategorySearch(
+            job,
+            query,
+            embedding,
+            fallback,
+            report,
+            catalogue.categories,
+          );
           filter = fallback;
         }
       }

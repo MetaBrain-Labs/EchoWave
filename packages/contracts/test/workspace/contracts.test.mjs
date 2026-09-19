@@ -191,6 +191,26 @@ describe('workspace contracts', () => {
         ),
       }),
     );
+    // 旧报告没有分类审计：缺省为空数组而不是解析失败。
+    assert.deepEqual(BusinessAnalysisResultSchema.parse(result).retrievalCategories, []);
+    assert.deepEqual(
+      BusinessAnalysisResultSchema.parse({
+        ...result,
+        retrievalCategories: [{ id: thirdId, name: '产品资料', lookupReason: 'auto', hitCount: 6 }],
+      }).retrievalCategories,
+      [{ id: thirdId, name: '产品资料', lookupReason: 'auto', hitCount: 6 }],
+    );
+    for (const invalid of [
+      { id: thirdId, name: '产品资料', lookupReason: 'unknown', hitCount: 6 },
+      { id: thirdId, name: '', lookupReason: 'auto', hitCount: 6 },
+      { id: thirdId, name: '产品资料', lookupReason: 'auto', hitCount: -1 },
+      { id: thirdId, name: '产品资料', lookupReason: 'auto', hitCount: 6, extra: true },
+    ]) {
+      assert.throws(
+        () => BusinessAnalysisResultSchema.parse({ ...result, retrievalCategories: [invalid] }),
+        `Expected rejection for ${JSON.stringify(invalid)}`,
+      );
+    }
     const state = AudioBusinessAnalysisStateSchema.parse({
       state: 'ready',
       groupId: secondId,
