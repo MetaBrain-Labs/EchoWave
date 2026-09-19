@@ -98,19 +98,31 @@ export function KnowledgeContent({
                 name="file-tray-stacked-outline"
                 size={typography.heading3.lineHeight}
               />
-              <Text style={styles.cardTitle}>{knowledgeBase.name}</Text>
+              <Text numberOfLines={1} style={styles.cardTitle}>
+                {knowledgeBase.name}
+              </Text>
+              <View style={styles.countChip}>
+                <Text style={styles.countChipText}>
+                  {t('groupContent.documentCount', {
+                    count: formatNumber(knowledgeBase.documentCount),
+                  })}
+                </Text>
+              </View>
               <Ionicons color={colors.secondary} name="chevron-forward" size={20} />
             </View>
-            <Text numberOfLines={2} style={styles.description}>
-              {knowledgeBase.description}
+            {/* 描述区固定两行正文高度（40px），空描述显示占位文案以避免卡片出现无意义空白。 */}
+            <Text
+              numberOfLines={2}
+              style={[styles.description, !knowledgeBase.description && styles.emptyDescription]}
+            >
+              {knowledgeBase.description || t('knowledge.noDescription')}
             </Text>
             <Text style={styles.metaText}>
-              {t('groupContent.documentCount', {
-                count: formatNumber(knowledgeBase.documentCount),
-              })}
-            </Text>
-            <Text style={styles.metaText}>
-              {t('knowledge.updated', { date: formatDateTime(knowledgeBase.updatedAt) })}
+              {`${t('groupContent.updatedAt', {
+                date: formatDateTime(knowledgeBase.updatedAt),
+              })} · ${t('groupContent.linkedGroupCount', {
+                count: formatNumber(knowledgeBase.linkedGroupCount),
+              })}`}
             </Text>
           </Pressable>
         ))
@@ -199,6 +211,19 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sansBold,
     fontWeight: 'bold',
   },
+  // 文档数量做成贴右的数量标记，避免它单独占一行并让卡片顶部空荡。
+  countChip: {
+    backgroundColor: colors.divider,
+    borderRadius: radii.round,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  countChipText: {
+    ...typography.label,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
   metaText: {
     ...typography.label,
     color: textColors.tertiary,
@@ -210,11 +235,20 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   description: {
-    ...typography.description,
+    ...typography.body,
     color: textColors.secondary,
     fontFamily: fontFamilies.sans,
     marginBottom: spacing.sm,
-    marginTop: spacing.md,
+    marginTop: spacing.base,
+    // 有描述时保留两行正文高度，避免下方元信息随描述有无而上下跳动。
+    minHeight: 40,
+  },
+  // 空描述只保留一行占位说明，不再用占位文字占满 40px 槽位造成空白。
+  emptyDescription: {
+    ...typography.description,
+    color: textColors.tertiary,
+    marginTop: spacing.sm,
+    minHeight: undefined,
   },
   pressed: {
     opacity: 0.65,
