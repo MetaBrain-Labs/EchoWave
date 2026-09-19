@@ -194,6 +194,18 @@ describe('AnalysisBatchCreateScreen', () => {
     );
   });
 
+  it('toggles the feature hint card from the header', async () => {
+    const screen = render(<AnalysisBatchCreateScreen />);
+    await screen.findByText('数据源 1');
+
+    expect(screen.queryByTestId('guide-hint-guideHint.analysisCreate')).toBeNull();
+    fireEvent.press(screen.getByLabelText('查看本功能能做什么'));
+    expect(screen.getByTestId('guide-hint-guideHint.analysisCreate')).toBeTruthy();
+    expect(screen.getByText(/一次可提交 1–20 个新上传文件/)).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('查看本功能能做什么'));
+    expect(screen.queryByTestId('guide-hint-guideHint.analysisCreate')).toBeNull();
+  });
+
   it('shows the selected data source role dictionary and persists an added role', async () => {
     jest.mocked(updateDataSource).mockResolvedValueOnce({
       id: 'source-1',

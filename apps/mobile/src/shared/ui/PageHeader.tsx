@@ -19,6 +19,7 @@ import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 
 /** 渲染详情层级页面使用的可访问返回页头。 */
 export function PageHeader({
+  guide,
   leading,
   moreLabel,
   onBack,
@@ -27,6 +28,8 @@ export function PageHeader({
   searchLabel,
   title,
 }: {
+  /** 顶部栏引导 / 提示按钮；由页面注入，页头只负责摆放在搜索左侧。 */
+  guide?: ReactNode;
   leading?: ReactNode;
   moreLabel?: string;
   onBack: () => void;
@@ -54,6 +57,7 @@ export function PageHeader({
         </Text>
       </View>
       <View style={styles.headerActions}>
+        {guide}
         {onSearch ? (
           <Pressable
             accessibilityLabel={searchLabel ?? t('common.search')}

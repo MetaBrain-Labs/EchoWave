@@ -155,7 +155,7 @@ export function GroupScreen({
 }) {
   const { t } = useAppLanguage();
   const runInitialRequest = useInitialRequestLoading();
-  const { offerStarterTemplates } = useStarterTour();
+  const { offerStarterTemplates, startGuide } = useStarterTour();
   const menuTourRef = useStarterTourTarget('group-menu');
   const settingsTourRef = useStarterTourTarget('group-settings');
   const titleTourRef = useStarterTourTarget('group-title');
@@ -833,6 +833,12 @@ export function GroupScreen({
           ) : null}
         </View>
         <View style={styles.topActions}>
+          <IconButton
+            icon="help-circle-outline"
+            label={t('guideHelp.openTour')}
+            onPress={() => startGuide('basic', '/')}
+            testID="group-guide"
+          />
           <IconButton
             disabled={!group}
             icon="search"

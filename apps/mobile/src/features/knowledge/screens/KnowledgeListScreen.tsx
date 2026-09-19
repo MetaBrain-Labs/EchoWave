@@ -67,7 +67,7 @@ export function KnowledgeListScreen({
   onOpenKnowledge: (id: string) => void;
 }) {
   const { formatDateTime, t } = useAppLanguage();
-  const { activeStep } = useStarterTour();
+  const { activeStep, startGuide } = useStarterTour();
   const headerTourRef = useStarterTourTarget('knowledge-header');
   const createTourRef = useStarterTourTarget('knowledge-create');
   const formTourRef = useStarterTourTarget('knowledge-form');
@@ -151,6 +151,12 @@ export function KnowledgeListScreen({
       <View collapsable={false} ref={headerTourRef}>
         <TopLevelPageHeader
           actions={[
+            {
+              accessibilityLabel: t('guideHelp.openTour'),
+              icon: 'help-circle-outline',
+              onPress: () => startGuide('knowledge', '/(tabs)/knowledge'),
+              testID: 'knowledge-guide',
+            },
             {
               accessibilityLabel: t('knowledge.searchTitle'),
               icon: 'search-outline',

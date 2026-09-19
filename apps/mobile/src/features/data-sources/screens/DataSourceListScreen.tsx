@@ -32,7 +32,7 @@ import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingP
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { SearchSheet } from '@/shared/ui/SearchSheet';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
-import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
+import { useStarterTour, useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 
 import { DataSourceFormSheet, type DataSourceFormValue } from '../components/DataSourceDialogs';
 
@@ -107,6 +107,7 @@ export function DataSourceListScreen({
   onOpenSource: (sourceId: string) => void;
 }) {
   const { t } = useAppLanguage();
+  const { startGuide } = useStarterTour();
   const headerTourRef = useStarterTourTarget('data-sources-header');
   const createTourRef = useStarterTourTarget('data-sources-create');
   const detailTourRef = useStarterTourTarget('data-source-detail-header');
@@ -202,6 +203,12 @@ export function DataSourceListScreen({
       <View collapsable={false} ref={headerTourRef}>
         <TopLevelPageHeader
           actions={[
+            {
+              accessibilityLabel: t('guideHelp.openTour'),
+              icon: 'help-circle-outline',
+              onPress: () => startGuide('data_sources', '/(tabs)/sources'),
+              testID: 'data-sources-guide',
+            },
             {
               accessibilityLabel: t('sources.search'),
               icon: 'search-outline',

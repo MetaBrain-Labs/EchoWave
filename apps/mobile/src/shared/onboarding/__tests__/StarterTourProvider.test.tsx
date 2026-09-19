@@ -55,6 +55,13 @@ function Controls({ groups = templates }: { groups?: readonly GroupSummary[] }) 
           <Text>{statuses[id]}</Text>
         </Pressable>
       ))}
+      {/* 模拟功能页顶部栏：带来源页启动引导。 */}
+      <Pressable
+        accessibilityLabel="从功能页开始"
+        onPress={() => startGuide('runtime_mode', '/audio-runtime')}
+      >
+        <Text>从功能页开始</Text>
+      </Pressable>
     </>
   );
 }
@@ -117,6 +124,32 @@ describe('StarterTourProvider', () => {
     expect(screen.getByTestId('starter-tour-state-ready')).toBeTruthy();
     expect(screen.queryByText('上传第一段录音')).toBeNull();
     expect(mockReplace).toHaveBeenLastCalledWith('/guides');
+  });
+
+  it('returns to the feature page when the guide was started from its top bar', async () => {
+    // 基础引导已结束，避免自动播放抢占步骤。
+    const saved = {
+      statuses: Object.fromEntries(
+        GUIDE_IDS.map((key) => [key, key === 'basic' ? 'completed' : 'not_started']),
+      ),
+    };
+    jest
+      .mocked(AsyncStorage.getItem)
+      .mockImplementation(async (key) =>
+        key === guideStorageKey(serverUrl) ? JSON.stringify(saved) : null,
+      );
+    const screen = renderTour();
+    await waitFor(() => expect(AsyncStorage.getItem).toHaveBeenCalled());
+
+    fireEvent.press(screen.getByLabelText('从功能页开始'));
+    const steps = GUIDE_REGISTRY.runtime_mode.steps.length;
+    for (let index = 0; index < steps - 1; index += 1) {
+      fireEvent.press(await screen.findByTestId('starter-tour-next'));
+    }
+    fireEvent.press(await screen.findByTestId('starter-tour-finish'));
+
+    // 从功能页发起的引导回到来源页，而不是引导中心。
+    expect(mockReplace).toHaveBeenLastCalledWith('/audio-runtime');
   });
 
   it('migrates the old completed flag into the basic status without auto-playing', async () => {

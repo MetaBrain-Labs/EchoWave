@@ -27,6 +27,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { GuideButton } from '@/shared/ui/GuideButton';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { useCitationJump } from '@/shared/hooks/useCitationJump';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
@@ -342,6 +343,16 @@ export function KnowledgeQueryScreen({
       >
         <View ref={headerTargetRef} collapsable={false}>
           <PageHeader
+            guide={
+              <GuideButton
+                content={{
+                  guide: 'knowledge_query',
+                  kind: 'tour',
+                  returnTo: `/knowledge/${knowledgeId}/ask`,
+                }}
+                testID="knowledge-query-guide"
+              />
+            }
             moreLabel={t('knowledgeQuery.history')}
             onBack={onBack}
             onMore={openHistory}

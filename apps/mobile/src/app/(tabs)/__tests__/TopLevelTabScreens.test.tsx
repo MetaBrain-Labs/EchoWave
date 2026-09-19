@@ -150,6 +150,14 @@ describe('Top-level tab screens', () => {
     const screen = render(<CreateScreen />);
 
     expect(screen.getByRole('header', { name: '新建' })).toBeTruthy();
+    // 该页尚无引导，顶部栏按钮改为展开功能说明卡片。
+    expect(screen.queryByTestId('guide-hint-guideHint.createHub')).toBeNull();
+    fireEvent.press(screen.getByLabelText('查看本功能能做什么'));
+    expect(screen.getByTestId('guide-hint-guideHint.createHub')).toBeTruthy();
+    expect(screen.getByText(/一键分析：从数据源挑选已有音频/)).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('查看本功能能做什么'));
+    expect(screen.queryByTestId('guide-hint-guideHint.createHub')).toBeNull();
+
     for (const card of [
       screen.getByLabelText('打开一键分析'),
       screen.getByLabelText('打开手机录音'),

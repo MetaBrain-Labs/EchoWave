@@ -1653,6 +1653,19 @@ describe('AnalysisDetailScreen', () => {
     expect(await screen.findByText('第 1 次 · 成功 · 57 秒')).toBeTruthy();
   });
 
+  it('toggles the feature hint card from the compact player header', async () => {
+    const screen = await renderAnalysis(analysisFixture.audioFileId);
+
+    expect(screen.queryByTestId('guide-hint-guideHint.analysisDetail')).toBeNull();
+    fireEvent.press(screen.getByLabelText('查看本功能能做什么'));
+
+    expect(screen.getByTestId('guide-hint-guideHint.analysisDetail')).toBeTruthy();
+    expect(screen.getByText(/分析任务：单独运行或重跑情绪分析/)).toBeTruthy();
+
+    fireEvent.press(screen.getByLabelText('查看本功能能做什么'));
+    expect(screen.queryByTestId('guide-hint-guideHint.analysisDetail')).toBeNull();
+  });
+
   it('renders an actionable state for unknown detail ids', async () => {
     const onBack = jest.fn();
     jest

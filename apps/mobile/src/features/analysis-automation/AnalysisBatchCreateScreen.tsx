@@ -51,6 +51,7 @@ import { colors, radii, spacing, textColors, typography } from '@/shared/theme/t
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
 import { ActionSheet, type ActionSheetItem } from '@/shared/ui/ActionSheet';
+import { GuideHintCard } from '@/shared/ui/GuideHintCard';
 import { RoleDictionaryPanel } from '@/shared/ui/RoleDictionaryPanel';
 import { AnalysisLanguagePicker } from '@/shared/i18n/AnalysisLanguagePicker';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
@@ -99,6 +100,7 @@ export function AnalysisBatchCreateScreen({ onBack }: { onBack?: () => void }) {
   const [groupSheetVisible, setGroupSheetVisible] = useState(false);
   const [backgroundDetailsVisible, setBackgroundDetailsVisible] = useState(false);
   const [moreSettingsExpanded, setMoreSettingsExpanded] = useState(false);
+  const [hintVisible, setHintVisible] = useState(false);
   const [previewExpanded, setPreviewExpanded] = useState(false);
 
   useEffect(() => {
@@ -438,6 +440,14 @@ export function AnalysisBatchCreateScreen({ onBack }: { onBack?: () => void }) {
   return (
     <SafeAreaView style={styles.page}>
       <TopLevelPageHeader
+        actions={[
+          {
+            accessibilityLabel: t('guideHelp.openHint'),
+            icon: 'help-circle-outline',
+            onPress: () => setHintVisible((current) => !current),
+            testID: 'analysis-create-guide',
+          },
+        ]}
         onBack={onBack}
         subtitle={t('analysisBatch.subtitle')}
         title={t('analysisBatch.title')}
@@ -449,6 +459,7 @@ export function AnalysisBatchCreateScreen({ onBack }: { onBack?: () => void }) {
         ref={scrollRef}
         refreshControl={<ScreenRefreshControl {...screenRefresh} />}
       >
+        {hintVisible ? <GuideHintCard namespace="guideHint.analysisCreate" /> : null}
         {refreshError ? (
           <Text accessibilityRole="alert" style={styles.danger}>
             {t('analysisBatch.refreshFailed', { message: refreshError })}
