@@ -33,7 +33,8 @@ export type StarterTourContextValue = {
     prepare?: () => void | Promise<void>,
   ) => void;
   replay: () => void;
-  startGuide: (id: GuideId) => void;
+  /** 启动指定引导；`returnTo` 为功能页路由时，引导结束后回到该页而不是引导中心。 */
+  startGuide: (id: GuideId, returnTo?: string) => void;
   statuses: GuideStatuses;
   templates: Partial<Record<StarterTemplateKey, string>>;
 };

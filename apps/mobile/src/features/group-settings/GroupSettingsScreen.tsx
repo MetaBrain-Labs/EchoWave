@@ -49,6 +49,7 @@ import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
+import { GuideButton } from '@/shared/ui/GuideButton';
 import { multilineTextInputText, textInputText } from '@/shared/theme/textInput';
 import {
   colors,
@@ -292,7 +293,16 @@ export function GroupSettingsScreen({
         <Text accessibilityRole="header" style={styles.headerTitle}>
           {t('groupSettings.title')}
         </Text>
-        <View style={styles.headerButton} />
+        <View style={styles.headerButton}>
+          <GuideButton
+            content={{
+              guide: 'group_settings',
+              kind: 'tour',
+              returnTo: `/groups/${groupId}/settings`,
+            }}
+            testID="group-settings-guide"
+          />
+        </View>
       </View>
       <View accessibilityRole="tablist" collapsable={false} ref={tabsTargetRef} style={styles.tabs}>
         {tabs.map((tab) => (

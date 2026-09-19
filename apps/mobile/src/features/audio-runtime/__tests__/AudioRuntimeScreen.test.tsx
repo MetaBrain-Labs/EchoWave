@@ -8,6 +8,8 @@ import type { ReactElement } from 'react';
 import { Text } from 'react-native';
 
 import { AdminSessionProvider, useAdminSession } from '@/shared/auth/AdminSessionProvider';
+import { StarterTourContext } from '@/shared/onboarding/StarterTourContext';
+import { GUIDE_IDS } from '@/shared/onboarding/guideRegistry';
 import { AudioRuntimeScreen } from '../AudioRuntimeScreen';
 import * as runtimeApi from '@/shared/api/audioRuntimeApi';
 
@@ -50,6 +52,34 @@ function renderWithSession(node: ReactElement, { authorized = true } = {}) {
   return screen;
 }
 
+/** 顶部栏引导按钮需要的引导上下文替身；只记录启动调用。 */
+const startGuide = jest.fn();
+
+/** 同时提供共享会话与引导上下文，用于顶部栏按钮行为。 */
+function renderWithTour(node: ReactElement) {
+  const screen = render(
+    <AdminSessionProvider serverRevision={0}>
+      <SeedSession token="admin-token" />
+      <StarterTourContext.Provider
+        value={{
+          activeGuide: null,
+          activeStep: null,
+          offerStarterTemplates: jest.fn(),
+          registerTarget: jest.fn(),
+          replay: jest.fn(),
+          startGuide,
+          statuses: Object.fromEntries(GUIDE_IDS.map((id) => [id, 'not_started'])) as never,
+          templates: {},
+        }}
+      >
+        {node}
+      </StarterTourContext.Provider>
+    </AdminSessionProvider>,
+  );
+  fireEvent.press(screen.getByText('建立共享会话'));
+  return screen;
+}
+
 const runtimeScreen = (
   <AudioRuntimeScreen onBack={jest.fn()} onOpenServiceConfiguration={jest.fn()} />
 );
@@ -63,6 +93,16 @@ describe('AudioRuntimeScreen', () => {
       mode: 'lightweight_local',
       revision: 4,
     });
+  });
+
+  it('starts the runtime mode guide from the header button', async () => {
+    const screen = renderWithTour(runtimeScreen);
+    await screen.findByText(/混合存储模式/);
+
+    fireEvent.press(screen.getByLabelText('开始本功能的引导'));
+
+    // 带上来源页，引导结束后回到运行模式页而不是引导中心。
+    expect(startGuide).toHaveBeenCalledWith('runtime_mode', '/audio-runtime');
   });
 
   it('shows the shared-session gate instead of a second token input when unverified', () => {

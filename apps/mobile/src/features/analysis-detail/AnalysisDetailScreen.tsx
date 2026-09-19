@@ -90,6 +90,7 @@ import { EmotionAnalysisPanel } from './components/EmotionAnalysisPanel';
 import { ModelExecutionContent } from './components/ModelExecutionContent';
 import { PostAnalysisConfirmDialog, PostAnalysisControls } from './components/PostAnalysisControls';
 import { RoleDictionaryPanel } from '@/shared/ui/RoleDictionaryPanel';
+import { GuideHintCard } from '@/shared/ui/GuideHintCard';
 import { TranscriptionRunSelector } from './components/TranscriptionRunSelector';
 import {
   BusinessAnalysisControls,
@@ -262,6 +263,8 @@ export function AnalysisDetailScreen({
   const { drafts: phoneRecordings } = useRecording();
   const [startingAnalysis, setStartingAnalysis] = useState(false);
   const [editingTranscript, setEditingTranscript] = useState(false);
+  // 本页尚无引导，顶部栏提供功能说明卡片的显隐。
+  const [hintVisible, setHintVisible] = useState(false);
   const [confirmingTranscript, setConfirmingTranscript] = useState(false);
   const [resolvingSpeakerReview, setResolvingSpeakerReview] = useState<string>();
   const [transcriptDisplayMode, setTranscriptDisplayMode] =
@@ -1062,8 +1065,22 @@ export function AnalysisDetailScreen({
         }
         tagSegments={transcriptSegments}
         topContent={
-          sourceAvailable ? (
-            expandedPlayer ? (
+          <>
+            {!sourceAvailable ? (
+              <AnalysisSourceUnavailableCard
+                description={
+                  detail.runtimeMode === 'lightweight_local'
+                    ? t('analysisDetail.lightweightDescription')
+                    : t('analysisDetail.sourceDescription')
+                }
+                onBack={requestBack}
+                title={
+                  detail.runtimeMode === 'lightweight_local'
+                    ? t('analysisDetail.lightweightNoAudio')
+                    : t('analysisDetail.sourceUnavailable')
+                }
+              />
+            ) : expandedPlayer ? (
               <ExpandedPlayer
                 durationSeconds={playbackDuration}
                 error={playback.error}
@@ -1093,25 +1110,13 @@ export function AnalysisDetailScreen({
                 onReset={() => void playback.seekTo(0)}
                 onRateChange={changePlaybackRate}
                 onRetry={() => playback.retry()}
+                onToggleHint={() => setHintVisible((current) => !current)}
                 playbackRate={playbackRate}
                 positionSeconds={playback.currentTime}
               />
-            )
-          ) : (
-            <AnalysisSourceUnavailableCard
-              description={
-                detail.runtimeMode === 'lightweight_local'
-                  ? t('analysisDetail.lightweightDescription')
-                  : t('analysisDetail.sourceDescription')
-              }
-              onBack={requestBack}
-              title={
-                detail.runtimeMode === 'lightweight_local'
-                  ? t('analysisDetail.lightweightNoAudio')
-                  : t('analysisDetail.sourceUnavailable')
-              }
-            />
-          )
+            )}
+            {hintVisible ? <GuideHintCard namespace="guideHint.analysisDetail" /> : null}
+          </>
         }
         transcript={{
           confirming: confirmingTranscript,

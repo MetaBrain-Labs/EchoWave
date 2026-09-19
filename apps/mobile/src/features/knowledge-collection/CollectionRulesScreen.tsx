@@ -36,6 +36,7 @@ import {
   startCollectionHistory,
 } from '@/shared/api/collectionApi';
 import { FixedActionButton } from '@/shared/ui/FixedActionButton';
+import { GuideButton } from '@/shared/ui/GuideButton';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import {
@@ -351,6 +352,16 @@ export function CollectionRulesScreen({
       onBack={back}
       loading={loading}
       error={error}
+      guide={
+        <GuideButton
+          content={{
+            guide: 'knowledge_collection',
+            kind: 'tour',
+            returnTo: `/collection?groupId=${groupId}`,
+          }}
+          testID="collection-guide"
+        />
+      }
       onRetry={() => void load()}
       onRefresh={load}
       footer={

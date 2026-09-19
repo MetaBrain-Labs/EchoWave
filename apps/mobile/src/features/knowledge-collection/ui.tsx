@@ -47,6 +47,7 @@ export function CollectionLayout({
   onRetry,
   onRefresh,
   onMore,
+  guide,
   footer,
 }: {
   title: string;
@@ -57,6 +58,8 @@ export function CollectionLayout({
   onRetry?: () => void;
   onRefresh?: () => Promise<void>;
   onMore?: () => void;
+  /** 顶部栏引导 / 提示按钮；由页面注入，布局只负责摆放。 */
+  guide?: ReactNode;
   footer?: ReactNode;
 }) {
   const { t } = useAppLanguage();
@@ -64,7 +67,7 @@ export function CollectionLayout({
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safe}>
       <View style={styles.header}>
-        <PageHeader title={title} onBack={onBack} onMore={onMore} />
+        <PageHeader guide={guide} title={title} onBack={onBack} onMore={onMore} />
       </View>
       <ScrollView
         keyboardShouldPersistTaps="handled"

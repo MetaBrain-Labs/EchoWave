@@ -48,6 +48,7 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { GuideButton } from '@/shared/ui/GuideButton';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { useStarterTour, useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import { ActionSheet } from '@/shared/ui/ActionSheet';
@@ -580,6 +581,12 @@ export function SettingsScreen({
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
       <PageHeader
+        guide={
+          <GuideButton
+            content={{ guide: 'ai_configuration', kind: 'tour', returnTo: '/settings' }}
+            testID="ai-configuration-guide"
+          />
+        }
         moreLabel={t('aiSettings.moreActions')}
         onBack={onBack}
         onMore={() => setActionsVisible(true)}

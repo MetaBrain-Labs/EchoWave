@@ -99,6 +99,7 @@ export function CompactPlayer({
   onReset,
   onRateChange,
   onRetry,
+  onToggleHint,
   playbackRate,
   positionSeconds,
 }: {
@@ -113,6 +114,8 @@ export function CompactPlayer({
   onReset: () => void;
   onRateChange: () => void;
   onRetry: () => void;
+  /** 切换本功能的说明卡片；由页面持有显隐状态。 */
+  onToggleHint: () => void;
   playbackRate: number;
   positionSeconds: number;
 }) {
@@ -160,6 +163,12 @@ export function CompactPlayer({
             </Text>
           )}
         </View>
+        <IconButton
+          icon="help-circle-outline"
+          label={t('guideHelp.openHint')}
+          onPress={onToggleHint}
+          testID="analysis-detail-guide"
+        />
         <IconButton
           icon="ellipsis-horizontal"
           label={t('common.moreActions')}

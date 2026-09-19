@@ -23,10 +23,12 @@ export function IconButton({
   icon,
   label,
   onPress,
+  testID,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   onPress: () => void;
+  testID?: string;
 }) {
   return (
     <Pressable
@@ -35,6 +37,7 @@ export function IconButton({
       hitSlop={8}
       onPress={onPress}
       style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+      testID={testID}
     >
       <Ionicons color={colors.ink} name={icon} size={28} />
     </Pressable>

@@ -124,6 +124,8 @@ export function StarterTourProvider({
   const [activeGuide, setActiveGuide] = useState<GuideId | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
   const [rect, setRect] = useState<WindowRect | null>(null);
+  // 从功能页顶部栏发起的引导记录来源路由，结束后回到该页；从引导中心发起时为空。
+  const returnToRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     let active = true;
@@ -291,7 +293,8 @@ export function StarterTourProvider({
   );
 
   const startGuide = useCallback(
-    (id: GuideId) => {
+    (id: GuideId, returnTo?: string) => {
+      returnToRef.current = returnTo;
       setRect(null);
       setStepIndex(0);
       setActiveGuide(id);
@@ -396,10 +399,12 @@ export function StarterTourProvider({
   const finish = useCallback(
     (status: Extract<GuideStatus, 'completed' | 'skipped'>) => {
       if (activeGuide) persistStatus(activeGuide, status);
+      const returnTo = returnToRef.current;
+      returnToRef.current = undefined;
       setRect(null);
       setActiveGuide(null);
-      // 完成和跳过都回到引导中心，避免用户回退到已经结束的引导步骤。
-      router.replace('/guides' as Href);
+      // 从功能页发起的引导回到来源页；从引导中心发起的仍回引导中心，避免用户回退到已结束的步骤。
+      router.replace((returnTo ?? '/guides') as Href);
     },
     [activeGuide, persistStatus, router],
   );

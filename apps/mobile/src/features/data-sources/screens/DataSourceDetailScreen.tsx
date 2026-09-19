@@ -55,6 +55,7 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { GuideButton } from '@/shared/ui/GuideButton';
 import { PageTabs } from '@/shared/ui/PageTabs';
 import { SearchSheet } from '@/shared/ui/SearchSheet';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
@@ -928,6 +929,12 @@ export function DataSourceDetailScreen({
       />
       <View collapsable={false} ref={detailHeaderTargetRef}>
         <PageHeader
+          guide={
+            <GuideButton
+              content={{ guide: 'data_sources', kind: 'tour', returnTo: `/sources/${sourceId}` }}
+              testID="data-source-detail-guide"
+            />
+          }
           onBack={onBack}
           onMore={openMoreActions}
           onSearch={() => setSearchVisible(true)}

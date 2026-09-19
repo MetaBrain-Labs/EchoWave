@@ -803,6 +803,32 @@ export const zhCN = {
   'roleDictionary.saveFailed': '角色词典保存失败',
   'roleDictionary.scopeHint':
     '自定义角色保存在该音频所属的数据源上，对之后启动的角色识别生效；已发布的结果不会改变，需要重新运行角色识别。',
+  'guideHelp.openTour': '开始本功能的引导',
+  'guideHelp.openHint': '查看本功能能做什么',
+  'guideHint.createHub.title': '新建：选择创建方式',
+  'guideHint.createHub.point1': '一键分析：从数据源挑选已有音频或上传新文件，交给服务器批量处理。',
+  'guideHint.createHub.point2': '手机录音：先用手机录下现场声音，再决定是否上传分析。',
+  'guideHint.createHub.point3': '两种方式最终都进入同一套分析流程，结果在分组页的分析记录里查看。',
+  'guideHint.createHub.point4': '录音原件默认只保存在本机，可独立试听、导出或删除。',
+  'guideHint.createHub.point5': '默认分析方式决定一次提交跑全流程还是只做转写。',
+  'guideHint.analysisCreate.title': '一键分析：批量提交音频',
+  'guideHint.analysisCreate.point1':
+    '必须先选数据源和分组：批次固定这两项，决定文件去向与可见范围。',
+  'guideHint.analysisCreate.point2': '一次可提交 1–20 个新上传文件或已存在的音频。',
+  'guideHint.analysisCreate.point3':
+    '默认分析方式决定流水线：全流程含情绪、角色与业务分析，仅转写只产出正文。',
+  'guideHint.analysisCreate.point4':
+    '“更多设置”里可改分析语言、执行时间，以及本次的 ASR 上下文与临时热词。',
+  'guideHint.analysisCreate.point5':
+    '上传完成并创建服务端任务后可以关闭 App，服务器会继续处理并在完成时推送。',
+  'guideHint.analysisDetail.title': '分析详情：一次分析的完整结果',
+  'guideHint.analysisDetail.point1': '转写分析：审核并确认正文，确认版本是后续所有分析的唯一输入。',
+  'guideHint.analysisDetail.point2':
+    '分析任务：单独运行或重跑情绪分析、角色识别与业务分析，角色词典在此维护。',
+  'guideHint.analysisDetail.point3':
+    '分析总结：查看结论、改进建议与知识引用，点引用可回到原文定位。',
+  'guideHint.analysisDetail.point4': '模型详情：查看每个阶段的耗时、Token 与工具调用轨迹。',
+  'guideHint.analysisDetail.point5': 'AI 标签可回跳对应转写片段，并把案例收集到知识库。',
   'post.roleDescription': '使用 DeepSeek 识别录音级业务角色',
   'post.notRequested': '本次仅转写；确认正文后可使用原件补跑声学情绪。',
   'post.sourceUnavailable': '源音频已清理或过期，无法再次执行声学分析',
@@ -2846,6 +2872,41 @@ export const en = {
   'roleDictionary.saveFailed': 'Saving the role dictionary failed',
   'roleDictionary.scopeHint':
     'Custom roles are stored on the data source this audio belongs to and apply to role recognition started later. Published results do not change; rerun role recognition to apply them.',
+  'guideHelp.openTour': 'Start the guide for this feature',
+  'guideHelp.openHint': 'See what this feature can do',
+  'guideHint.createHub.title': 'Create: choose how to start',
+  'guideHint.createHub.point1':
+    'One-click analysis: pick existing audio or upload files from a data source and let the Server process them in a batch.',
+  'guideHint.createHub.point2':
+    'Phone recording: capture audio on the phone first, then decide whether to upload it for analysis.',
+  'guideHint.createHub.point3':
+    'Both paths end in the same analysis workflow; results appear in the group page analysis records.',
+  'guideHint.createHub.point4':
+    'Recording originals stay on this phone by default and can be played, exported, or deleted independently.',
+  'guideHint.createHub.point5':
+    'The default analysis workflow decides whether a submission runs the full pipeline or transcription only.',
+  'guideHint.analysisCreate.title': 'One-click analysis: batch audio submission',
+  'guideHint.analysisCreate.point1':
+    'A data source and a group are required: the batch fixes both, deciding where files go and who can see them.',
+  'guideHint.analysisCreate.point2':
+    'Submit 1–20 newly uploaded files or existing audio assets at once.',
+  'guideHint.analysisCreate.point3':
+    'The default analysis workflow sets the pipeline: full analysis adds emotion, role, and business analysis; transcription only yields the transcript.',
+  'guideHint.analysisCreate.point4':
+    'More settings changes the analysis language, run time, and this batch ASR context and temporary hotwords.',
+  'guideHint.analysisCreate.point5':
+    'After upload completes and the server task is created you may close the App; the Server continues and pushes on completion.',
+  'guideHint.analysisDetail.title': 'Analysis detail: one complete analysis',
+  'guideHint.analysisDetail.point1':
+    'Transcript analysis: review and confirm the text; the confirmed version is the only input for later analysis.',
+  'guideHint.analysisDetail.point2':
+    'Analysis tasks: run or rerun emotion, role, and business analysis independently; the role dictionary is maintained here.',
+  'guideHint.analysisDetail.point3':
+    'Summary: read conclusions, improvement suggestions, and knowledge citations; tapping a citation jumps to its source.',
+  'guideHint.analysisDetail.point4':
+    'Model details: inspect duration, tokens, and tool calls for every stage.',
+  'guideHint.analysisDetail.point5':
+    'AI tags jump back to the matching transcript segment and can collect the case into a knowledge base.',
   'post.roleDescription': 'Recognize recording-level business roles with DeepSeek',
   'post.notRequested':
     'This run transcribed only. Confirm the transcript and provide the original to run acoustic emotion analysis.',

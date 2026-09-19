@@ -40,6 +40,7 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { GuideButton } from '@/shared/ui/GuideButton';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import { ActionSheet } from '@/shared/ui/ActionSheet';
@@ -169,6 +170,12 @@ export function AudioRuntimeScreen({
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
       <PageHeader
+        guide={
+          <GuideButton
+            content={{ guide: 'runtime_mode', kind: 'tour', returnTo: '/audio-runtime' }}
+            testID="runtime-guide"
+          />
+        }
         moreLabel={t('runtime.moreActions')}
         onBack={onBack}
         onMore={() => setActionsVisible(true)}

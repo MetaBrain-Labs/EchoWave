@@ -11,6 +11,7 @@
  * - 页面不持有上传、录音或分析业务状态。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -23,6 +24,7 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import { GuideHintCard } from '@/shared/ui/GuideHintCard';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
 
 /** 渲染两个互相独立的新建入口。 */
@@ -34,6 +36,7 @@ export function CreateHubScreen({
   onOpenRecording: () => void;
 }) {
   const { t } = useAppLanguage();
+  const [hintVisible, setHintVisible] = useState(false);
   const cards = [
     {
       accessibilityLabel: t('createHub.analysis.accessibility'),
@@ -54,8 +57,20 @@ export function CreateHubScreen({
   ];
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
-      <TopLevelPageHeader subtitle={t('createHub.subtitle')} title={t('createHub.title')} />
+      <TopLevelPageHeader
+        actions={[
+          {
+            accessibilityLabel: t('guideHelp.openHint'),
+            icon: 'help-circle-outline',
+            onPress: () => setHintVisible((current) => !current),
+            testID: 'create-hub-guide',
+          },
+        ]}
+        subtitle={t('createHub.subtitle')}
+        title={t('createHub.title')}
+      />
       <ScrollView contentContainerStyle={styles.content} testID="create-hub-scroll">
+        {hintVisible ? <GuideHintCard namespace="guideHint.createHub" /> : null}
         {cards.map((card) => (
           <Pressable
             accessibilityLabel={card.accessibilityLabel}
