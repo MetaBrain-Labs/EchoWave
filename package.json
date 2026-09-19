@@ -1,6 +1,6 @@
 {
   "name": "echowave",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Self-hosted cross-platform audio analysis and knowledge workspace.",
   "private": true,
   "license": "Apache-2.0",
