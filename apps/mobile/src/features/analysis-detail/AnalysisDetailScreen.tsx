@@ -1025,6 +1025,7 @@ export function AnalysisDetailScreen({
               }
               pending={selectingTranscription}
               runs={transcriptionRuns}
+              runtimeMode={detail.runtimeMode}
             />
             <PostAnalysisControls
               confirmed={detail.transcriptConfirmation.status === 'confirmed'}

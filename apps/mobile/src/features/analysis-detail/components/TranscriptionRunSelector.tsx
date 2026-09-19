@@ -6,8 +6,11 @@
  * Responsibilities:
  * - 明确区分 Run 状态、是否启用声学情绪和当前 active 指针。
  * - 把选择动作交给页面编排器执行。
+ *
+ * Notes:
+ * - 捆绑式声学情绪只在轻量本地模式存在；其他模式下转写版本没有该属性，不能显示为“未启用”。
  */
-import type { AudioTranscriptionRunListResponse } from '@echowave/contracts';
+import type { AudioRuntimeMode, AudioTranscriptionRunListResponse } from '@echowave/contracts';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
@@ -37,14 +40,18 @@ export function TranscriptionRunSelector({
   onSelect,
   pending,
   runs,
+  runtimeMode = 'hybrid',
 }: {
   onAuto: () => void;
   onSelect: (revisionId: string) => void;
   pending: boolean;
   runs?: AudioTranscriptionRunListResponse;
+  runtimeMode?: AudioRuntimeMode;
 }) {
   const { t } = useAppLanguage();
   if (!runs) return null;
+  // 只有轻量本地模式会在转写时捆绑声学情绪，其他模式的声学情绪在确认转写后独立运行。
+  const bundledAcousticEmotion = runtimeMode === 'lightweight_local';
   return (
     <View style={styles.container}>
       <View style={styles.headingRow}>
@@ -76,14 +83,24 @@ export function TranscriptionRunSelector({
               v{run.revision} · {run.model}
             </Text>
             <Text style={styles.description}>
-              {t('transcriptionRuns.details', {
-                status: t(transcriptionRunStatusKeys[run.status]),
-                emotion: run.includeAcousticEmotion
-                  ? t('transcriptionRuns.enabled')
-                  : t('transcriptionRuns.disabled'),
-                language:
-                  run.language === 'zh-CN' ? t('analysisLanguage.zhCN') : t('analysisLanguage.en'),
-              })}
+              {bundledAcousticEmotion
+                ? t('transcriptionRuns.details', {
+                    status: t(transcriptionRunStatusKeys[run.status]),
+                    emotion: run.includeAcousticEmotion
+                      ? t('transcriptionRuns.enabled')
+                      : t('transcriptionRuns.disabled'),
+                    language:
+                      run.language === 'zh-CN'
+                        ? t('analysisLanguage.zhCN')
+                        : t('analysisLanguage.en'),
+                  })
+                : t('transcriptionRuns.detailsWithoutEmotion', {
+                    status: t(transcriptionRunStatusKeys[run.status]),
+                    language:
+                      run.language === 'zh-CN'
+                        ? t('analysisLanguage.zhCN')
+                        : t('analysisLanguage.en'),
+                  })}
             </Text>
           </View>
           <Text style={styles.marker}>

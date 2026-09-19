@@ -38,11 +38,13 @@ function TaskCard({
   type,
   state,
   onStart,
+  runtimeMode,
 }: {
   confirmed: boolean;
   type: AudioPostAnalysisType;
   state: AudioPostAnalysisState;
   onStart: (type: AudioPostAnalysisType) => void;
+  runtimeMode?: AudioRuntimeMode;
 }) {
   const { formatDateTime, t } = useAppLanguage();
   const emotion = type === 'emotion';
@@ -102,6 +104,10 @@ function TaskCard({
                             : t('post.queued')}
             {confirmed ? versionLabel : ''}
           </Text>
+          {/* 说明情绪分析的执行路径：非轻量模式不随转写捆绑，避免与 ASR 版本属性混淆。 */}
+          {emotion && confirmed && runtimeMode !== 'lightweight_local' ? (
+            <Text style={styles.hint}>{t('post.emotionSeparateHint')}</Text>
+          ) : null}
         </View>
       </View>
       {running ? (
@@ -182,7 +188,13 @@ export function PostAnalysisControls({
       </Pressable>
       {!collapsed ? (
         <View style={styles.cards}>
-          <TaskCard confirmed={confirmed} onStart={onStart} state={emotion} type="emotion" />
+          <TaskCard
+            confirmed={confirmed}
+            onStart={onStart}
+            runtimeMode={runtimeMode}
+            state={emotion}
+            type="emotion"
+          />
           {((emotion.state === 'source_unavailable' && emotion.reason !== 'source_expired') ||
             (emotion.state === 'failed' && emotion.requiresSourceRemount === true)) &&
           onRemountSource ? (
@@ -283,6 +295,12 @@ const styles = StyleSheet.create({
   cardCopy: { flex: 1 },
   title: { ...typography.heading3, color: textColors.primary, fontFamily: fontFamilies.sansBold },
   meta: { ...typography.description, color: textColors.secondary, fontFamily: fontFamilies.sans },
+  hint: {
+    ...typography.label,
+    color: textColors.tertiary,
+    fontFamily: fontFamilies.sans,
+    marginTop: spacing.xs,
+  },
   runningRow: {
     alignItems: 'center',
     flexDirection: 'row',

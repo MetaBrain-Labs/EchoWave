@@ -535,6 +535,7 @@ export const zhCN = {
   'transcriptionRuns.manual': '已手动固定版本',
   'transcriptionRuns.restoreAuto': '恢复自动',
   'transcriptionRuns.details': '%{status} · 声学情绪%{emotion} · %{language}',
+  'transcriptionRuns.detailsWithoutEmotion': '%{status} · %{language}',
   'transcriptionRuns.enabled': '已启用',
   'transcriptionRuns.disabled': '未启用',
   'transcriptionRuns.status.queued': '排队中',
@@ -792,6 +793,7 @@ export const zhCN = {
   'post.rerunRole': '重新识别',
   'post.confirmTranscript': '请先确认转写正文',
   'post.emotionDescription': '使用 Qwen3.5-Omni 分析每个说话轮次',
+  'post.emotionSeparateHint': '当前模式下声学情绪不随转写执行，请在确认转写版本后单独运行。',
   'post.roleDescription': '使用 DeepSeek 识别录音级业务角色',
   'post.notRequested': '本次仅转写；确认正文后可使用原件补跑声学情绪。',
   'post.sourceUnavailable': '源音频已清理或过期，无法再次执行声学分析',
@@ -2545,6 +2547,7 @@ export const en = {
   'transcriptionRuns.manual': 'A version is pinned manually',
   'transcriptionRuns.restoreAuto': 'Restore automatic',
   'transcriptionRuns.details': '%{status} · Acoustic emotion %{emotion} · %{language}',
+  'transcriptionRuns.detailsWithoutEmotion': '%{status} · %{language}',
   'transcriptionRuns.enabled': 'enabled',
   'transcriptionRuns.disabled': 'disabled',
   'transcriptionRuns.status.queued': 'Queued',
@@ -2822,6 +2825,8 @@ export const en = {
   'post.rerunRole': 'Recognize again',
   'post.confirmTranscript': 'Confirm the transcript first',
   'post.emotionDescription': 'Analyze each speaker turn with Qwen3.5-Omni',
+  'post.emotionSeparateHint':
+    'Acoustic emotion does not run with transcription in this mode; start it separately after confirming a transcript version.',
   'post.roleDescription': 'Recognize recording-level business roles with DeepSeek',
   'post.notRequested':
     'This run transcribed only. Confirm the transcript and provide the original to run acoustic emotion analysis.',
