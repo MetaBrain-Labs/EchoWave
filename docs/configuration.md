@@ -18,22 +18,31 @@ Authoritative defaults come from `packages/contracts/src/settings.ts`:
 
 | Capability                                               | Provider type             | Default model/backend                |
 | -------------------------------------------------------- | ------------------------- | ------------------------------------ |
-| Knowledge embedding                                      | DashScope (fixed)         | `qwen3.7-text-embedding`             |
+| Knowledge embedding                                      | DashScope                 | `qwen3.7-text-embedding`             |
 | Knowledge answers                                        | DashScope                 | `qwen3.5-omni-flash`                 |
-| Audio transcription                                      | DashScope (fixed)         | `qwen-audio-3.0-asr-flash-filetrans` |
+| Audio transcription                                      | DashScope                 | `qwen-audio-3.0-asr-flash-filetrans` |
 | Acoustic emotion                                         | DashScope                 | `qwen3.5-omni-flash`                 |
 | Business role, speaker review, business analysis         | DashScope                 | `qwen3.5-omni-flash`                 |
 | Temporary audio staging and authoritative object storage | Alibaba Cloud OSS (fixed) | `aliyun-oss`                         |
 
-Embedding and ASR models stay fixed: vector dimensions of 1024 plus the diarization and timestamp contracts are encoded in the shared contracts, SQL, and code constants, so changing them would invalidate existing vector spaces and transcription revisions. Text capabilities (knowledge answers, acoustic emotion, business role, speaker review, business analysis) can search and change models in AI configuration. Candidates come from the official Model Studio model list endpoint `GET /api/v1/models` and are filtered by capability responsibility:
+Every capability except the two OSS backends can search and change its model in AI configuration. Candidates come from the official Model Studio model list endpoint `GET /api/v1/models` and are filtered by capability responsibility:
 
 - Text-generation capabilities only list models that support text generation (`TG`);
 - Acoustic emotion additionally requires audio input, so pure text models and ASR-only models never appear;
-- Embedding only accepts `qwen3.7-text-embedding`, and transcription only accepts `qwen-audio-3.0-asr-flash-filetrans`.
+- Knowledge embedding lists only text-vector (`TR`) models, and audio transcription only speech-recognition (`ASR`) models.
 
-Prices and context windows in the model list response are selection hints only; they never drive billing and are not written to business tables. See [List models](https://help.aliyun.com/zh/model-studio/list-models) for the endpoint contract.
+The first row of the picker is the capability default, labelled **verified**, but only when the selected connection can actually serve it: a DeepSeek connection only ever lists its own models, never the Qwen default, including when the list request fails. Only models this repository has adapted and verified can pass the check performed when a binding is saved; other catalogue entries stay searchable but are refused with a "not adapted yet" message:
 
-Editable model fields support future adapted releases; they do not imply arbitrary compatibility with prompts, structured output, timestamps, speakers, thinking modes, or recovery protocols. Only models that pass the capability filter and the server-side check performed when a binding is saved become effective.
+- Embedding: vector dimensions are fixed at 1024, so a model with different output dimensions is refused outright (the `pgvector` column type and retrieval contract both hard-code it). After switching to another verified embedding model, existing documents only return to retrieval once they are re-ingested, because retrieval filters on `embedding_model`.
+- Audio transcription: the runtime requires whole-file transcription, diarization, and word timestamps. Only `qwen-audio-3.0-asr-flash-filetrans` declares that adaptation metadata today, so it is the only bindable transcription model.
+
+One model appearing in several capability catalogues is expected: `qwen3.5-omni-flash` supports both text generation and audio input, so it is the default for knowledge answers, business role, speaker review, and business analysis as well as for acoustic emotion. The pinned row states that the model is verified **for the current capability**, so it never reads as belonging to a single capability. To give knowledge answers a pure text model such as `qwen3-max`, register and validate it in `CAPABILITY_MODEL_REQUIREMENTS.knowledge_chat.verifiedModelIds` first.
+
+After changing a model you must confirm it actually provides what the capability needs; the server only checks the capability catalogue and hard constraints such as dimensions. Prices, context windows, and declared vector dimensions in the model list response are selection hints only; they never drive billing and are not written to business tables. See [List models](https://help.aliyun.com/zh/model-studio/list-models) for the endpoint contract.
+
+Reading the list degrades in three steps: first a capability-filtered request, then a pagination-only request if the filters are rejected, then a single request without pagination; whichever succeeds is filtered locally by capability responsibility. Responses that omit capability or modality metadata never empty the catalogue, and unadapted models are still refused when a binding is saved. When reading fails, the picker keeps the verified default model (it does not depend on the list endpoint) and shows a coarse reason (for example "the provider returned 401" or "network or timeout") so credentials, region, and connectivity problems can be told apart, without exposing the API key or the provider response body. Switching the provider connection refreshes the model field immediately: with the catalogue already loaded it moves to that connection's default or first candidate, and without a loaded catalogue it clears and asks for an explicit choice, so a model name from the previous connection is never carried over.
+
+Editable model fields support future adapted releases; they do not imply arbitrary compatibility with prompts, structured output, timestamps, speakers, thinking modes, or recovery protocols.
 
 | Runtime mode      | DashScope | DeepSeek (optional text-capability swap) | Alibaba Cloud OSS                                    |
 | ----------------- | --------- | ---------------------------------------- | ---------------------------------------------------- |

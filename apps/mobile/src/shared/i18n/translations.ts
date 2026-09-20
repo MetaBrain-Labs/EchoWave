@@ -1431,10 +1431,21 @@ export const zhCN = {
   'aiSettings.searchModel': '搜索模型名称或 ID',
   'aiSettings.catalogLoading': '正在读取供应商模型列表…',
   'aiSettings.catalogUnavailable': '暂时无法读取该供应商的模型列表，请稍后重试。',
+  'aiSettings.catalogFallbackHint':
+    '以下仅显示该能力已验证的默认模型，它不依赖供应商列表接口，可直接保存使用。',
   'aiSettings.catalogRetry': '重新读取模型列表',
   'aiSettings.modelNoMatch': '没有匹配的模型，请调整搜索词。',
   'aiSettings.modelRecommended': '推荐',
+  'aiSettings.modelVerified': '已验证',
+  'aiSettings.modelVerifiedHint': '本仓库已验证可用，选择器固定置顶。',
+  'aiSettings.modelVerifiedFor': '已按本仓库适配验证：可用于%{capability}。',
+  'aiSettings.modelDimensions': '%{count} 维向量',
+  'aiSettings.modelPriceUnknown': '供应商未提供价格',
+  'aiSettings.modelOwnershipWarning':
+    '注意：改选模型后，该模型是否具备本能力所需的能力（向量维度、说话人分离、时间戳与结构化输出等）需由你自行确认；服务端只会校验模型是否在能力目录内。',
   'aiSettings.chooseModel': '选择模型',
+  'aiSettings.bindingFailed': '能力绑定未保存',
+  'aiSettings.dismissAlert': '知道了',
   'aiSettings.modelNotSelected': '尚未选择模型',
   'aiSettings.modelRequired': '请选择该能力要使用的模型。',
   'aiSettings.modelFixedHint':
@@ -3562,10 +3573,21 @@ export const en = {
   'aiSettings.catalogLoading': 'Loading the provider model list…',
   'aiSettings.catalogUnavailable':
     'The provider model list is temporarily unavailable. Please try again later.',
+  'aiSettings.catalogFallbackHint':
+    'Only the verified default model for this capability is shown. It does not depend on the provider list endpoint and can be saved as is.',
   'aiSettings.catalogRetry': 'Reload model list',
   'aiSettings.modelNoMatch': 'No model matches this search. Adjust the keywords.',
   'aiSettings.modelRecommended': 'recommended',
+  'aiSettings.modelVerified': 'verified',
+  'aiSettings.modelVerifiedHint': 'Verified in this repository; pinned to the top of the list.',
+  'aiSettings.modelVerifiedFor': 'Adapted and verified here for %{capability}.',
+  'aiSettings.modelDimensions': '%{count}-dim vectors',
+  'aiSettings.modelPriceUnknown': 'No price published by the provider',
+  'aiSettings.modelOwnershipWarning':
+    'Note: after changing the model you must confirm it actually supports what this capability needs (vector dimensions, diarization, timestamps, structured output). The server only checks that the model belongs to the capability catalogue.',
   'aiSettings.chooseModel': 'Choose model',
+  'aiSettings.bindingFailed': 'Capability binding was not saved',
+  'aiSettings.dismissAlert': 'Got it',
   'aiSettings.modelNotSelected': 'No model selected',
   'aiSettings.modelRequired': 'Choose the model this capability should use.',
   'aiSettings.modelFixedHint':

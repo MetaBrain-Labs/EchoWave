@@ -76,9 +76,13 @@ export const ProviderModelSummarySchema = z
     features: z.array(ModelFeatureSchema),
     contextWindow: z.number().int().positive().nullable(),
     maxOutputTokens: z.number().int().positive().nullable(),
+    /** 向量模型声明的输出维度；非向量模型或供应商未声明时为 null。 */
+    outputDimensions: z.number().int().positive().nullable(),
     pricing: ModelPricingSchema.nullable(),
-    /** 责任规则之外的服务端推测，例如支持结构化输出，仅用于排序提示。 */
+    /** 服务端推测的适配提示，例如支持结构化输出，仅用于排序。 */
     recommended: z.boolean(),
+    /** true 表示该模型在本仓库已验证可用，选择器固定置顶并标注。 */
+    verified: z.boolean(),
   })
   .strict();
 
@@ -128,8 +132,20 @@ export type CapabilityModelRequirement = {
   capabilities: readonly ModelCapability[];
   /** 输入模态约束，用于排除不具备音频输入的全模态模型选择。 */
   requiredInputModalities: readonly ModelModality[];
-  /** true 表示该能力只接受共享默认模型，不允许用户改选。 */
+  /**
+   * true 表示该能力只接受共享默认模型（OSS 后端）。
+   *
+   * 需要用户自行承担模型适配责任的能力（Embedding、ASR）也放开改选，但由
+   * `verifiedModelIds` 与运行时不变量共同兜底。
+   */
   fixedModel: boolean;
+  /**
+   * 运行时不变量已在本仓库验证过的模型。
+   *
+   * 目录列出的其他模型仍然可见可搜索，但不能通过绑定时校验：这些能力的时间戳、
+   * 说话人分离或向量维度契约无法从模型列表接口推断。
+   */
+  verifiedModelIds: readonly string[];
   /** 需要结构化 JSON 输出的能力优先推荐支持 structured-outputs 的模型。 */
   prefersStructuredOutput: boolean;
 };
@@ -138,11 +154,13 @@ export type CapabilityModelRequirement = {
 export const CAPABILITY_MODEL_REQUIREMENTS: Readonly<
   Record<AiCapability, CapabilityModelRequirement>
 > = {
+  // 向量维度写死在 pgvector 列类型中，绑定时只接受输出维度等于 1024 的模型。
   knowledge_embedding: {
     providers: ['dashscope'],
     capabilities: ['TR'],
     requiredInputModalities: [],
-    fixedModel: true,
+    fixedModel: false,
+    verifiedModelIds: ['qwen3.7-text-embedding'],
     prefersStructuredOutput: false,
   },
   knowledge_chat: {
@@ -150,13 +168,16 @@ export const CAPABILITY_MODEL_REQUIREMENTS: Readonly<
     capabilities: ['TG'],
     requiredInputModalities: [],
     fixedModel: false,
+    verifiedModelIds: [],
     prefersStructuredOutput: true,
   },
+  // 转写协议要求 diarization 与词级时间戳，因此只接受已验证的整文件转写模型。
   audio_transcription: {
     providers: ['dashscope'],
     capabilities: ['ASR'],
     requiredInputModalities: [],
-    fixedModel: true,
+    fixedModel: false,
+    verifiedModelIds: ['qwen-audio-3.0-asr-flash-filetrans'],
     prefersStructuredOutput: false,
   },
   audio_emotion: {
@@ -164,6 +185,7 @@ export const CAPABILITY_MODEL_REQUIREMENTS: Readonly<
     capabilities: ['TG'],
     requiredInputModalities: ['Audio'],
     fixedModel: false,
+    verifiedModelIds: [],
     prefersStructuredOutput: false,
   },
   audio_role: {
@@ -171,6 +193,7 @@ export const CAPABILITY_MODEL_REQUIREMENTS: Readonly<
     capabilities: ['TG'],
     requiredInputModalities: [],
     fixedModel: false,
+    verifiedModelIds: [],
     prefersStructuredOutput: true,
   },
   audio_speaker_review: {
@@ -178,6 +201,7 @@ export const CAPABILITY_MODEL_REQUIREMENTS: Readonly<
     capabilities: ['TG'],
     requiredInputModalities: [],
     fixedModel: false,
+    verifiedModelIds: [],
     prefersStructuredOutput: true,
   },
   business_analysis: {
@@ -185,6 +209,7 @@ export const CAPABILITY_MODEL_REQUIREMENTS: Readonly<
     capabilities: ['TG'],
     requiredInputModalities: [],
     fixedModel: false,
+    verifiedModelIds: [],
     prefersStructuredOutput: true,
   },
   audio_staging: {
@@ -192,6 +217,7 @@ export const CAPABILITY_MODEL_REQUIREMENTS: Readonly<
     capabilities: [],
     requiredInputModalities: [],
     fixedModel: true,
+    verifiedModelIds: ['aliyun-oss'],
     prefersStructuredOutput: false,
   },
   audio_primary_storage: {
@@ -199,6 +225,7 @@ export const CAPABILITY_MODEL_REQUIREMENTS: Readonly<
     capabilities: [],
     requiredInputModalities: [],
     fixedModel: true,
+    verifiedModelIds: ['aliyun-oss'],
     prefersStructuredOutput: false,
   },
 };
@@ -208,10 +235,8 @@ const parseResult = z
     success: z.boolean().nullable().optional(),
     code: z.string().nullable().optional(),
     message: z.string().nullable().optional(),
-    data: z
-      .array(z.object({ id: z.string().min(1) }).passthrough())
-      .nullable()
-      .optional(),
+    // 不同部署可能返回 OpenAI 形态的 data[] 或百炼形态的 output.models[]，两者都要容忍。
+    data: z.array(z.record(z.string(), z.unknown())).nullable().optional(),
     output: z
       .object({
         models: z.array(z.record(z.string(), z.unknown())).nullable().optional(),
@@ -221,6 +246,13 @@ const parseResult = z
       .optional(),
   })
   .passthrough();
+
+/** 把一条原始条目规范为统一记录：OpenAI 形态用 id，百炼形态用 model。 */
+function modelRow(row: Record<string, unknown>): { id: string; record: Record<string, unknown> } {
+  const rawId = typeof row.model === 'string' ? row.model : row.id;
+  const id = typeof rawId === 'string' ? rawId.trim() : '';
+  return { id, record: id && row.model !== id ? { ...row, model: id } : row };
+}
 
 /** 单条价格转换为展示条目；畸形价格被丢弃而不是让整页目录失败。 */
 function priceEntries(value: unknown): ModelPriceEntry[] {
@@ -293,46 +325,62 @@ function satisfiesRequirement(
   inputModalities: readonly ModelModality[],
   requirement: CapabilityModelRequirement,
 ): boolean {
-  if (requirement.capabilities.some((capability) => !model.capabilities.includes(capability))) {
+  // 供应商没有返回能力元数据时（例如 OpenAI 形态的 /models）不做能力排除，只按本地
+  // 责任规则兜底：缺少元数据不等于模型不具备该能力。
+  if (
+    model.capabilities.length > 0 &&
+    requirement.capabilities.some((capability) => !model.capabilities.includes(capability))
+  ) {
     return false;
   }
+  if (inputModalities.length === 0) return true;
   return requirement.requiredInputModalities.every((modality) =>
     inputModalities.includes(modality),
   );
 }
-
-/** 解码百炼模型列表响应，并按能力责任过滤出可用于该能力的模型。 */
+/**
+ * 解码百炼模型列表响应，并按能力责任过滤出可用于该能力的模型。
+ *
+ * 过滤只在供应商确实返回了对应元数据时生效：缺少能力或模态字段时保留条目，交由服务端
+ * 的已验证白名单与用户自行确认兜底，避免因为元数据缺失把整个能力目录清空。
+ */
 export function decodeDashScopeModelList(
   payload: unknown,
   requirement: CapabilityModelRequirement,
 ): ProviderModelSummary[] {
   const parsed = parseResult.safeParse(payload);
-  const rows = parsed.success ? (parsed.data.output?.models ?? []) : [];
+  // 优先使用百炼形态；只有它缺席时才退回 OpenAI 形态，避免混入不相关信息。
+  const rows = parsed.success ? (parsed.data.output?.models ?? parsed.data.data ?? []) : [];
   const models: ProviderModelSummary[] = [];
-  for (const row of rows) {
-    const record = row as Record<string, unknown>;
-    const id = text(record, 'model');
+  for (const raw of rows) {
+    const { id, record } = modelRow(raw as Record<string, unknown>);
     if (!id) continue;
     const inference = (record.inference_metadata ?? {}) as Record<string, unknown>;
     const modelInfo = (record.model_info ?? {}) as Record<string, unknown>;
+    const responseModalities = modalityList(inference.response_modality);
     const inputModalities = modalityList(inference.request_modality);
-    // 只评估 text 输出模型：图片、视频、语音合成模型不具备本产品的文本职责。
-    if (!modalityList(inference.response_modality).includes('Text')) continue;
+    // 只排除明确声明为非文本输出的模型（图片、视频、语音合成等）。
+    if (responseModalities.length > 0 && !responseModalities.includes('Text')) continue;
+    const capabilities = capabilityList(record.capabilities);
     const features = featureList(record.features);
     const candidate: ProviderModelSummary = {
       id,
       displayName: text(record, 'name') || id,
       description: text(record, 'description'),
-      capabilities: capabilityList(record.capabilities),
+      capabilities,
       features,
       contextWindow: positiveInteger(modelInfo.context_window),
       maxOutputTokens: positiveInteger(modelInfo.max_output_tokens),
+      outputDimensions: positiveInteger(modelInfo.output_dimensions),
       pricing: null,
       recommended: requirement.prefersStructuredOutput
         ? features.includes('structured-outputs')
         : false,
+      verified: requirement.verifiedModelIds.includes(id),
     };
-    if (!satisfiesRequirement(candidate, inputModalities, requirement)) continue;
+    if (capabilities.length > 0 && !satisfiesRequirement(candidate, inputModalities, requirement)) {
+      continue;
+    }
     const entries = priceEntries(record.prices);
     models.push(
       entries.length > 0
@@ -349,7 +397,7 @@ export function decodeDeepSeekModelList(payload: unknown): ProviderModelSummary[
   const rows = parsed.success ? (parsed.data.data ?? []) : [];
   const models: ProviderModelSummary[] = [];
   for (const row of rows) {
-    const id = row.id.trim();
+    const { id } = modelRow(row);
     if (!id) continue;
     models.push({
       id,
@@ -359,8 +407,10 @@ export function decodeDeepSeekModelList(payload: unknown): ProviderModelSummary[
       features: [],
       contextWindow: null,
       maxOutputTokens: null,
+      outputDimensions: null,
       pricing: null,
       recommended: false,
+      verified: false,
     });
   }
   return models;

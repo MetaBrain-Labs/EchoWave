@@ -46,6 +46,7 @@ import { settingsApi } from '@/shared/api/settingsApi';
 import { WorkspaceRequestError } from '@/shared/api/request';
 import { AdminSessionGate } from '@/shared/auth/AdminSessionGate';
 import { useAdminSession } from '@/shared/auth/AdminSessionProvider';
+import { AlertDialog } from '@/shared/ui/AlertDialog';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import {
@@ -398,6 +399,7 @@ export function SettingsScreen({
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogRevision, setCatalogRevision] = useState(0);
+  const [bindingAlert, setBindingAlert] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionsVisible, setActionsVisible] = useState(false);
@@ -549,6 +551,7 @@ export function SettingsScreen({
     if (bindingCapability === capability) {
       setBindingCapability(null);
       setModelPickerOpen(false);
+      setBindingAlert(null);
       return;
     }
     const current = overview?.bindings.find((item) => item.capability === capability);
@@ -562,6 +565,8 @@ export function SettingsScreen({
     setBindingCapability(capability);
     setBindingProviderId(current?.providerConnectionId ?? (preferred ?? compatible[0])?.id ?? '');
     setBindingThinking(current?.settings.enableThinking === true);
+    // 模型草稿必须按能力重置：否则上一个能力里未保存（例如保存被拒）的模型名会串到
+    // 下一个能力，看起来像是“切换供应商没有刷新模型”。
     setBindingModel(current?.model ?? AI_CAPABILITY_DEFAULTS[capability].model);
     setModelSearch('');
     // 目录延后到用户真正打开模型弹窗时再读取，避免展开面板即产生供应商请求。
@@ -570,18 +575,25 @@ export function SettingsScreen({
     setCatalogError(null);
     setCatalogLoading(false);
     setCatalogRevision(0);
+    setBindingAlert(null);
   };
 
   const saveBinding = async () => {
     if (!token || !bindingCapability || !bindingProviderId) return;
     const current = overview?.bindings.find((item) => item.capability === bindingCapability);
+    const model = bindingModel.trim();
+    if (!model) {
+      // 换供应商后目录尚未加载时模型为空：要求显式选择，不用其他供应商的默认模型兜底。
+      setBindingAlert(t('aiSettings.modelRequired'));
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       await settingsApi.saveCapability(token, bindingCapability, {
         providerConnectionId: bindingProviderId,
         secondaryProviderConnectionId: null,
-        model: bindingModel || AI_CAPABILITY_DEFAULTS[bindingCapability].model,
+        model,
         settings: supportsThinkingSetting(bindingCapability)
           ? { enableThinking: bindingThinking }
           : {},
@@ -590,7 +602,8 @@ export function SettingsScreen({
       setBindingCapability(null);
       await refresh(token);
     } catch (reason) {
-      setError(errorMessage(reason, t));
+      // 保存结果就在触发按钮旁边呈现，避免用户滚到页面顶部才能看到失败原因。
+      setBindingAlert(errorMessage(reason, t));
     } finally {
       setBusy(false);
     }
@@ -613,7 +626,7 @@ export function SettingsScreen({
   );
 
   const pickerModels = useMemo(() => {
-    if (!activeCatalog || activeCatalog.catalogAvailable === false) return [];
+    if (!activeCatalog) return [];
     const keyword = modelSearch.trim().toLowerCase();
     if (!keyword) return activeCatalog.models;
     return activeCatalog.models.filter(
@@ -625,13 +638,16 @@ export function SettingsScreen({
 
   const selectedModel = activeCatalog?.models.find((model) => model.id === bindingModel) ?? null;
 
-  const pickerStatus: 'loading' | 'error' | 'unavailable' | 'ready' = catalogLoading
-    ? 'loading'
-    : catalogError
-      ? 'error'
-      : activeCatalog?.catalogAvailable === false
-        ? 'unavailable'
-        : 'ready';
+  const pickerStatus: 'loading' | 'ready' =
+    catalogLoading || (!catalogError && !activeCatalog) ? 'loading' : 'ready';
+
+  /** 目录不可用时的安全提示；此时列表只保留服务端仍返回的已验证默认模型。 */
+  const pickerNotice =
+    catalogError ??
+    (activeCatalog?.catalogAvailable === false
+      ? (activeCatalog.unavailableReason ?? t('aiSettings.catalogUnavailable'))
+      : null);
+  const pickerFallbackOnly = activeCatalog?.catalogAvailable === false && pickerModels.length > 0;
 
   const selectedDefaultProvider = (type: ProviderType): string | undefined => {
     const compatible = overview?.providers.filter((provider) => provider.type === type) ?? [];
@@ -901,12 +917,20 @@ export function SettingsScreen({
                             }))}
                             selected={bindingProviderId}
                             onSelect={(providerConnectionId) => {
+                              if (providerConnectionId === bindingProviderId) return;
                               setBindingProviderId(providerConnectionId);
-                              // 换连接后原模型可能不在新供应商目录中，回落到该连接的默认模型。
-                              const nextDefault = catalog?.providers.find(
+                              // 换连接等于换供应商：绝不能回落成上一个连接的模型或能力默认
+                              // 模型（它可能属于另一个供应商）。目录可用就用该连接的默认模型
+                              // 或首个候选；否则清空并要求用户显式选择。
+                              const providerCatalog = catalog?.providers.find(
                                 (provider) => provider.connectionId === providerConnectionId,
-                              )?.defaultModel;
-                              if (nextDefault) setBindingModel(nextDefault);
+                              );
+                              setBindingModel(
+                                providerCatalog?.defaultModel ??
+                                  providerCatalog?.models[0]?.id ??
+                                  '',
+                              );
+                              setModelSearch('');
                             }}
                           />
                           <ModelField
@@ -980,7 +1004,10 @@ export function SettingsScreen({
       </ScrollView>
       {bindingCapability ? (
         <ModelPickerSheet
+          capability={bindingCapability}
+          fallbackOnly={pickerFallbackOnly}
           models={pickerModels}
+          notice={pickerNotice}
           onClose={() => setModelPickerOpen(false)}
           onRetry={retryCatalog}
           onSearch={setModelSearch}
@@ -992,10 +1019,33 @@ export function SettingsScreen({
           selected={bindingModel}
           status={pickerStatus}
           title={capabilityLabel(bindingCapability, t)}
-          unavailableReason={catalogError ?? activeCatalog?.unavailableReason ?? null}
           visible={modelPickerOpen}
         />
       ) : null}
+      <AlertDialog
+        actions={[
+          {
+            label: t('aiSettings.dismissAlert'),
+            onPress: () => setBindingAlert(null),
+            testID: 'binding-alert-dismiss',
+          },
+          ...(bindingCapability
+            ? [
+                {
+                  label: t('aiSettings.chooseModel'),
+                  onPress: () => {
+                    setBindingAlert(null);
+                    openModelPicker();
+                  },
+                },
+              ]
+            : []),
+        ]}
+        message={bindingAlert ?? ''}
+        onClose={() => setBindingAlert(null)}
+        title={t('aiSettings.bindingFailed')}
+        visible={bindingAlert !== null}
+      />
       <ActionSheet
         items={[
           {
@@ -1292,7 +1342,10 @@ function priceSummary(model: ProviderModelSummary, t: TranslationFunction): stri
  * 关闭后立即卸载，避免在配置页常驻渲染整份模型清单。
  */
 function ModelPickerSheet({
+  capability,
+  fallbackOnly,
   models,
+  notice,
   onClose,
   onRetry,
   onSelect,
@@ -1300,19 +1353,20 @@ function ModelPickerSheet({
   selected,
   status,
   title,
-  unavailableReason,
   onSearch,
   visible,
 }: {
+  capability: AiCapability;
+  fallbackOnly: boolean;
   models: ProviderModelSummary[];
+  notice: string | null;
   onClose: () => void;
   onRetry: () => void;
   onSelect: (model: ProviderModelSummary) => void;
   search: string;
   selected: string;
-  status: 'loading' | 'error' | 'unavailable' | 'ready';
+  status: 'loading' | 'ready';
   title: string;
-  unavailableReason?: string | null;
   onSearch: (value: string) => void;
   visible: boolean;
 }) {
@@ -1374,50 +1428,73 @@ function ModelPickerSheet({
               <ActivityIndicator color={colors.ink} />
               <Text style={styles.help}>{t('aiSettings.catalogLoading')}</Text>
             </View>
-          ) : status === 'error' || status === 'unavailable' ? (
-            <View style={styles.pickerState}>
-              <Text accessibilityRole="alert" style={styles.errorText}>
-                {unavailableReason ?? t('aiSettings.catalogUnavailable')}
-              </Text>
-              <ActionButton label={t('aiSettings.catalogRetry')} onPress={onRetry} />
-            </View>
-          ) : models.length === 0 ? (
-            <View style={styles.pickerState}>
-              <Text style={styles.help}>{t('aiSettings.modelNoMatch')}</Text>
-            </View>
           ) : (
-            <FlatList
-              contentContainerStyle={styles.pickerList}
-              data={models}
-              initialNumToRender={12}
-              keyboardShouldPersistTaps="handled"
-              keyExtractor={(model) => model.id}
-              maxToRenderPerBatch={12}
-              renderItem={({ item }) => {
-                const prices = priceSummary(item, t);
-                const active = selected === item.id;
-                return (
-                  <Pressable
-                    accessibilityLabel={item.id}
-                    accessibilityRole="radio"
-                    accessibilityState={{ checked: active }}
-                    onPress={() => onSelect(item)}
-                    style={[styles.modelRow, active && styles.modelRowSelected]}
-                  >
-                    <View style={styles.modelRowHead}>
-                      <Text style={styles.rowTitle}>
-                        {item.displayName}
-                        {item.recommended ? ` · ${t('aiSettings.modelRecommended')}` : ''}
-                      </Text>
-                      {active ? <Ionicons color={colors.ink} name="checkmark" size={22} /> : null}
-                    </View>
-                    <Text style={styles.help}>{item.id}</Text>
-                    {prices ? <Text style={styles.help}>{prices}</Text> : null}
-                  </Pressable>
-                );
-              }}
-              windowSize={7}
-            />
+            <>
+              {notice ? (
+                <View style={styles.pickerNotice}>
+                  <Text accessibilityRole="alert" style={styles.errorText}>
+                    {notice}
+                  </Text>
+                  {fallbackOnly ? (
+                    <Text style={styles.help}>{t('aiSettings.catalogFallbackHint')}</Text>
+                  ) : null}
+                  <ActionButton label={t('aiSettings.catalogRetry')} onPress={onRetry} />
+                </View>
+              ) : null}
+              {models.length === 0 ? (
+                <View style={styles.pickerState}>
+                  <Text style={styles.help}>{t('aiSettings.modelNoMatch')}</Text>
+                </View>
+              ) : (
+                <FlatList
+                  contentContainerStyle={styles.pickerList}
+                  data={models}
+                  initialNumToRender={12}
+                  keyboardShouldPersistTaps="handled"
+                  keyExtractor={(model) => model.id}
+                  maxToRenderPerBatch={12}
+                  renderItem={({ item }) => {
+                    const prices = priceSummary(item, t);
+                    const active = selected === item.id;
+                    return (
+                      <Pressable
+                        accessibilityLabel={item.id}
+                        accessibilityRole="radio"
+                        accessibilityState={{ checked: active }}
+                        onPress={() => onSelect(item)}
+                        style={[styles.modelRow, active && styles.modelRowSelected]}
+                      >
+                        <View style={styles.modelRowHead}>
+                          <Text style={styles.rowTitle}>
+                            {item.displayName}
+                            {item.verified ? ` · ${t('aiSettings.modelVerified')}` : ''}
+                            {item.recommended ? ` · ${t('aiSettings.modelRecommended')}` : ''}
+                          </Text>
+                          {active ? (
+                            <Ionicons color={colors.ink} name="checkmark" size={22} />
+                          ) : null}
+                        </View>
+                        <Text style={styles.help}>{item.id}</Text>
+                        {item.verified ? (
+                          <Text style={styles.successText}>
+                            {t('aiSettings.modelVerifiedFor', {
+                              capability: capabilityLabel(capability, t),
+                            })}
+                          </Text>
+                        ) : null}
+                        <Text style={styles.help}>
+                          {item.outputDimensions === null
+                            ? ''
+                            : `${t('aiSettings.modelDimensions', { count: item.outputDimensions })} · `}
+                          {prices ?? t('aiSettings.modelPriceUnknown')}
+                        </Text>
+                      </Pressable>
+                    );
+                  }}
+                  windowSize={7}
+                />
+              )}
+            </>
           )}
         </View>
       </KeyboardAvoidingView>
@@ -1428,7 +1505,7 @@ function ModelPickerSheet({
 /**
  * 能力绑定面板里的模型字段。
  *
- * 固定能力只展示权威模型；其余能力展示当前选择并用弹窗承载搜索与整份候选清单。
+ * 固定能力只展示权威后端；其余能力展示当前选择并用弹窗承载搜索与整份候选清单。
  */
 function ModelField({
   capability,
@@ -1475,6 +1552,8 @@ function ModelField({
             </View>
             <Text style={styles.link}>{t('aiSettings.chooseModel')}</Text>
           </Pressable>
+          {/* 兼容能力可以改选，但模型能力是否匹配由用户自行确认。 */}
+          <Text style={styles.warningText}>{t('aiSettings.modelOwnershipWarning')}</Text>
           {modelId ? null : <Text style={styles.errorText}>{t('aiSettings.modelRequired')}</Text>}
           {catalogAvailable ? null : (
             <Text style={styles.help}>{t('aiSettings.catalogUnavailable')}</Text>
@@ -1752,6 +1831,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     padding: spacing.lg,
   },
+  pickerNotice: { gap: spacing.sm, paddingHorizontal: spacing.md, paddingTop: spacing.sm },
   pressed: { backgroundColor: colors.background, borderRadius: radii.default },
   fieldLabel: {
     ...typography.description,

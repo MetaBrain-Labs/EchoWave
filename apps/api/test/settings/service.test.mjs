@@ -54,13 +54,33 @@ function storedProvider(type) {
   };
 }
 
-/** 目录替身：返回固定候选，便于断言“责任不符的模型被拒绝”。 */
-function catalogService(modelsByCapability = {}) {
+/** 目录替身：返回固定候选，便于断言“能力目录之外的模型被拒绝”。 */
+function catalogService(modelsByCapability = {}, verifiedByCapability = {}) {
+  const summaries = (capability) =>
+    (modelsByCapability[capability] ?? []).map((model) => ({
+      id: model,
+      displayName: model,
+      description: '',
+      capabilities: [],
+      features: [],
+      contextWindow: null,
+      maxOutputTokens: null,
+      outputDimensions: null,
+      pricing: null,
+      recommended: false,
+      verified: (verifiedByCapability[capability] ?? []).includes(model),
+    }));
   return {
-    async isSelectableModel(capability, _provider, model) {
+    async summariesFor(capability) {
+      return modelsByCapability[capability] ? summaries(capability) : undefined;
+    },
+    async isSelectableModel(capability, _provider, model, currentModel) {
       const models = modelsByCapability[capability];
       if (!models) return undefined;
-      return models.includes(model);
+      if ((verifiedByCapability[capability] ?? []).includes(model)) return true;
+      if (!models.includes(model)) return false;
+      // 目录中存在但未在本仓库适配：只允许保持已有绑定。
+      return currentModel === model;
     },
     async catalog(capability, providers) {
       return {
@@ -72,21 +92,16 @@ function catalogService(modelsByCapability = {}) {
           catalogAvailable: true,
           unavailableReason: null,
           defaultModel: null,
-          models: (modelsByCapability[capability] ?? []).map((model) => ({
-            id: model,
-            displayName: model,
-            description: '',
-            capabilities: [],
-            features: [],
-            contextWindow: null,
-            maxOutputTokens: null,
-            pricing: null,
-            recommended: false,
-          })),
+          models: summaries(capability),
         })),
       };
     },
   };
+}
+
+/** 绑定校验会读取当前绑定以判断“未改动”，替身默认没有既有绑定。 */
+function repositoryStub(overrides = {}) {
+  return { listBindings: async () => [], ...overrides };
 }
 
 function settingsService(repository, legacy = {}, catalog = catalogService({})) {
@@ -112,19 +127,22 @@ function settingsService(repository, legacy = {}, catalog = catalogService({})) 
 }
 
 describe('SettingsService defaults', () => {
-  it('accepts a catalogued model for a text capability and rejects an uncatalogued one', async () => {
+  it('accepts a verified model and rejects one outside the capability catalogue', async () => {
     let saved;
     const provider = storedProvider('dashscope');
     const service = settingsService(
-      {
+      repositoryStub({
         getProvider: async () => provider,
         saveBinding: async (input) => {
           saved = input;
           return input;
         },
-      },
+      }),
       {},
-      catalogService({ knowledge_chat: ['qwen3.5-omni-flash', 'qwen3-max'] }),
+      catalogService(
+        { knowledge_chat: ['qwen3.5-omni-flash', 'qwen3-max'] },
+        { knowledge_chat: ['qwen3-max'] },
+      ),
     );
 
     await service.saveBinding('knowledge_chat', {
@@ -147,19 +165,99 @@ describe('SettingsService defaults', () => {
     );
   });
 
-  it('keeps DeepSeek available as the fallback provider for text capabilities', async () => {
-    let saved;
-    const provider = storedProvider('deepseek');
+  it('lists a catalogued model but refuses to bind it until this repository adapts it', async () => {
+    const provider = storedProvider('dashscope');
     const service = settingsService(
-      {
+      repositoryStub({
+        getProvider: async () => provider,
+        saveBinding: async () => {
+          throw new Error('must not persist');
+        },
+      }),
+      {},
+      // 目录里存在，但没有声明为已验证 → 不允许新选择。
+      catalogService({ knowledge_chat: ['qwen3.5-omni-flash', 'glm-5.1'] }),
+    );
+
+    await assert.rejects(
+      service.saveBinding('knowledge_chat', {
+        providerConnectionId: provider.id,
+        secondaryProviderConnectionId: null,
+        model: 'glm-5.1',
+        settings: { enableThinking: false },
+      }),
+      (error) => error.code === 'BAD_REQUEST' && /已验证/.test(error.message),
+    );
+  });
+
+  it('pins the capability default model as always bindable', async () => {
+    let saved;
+    const provider = storedProvider('dashscope');
+    const service = settingsService(
+      repositoryStub({
         getProvider: async () => provider,
         saveBinding: async (input) => {
           saved = input;
           return input;
         },
-      },
+      }),
       {},
-      catalogService({ knowledge_chat: ['deepseek-v4-flash'] }),
+      // 目录不可用时默认模型仍然可写入，保证首次配置不会卡死。
+      catalogService({}),
+    );
+
+    await service.saveBinding('knowledge_chat', {
+      providerConnectionId: provider.id,
+      secondaryProviderConnectionId: null,
+      model: AI_CAPABILITY_DEFAULTS.knowledge_chat.model,
+      settings: { enableThinking: false },
+    });
+
+    assert.equal(saved.model, AI_CAPABILITY_DEFAULTS.knowledge_chat.model);
+  });
+
+  it('keeps a verified model bindable even when the provider list is unavailable', async () => {
+    let saved;
+    const provider = storedProvider('dashscope');
+    const service = settingsService(
+      repositoryStub({
+        getProvider: async () => provider,
+        saveBinding: async (input) => {
+          saved = input;
+          return input;
+        },
+      }),
+      {},
+      // 目录整体不可用：已验证模型（这里是 Embedding 默认模型）仍必须可保存。
+      catalogService({}),
+    );
+
+    await service.saveBinding('knowledge_embedding', {
+      providerConnectionId: provider.id,
+      secondaryProviderConnectionId: null,
+      model: AI_CAPABILITY_DEFAULTS.knowledge_embedding.model,
+      settings: {},
+    });
+
+    assert.equal(saved.model, AI_CAPABILITY_DEFAULTS.knowledge_embedding.model);
+  });
+
+  it('keeps DeepSeek available as the fallback provider for text capabilities', async () => {
+    let saved;
+    const provider = storedProvider('deepseek');
+    const service = settingsService(
+      repositoryStub({
+        getProvider: async () => provider,
+        saveBinding: async (input) => {
+          saved = input;
+          return input;
+        },
+      }),
+      {},
+      catalogService(
+        { knowledge_chat: ['deepseek-v4-flash'] },
+        { knowledge_chat: ['deepseek-v4-flash'] },
+      ),
     );
 
     await service.saveBinding('knowledge_chat', {
@@ -174,12 +272,12 @@ describe('SettingsService defaults', () => {
   it('refuses to persist an unverifiable model while the provider catalog is unavailable', async () => {
     const provider = storedProvider('dashscope');
     const service = settingsService(
-      {
+      repositoryStub({
         getProvider: async () => provider,
         saveBinding: async () => {
           throw new Error('must not persist');
         },
-      },
+      }),
       {},
       catalogService({}),
     );
@@ -193,28 +291,18 @@ describe('SettingsService defaults', () => {
       }),
       (error) => error.code === 'MODEL_UNAVAILABLE',
     );
-
-    // 目录不可用时，权威默认模型仍然可写入，避免完全无法完成首次配置。
-    const fallbackService = settingsService({
-      getProvider: async () => provider,
-      saveBinding: async (input) => input,
-    });
-    await fallbackService.saveBinding('knowledge_chat', {
-      providerConnectionId: provider.id,
-      secondaryProviderConnectionId: null,
-      model: AI_CAPABILITY_DEFAULTS.knowledge_chat.model,
-      settings: { enableThinking: false },
-    });
   });
 
   it('rejects a text capability bound to a non-text provider', async () => {
     const provider = storedProvider('aliyun_oss');
-    const service = settingsService({
-      getProvider: async () => provider,
-      saveBinding: async () => {
-        throw new Error('must not persist');
-      },
-    });
+    const service = settingsService(
+      repositoryStub({
+        getProvider: async () => provider,
+        saveBinding: async () => {
+          throw new Error('must not persist');
+        },
+      }),
+    );
 
     await assert.rejects(
       service.saveBinding('knowledge_chat', {
@@ -227,16 +315,65 @@ describe('SettingsService defaults', () => {
     );
   });
 
-  it('keeps fixed capabilities on their authoritative model', async () => {
+  it('rejects an embedding model whose vector dimensions differ from the index', async () => {
     const provider = storedProvider('dashscope');
-    const service = settingsService({
-      getProvider: async () => provider,
-      saveBinding: async () => {
-        throw new Error('must not persist');
-      },
-    });
+    const catalog = catalogService(
+      { knowledge_embedding: ['qwen3.7-text-embedding', 'text-embedding-v3'] },
+      { knowledge_embedding: ['text-embedding-v3'] },
+    );
+    catalog.summariesFor = async (capability) =>
+      capability === 'knowledge_embedding'
+        ? [
+            {
+              id: 'text-embedding-v3',
+              displayName: 'text-embedding-v3',
+              description: '',
+              capabilities: [],
+              features: [],
+              contextWindow: null,
+              maxOutputTokens: null,
+              outputDimensions: 512,
+              pricing: null,
+              recommended: false,
+              verified: true,
+            },
+          ]
+        : undefined;
+    const service = settingsService(
+      repositoryStub({
+        getProvider: async () => provider,
+        saveBinding: async () => {
+          throw new Error('must not persist');
+        },
+      }),
+      {},
+      catalog,
+    );
+
     await assert.rejects(
       service.saveBinding('knowledge_embedding', {
+        providerConnectionId: provider.id,
+        secondaryProviderConnectionId: null,
+        model: 'text-embedding-v3',
+        settings: {},
+      }),
+      (error) => error.code === 'BAD_REQUEST' && /512/.test(error.message),
+    );
+  });
+
+  it('still refuses an unknown backend for the fixed OSS capabilities', async () => {
+    const provider = storedProvider('aliyun_oss');
+    const service = settingsService(
+      repositoryStub({
+        getProvider: async () => provider,
+        saveBinding: async () => {
+          throw new Error('must not persist');
+        },
+      }),
+    );
+
+    await assert.rejects(
+      service.saveBinding('audio_staging', {
         providerConnectionId: provider.id,
         secondaryProviderConnectionId: null,
         model: 'qwen3-max',

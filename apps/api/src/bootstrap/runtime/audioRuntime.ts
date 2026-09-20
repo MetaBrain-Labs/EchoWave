@@ -207,6 +207,8 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
           fetch,
           (durationMs) => new Promise((resolve) => setTimeout(resolve, durationMs)),
           sttRawResponseReporter,
+          // 供应商请求必须使用该任务实际绑定的转写模型，而不是写死的默认模型。
+          transcription.model,
         ),
         notifyMode: transcriptionConfig.asyncNotifyMode,
         ossStaging,

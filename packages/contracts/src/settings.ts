@@ -99,6 +99,9 @@ export const AI_CAPABILITY_DEFAULTS = {
   },
 } as const satisfies Readonly<Record<AiCapability, AiCapabilityDefault>>;
 
+/** 知识库向量维度：pgvector 列类型与检索契约都固定为该值。 */
+export const EMBEDDING_DIMENSIONS = 1024 as const;
+
 /** 支持 Thinking 开关的能力，决定能力绑定的 settings 形状。 */
 export const THINKING_CAPABILITIES = [
   'knowledge_chat',

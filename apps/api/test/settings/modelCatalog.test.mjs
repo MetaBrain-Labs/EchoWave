@@ -130,12 +130,14 @@ describe('ModelCatalogService', () => {
 
     const catalog = result.providers[0];
     assert.equal(catalog.catalogAvailable, true);
+    // 默认模型固定置顶并标记已验证，其余候选按目录顺序跟随。
     assert.deepEqual(
       catalog.models.map((item) => item.id),
-      ['qwen3-max'],
+      ['qwen3.5-omni-flash', 'qwen3-max'],
     );
-    assert.equal(catalog.models[0].recommended, true);
-    assert.deepEqual(catalog.models[0].pricing.entries[0], {
+    assert.equal(catalog.models[0].verified, true);
+    assert.equal(catalog.models[1].recommended, true);
+    assert.deepEqual(catalog.models[1].pricing.entries[0], {
       type: 'input_token',
       name: '输入',
       amount: 2,
@@ -157,6 +159,7 @@ describe('ModelCatalogService', () => {
               model: 'qwen3.7-text-embedding',
               capabilities: ['TR'],
               inference_metadata: { request_modality: ['Text'], response_modality: ['Text'] },
+              model_info: { context_window: 8192, output_dimensions: 1024 },
             }),
             model({
               model: 'qwen-audio-3.0-asr-flash-filetrans',
@@ -184,7 +187,13 @@ describe('ModelCatalogService', () => {
 
     const embedding = await service.catalog('knowledge_embedding', [provider]);
     assert.equal(embedding.providers[0].catalogAvailable, true);
-    assert.equal(embedding.providers[0].models[0].id, 'qwen3.7-text-embedding');
+    assert.deepEqual(
+      embedding.providers[0].models.map((item) => item.id),
+      ['qwen3.7-text-embedding'],
+    );
+    // 向量维度来自模型元数据，是绑定校验拒绝维度不一致模型的依据。
+    assert.equal(embedding.providers[0].models[0].outputDimensions, 1024);
+    assert.equal(embedding.providers[0].models[0].verified, true);
 
     const emotion = await service.catalog('audio_emotion', [provider]);
     // 情绪必须同时支持文本输出与音频输入：纯文本模型与 ASR 专用模型都被排除。
@@ -200,12 +209,105 @@ describe('ModelCatalogService', () => {
     );
   });
 
-  it('caches a successful catalog and does not cache upstream failures', async () => {
-    let calls = 0;
+  it('pins the verified default model first even when the provider omits it', async () => {
     const service = new ModelCatalogService({
-      fetch: async () => {
-        calls += 1;
-        if (calls === 1) return new Response('nope', { status: 401 });
+      // 供应商按能力过滤后没有返回默认模型，选择器仍必须把它固定置顶并标注已验证。
+      fetch: async () =>
+        Response.json(
+          modelList([
+            model({
+              model: 'text-embedding-v4',
+              capabilities: ['TR'],
+              model_info: { context_window: 8192, output_dimensions: 1024 },
+            }),
+          ]),
+        ),
+    });
+    const provider = {
+      connectionId,
+      providerType: 'dashscope',
+      name: '百炼',
+      config: dashScopeProvider().config,
+      credential: { apiKey: 'secret-key' },
+    };
+
+    const result = await service.catalog('knowledge_embedding', [provider]);
+
+    assert.deepEqual(
+      result.providers[0].models.map((item) => item.id),
+      ['qwen3.7-text-embedding', 'text-embedding-v4'],
+    );
+    assert.deepEqual(
+      result.providers[0].models.map((item) => item.verified),
+      [true, false],
+    );
+    assert.equal(result.providers[0].defaultModel, 'qwen3.7-text-embedding');
+  });
+
+  it('lists models that are not adapted for the capability but refuses to bind them', async () => {
+    const service = new ModelCatalogService({
+      fetch: async () =>
+        Response.json(
+          modelList([
+            model({
+              model: 'qwen3.7-text-embedding',
+              capabilities: ['TR'],
+              model_info: { context_window: 8192, output_dimensions: 1024 },
+            }),
+            model({
+              model: 'text-embedding-v4',
+              capabilities: ['TR'],
+              model_info: { context_window: 8192, output_dimensions: 1024 },
+            }),
+          ]),
+        ),
+    });
+    const provider = {
+      connectionId,
+      providerType: 'dashscope',
+      name: '百炼',
+      config: dashScopeProvider().config,
+      credential: { apiKey: 'secret-key' },
+    };
+
+    // 未适配模型在目录中可见，但不能被新选择；已绑定未改动的模型保持可用。
+    const catalog = await service.catalog('knowledge_embedding', [provider]);
+    assert.deepEqual(
+      catalog.providers[0].models.map((item) => item.verified),
+      [true, false],
+    );
+    assert.equal(
+      await service.isSelectableModel('knowledge_embedding', provider, 'text-embedding-v4', null),
+      false,
+    );
+    assert.equal(
+      await service.isSelectableModel(
+        'knowledge_embedding',
+        provider,
+        'text-embedding-v4',
+        'text-embedding-v4',
+      ),
+      true,
+    );
+    assert.equal(
+      await service.isSelectableModel(
+        'knowledge_embedding',
+        provider,
+        'qwen3.7-text-embedding',
+        null,
+      ),
+      true,
+    );
+  });
+
+  it('falls back to an unfiltered request when the provider rejects the filter parameters', async () => {
+    const urls = [];
+    const service = new ModelCatalogService({
+      fetch: async (url) => {
+        urls.push(String(url));
+        // 带 capabilities/supports 的请求被拒绝，退回只有分页参数的请求。
+        if (String(url).includes('capabilities='))
+          return new Response('bad request', { status: 400 });
         return Response.json(modelList([model({})]));
       },
     });
@@ -217,19 +319,189 @@ describe('ModelCatalogService', () => {
       credential: { apiKey: 'secret-key' },
     };
 
+    const result = await service.catalog('knowledge_chat', [provider]);
+
+    assert.equal(result.providers[0].catalogAvailable, true);
+    assert.deepEqual(
+      result.providers[0].models.map((item) => item.id),
+      ['qwen3.5-omni-flash', 'qwen3-max'],
+    );
+    assert.equal(urls.length, 2);
+    assert.equal(urls[1].includes('capabilities='), false);
+    assert.match(urls[1], /page_size=100/);
+  });
+
+  it('accepts an OpenAI-shaped list response and filters it locally', async () => {
+    const service = new ModelCatalogService({
+      fetch: async () =>
+        Response.json({
+          object: 'list',
+          data: [
+            { id: 'qwen3-max', object: 'model', owned_by: 'qwen' },
+            { id: 'qwen-image-max', object: 'model', owned_by: 'qwen' },
+          ],
+        }),
+    });
+    const provider = {
+      connectionId,
+      providerType: 'dashscope',
+      name: '百炼',
+      config: dashScopeProvider().config,
+      credential: { apiKey: 'secret-key' },
+    };
+
+    const result = await service.catalog('knowledge_chat', [provider]);
+
+    assert.equal(result.providers[0].catalogAvailable, true);
+    // 无能力元数据时按 id 兜底展示，置顶项仍是已验证默认模型。
+    assert.ok(result.providers[0].models.some((item) => item.id === 'qwen3-max'));
+    assert.equal(result.providers[0].models[0].id, 'qwen3.5-omni-flash');
+  });
+
+  it('keeps the emotion catalogue usable when the provider omits capability metadata', async () => {
+    const service = new ModelCatalogService({
+      // 缺少 capabilities 与 inference_metadata 的部署：不能因为元数据缺失就把情绪目录清空。
+      fetch: async () =>
+        Response.json(
+          modelList([
+            model({
+              model: 'qwen3.5-omni-flash',
+              capabilities: [],
+              features: [],
+              model_info: {},
+            }),
+          ]),
+        ),
+    });
+    const provider = {
+      connectionId,
+      providerType: 'dashscope',
+      name: '百炼',
+      config: dashScopeProvider().config,
+      credential: { apiKey: 'secret-key' },
+    };
+
+    const result = await service.catalog('audio_emotion', [provider]);
+
+    assert.equal(result.providers[0].catalogAvailable, true);
+    assert.ok(result.providers[0].models.some((item) => item.id === 'qwen3.5-omni-flash'));
+    assert.equal(result.providers[0].models[0].id, 'qwen3.5-omni-flash');
+    assert.equal(result.providers[0].models[0].verified, true);
+  });
+
+  it('keeps excluding image and video models even without capability metadata', async () => {
+    const service = new ModelCatalogService({
+      fetch: async () =>
+        Response.json(
+          modelList([
+            model({ model: 'qwen3.5-omni-flash', capabilities: [], features: [], model_info: {} }),
+            model({
+              model: 'qwen-image-max',
+              capabilities: [],
+              features: [],
+              model_info: {},
+              inference_metadata: { request_modality: ['Text'], response_modality: ['Image'] },
+            }),
+          ]),
+        ),
+    });
+    const provider = {
+      connectionId,
+      providerType: 'dashscope',
+      name: '百炼',
+      config: dashScopeProvider().config,
+      credential: { apiKey: 'secret-key' },
+    };
+
+    const result = await service.catalog('audio_emotion', [provider]);
+
+    assert.deepEqual(
+      result.providers[0].models.map((item) => item.id),
+      ['qwen3.5-omni-flash'],
+    );
+  });
+
+  it('does not cache a failed catalog and caches the next success', async () => {
+    let calls = 0;
+    let failing = true;
+    const service = new ModelCatalogService({
+      fetch: async () => {
+        calls += 1;
+        if (failing) return new Response('nope', { status: 401 });
+        return Response.json(modelList([model({})]));
+      },
+    });
+    const provider = {
+      connectionId,
+      providerType: 'dashscope',
+      name: '百炼',
+      config: dashScopeProvider().config,
+      credential: { apiKey: 'secret-key' },
+    };
+
+    // 三次备用请求全部失败：目录标记不可用，并给出可排查但不含密钥的诊断。
     const failed = await service.catalog('knowledge_chat', [provider]);
     assert.equal(failed.providers[0].catalogAvailable, false);
-    assert.match(failed.providers[0].unavailableReason, /模型列表/);
-    assert.deepEqual(failed.providers[0].models, []);
+    assert.match(failed.providers[0].unavailableReason, /供应商返回 401/);
+    // 失败时仍保留已验证默认模型，其余候选为空。
+    assert.deepEqual(
+      failed.providers[0].models.map((item) => item.id),
+      ['qwen3.5-omni-flash'],
+    );
+    assert.equal(failed.providers[0].models[0].verified, true);
     assert.equal(JSON.stringify(failed).includes('secret-key'), false);
     assert.equal(JSON.stringify(failed).includes('dashscope.aliyuncs.com'), false);
+    const failedCalls = calls;
 
-    const first = await service.catalog('knowledge_chat', [provider]);
-    const second = await service.catalog('knowledge_chat', [provider]);
-    assert.equal(first.providers[0].catalogAvailable, true);
-    assert.equal(second.providers[0].catalogAvailable, true);
-    // 第二次读取命中缓存，只额外发生一次真实请求。
-    assert.equal(calls, 2);
+    failing = false;
+    const recovered = await service.catalog('knowledge_chat', [provider]);
+    assert.equal(recovered.providers[0].catalogAvailable, true);
+    // 失败结果不入缓存：重试会真正重新请求一次并立即恢复。
+    assert.equal(calls, failedCalls + 1);
+
+    const cached = await service.catalog('knowledge_chat', [provider]);
+    assert.equal(cached.providers[0].catalogAvailable, true);
+    // 成功结果命中缓存，不再产生新的供应商请求。
+    assert.equal(calls, failedCalls + 1);
+  });
+
+  it('refuses to bind a third-party model to the provider that merely hosts it', async () => {
+    // 百炼目录里会出现它托管的 DeepSeek 模型，但把它绑到百炼连接上请求必然失败。
+    const service = new ModelCatalogService({
+      fetch: async () =>
+        Response.json(
+          modelList([
+            model({ model: 'qwen3.5-omni-flash' }),
+            model({ model: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash' }),
+          ]),
+        ),
+    });
+    const provider = {
+      connectionId,
+      providerType: 'dashscope',
+      name: '百炼',
+      config: dashScopeProvider().config,
+      credential: { apiKey: 'secret-key' },
+    };
+
+    assert.equal(
+      await service.isSelectableModel('knowledge_chat', provider, 'deepseek-v4-flash', null),
+      false,
+    );
+    assert.equal(
+      await service.isSelectableModel('knowledge_chat', provider, 'qwen3.5-omni-flash', null),
+      true,
+    );
+    // 已有绑定保持可用，避免升级后把历史配置锁死。
+    assert.equal(
+      await service.isSelectableModel(
+        'knowledge_chat',
+        provider,
+        'deepseek-v4-flash',
+        'deepseek-v4-flash',
+      ),
+      true,
+    );
   });
 
   it('reports the static DeepSeek fallback catalog without calling the provider', async () => {
@@ -252,9 +524,15 @@ describe('ModelCatalogService', () => {
     ]);
 
     assert.equal(calls, 0);
+    // DeepSeek 连接不提供百炼的默认模型，因此绝不把它置顶，只列出自己真实可用的模型。
     assert.deepEqual(
       result.providers.flatMap((provider) => provider.models.map((item) => item.id)),
       ['deepseek-v4-flash'],
+    );
+    assert.equal(result.providers[0].defaultModel, null);
+    assert.equal(
+      result.providers[0].models.some((item) => item.id === 'qwen3.5-omni-flash'),
+      false,
     );
     assert.equal(
       await service.isSelectableModel(
@@ -272,6 +550,43 @@ describe('ModelCatalogService', () => {
     );
   });
 
+  it('never pins the Qwen default onto a DeepSeek connection for any text capability', async () => {
+    const service = new ModelCatalogService({
+      fetch: async () => {
+        throw new Error('must not call the network for DeepSeek');
+      },
+    });
+    const provider = {
+      connectionId: deepSeekProvider.id,
+      providerType: 'deepseek',
+      name: 'DeepSeek',
+      config: { baseUrl: 'https://api.deepseek.com' },
+      credential: { apiKey: 'secret-key' },
+    };
+
+    // 情绪能力只允许百炼连接（providers 列表会把它过滤掉），因此只检查 DeepSeek 可作为
+    // 备选方案的文本能力。
+    const textCapabilities = [
+      'knowledge_chat',
+      'audio_role',
+      'audio_speaker_review',
+      'business_analysis',
+    ];
+    const emotionCatalog = await service.catalog('audio_emotion', [provider]);
+    assert.deepEqual(emotionCatalog.providers, []);
+
+    for (const capability of textCapabilities) {
+      const catalog = await service.catalog(capability, [provider]);
+      assert.equal(catalog.providers[0].catalogAvailable, true);
+      assert.deepEqual(
+        catalog.providers[0].models.map((item) => item.id),
+        ['deepseek-v4-flash'],
+        `${capability} must not offer the Qwen default on DeepSeek`,
+      );
+      assert.equal(catalog.providers[0].defaultModel, null);
+    }
+  });
+
   it('returns the DashScope and DeepSeek catalogs together for text capabilities', async () => {
     const service = new ModelCatalogService({
       fetch: async () => Response.json(modelList([model({})])),
@@ -283,6 +598,12 @@ describe('ModelCatalogService', () => {
     assert.deepEqual(
       result.providers.map((provider) => provider.providerType),
       ['dashscope', 'deepseek'],
+    );
+    // 同一个能力下两个供应商各列自己的模型：DeepSeek 不会出现百炼的默认模型。
+    assert.ok(result.providers[0].models.some((item) => item.id === 'qwen3.5-omni-flash'));
+    assert.deepEqual(
+      result.providers[1].models.map((item) => item.id),
+      ['deepseek-v4-flash'],
     );
     // 静态备用清单与实时目录都可用，服务端据此严格校验所选模型。
     assert.equal(
@@ -301,7 +622,7 @@ describe('ModelCatalogService', () => {
     );
   });
 
-  it('reports an unavailable catalog when the provider cannot be reached', async () => {
+  it('reports an unavailable catalog with a non-secret diagnostic when the provider cannot be reached', async () => {
     const service = new ModelCatalogService({
       fetch: async () => {
         throw new Error('network down');
@@ -312,9 +633,18 @@ describe('ModelCatalogService', () => {
     const result = await catalogService.modelCatalogFor('knowledge_chat');
 
     assert.equal(result.providers[0].catalogAvailable, false);
-    assert.equal(
+    // 原因只包含安全的粗粒度诊断，便于用户判断是网络、超时还是上游状态码。
+    assert.match(
       result.providers[0].unavailableReason,
-      '暂时无法读取该供应商的模型列表，请稍后重试。',
+      /^暂时无法读取该供应商的模型列表（.+），请稍后重试。$/,
     );
+    assert.equal(result.providers[0].unavailableReason.includes('network down'), false);
+    // 列表读不出来时仍保留已验证的默认模型，保证首次配置可以完成。
+    assert.equal(result.providers[0].defaultModel, 'qwen3.5-omni-flash');
+    assert.deepEqual(
+      result.providers[0].models.map((item) => item.id),
+      ['qwen3.5-omni-flash'],
+    );
+    assert.equal(result.providers[0].models[0].verified, true);
   });
 });

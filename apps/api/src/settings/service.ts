@@ -21,6 +21,7 @@ import {
   CapabilityBindingWriteSchema,
   DashScopeCredentialInputSchema,
   DeepSeekCredentialInputSchema,
+  EMBEDDING_DIMENSIONS,
   ModelCatalogQuerySchema,
   ProviderConnectionSchema,
   ProviderConnectionWriteSchema,
@@ -188,11 +189,9 @@ export class SettingsService {
   async saveBinding(capability: AiCapability, rawInput: CapabilityBindingWrite) {
     const input = CapabilityBindingWriteSchema.parse(rawInput);
     const requirement = CAPABILITY_MODEL_REQUIREMENTS[capability];
-    if (requirement.fixedModel) {
-      // 固定能力（Embedding、ASR、OSS）的模型由共享契约决定，避免运行时不变量被改写。
-      if (input.model !== AI_CAPABILITY_DEFAULTS[capability].model) {
-        throw new SettingsError('BAD_REQUEST', '该能力不支持所选模型。');
-      }
+    if (requirement.fixedModel && input.model !== AI_CAPABILITY_DEFAULTS[capability].model) {
+      // 固定能力（音频中转与权威对象存储）没有可选模型，避免写入无法解析的后端标识。
+      throw new SettingsError('BAD_REQUEST', '该能力不支持所选模型。');
     }
     const settings = validSettings(capability, input.settings);
     if (!input.providerConnectionId) {
@@ -206,14 +205,22 @@ export class SettingsService {
       throw new SettingsError('BAD_REQUEST', '供应商连接类型与能力不兼容。');
     }
     if (!requirement.fixedModel) {
+      const current = (await this.repository.listBindings()).find(
+        (binding) => binding.capability === capability,
+      );
       const credential = await this.resolveCredential(provider);
+      const catalogProvider = this.catalogProvider(provider, credential);
       const selectable = await this.modelCatalog.isSelectableModel(
         capability,
-        this.catalogProvider(provider, credential),
+        catalogProvider,
         input.model,
+        current?.model ?? null,
       );
       if (selectable === false) {
-        throw new SettingsError('BAD_REQUEST', '所选模型不适用于该能力。');
+        throw new SettingsError(
+          'BAD_REQUEST',
+          '该模型尚未在本仓库完成适配，请选择列表中标为已验证的模型。',
+        );
       }
       // 目录暂时不可用时只接受现状：不静默写入无法校验的模型。
       if (selectable === undefined && input.model !== AI_CAPABILITY_DEFAULTS[capability].model) {
@@ -221,6 +228,23 @@ export class SettingsService {
           'MODEL_UNAVAILABLE',
           '暂时无法从供应商读取模型列表，无法确认所选模型是否可用，请稍后重试。',
         );
+      }
+      if (capability === 'knowledge_embedding') {
+        // 向量维度写死在 pgvector 列类型中，选错模型会让入库与检索直接失败。
+        const models = await this.modelCatalog.summariesFor(capability, catalogProvider);
+        const dimensions = models?.find(
+          (candidate) => candidate.id === input.model,
+        )?.outputDimensions;
+        if (
+          dimensions !== null &&
+          dimensions !== undefined &&
+          dimensions !== EMBEDDING_DIMENSIONS
+        ) {
+          throw new SettingsError(
+            'BAD_REQUEST',
+            `该模型输出 ${dimensions} 维向量，与当前向量索引的 ${EMBEDDING_DIMENSIONS} 维不一致。`,
+          );
+        }
       }
     }
     if (provider.credential.source === 'local_file') {

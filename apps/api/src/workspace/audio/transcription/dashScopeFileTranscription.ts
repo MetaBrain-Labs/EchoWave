@@ -16,6 +16,7 @@ import { z } from 'zod';
 
 import type { TranscriptDraft } from './repository.ts';
 import type { AsrEnhancementSnapshot, SupportedLanguage } from '@echowave/contracts';
+import { QWEN_AUDIO_FILETRANS_MODEL } from '@echowave/contracts';
 import {
   noOpSttRawResponseReporter,
   type SttRawResponseKind,
@@ -215,7 +216,7 @@ export function normalizeSpeakerTurnSegments(
   return segments;
 }
 
-/** 提交、单次查询并下载 Qwen Audio 3.0 文件转写任务结果。 */
+/** 提交、单次查询并下载整文件转写任务结果。 */
 export class DashScopeFileTranscription {
   constructor(
     private readonly apiKey: string,
@@ -224,6 +225,8 @@ export class DashScopeFileTranscription {
     private readonly sleep: Sleep = (durationMs) =>
       new Promise((resolve) => setTimeout(resolve, durationMs)),
     private readonly rawResponseReporter: SttRawResponseReporter = noOpSttRawResponseReporter,
+    /** 本次任务实际使用的转写模型；缺省时回落到仓库默认模型。 */
+    private readonly model: string = QWEN_AUDIO_FILETRANS_MODEL,
   ) {}
 
   /** 创建仅包含一个整文件 URL 的异步说话人分离任务。 */
@@ -247,7 +250,7 @@ export class DashScopeFileTranscription {
         ...(fileUrl.startsWith('oss://') ? { 'X-DashScope-OssResourceResolve': 'enable' } : {}),
       },
       body: JSON.stringify({
-        model: 'qwen-audio-3.0-asr-flash-filetrans',
+        model: this.model,
         input: {
           file_urls: [fileUrl],
           ...(asrEnhancement.contextText
@@ -476,7 +479,7 @@ export class DashScopeFileTranscription {
     if (!context) return;
     await this.rawResponseReporter.record({
       revisionId: context.revisionId,
-      model: 'qwen-audio-3.0-asr-flash-filetrans',
+      model: this.model,
       provider: 'dashscope',
       responseKind,
       preprocessing: context.preprocessing ?? 'whole_file',

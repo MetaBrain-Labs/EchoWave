@@ -10,7 +10,10 @@
  * Notes:
  * - 不读取配置文件，供应商跨字段校验由 providers 模块负责。
  */
-import { AudioTranscriptionModelSchema, type AudioTranscriptionModel } from '@echowave/contracts';
+import {
+  DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
+  type AudioTranscriptionModel,
+} from '@echowave/contracts';
 import { z } from 'zod';
 import path from 'node:path';
 
@@ -29,7 +32,8 @@ export const WorkspaceEnvironmentSchema = z.object({
   UPLOAD_TEMP_DIR: z.string().min(1),
   KNOWLEDGE_STORAGE_DIR: z.string().min(1),
   AUDIO_STORAGE_DIR: z.string().min(1),
-  AUDIO_TRANSCRIPTION_MODEL: AudioTranscriptionModelSchema.optional(),
+  // 启动级 .env 只是旧配置兼容值；运行时模型来自能力绑定，允许改选已验证模型。
+  AUDIO_TRANSCRIPTION_MODEL: z.literal(DEFAULT_AUDIO_TRANSCRIPTION_MODEL).optional(),
   AUDIO_EMOTION_MODEL: z.literal('qwen3.5-omni-flash').optional(),
   AUDIO_TRANSCRIPTION_TEMP_DIR: z.string().min(1),
   AUDIO_TRANSCRIPTION_MAX_IN_FLIGHT: z.coerce.number().int().min(1).max(100),
@@ -81,8 +85,7 @@ export function createRagConfig(
     uploadTempDir: resolvePath(values.UPLOAD_TEMP_DIR),
     knowledgeStorageDir: resolvePath(values.KNOWLEDGE_STORAGE_DIR),
     audioStorageDir: resolvePath(values.AUDIO_STORAGE_DIR),
-    audioTranscriptionModel:
-      values.AUDIO_TRANSCRIPTION_MODEL ?? 'qwen-audio-3.0-asr-flash-filetrans',
+    audioTranscriptionModel: values.AUDIO_TRANSCRIPTION_MODEL ?? DEFAULT_AUDIO_TRANSCRIPTION_MODEL,
     audioEmotionModel: values.AUDIO_EMOTION_MODEL ?? 'qwen3.5-omni-flash',
     audioTranscriptionTempDir: resolvePath(values.AUDIO_TRANSCRIPTION_TEMP_DIR),
     audioTranscriptionMaxInFlight: values.AUDIO_TRANSCRIPTION_MAX_IN_FLIGHT,
