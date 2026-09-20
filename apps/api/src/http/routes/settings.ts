@@ -94,6 +94,12 @@ export function registerSettingsRoutes(
     );
   });
 
+  app.get('/api/settings/model-catalog/:capability', async (context) => {
+    service.authorize(context.req.header('authorization'));
+    const capability = AiCapabilitySchema.parse(context.req.param('capability'));
+    return context.json(await service.modelCatalogFor(capability, context.req.query()));
+  });
+
   app.put('/api/settings/capabilities/:capability', async (context) => {
     service.authorize(context.req.header('authorization'));
     const capability = AiCapabilitySchema.parse(context.req.param('capability'));

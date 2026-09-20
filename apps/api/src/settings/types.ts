@@ -45,6 +45,7 @@ export class SettingsError extends Error {
       | 'CONFIGURATION_REQUIRED'
       | 'CONFLICT'
       | 'INSECURE_CREDENTIAL_TRANSPORT'
+      | 'MODEL_UNAVAILABLE'
       | 'NOT_FOUND'
       | 'UNAUTHORIZED',
     message: string,

@@ -107,6 +107,8 @@ describe('Top-level tab screens', () => {
           backgroundColor: colors.card,
           borderColor: colors.divider,
           borderRadius: radii.default,
+          // 固定最小高度 + 单行说明，保证同一列表内所有入口卡高度一致。
+          minHeight: 88,
           padding: spacing.md,
         }),
       );

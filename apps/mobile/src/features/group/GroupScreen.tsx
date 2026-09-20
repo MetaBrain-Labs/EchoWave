@@ -738,6 +738,7 @@ export function GroupScreen({
           onArchive={handleArchiveGroup}
           onClose={() => setDrawerVisible(false)}
           onCreate={handleCreateGroup}
+          onOpenGuide={() => startGuide('basic', '/')}
           onOpenSettings={(target) => onOpenSettings?.(target.id)}
           onRename={handleRenameGroup}
           onSelect={(target) => {
@@ -833,12 +834,6 @@ export function GroupScreen({
           ) : null}
         </View>
         <View style={styles.topActions}>
-          <IconButton
-            icon="help-circle-outline"
-            label={t('guideHelp.openTour')}
-            onPress={() => startGuide('basic', '/')}
-            testID="group-guide"
-          />
           <IconButton
             disabled={!group}
             icon="search"

@@ -14,12 +14,12 @@ import {
 import type { LiveUpdateBroker } from '../../../infrastructure/liveUpdateBroker.ts';
 import type { WorkerWakeupSource } from '../../../infrastructure/workerWakeup.ts';
 import { PostAnalysisProviderError } from '../post-analysis/qwenEmotionAnalyzer.ts';
-import type { DeepSeekSpeakerReviewer } from './deepSeekSpeakerReviewer.ts';
+import type { SpeakerReviewer } from './speakerReviewer.ts';
 import { type ClaimedSpeakerReviewJob, SpeakerReviewRepository } from './repository.ts';
 
 const SAFETY_POLL_INTERVAL_MS = 15_000;
 
-type SpeakerReviewRuntime = { reviewer: DeepSeekSpeakerReviewer };
+type SpeakerReviewRuntime = { reviewer: SpeakerReviewer };
 
 type WorkerOptions = {
   repository: SpeakerReviewRepository;

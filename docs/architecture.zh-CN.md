@@ -112,7 +112,7 @@ apps/api/src/
 - 音频转写通过部分唯一索引阻止同一音频并发任务，并用 `FOR UPDATE SKIP LOCKED` 领取。DashScope 的任务 ID、临时 OSS 对象键和提交时间随修订持久化；提交后进入 `awaiting_result` 并释放 worker。Polling 模式只领取已到数据库截止时间的任务并单次查询状态，进程内定时器按全局最近的查询或六小时超时截止点精确唤醒；EventBridge 模式不查询状态，只等待验签回调。进程重启时只重新排队未完成提交的修订，已有 task ID 的修订从持久化截止点恢复对应发现机制，已持久化终态的修订直接重新领取完成阶段。
 - Qwen Filetrans 适配器要求每个非空句子都有 `speaker_id` 与有序有效毫秒时间戳；Speaker 变化、同 Speaker 间隔达到 1500ms 或合并后超过 240 字软上限时创建新段。缺失 Speaker、时间戳异常或乱序直接以 `INVALID_MODEL_OUTPUT` 失败，不进行模型或分段回退。原始 ASR 只产生正文、Speaker 与时间戳，角色识别和声学情绪由后处理结果覆盖兼容字段；轻量本地在同一 ASR Run 内顺序执行声学情绪并在成功后清理源文件。
 - 情绪 worker 按说话轮次生成最多 5 分钟或 50 个目标片段的窗口，并加入前后各 1 秒上下文。窗口经 FFmpeg 转为音频后暂存到独立 OSS 前缀并交给 Qwen；网络最多重试三次，结构纠正一次，仍无效时递归二分，单片段失败则整项任务失败。
-- 角色 worker 把完整有序转写、每个 `speakerKey`、核心角色和本次数据源角色快照发送给 DeepSeek。输出必须完整覆盖已观察说话人，角色必须在白名单内，证据片段必须属于对应说话人。
+- 角色 worker 把完整有序转写、每个 `speakerKey`、核心角色和本次数据源角色快照发送给绑定的文本模型。输出必须完整覆盖已观察说话人，角色必须在白名单内，证据片段必须属于对应说话人。
 - 转写 worker 将阶段、当前 Chunk/动态总数、音频时间范围、网络尝试和更新时间持久化到当前修订。Polling 和 EventBridge 只负责发现并持久化首个供应商终态，结果下载、结构校验、时间轴恢复、发布与清理由同一完成路径处理；移动端通过单实例进程内事件总线唤醒的 SSE 展示业务进度，REST 仅负责首帧和连接失败后的临时降级。旧修订的结构尝试字段仅作兼容读取。
 - 新 revision 仅在全部向量写入成功后才在单事务中成为 active revision；失败不会使旧内容离线。
 - 原文件使用随机临时路径，发布成功或不可重试失败后删除；超过 24 小时的孤立文件由 worker 清理。
@@ -128,10 +128,12 @@ apps/api/src/
 
 - DashScope 原生 TextEmbedding 接口使用 `qwen3.7-text-embedding`，固定输出 1024 维密集向量，文档批次最多 20；文档发送 `text_type=document`，查询发送 `text_type=query` 并添加英文检索指令。
 - `qwen-audio-3.0-asr-flash-filetrans` 固定使用 `speaker_turn`，预处理可明确选择 `silero_vad` 或 `whole_file`。Silero 清单与临时 OSS 对象键原子保存，重启恢复终态完成阶段后仍用压缩时长校验供应商结果并把时间戳映射回原录音；跨折叠边界的模糊结果拒绝发布。OSS 或 FFmpeg 缺失时模型保持可见但禁用；EventBridge 配置只在 `eventbridge` 模式要求，Polling 不依赖公网回调。VAD 缺失时整文件模式仍可显式选择，绝不静默降级。
-- `qwen3.5-omni-flash` 仅负责逐片段声学情绪，通过北京地域 OpenAI-compatible Chat Completions 接收签名 OSS URL；Prompt 与 Schema 描述为英文，用户正文保持原文。结果必须逐一覆盖目标片段，并保存固定枚举、置信度及声音线索。
-- `deepseek-v4-flash` 以非思考模式和 JSON Output 识别录音级业务角色。核心角色为“销售、客户、其他、未知”，数据源可在此基础上增加最多 16 个自定义角色。
+- `qwen3.5-omni-flash` 是知识问答、业务角色、说话人复核和业务分析的默认文本模型，同时仅负责逐片段声学情绪；它通过北京地域 OpenAI-compatible Chat Completions 接收签名 OSS URL。Prompt 与 Schema 描述为英文，用户正文保持原文。情绪结果必须逐一覆盖目标片段，并保存固定枚举、置信度及声音线索。
+- 文本类能力绑定“供应商连接 + 模型”，模型来自该供应商的模型目录：百炼候选来自 `GET /api/v1/models` 并按能力责任过滤（文本生成，情绪额外要求音频输入），DeepSeek 保留静态 `deepseek-v4-flash` 作为成本备选。保存绑定时服务端会再校验一次目录，职责不符的模型无法发布。
+- Thinking 参数按供应商区分：DeepSeek 使用 `thinking: { type }`，百炼兼容模式使用 `enable_thinking`。共享聊天模型工厂只发送绑定供应商认识的字段。
+- 角色识别使用非思考 JSON Output，核心角色为“销售、客户、其他、未知”，数据源可在此基础上增加最多 16 个自定义角色。
 - 检索使用 cosine HNSW、`ef_search=100` 和 pgvector iterative scan，初召回 30，去重和文档配额后最多向 Agent 提供 8 块/12000 字符。
-- DeepAgent 使用 DeepSeek `deepseek-v4-flash`、结构化 `{ answer, grounded, citedChunkIds }` 输出和 PostgreSQL checkpointer。
+- DeepAgent 使用绑定能力选择的文本模型、结构化 `{ answer, grounded, citedChunkIds }` 输出和 PostgreSQL checkpointer。
 - 文件系统权限全部拒绝，不配置 skills、长期记忆或子代理；业务工具只有租户范围内的 `search_knowledge`，单轮最多实际执行四次。
 - 销售复盘的外层恢复边界是 LangGraph；DeepAgent 只作为其中一个原子分析节点，保留检索工具白名单、调用次数限制、结构修复和证据安全校验，不配置内部 checkpointer。
 - 模型应尽量选择最有代表性的引用，8 条只是提示中的偏好，不是服务端裁剪阈值。凡是通过本轮检索白名单的引用一律保留，不得为了让清单变短而删除合法引用——正文里的 `[9]` 就代表第 9 条真实来源。只有引用了白名单之外的 ID 时才执行纠正，且纠正只允许替换越权 ID，不得缩短答案或改动标记与引用的对应关系。模型标记按 1 基序号对应引用顺序：服务端在返回前按该顺序重编为连续编号，仅在标记数超过已保留引用数时移除那些无法追溯的标记，保证正文中的每个 `[n]` 都能在完整来源清单里找到对应条目。完整来源清单在移动端默认展示前 4 条，其余由用户按需展开。

@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { DeepSeekRoleRecognizer } from '../../../dist/workspace/audio/post-analysis/deepSeekRoleRecognizer.js';
+import { RoleRecognizer } from '../../../dist/workspace/audio/post-analysis/roleRecognizer.js';
 import { QwenEmotionAnalyzer } from '../../../dist/workspace/audio/post-analysis/qwenEmotionAnalyzer.js';
 
 const firstId = '11111111-1111-4111-8111-111111111111';
@@ -139,7 +139,8 @@ describe('post-analysis providers', () => {
 
   it('recognizes only allowed roles and validates evidence ownership', async () => {
     const modelCalls = [];
-    const recognizer = new DeepSeekRoleRecognizer({
+    const recognizer = new RoleRecognizer({
+      providerType: 'deepseek',
       apiKey: 'test',
       baseUrl: 'https://api.deepseek.test',
       model: 'deepseek-v4-flash',
@@ -179,7 +180,8 @@ describe('post-analysis providers', () => {
   });
 
   it('rejects roles outside the data-source whitelist', async () => {
-    const recognizer = new DeepSeekRoleRecognizer({
+    const recognizer = new RoleRecognizer({
+      providerType: 'deepseek',
       apiKey: 'test',
       baseUrl: 'https://api.deepseek.test',
       model: 'deepseek-v4-flash',
@@ -209,7 +211,8 @@ describe('post-analysis providers', () => {
 
   it('keeps stable role kinds while requesting English labels and prose', async () => {
     let requestBody;
-    const recognizer = new DeepSeekRoleRecognizer({
+    const recognizer = new RoleRecognizer({
+      providerType: 'deepseek',
       apiKey: 'test',
       baseUrl: 'https://api.deepseek.test',
       model: 'deepseek-v4-flash',
@@ -248,5 +251,45 @@ describe('post-analysis providers', () => {
     );
     assert.match(requestBody.messages[0].content, /English call transcript/);
     assert.match(requestBody.messages[0].content, /"Sales"/);
+  });
+
+  it('sends the Qwen-compatible thinking flag on DashScope text bindings', async () => {
+    let requestBody;
+    const recognizer = new RoleRecognizer({
+      providerType: 'dashscope',
+      apiKey: 'test',
+      baseUrl: 'https://dashscope.test/compatible-mode/v1',
+      model: 'qwen3.5-omni-flash',
+      sleep: async () => {},
+      fetch: async (_url, init) => {
+        requestBody = JSON.parse(init.body);
+        return response(
+          JSON.stringify({
+            speakers: [
+              {
+                speakerKey: 'Speaker 0',
+                role: '销售',
+                confidence: 0.9,
+                evidenceSegmentIds: [firstId],
+              },
+              {
+                speakerKey: 'Speaker 1',
+                role: '客户',
+                confidence: 0.8,
+                evidenceSegmentIds: [secondId],
+              },
+            ],
+          }),
+        );
+      },
+    });
+
+    await recognizer.recognize(segments, []);
+
+    // 百炼兼容模式只接受 enable_thinking；DeepSeek 的 thinking 字段会被拒绝。
+    assert.equal(requestBody.enable_thinking, false);
+    assert.equal('thinking' in requestBody, false);
+    assert.equal(requestBody.model, 'qwen3.5-omni-flash');
+    assert.deepEqual(requestBody.response_format, { type: 'json_object' });
   });
 });

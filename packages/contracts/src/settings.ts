@@ -13,6 +13,7 @@
 import { z } from 'zod';
 
 import { EntityIdSchema } from './common.ts';
+import { CAPABILITY_MODEL_REQUIREMENTS } from './modelCatalog.ts';
 
 export const ProviderTypeSchema = z.enum(['dashscope', 'deepseek', 'aliyun_oss']);
 export const CredentialSourceSchema = z.enum(['database', 'local_file']);
@@ -44,7 +45,12 @@ export type AiCapabilityDefault = {
   settings: Record<string, unknown>;
 };
 
-/** 所有受支持 AI 能力的权威默认供应商、模型和运行设置。 */
+/**
+ * 所有受支持 AI 能力的权威默认供应商、模型和运行设置。
+ *
+ * 默认全部绑定百炼（通义千问），使部署者只配置一个 API Key 即可运行；DeepSeek 连接用于
+ * 成本敏感场景下改选相同职责的模型，其缓存命中价格更低。
+ */
 export const AI_CAPABILITY_DEFAULTS = {
   knowledge_embedding: {
     providerType: 'dashscope',
@@ -52,8 +58,8 @@ export const AI_CAPABILITY_DEFAULTS = {
     settings: {},
   },
   knowledge_chat: {
-    providerType: 'deepseek',
-    model: 'deepseek-v4-flash',
+    providerType: 'dashscope',
+    model: 'qwen3.5-omni-flash',
     settings: { enableThinking: false },
   },
   audio_transcription: {
@@ -67,18 +73,18 @@ export const AI_CAPABILITY_DEFAULTS = {
     settings: {},
   },
   audio_role: {
-    providerType: 'deepseek',
-    model: 'deepseek-v4-flash',
+    providerType: 'dashscope',
+    model: 'qwen3.5-omni-flash',
     settings: {},
   },
   audio_speaker_review: {
-    providerType: 'deepseek',
-    model: 'deepseek-v4-flash',
+    providerType: 'dashscope',
+    model: 'qwen3.5-omni-flash',
     settings: {},
   },
   business_analysis: {
-    providerType: 'deepseek',
-    model: 'deepseek-v4-flash',
+    providerType: 'dashscope',
+    model: 'qwen3.5-omni-flash',
     settings: { enableThinking: false },
   },
   audio_staging: {
@@ -92,6 +98,33 @@ export const AI_CAPABILITY_DEFAULTS = {
     settings: {},
   },
 } as const satisfies Readonly<Record<AiCapability, AiCapabilityDefault>>;
+
+/** 支持 Thinking 开关的能力，决定能力绑定的 settings 形状。 */
+export const THINKING_CAPABILITIES = [
+  'knowledge_chat',
+  'business_analysis',
+] as const satisfies readonly AiCapability[];
+
+export type ThinkingCapability = (typeof THINKING_CAPABILITIES)[number];
+
+/** 判断能力绑定是否接受 enableThinking 运行设置。 */
+export function supportsThinkingSetting(
+  capability: AiCapability,
+): capability is ThinkingCapability {
+  return (THINKING_CAPABILITIES as readonly AiCapability[]).includes(capability);
+}
+
+/**
+ * 每个能力可绑定的供应商类型，顺序即默认优先级。
+ *
+ * 与模型责任规则同源，避免“默认供应商”与“可选供应商”在两处漂移。
+ */
+export const AI_CAPABILITY_PROVIDER_PREFERENCES = Object.fromEntries(
+  Object.entries(CAPABILITY_MODEL_REQUIREMENTS).map(([capability, requirement]) => [
+    capability,
+    requirement.providers,
+  ]),
+) as Readonly<Record<AiCapability, readonly ProviderType[]>>;
 
 const HttpsUrlSchema = z
   .string()
@@ -297,3 +330,5 @@ export type CapabilityBinding = z.infer<typeof CapabilityBindingSchema>;
 export type SettingsOverview = z.infer<typeof SettingsOverviewSchema>;
 export type CredentialBundleInput = z.infer<typeof CredentialBundleInputSchema>;
 export type LocalCredentialProviderStatus = z.infer<typeof LocalCredentialProviderStatusSchema>;
+
+export { CAPABILITY_MODEL_REQUIREMENTS, type CapabilityModelRequirement } from './modelCatalog.ts';

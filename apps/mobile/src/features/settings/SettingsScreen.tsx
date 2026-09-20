@@ -13,9 +13,14 @@
  */
 import {
   AI_CAPABILITY_DEFAULTS,
+  AI_CAPABILITY_PROVIDER_PREFERENCES,
+  CAPABILITY_MODEL_REQUIREMENTS,
+  supportsThinkingSetting,
   type AiCapability,
+  type ModelCatalogResponse,
   type ProviderConnection,
   type ProviderConnectionWrite,
+  type ProviderModelSummary,
   type ProviderType,
   type SettingsOverview,
   type TransportSecurityMode,
@@ -24,6 +29,10 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useMemo, useState, type ComponentProps, type ReactNode } from 'react';
 import {
   ActivityIndicator,
+  FlatList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -78,9 +87,9 @@ type TranslationFunction = ReturnType<typeof useAppLanguage>['t'];
 
 function providerLabel(type: ProviderType, t: TranslationFunction): string {
   return type === 'dashscope'
-    ? 'DashScope'
+    ? t('aiSettings.providerQwen')
     : type === 'deepseek'
-      ? 'DeepSeek'
+      ? t('aiSettings.providerDeepSeek')
       : t('aiSettings.alibabaOss');
 }
 
@@ -381,7 +390,14 @@ export function SettingsScreen({
   const [defaultApplySummary, setDefaultApplySummary] = useState<DefaultApplySummary | null>(null);
   const [bindingCapability, setBindingCapability] = useState<AiCapability | null>(null);
   const [bindingProviderId, setBindingProviderId] = useState('');
+  const [bindingModel, setBindingModel] = useState('');
   const [bindingThinking, setBindingThinking] = useState(false);
+  const [modelSearch, setModelSearch] = useState('');
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [catalog, setCatalog] = useState<ModelCatalogResponse | null>(null);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogRevision, setCatalogRevision] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionsVisible, setActionsVisible] = useState(false);
@@ -465,8 +481,51 @@ export function SettingsScreen({
     setProviderEditorExpanded(false);
     setBindingCapability(null);
     setDefaultApplySummary(null);
+    setCatalog(null);
+    setCatalogError(null);
+    setModelPickerOpen(false);
     setError(null);
   };
+
+  /** 懒加载：只在打开模型弹窗或显式重试时才请求供应商模型目录。 */
+  const retryCatalog = () => {
+    setCatalogLoading(true);
+    setCatalogRevision((current) => current + 1);
+  };
+
+  const openModelPicker = () => {
+    setModelPickerOpen(true);
+    if (!catalog) {
+      setCatalogLoading(true);
+      setCatalogRevision((current) => current + 1);
+    }
+  };
+
+  // 目录读取是外部系统的反应性同步：effect 只订阅结果，加载态由打开弹窗或重试时置位。
+  useEffect(() => {
+    if (!token || !bindingCapability || !catalogRevision) return;
+    let active = true;
+    void settingsApi
+      .modelCatalog(token, bindingCapability)
+      .then((value) => {
+        if (!active) return;
+        setCatalog(value);
+        setCatalogError(null);
+      })
+      .catch((reason: unknown) => {
+        if (!active) return;
+        setCatalog(null);
+        setCatalogError(errorMessage(reason, t));
+      })
+      .finally(() => {
+        if (active) setCatalogLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+    // 只在打开弹窗或显式重试时拉取；同一能力与供应商组合复用同一份目录。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, bindingCapability, catalogRevision]);
 
   const saveProvider = async () => {
     if (!token) return;
@@ -489,18 +548,28 @@ export function SettingsScreen({
   const beginBinding = (capability: AiCapability) => {
     if (bindingCapability === capability) {
       setBindingCapability(null);
+      setModelPickerOpen(false);
       return;
     }
     const current = overview?.bindings.find((item) => item.capability === capability);
     const compatible =
-      overview?.providers.filter(
-        ({ type }) => type === AI_CAPABILITY_DEFAULTS[capability].providerType,
+      overview?.providers.filter(({ type }) =>
+        (AI_CAPABILITY_PROVIDER_PREFERENCES[capability] as readonly ProviderType[]).includes(type),
       ) ?? [];
-    setBindingCapability(capability);
-    setBindingProviderId(
-      current?.providerConnectionId ?? (compatible.length === 1 ? compatible[0]!.id : ''),
+    const preferred = compatible.find(
+      ({ type }) => type === AI_CAPABILITY_PROVIDER_PREFERENCES[capability][0],
     );
+    setBindingCapability(capability);
+    setBindingProviderId(current?.providerConnectionId ?? (preferred ?? compatible[0])?.id ?? '');
     setBindingThinking(current?.settings.enableThinking === true);
+    setBindingModel(current?.model ?? AI_CAPABILITY_DEFAULTS[capability].model);
+    setModelSearch('');
+    // 目录延后到用户真正打开模型弹窗时再读取，避免展开面板即产生供应商请求。
+    setModelPickerOpen(false);
+    setCatalog(null);
+    setCatalogError(null);
+    setCatalogLoading(false);
+    setCatalogRevision(0);
   };
 
   const saveBinding = async () => {
@@ -512,11 +581,10 @@ export function SettingsScreen({
       await settingsApi.saveCapability(token, bindingCapability, {
         providerConnectionId: bindingProviderId,
         secondaryProviderConnectionId: null,
-        model: AI_CAPABILITY_DEFAULTS[bindingCapability].model,
-        settings:
-          bindingCapability === 'knowledge_chat' || bindingCapability === 'business_analysis'
-            ? { enableThinking: bindingThinking }
-            : {},
+        model: bindingModel || AI_CAPABILITY_DEFAULTS[bindingCapability].model,
+        settings: supportsThinkingSetting(bindingCapability)
+          ? { enableThinking: bindingThinking }
+          : {},
         ...(current ? { expectedRevision: current.revision } : {}),
       });
       setBindingCapability(null);
@@ -530,10 +598,40 @@ export function SettingsScreen({
 
   const compatibleProviders = useMemo(() => {
     const required = bindingCapability
-      ? AI_CAPABILITY_DEFAULTS[bindingCapability].providerType
+      ? (AI_CAPABILITY_PROVIDER_PREFERENCES[bindingCapability] as readonly ProviderType[])
       : undefined;
-    return overview?.providers.filter(({ type }) => type === required) ?? [];
+    return (
+      overview?.providers.filter(({ type }) => (!required ? false : required.includes(type))) ?? []
+    );
   }, [bindingCapability, overview]);
+
+  /** 当前供应商在该能力下的目录；未加载时为 null。 */
+  const activeCatalog = useMemo(
+    () =>
+      catalog?.providers.find((provider) => provider.connectionId === bindingProviderId) ?? null,
+    [bindingProviderId, catalog],
+  );
+
+  const pickerModels = useMemo(() => {
+    if (!activeCatalog || activeCatalog.catalogAvailable === false) return [];
+    const keyword = modelSearch.trim().toLowerCase();
+    if (!keyword) return activeCatalog.models;
+    return activeCatalog.models.filter(
+      (model) =>
+        model.id.toLowerCase().includes(keyword) ||
+        model.displayName.toLowerCase().includes(keyword),
+    );
+  }, [activeCatalog, modelSearch]);
+
+  const selectedModel = activeCatalog?.models.find((model) => model.id === bindingModel) ?? null;
+
+  const pickerStatus: 'loading' | 'error' | 'unavailable' | 'ready' = catalogLoading
+    ? 'loading'
+    : catalogError
+      ? 'error'
+      : activeCatalog?.catalogAvailable === false
+        ? 'unavailable'
+        : 'ready';
 
   const selectedDefaultProvider = (type: ProviderType): string | undefined => {
     const compatible = overview?.providers.filter((provider) => provider.type === type) ?? [];
@@ -546,7 +644,11 @@ export function SettingsScreen({
     ({ id }) => !overview?.bindings.some((binding) => binding.capability === id),
   );
   const defaultTargets = missingCapabilities.flatMap(({ id }) => {
-    const providerConnectionId = selectedDefaultProvider(AI_CAPABILITY_DEFAULTS[id].providerType);
+    const preferred = AI_CAPABILITY_PROVIDER_PREFERENCES[id];
+    const providerConnectionId =
+      preferred
+        .map((type) => selectedDefaultProvider(type))
+        .find((candidate) => candidate !== undefined) ?? undefined;
     return providerConnectionId ? [{ capability: id, providerConnectionId }] : [];
   });
 
@@ -798,14 +900,29 @@ export function SettingsScreen({
                               label: item.name,
                             }))}
                             selected={bindingProviderId}
-                            onSelect={setBindingProviderId}
+                            onSelect={(providerConnectionId) => {
+                              setBindingProviderId(providerConnectionId);
+                              // 换连接后原模型可能不在新供应商目录中，回落到该连接的默认模型。
+                              const nextDefault = catalog?.providers.find(
+                                (provider) => provider.connectionId === providerConnectionId,
+                              )?.defaultModel;
+                              if (nextDefault) setBindingModel(nextDefault);
+                            }}
                           />
-                          <StaticField
-                            label={t('aiSettings.model')}
-                            value={AI_CAPABILITY_DEFAULTS[capability.id].model}
+                          <ModelField
+                            capability={capability.id}
+                            catalogAvailable={
+                              catalog?.providers.some(
+                                (provider) =>
+                                  provider.connectionId === bindingProviderId &&
+                                  provider.catalogAvailable,
+                              ) ?? true
+                            }
+                            modelId={bindingModel}
+                            modelName={selectedModel?.displayName ?? null}
+                            onOpen={openModelPicker}
                           />
-                          {capability.id === 'knowledge_chat' ||
-                          capability.id === 'business_analysis' ? (
+                          {supportsThinkingSetting(capability.id) ? (
                             <ChoiceRow
                               options={[
                                 { id: 'off', label: t('aiSettings.thinkingOff') },
@@ -861,6 +978,24 @@ export function SettingsScreen({
         </View>
         {busy ? <ActivityIndicator color={colors.ink} style={styles.busy} /> : null}
       </ScrollView>
+      {bindingCapability ? (
+        <ModelPickerSheet
+          models={pickerModels}
+          onClose={() => setModelPickerOpen(false)}
+          onRetry={retryCatalog}
+          onSearch={setModelSearch}
+          onSelect={(model) => {
+            setBindingModel(model.id);
+            setModelPickerOpen(false);
+          }}
+          search={modelSearch}
+          selected={bindingModel}
+          status={pickerStatus}
+          title={capabilityLabel(bindingCapability, t)}
+          unavailableReason={catalogError ?? activeCatalog?.unavailableReason ?? null}
+          visible={modelPickerOpen}
+        />
+      ) : null}
       <ActionSheet
         items={[
           {
@@ -1129,14 +1264,223 @@ function Field({
   );
 }
 
-/** 以输入框视觉展示服务端固定模型，避免暗示该值可以自由编辑。 */
-function StaticField({ label, value }: { label: string; value: string }) {
+/** 把价格条目压缩为一行可比较的文本；缺少价格时不展示虚构数值。 */
+function priceSummary(model: ProviderModelSummary, t: TranslationFunction): string | null {
+  const pricing = model.pricing;
+  if (!pricing || pricing.entries.length === 0) return null;
+  return pricing.entries
+    .slice(0, 4)
+    .map((entry) => {
+      const unit = pricing.currency === 'CNY' ? '元' : pricing.currency;
+      const amount = entry.amount === null ? '—' : `${entry.amount}${unit}`;
+      const label =
+        entry.type === 'input_token'
+          ? t('aiSettings.modelPriceInput')
+          : entry.type === 'output_token'
+            ? t('aiSettings.modelPriceOutput')
+            : entry.type.startsWith('cache')
+              ? t('aiSettings.modelPriceCache')
+              : (entry.name ?? entry.type);
+      return `${label} ${amount}${entry.unit ? `/${entry.unit}` : ''}`;
+    })
+    .join(' · ');
+}
+/**
+ * 模型选择弹窗。
+ *
+ * 候选来自服务端按能力责任过滤后的供应商目录；弹窗打开时才读取目录并建立列表，
+ * 关闭后立即卸载，避免在配置页常驻渲染整份模型清单。
+ */
+function ModelPickerSheet({
+  models,
+  onClose,
+  onRetry,
+  onSelect,
+  search,
+  selected,
+  status,
+  title,
+  unavailableReason,
+  onSearch,
+  visible,
+}: {
+  models: ProviderModelSummary[];
+  onClose: () => void;
+  onRetry: () => void;
+  onSelect: (model: ProviderModelSummary) => void;
+  search: string;
+  selected: string;
+  status: 'loading' | 'error' | 'unavailable' | 'ready';
+  title: string;
+  unavailableReason?: string | null;
+  onSearch: (value: string) => void;
+  visible: boolean;
+}) {
+  const { t } = useAppLanguage();
+  return (
+    <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'web' ? undefined : 'padding'}
+        style={styles.pickerOverlay}
+      >
+        <Pressable
+          accessibilityLabel={t('common.close')}
+          accessibilityRole="button"
+          onPress={onClose}
+          style={StyleSheet.absoluteFill}
+        />
+        <View accessibilityViewIsModal style={styles.pickerSheet}>
+          <View style={styles.pickerHeader}>
+            <Text accessibilityRole="header" numberOfLines={1} style={styles.pickerTitle}>
+              {title}
+            </Text>
+            <Pressable
+              accessibilityLabel={t('common.close')}
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={onClose}
+              style={({ pressed }) => [styles.pickerClose, pressed && styles.pressed]}
+            >
+              <Ionicons color={colors.ink} name="close" size={26} />
+            </Pressable>
+          </View>
+          <View style={styles.pickerSearchRow}>
+            <View style={styles.pickerInputBox}>
+              <Ionicons color={textColors.tertiary} name="search" size={20} />
+              <TextInput
+                accessibilityLabel={t('aiSettings.searchModel')}
+                autoCapitalize="none"
+                autoCorrect={false}
+                onChangeText={onSearch}
+                placeholder={t('aiSettings.searchModel')}
+                placeholderTextColor={textColors.tertiary}
+                style={styles.pickerInput}
+                value={search}
+              />
+              {search ? (
+                <Pressable
+                  accessibilityLabel={t('common.clearSearch')}
+                  accessibilityRole="button"
+                  hitSlop={8}
+                  onPress={() => onSearch('')}
+                >
+                  <Ionicons color={textColors.secondary} name="close-circle" size={20} />
+                </Pressable>
+              ) : null}
+            </View>
+          </View>
+          {status === 'loading' ? (
+            <View style={styles.pickerState}>
+              <ActivityIndicator color={colors.ink} />
+              <Text style={styles.help}>{t('aiSettings.catalogLoading')}</Text>
+            </View>
+          ) : status === 'error' || status === 'unavailable' ? (
+            <View style={styles.pickerState}>
+              <Text accessibilityRole="alert" style={styles.errorText}>
+                {unavailableReason ?? t('aiSettings.catalogUnavailable')}
+              </Text>
+              <ActionButton label={t('aiSettings.catalogRetry')} onPress={onRetry} />
+            </View>
+          ) : models.length === 0 ? (
+            <View style={styles.pickerState}>
+              <Text style={styles.help}>{t('aiSettings.modelNoMatch')}</Text>
+            </View>
+          ) : (
+            <FlatList
+              contentContainerStyle={styles.pickerList}
+              data={models}
+              initialNumToRender={12}
+              keyboardShouldPersistTaps="handled"
+              keyExtractor={(model) => model.id}
+              maxToRenderPerBatch={12}
+              renderItem={({ item }) => {
+                const prices = priceSummary(item, t);
+                const active = selected === item.id;
+                return (
+                  <Pressable
+                    accessibilityLabel={item.id}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: active }}
+                    onPress={() => onSelect(item)}
+                    style={[styles.modelRow, active && styles.modelRowSelected]}
+                  >
+                    <View style={styles.modelRowHead}>
+                      <Text style={styles.rowTitle}>
+                        {item.displayName}
+                        {item.recommended ? ` · ${t('aiSettings.modelRecommended')}` : ''}
+                      </Text>
+                      {active ? <Ionicons color={colors.ink} name="checkmark" size={22} /> : null}
+                    </View>
+                    <Text style={styles.help}>{item.id}</Text>
+                    {prices ? <Text style={styles.help}>{prices}</Text> : null}
+                  </Pressable>
+                );
+              }}
+              windowSize={7}
+            />
+          )}
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+/**
+ * 能力绑定面板里的模型字段。
+ *
+ * 固定能力只展示权威模型；其余能力展示当前选择并用弹窗承载搜索与整份候选清单。
+ */
+function ModelField({
+  capability,
+  catalogAvailable,
+  modelId,
+  modelName,
+  onOpen,
+}: {
+  capability: AiCapability;
+  catalogAvailable: boolean;
+  modelId: string;
+  modelName: string | null;
+  onOpen: () => void;
+}) {
+  const { t } = useAppLanguage();
+  const fixed = CAPABILITY_MODEL_REQUIREMENTS[capability].fixedModel;
   return (
     <View style={styles.field}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <View style={styles.staticValue}>
-        <Text style={styles.staticValueText}>{value}</Text>
-      </View>
+      <Text style={styles.fieldLabel}>{t('aiSettings.model')}</Text>
+      {fixed ? (
+        <>
+          <View style={styles.staticValue}>
+            <Text style={styles.staticValueText}>{AI_CAPABILITY_DEFAULTS[capability].model}</Text>
+          </View>
+          <Text style={styles.help}>{t('aiSettings.modelFixedHint')}</Text>
+        </>
+      ) : (
+        <>
+          <Pressable
+            accessibilityLabel={t('aiSettings.chooseModel')}
+            accessibilityRole="button"
+            onPress={onOpen}
+            style={({ pressed }) => [styles.modelField, pressed && styles.pressed]}
+          >
+            <View style={styles.flex}>
+              <Text numberOfLines={1} style={styles.modelFieldValue}>
+                {modelId || t('aiSettings.modelNotSelected')}
+              </Text>
+              {modelName && modelName !== modelId ? (
+                <Text numberOfLines={1} style={styles.help}>
+                  {modelName}
+                </Text>
+              ) : null}
+            </View>
+            <Text style={styles.link}>{t('aiSettings.chooseModel')}</Text>
+          </Pressable>
+          {modelId ? null : <Text style={styles.errorText}>{t('aiSettings.modelRequired')}</Text>}
+          {catalogAvailable ? null : (
+            <Text style={styles.help}>{t('aiSettings.catalogUnavailable')}</Text>
+          )}
+        </>
+      )}
     </View>
   );
 }
@@ -1310,6 +1654,105 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   field: { gap: spacing.xs },
+  modelNotice: { gap: spacing.xs },
+  modelField: {
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 56,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.sm,
+  },
+  modelFieldValue: {
+    ...typography.body,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  modelRow: {
+    backgroundColor: colors.card,
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    gap: spacing.xs,
+    minHeight: 56,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.sm,
+  },
+  modelRowHead: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'space-between',
+  },
+  modelRowSelected: { borderColor: colors.ink, borderWidth: 2 },
+  pickerOverlay: {
+    backgroundColor: 'rgba(16, 24, 40, 0.28)',
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  pickerSheet: {
+    alignSelf: 'center',
+    backgroundColor: colors.card,
+    borderTopLeftRadius: spacing.lg,
+    borderTopRightRadius: spacing.lg,
+    height: '78%',
+    maxWidth: 480,
+    width: '100%',
+  },
+  pickerHeader: {
+    alignItems: 'center',
+    borderBottomColor: colors.divider,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: spacing.md,
+  },
+  pickerTitle: {
+    ...typography.heading2,
+    color: textColors.primary,
+    flex: 1,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  pickerClose: {
+    alignItems: 'center',
+    borderRadius: radii.round,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  pickerSearchRow: { padding: spacing.md },
+  pickerInputBox: {
+    alignItems: 'center',
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    height: 48,
+    paddingHorizontal: spacing.base,
+  },
+  pickerInput: {
+    ...textInputText,
+    ...typography.body,
+    color: textColors.primary,
+    flex: 1,
+    fontFamily: fontFamilies.sans,
+    height: 46,
+    includeFontPadding: false,
+  },
+  pickerList: { gap: spacing.sm, paddingBottom: spacing.xl, paddingHorizontal: spacing.md },
+  pickerState: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.lg,
+  },
+  pressed: { backgroundColor: colors.background, borderRadius: radii.default },
   fieldLabel: {
     ...typography.description,
     color: textColors.secondary,

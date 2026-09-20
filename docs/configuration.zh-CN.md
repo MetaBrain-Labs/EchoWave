@@ -8,32 +8,40 @@ EchoWave 将服务端配置分成三个边界：`apps/api/.env` 保存启动级�
 
 EchoWave 当前以阿里云百炼和通义千问能力为主，是因为百炼在同一平台覆盖文本生成、Embedding、ASR 和全模态模型，同时提供 DeepSeek 等第三方模型的 OpenAI-compatible 接口。部署者可以用一个阿里云账号开通大部分模型服务和 OSS，减少跨平台账号与账单管理；这不表示所有能力共用同一种密钥。
 
-- DashScope 连接使用百炼 API Key，负责 Qwen Embedding、文件转写和声学情绪。
-- DeepSeek 是 EchoWave 中独立的逻辑连接。它可以使用 DeepSeek 官方 API，也可以把 Base URL 改为百炼业务空间的 OpenAI-compatible endpoint，并使用百炼 API Key。
+- DashScope 连接使用百炼 API Key，默认承载全部能力：Qwen Embedding、文件转写、声学情绪以及文本生成（知识问答、角色识别、说话人复核、业务分析）。
+- DeepSeek 是可选的成本备选方案。同一个模型在 DeepSeek 官方 API 的缓存命中价格低于百炼同名模型；对成本敏感时，可在 AI 配置中把文本类能力改绑到 DeepSeek 连接。它可以使用 DeepSeek 官方 API，也可以把 Base URL 改为百炼业务空间的 OpenAI-compatible endpoint，并使用百炼 API Key。
 - 阿里云 OSS 连接使用 AccessKey ID/AccessKey Secret，不使用百炼 API Key。即使它们属于同一阿里云账号，也必须按不同 Credential 类型保存。
 
 百炼的地域、业务空间和模型可用范围可能不同。使用百炼承载 DeepSeek 时，必须使用目标地域实际提供的 endpoint 和模型，不能直接照抄其他账号的 Workspace ID。官方说明见[什么是阿里云百炼](https://help.aliyun.com/zh/model-studio/what-is-model-studio/)和[百炼 DeepSeek API](https://help.aliyun.com/zh/model-studio/deepseek-api)。
 
 当前权威默认绑定来自 `packages/contracts/src/settings.ts`：
 
-| 能力                           | Provider 类型 | 默认模型或后端                       |
-| ------------------------------ | ------------- | ------------------------------------ |
-| 知识库 Embedding               | DashScope     | `qwen3.7-text-embedding`             |
-| 知识问答                       | DeepSeek      | `deepseek-v4-flash`                  |
-| 音频转写                       | DashScope     | `qwen-audio-3.0-asr-flash-filetrans` |
-| 声学情绪                       | DashScope     | `qwen3.5-omni-flash`                 |
-| 业务角色、说话人复核、业务分析 | DeepSeek      | `deepseek-v4-flash`                  |
-| 临时音频中转、权威对象存储     | 阿里云 OSS    | `aliyun-oss`                         |
+| 能力                           | Provider 类型      | 默认模型或后端                       |
+| ------------------------------ | ------------------ | ------------------------------------ |
+| 知识库 Embedding               | DashScope（固定）  | `qwen3.7-text-embedding`             |
+| 知识问答                       | DashScope          | `qwen3.5-omni-flash`                 |
+| 音频转写                       | DashScope（固定）  | `qwen-audio-3.0-asr-flash-filetrans` |
+| 声学情绪                       | DashScope          | `qwen3.5-omni-flash`                 |
+| 业务角色、说话人复核、业务分析 | DashScope          | `qwen3.5-omni-flash`                 |
+| 临时音频中转、权威对象存储     | 阿里云 OSS（固定） | `aliyun-oss`                         |
 
-配置页允许编辑模型名是为了支持经过适配和验证的后续版本，不代表任意模型现在都与 Prompt、结构化输出、时间戳、Speaker、Thinking 或恢复协议兼容。当前只有仓库已经适配的默认模型保证可用；项目后续会逐步增加更多模型与 Provider。
+Embedding 与 ASR 的模型固定：向量维度 1024、说话人分离和时间戳契约写入了共享契约、SQL 与代码常量，改选会破坏已有向量空间和转写修订。文本类能力（知识问答、声学情绪、业务角色、说话人复核、业务分析）可在 AI 配置中搜索并改选模型，候选来自百炼官方模型列表接口 `GET /api/v1/models`，并按能力责任过滤：
+
+- 文本生成能力只展示支持文本生成（`TG`）的模型；
+- 声学情绪额外要求模型支持音频输入，因此纯文本模型和 ASR 专用模型都不会出现；
+- Embedding 只接受 `qwen3.7-text-embedding`，ASR 只接受 `qwen-audio-3.0-asr-flash-filetrans`。
+
+模型列表响应中的价格与上下文长度只用于选择参考，不参与计费计算，也不写入业务表。列表接口口径见[查询模型列表](https://help.aliyun.com/zh/model-studio/list-models)。
+
+配置页允许编辑模型名是为了支持经过适配和验证的后续版本，不代表任意模型现在都与 Prompt、结构化输出、时间戳、Speaker、Thinking 或恢复协议兼容。只有通过能力责任过滤、且由服务端在保存绑定时再次校验的模型才能生效。
 
 运行模式决定 OSS 是否必需：
 
-| 运行模式 | DashScope | DeepSeek                           | 阿里云 OSS                                      |
-| -------- | --------- | ---------------------------------- | ----------------------------------------------- |
-| 轻量本地 | 必需      | 使用知识问答、角色或业务分析时必需 | 不需要                                          |
-| 混合     | 必需      | 使用知识问答、角色或业务分析时必需 | `audio_staging` 必需                            |
-| 对象存储 | 必需      | 使用知识问答、角色或业务分析时必需 | `audio_staging` 与 `audio_primary_storage` 必需 |
+| 运行模式 | DashScope | DeepSeek（可选替换文本类能力） | 阿里云 OSS                                      |
+| -------- | --------- | ------------------------------ | ----------------------------------------------- |
+| 轻量本地 | 必需      | 仅在改绑文本类能力后必需       | 不需要                                          |
+| 混合     | 必需      | 仅在改绑文本类能力后必需       | `audio_staging` 必需                            |
+| 对象存储 | 必需      | 仅在改绑文本类能力后必需       | `audio_staging` 与 `audio_primary_storage` 必需 |
 
 模式选择、原音频位置和清理语义见[音频运行模式](./audio-runtime-modes.md)，完整 Server 安装顺序见[Server 部署指南](./server-deployment.md)。
 

@@ -266,9 +266,10 @@ describe('SalesAnalysisAgent', () => {
     const modelCalls = [];
     const agent = new SalesAnalysisAgent({
       ragConfig: {
-        deepSeekApiKey: 'test-key',
-        deepSeekBaseUrl: 'https://deepseek.example.com/v1',
-        deepSeekChatModel: 'deepseek-v4-flash',
+        chatProvider: 'deepseek',
+        chatApiKey: 'test-key',
+        chatBaseUrl: 'https://deepseek.example.com/v1',
+        chatModel: 'deepseek-v4-flash',
         enableThinking: false,
       },
       fetchImplementation: async (_url, init) => {
@@ -292,13 +293,39 @@ describe('SalesAnalysisAgent', () => {
     assert.match(modelCalls[0].output.content, /queries/);
   });
 
+  it('sends the Qwen-compatible thinking flag instead of the DeepSeek one on DashScope bindings', async () => {
+    const requests = [];
+    const agent = new SalesAnalysisAgent({
+      ragConfig: {
+        chatProvider: 'dashscope',
+        chatApiKey: 'test-key',
+        chatBaseUrl: 'https://dashscope.example.com/compatible-mode/v1',
+        chatModel: 'qwen3.5-omni-flash',
+        enableThinking: false,
+      },
+      fetchImplementation: async (_url, init) => {
+        const request = JSON.parse(init.body);
+        requests.push(request);
+        return responseForChatCompletion(chatCompletion('{"queries":["客户需求"]}'), request);
+      },
+    });
+
+    await agent.planRetrievalQueries(analysisJob(), recorder([]));
+
+    // 百炼兼容模式只接受 enable_thinking；发送 DeepSeek 的 thinking 会被拒绝。
+    assert.equal(requests[0].enable_thinking, false);
+    assert.equal('thinking' in requests[0], false);
+    assert.equal(requests[0].model, 'qwen3.5-omni-flash');
+  });
+
   it('records invalid analysis and repair calls with their actual prompts and outputs', async () => {
     const modelCalls = [];
     const agent = new SalesAnalysisAgent({
       ragConfig: {
-        deepSeekApiKey: 'test-key',
-        deepSeekBaseUrl: 'https://deepseek.example.com/v1',
-        deepSeekChatModel: 'deepseek-v4-flash',
+        chatProvider: 'deepseek',
+        chatApiKey: 'test-key',
+        chatBaseUrl: 'https://deepseek.example.com/v1',
+        chatModel: 'deepseek-v4-flash',
         enableThinking: false,
       },
       fetchImplementation: async (_url, init) =>
@@ -346,9 +373,10 @@ describe('SalesAnalysisAgent', () => {
     const steps = [];
     const agent = new SalesAnalysisAgent({
       ragConfig: {
-        deepSeekApiKey: 'test-key',
-        deepSeekBaseUrl: 'https://deepseek.example.com/v1',
-        deepSeekChatModel: 'deepseek-v4-flash',
+        chatProvider: 'deepseek',
+        chatApiKey: 'test-key',
+        chatBaseUrl: 'https://deepseek.example.com/v1',
+        chatModel: 'deepseek-v4-flash',
         enableThinking: false,
       },
       fetchImplementation: async (_url, init) => {
@@ -419,9 +447,10 @@ describe('SalesAnalysisAgent', () => {
     const steps = [];
     const agent = new SalesAnalysisAgent({
       ragConfig: {
-        deepSeekApiKey: 'test-key',
-        deepSeekBaseUrl: 'https://deepseek.example.com/v1',
-        deepSeekChatModel: 'deepseek-v4-flash',
+        chatProvider: 'deepseek',
+        chatApiKey: 'test-key',
+        chatBaseUrl: 'https://deepseek.example.com/v1',
+        chatModel: 'deepseek-v4-flash',
         enableThinking: false,
       },
       fetchImplementation: async (_url, init) => {

@@ -41,9 +41,11 @@ export type RagConfig = {
   dashScope: ProviderConfig['dashScope'];
   embeddingModel: 'qwen3.7-text-embedding';
   embeddingDimensions: 1024;
-  deepSeekApiKey: string;
-  deepSeekBaseUrl: string;
-  deepSeekChatModel: 'deepseek-v4-flash';
+  /** 文本类能力绑定的供应商类型，决定 thinking 参数与端点来源。 */
+  chatProvider: 'dashscope' | 'deepseek';
+  chatApiKey: string;
+  chatBaseUrl: string;
+  chatModel: string;
   enableThinking: boolean;
   langGraphSchema: string;
   uploadTempDir: string;
@@ -69,9 +71,11 @@ export function createRagConfig(
     dashScope: providers.dashScope,
     embeddingModel: values.RAG_EMBEDDING_MODEL ?? 'qwen3.7-text-embedding',
     embeddingDimensions: values.RAG_EMBEDDING_DIMENSIONS ?? 1024,
-    deepSeekApiKey: providers.deepSeek.apiKey,
-    deepSeekBaseUrl: providers.deepSeek.baseUrl,
-    deepSeekChatModel: providers.deepSeek.chatModel,
+    // 启动级 .env 只提供兜底值；实际文本模型来自能力绑定，默认是百炼上的通义千问。
+    chatProvider: 'dashscope',
+    chatApiKey: providers.dashScope.apiKey || providers.deepSeek.apiKey,
+    chatBaseUrl: providers.dashScope.compatibleBaseUrl || providers.deepSeek.baseUrl,
+    chatModel: 'qwen3.5-omni-flash',
     enableThinking: providers.deepSeek.enableThinking,
     langGraphSchema: values.LANGGRAPH_SCHEMA,
     uploadTempDir: resolvePath(values.UPLOAD_TEMP_DIR),

@@ -1,12 +1,12 @@
 /**
- * DeepSeek 说话人复核适配器测试。
+ * 说话人复核适配器测试。
  *
- * 锁定模型只能引用输入中真实存在的原始片段与词边界。
+ * 锁定模型只能引用输入中真实存在的原始片段与词边界，以及按绑定供应商选择思考参数。
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { DeepSeekSpeakerReviewer } from '../../../dist/workspace/audio/speaker-review/deepSeekSpeakerReviewer.js';
+import { SpeakerReviewer } from '../../../dist/workspace/audio/speaker-review/speakerReviewer.js';
 
 const segmentId = '33333333-3333-4333-8333-333333333333';
 const segments = [
@@ -21,21 +21,27 @@ const segments = [
   },
 ];
 
-function reviewerWith(findings) {
-  return new DeepSeekSpeakerReviewer({
+function reviewerWith(findings, { providerType = 'deepseek', requests } = {}) {
+  return new SpeakerReviewer({
+    providerType,
     apiKey: 'secret',
-    baseUrl: 'https://api.deepseek.example/v1',
-    model: 'deepseek-v4-flash',
-    fetch: async () =>
-      new Response(
+    baseUrl:
+      providerType === 'deepseek'
+        ? 'https://api.deepseek.example/v1'
+        : 'https://dashscope.example/compatible-mode/v1',
+    model: providerType === 'deepseek' ? 'deepseek-v4-flash' : 'qwen3.5-omni-flash',
+    fetch: async (_url, init) => {
+      requests?.push(JSON.parse(init.body));
+      return new Response(
         JSON.stringify({ choices: [{ message: { content: JSON.stringify({ findings }) } }] }),
         { status: 200 },
-      ),
+      );
+    },
     sleep: async () => undefined,
   });
 }
 
-describe('DeepSeekSpeakerReviewer', () => {
+describe('SpeakerReviewer', () => {
   it('accepts a real boundary and rejects fabricated segments or indexes', async () => {
     const valid = await reviewerWith([
       {
@@ -88,5 +94,13 @@ describe('DeepSeekSpeakerReviewer', () => {
         ]).review(segments),
       { code: 'INVALID_MODEL_OUTPUT' },
     );
+  });
+
+  it('sends the Qwen-compatible thinking flag on DashScope bindings', async () => {
+    const requests = [];
+    await reviewerWith([], { providerType: 'dashscope', requests }).review(segments);
+    assert.equal(requests[0].enable_thinking, false);
+    assert.equal('thinking' in requests[0], false);
+    assert.equal(requests[0].model, 'qwen3.5-omni-flash');
   });
 });

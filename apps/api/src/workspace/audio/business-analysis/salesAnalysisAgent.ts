@@ -1,5 +1,5 @@
 /**
- * DeepSeek 销售复盘 Agent。
+ * 销售复盘 Agent。
  *
  * 将确认转写、可选角色/情绪、预检索上下文和受限知识搜索工具组合为结构化结果；
  * 用户配置只能影响分析侧重与表达风格，不能改变证据和权限规则。
@@ -10,6 +10,7 @@
  *
  * Notes:
  * - 所有模型指令保持英文，中文仅作为业务输入或期望输出语言。
+ * - 文本模型来自能力绑定，供应商差异由共享工厂处理。
  */
 import { randomUUID } from 'node:crypto';
 
@@ -18,7 +19,6 @@ import type { CategorySearchChoice } from '../../../knowledge/retrieval/category
 import type { AIMessageChunk } from '@langchain/core/messages';
 import { tool } from '@langchain/core/tools';
 import { concat } from '@langchain/core/utils/stream';
-import { ChatDeepSeek } from '@langchain/deepseek';
 import { createDeepAgent } from 'deepagents';
 import { modelCallLimitMiddleware, toolCallLimitMiddleware } from 'langchain';
 import { z } from 'zod';
@@ -30,6 +30,7 @@ import {
   type AiExecutionRecorder,
 } from '../../../ai-observability/executionReporter.ts';
 import { modelMessageForReport } from '../../../ai-observability/modelCallReporting.ts';
+import { createChatStyleModel, type ChatStyleModel } from '../../../ai-runtime/chatModel.ts';
 import { extractFinalMessageText, parseJsonObject } from '../../../ai-runtime/structuredOutput.ts';
 import type { RagConfig } from '../../../config/workspace.ts';
 import type { RetrievalChunk } from '../../../knowledge/retrieval/types.ts';
@@ -146,7 +147,7 @@ export class BusinessAnalysisProviderError extends Error {
 }
 
 type SalesAnalysisAgentOptions = {
-  ragConfig: Pick<RagConfig, 'deepSeekApiKey' | 'deepSeekBaseUrl' | 'deepSeekChatModel'>;
+  ragConfig: Pick<RagConfig, 'chatApiKey' | 'chatBaseUrl' | 'chatModel' | 'chatProvider'>;
   fetchImplementation?: typeof fetch;
 };
 
@@ -323,52 +324,42 @@ function summarizeInvalidFields(error: z.ZodError): string {
 
 /** 对一个确认版转写执行受限知识检索和结构化销售复盘。 */
 export class SalesAnalysisAgent {
-  private readonly planningModel: ChatDeepSeek;
-  private readonly model: ChatDeepSeek;
-  private readonly repairModel: ChatDeepSeek;
+  private readonly planningModel: ChatStyleModel;
+  private readonly model: ChatStyleModel;
+  private readonly repairModel: ChatStyleModel;
 
   constructor(private readonly options: SalesAnalysisAgentOptions) {
-    this.planningModel = new ChatDeepSeek({
-      apiKey: options.ragConfig.deepSeekApiKey,
-      model: options.ragConfig.deepSeekChatModel,
+    const shared = {
+      providerType: options.ragConfig.chatProvider,
+      apiKey: options.ragConfig.chatApiKey,
+      baseUrl: options.ragConfig.chatBaseUrl,
+      model: options.ragConfig.chatModel,
       temperature: 0,
+      ...(options.fetchImplementation ? { fetchImplementation: options.fetchImplementation } : {}),
+    };
+    // 规划只返回少量查询，关闭思考可避免等待无关的长推理。
+    this.planningModel = createChatStyleModel({
+      ...shared,
       maxTokens: RETRIEVAL_PLANNING_MAX_OUTPUT_TOKENS,
       maxRetries: 0,
       timeout: RETRIEVAL_PLANNING_TIMEOUT_MS,
-      configuration: {
-        baseURL: options.ragConfig.deepSeekBaseUrl,
-        ...(options.fetchImplementation ? { fetch: options.fetchImplementation } : {}),
-      },
-      // 规划只返回少量查询，关闭思考可避免等待无关的长推理。
-      modelKwargs: { thinking: { type: 'disabled' } },
+      thinking: 'disabled',
     });
-    this.model = new ChatDeepSeek({
-      apiKey: options.ragConfig.deepSeekApiKey,
-      model: options.ragConfig.deepSeekChatModel,
-      temperature: 0,
+    // 结构化结果必须优先保证完整 JSON，避免隐藏思考占满输出预算。
+    this.model = createChatStyleModel({
+      ...shared,
       maxTokens: ANALYSIS_MAX_OUTPUT_TOKENS,
       maxRetries: 1,
       timeout: ANALYSIS_MODEL_TIMEOUT_MS,
-      configuration: {
-        baseURL: options.ragConfig.deepSeekBaseUrl,
-        ...(options.fetchImplementation ? { fetch: options.fetchImplementation } : {}),
-      },
-      // 结构化结果必须优先保证完整 JSON，避免隐藏思考占满输出预算。
-      modelKwargs: { thinking: { type: 'disabled' } },
+      thinking: 'disabled',
     });
-    this.repairModel = new ChatDeepSeek({
-      apiKey: options.ragConfig.deepSeekApiKey,
-      model: options.ragConfig.deepSeekChatModel,
-      temperature: 0,
+    // 修复阶段只压缩和恢复 JSON，不重复执行长链思考。
+    this.repairModel = createChatStyleModel({
+      ...shared,
       maxTokens: REPAIR_MAX_OUTPUT_TOKENS,
       maxRetries: 1,
       timeout: REPAIR_TIMEOUT_MS,
-      configuration: {
-        baseURL: options.ragConfig.deepSeekBaseUrl,
-        ...(options.fetchImplementation ? { fetch: options.fetchImplementation } : {}),
-      },
-      // 修复阶段只压缩和恢复 JSON，不重复执行长链思考。
-      modelKwargs: { thinking: { type: 'disabled' } },
+      thinking: 'disabled',
     });
   }
 
@@ -405,8 +396,8 @@ export class SalesAnalysisAgent {
     const modelCall = beginAiModelCall(recorder, {
       name: 'business-analysis-retrieval-planning',
       displayName: '规划业务分析所需的知识检索问题',
-      provider: 'deepseek',
-      model: this.options.ragConfig.deepSeekChatModel,
+      provider: this.options.ragConfig.chatProvider,
+      model: this.options.ragConfig.chatModel,
       attempt: 1,
       reasoningMode: 'streaming',
     });
@@ -636,8 +627,8 @@ export class SalesAnalysisAgent {
             span: beginAiModelCall(recorder, {
               name: 'business-analysis-generation',
               displayName: '结合转写与知识证据生成业务分析',
-              provider: 'deepseek',
-              model: this.options.ragConfig.deepSeekChatModel,
+              provider: this.options.ragConfig.chatProvider,
+              model: this.options.ragConfig.chatModel,
               attempt: modelAttempt,
               reasoningMode: 'streaming',
             }),
@@ -787,8 +778,8 @@ export class SalesAnalysisAgent {
       const call = beginAiModelCall(input.recorder, {
         name: 'business-analysis-window',
         displayName: '分层业务分析窗口',
-        provider: 'deepseek',
-        model: this.options.ragConfig.deepSeekChatModel,
+        provider: this.options.ragConfig.chatProvider,
+        model: this.options.ragConfig.chatModel,
         attempt: window.index + 1,
         reasoningMode: 'disabled',
       });
@@ -912,8 +903,8 @@ export class SalesAnalysisAgent {
     const call = beginAiModelCall(recorder, {
       name: 'business-analysis-synthesis',
       displayName: '汇总分层业务分析',
-      provider: 'deepseek',
-      model: this.options.ragConfig.deepSeekChatModel,
+      provider: this.options.ragConfig.chatProvider,
+      model: this.options.ragConfig.chatModel,
       attempt: 1,
       reasoningMode: 'disabled',
     });
@@ -997,8 +988,8 @@ export class SalesAnalysisAgent {
     const modelCall = beginAiModelCall(input.recorder, {
       name: 'business-analysis-structure-repair',
       displayName: '修复业务分析的结构与引用',
-      provider: 'deepseek',
-      model: this.options.ragConfig.deepSeekChatModel,
+      provider: this.options.ragConfig.chatProvider,
+      model: this.options.ragConfig.chatModel,
       attempt: 1,
       reasoningMode: 'disabled',
     });

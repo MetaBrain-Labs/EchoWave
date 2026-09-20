@@ -333,6 +333,7 @@ export {
 export {
   AdminSessionResponseSchema,
   AI_CAPABILITY_DEFAULTS,
+  AI_CAPABILITY_PROVIDER_PREFERENCES,
   AiCapabilitySchema,
   AliyunOssConnectionConfigSchema,
   AliyunOssCredentialInputSchema,
@@ -353,8 +354,10 @@ export {
   ProviderConnectionWriteSchema,
   ProviderTypeSchema,
   SettingsOverviewSchema,
+  THINKING_CAPABILITIES,
   TransportSecurityModeSchema,
   TransportSecuritySchema,
+  supportsThinkingSetting,
   type AiCapability,
   type AiCapabilityDefault,
   type CapabilityBinding,
@@ -366,8 +369,33 @@ export {
   type ProviderConnectionWrite,
   type ProviderType,
   type SettingsOverview,
+  type ThinkingCapability,
   type TransportSecurityMode,
 } from './settings.ts';
+export {
+  CAPABILITY_MODEL_REQUIREMENTS,
+  ModelCatalogQuerySchema,
+  ModelCatalogResponseSchema,
+  ModelCapabilitySchema,
+  ModelFeatureSchema,
+  ModelModalitySchema,
+  ModelPriceEntrySchema,
+  ModelPricingSchema,
+  ProviderModelCatalogSchema,
+  ProviderModelSummarySchema,
+  decodeDashScopeModelList,
+  decodeDeepSeekModelList,
+  type CapabilityModelRequirement,
+  type ModelCapability,
+  type ModelCatalogQuery,
+  type ModelCatalogResponse,
+  type ModelFeature,
+  type ModelModality,
+  type ModelPriceEntry,
+  type ModelPricing,
+  type ProviderModelCatalog,
+  type ProviderModelSummary,
+} from './modelCatalog.ts';
 export * from './audio/automation.ts';
 export * from './audio/analysisRuns.ts';
 export {

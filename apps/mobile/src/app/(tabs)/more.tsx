@@ -65,7 +65,9 @@ export default function MoreScreen() {
             </View>
             <View style={styles.navigationCopy}>
               <Text style={styles.navigationTitle}>{t(`more.${card.key}.title`)}</Text>
-              <Text style={styles.navigationText}>{t(`more.${card.key}.description`)}</Text>
+              <Text numberOfLines={1} style={styles.navigationText}>
+                {t(`more.${card.key}.description`)}
+              </Text>
             </View>
             <Ionicons color={textColors.tertiary} name="chevron-forward" size={22} />
           </Pressable>
@@ -81,7 +83,9 @@ export default function MoreScreen() {
           </View>
           <View style={styles.navigationCopy}>
             <Text style={styles.navigationTitle}>{t('more.guides.title')}</Text>
-            <Text style={styles.navigationText}>{t('more.guides.description')}</Text>
+            <Text numberOfLines={1} style={styles.navigationText}>
+              {t('more.guides.description')}
+            </Text>
           </View>
           <Ionicons color={textColors.tertiary} name="chevron-forward" size={22} />
         </Pressable>
@@ -108,6 +112,8 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     gap: spacing.base,
+    // 固定卡片高度与单行说明，避免描述换行把某一张卡顶高而破坏列表节奏。
+    minHeight: 88,
     padding: spacing.md,
   },
   navigationIcon: {

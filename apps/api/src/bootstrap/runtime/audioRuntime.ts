@@ -18,6 +18,7 @@ import type { ApiConfig } from '../../config/env.ts';
 import type { LiveUpdateBroker } from '../../infrastructure/liveUpdateBroker.ts';
 import type { DatabasePool } from '../../infrastructure/postgres.ts';
 import type { WorkerWakeupSource } from '../../infrastructure/workerWakeup.ts';
+import { chatModelBaseUrl, isTextChatProvider } from '../../ai-runtime/chatModel.ts';
 import { DashScopeEmbeddings } from '../../knowledge/embeddings/dashScopeEmbeddings.ts';
 import type { KnowledgeSearchPort } from '../../knowledge/retrieval/port.ts';
 import type { SettingsService } from '../../settings/service.ts';
@@ -35,7 +36,7 @@ import { BusinessAnalysisRepository } from '../../workspace/audio/business-analy
 import { PostAnalysisRepository } from '../../workspace/audio/post-analysis/repository.ts';
 import { TranscriptConfirmationRepository } from '../../workspace/audio/core/transcriptConfirmationRepository.ts';
 import { AudioWindowPreprocessor } from '../../workspace/audio/post-analysis/audioWindowPreprocessor.ts';
-import { DeepSeekRoleRecognizer } from '../../workspace/audio/post-analysis/deepSeekRoleRecognizer.ts';
+import { RoleRecognizer } from '../../workspace/audio/post-analysis/roleRecognizer.ts';
 import { QwenEmotionAnalyzer } from '../../workspace/audio/post-analysis/qwenEmotionAnalyzer.ts';
 import { AudioPostAnalysisWorker } from '../../workspace/audio/post-analysis/worker.ts';
 import { AudioInputPreprocessor } from '../../workspace/audio/transcription/audioPreprocessor.ts';
@@ -50,7 +51,7 @@ import { DashScopeInstantStore } from '../../workspace/audio/transcription/dashS
 import { PrimaryOssStore } from '../../workspace/audio/runtime-mode/primaryOssStore.ts';
 import { AudioSourceLifecycle } from '../../workspace/audio/runtime-mode/sourceLifecycle.ts';
 import { AudioTranscriptionWorker } from '../../workspace/audio/transcription/worker.ts';
-import { DeepSeekSpeakerReviewer } from '../../workspace/audio/speaker-review/deepSeekSpeakerReviewer.ts';
+import { SpeakerReviewer } from '../../workspace/audio/speaker-review/speakerReviewer.ts';
 import { SpeakerReviewRepository } from '../../workspace/audio/speaker-review/repository.ts';
 import { SpeakerReviewWorker } from '../../workspace/audio/speaker-review/worker.ts';
 
@@ -352,13 +353,17 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
         'audio_role',
         job.capabilityBindingRevisionId ?? undefined,
       );
-      if (role.provider.type !== 'deepseek' || !('apiKey' in role.provider.credential)) {
+      if (!isTextChatProvider(role.provider.type) || !('apiKey' in role.provider.credential)) {
         throw new Error('Resolved role analysis provider is incompatible.');
       }
       return {
-        roleRecognizer: new DeepSeekRoleRecognizer({
+        roleRecognizer: new RoleRecognizer({
+          providerType: role.provider.type,
           apiKey: role.provider.credential.apiKey,
-          baseUrl: (role.provider.config as { baseUrl: string }).baseUrl,
+          baseUrl: chatModelBaseUrl(
+            role.provider.type,
+            role.provider.config as Record<string, unknown>,
+          ),
           model: job.model,
         }),
       };
@@ -374,13 +379,17 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
         'audio_speaker_review',
         job.capabilityBindingRevisionId ?? undefined,
       );
-      if (review.provider.type !== 'deepseek' || !('apiKey' in review.provider.credential)) {
+      if (!isTextChatProvider(review.provider.type) || !('apiKey' in review.provider.credential)) {
         throw new Error('Resolved speaker review provider is incompatible.');
       }
       return {
-        reviewer: new DeepSeekSpeakerReviewer({
+        reviewer: new SpeakerReviewer({
+          providerType: review.provider.type,
           apiKey: review.provider.credential.apiKey,
-          baseUrl: (review.provider.config as { baseUrl: string }).baseUrl,
+          baseUrl: chatModelBaseUrl(
+            review.provider.type,
+            review.provider.config as Record<string, unknown>,
+          ),
           model: job.model,
         }),
       };
@@ -401,7 +410,7 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
         ),
       ]);
       if (
-        chat.provider.type !== 'deepseek' ||
+        !isTextChatProvider(chat.provider.type) ||
         !('apiKey' in chat.provider.credential) ||
         embedding.provider.type !== 'dashscope' ||
         !('apiKey' in embedding.provider.credential)
@@ -410,9 +419,13 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
       }
       const dynamicRagConfig = {
         ...config.rag,
-        deepSeekApiKey: chat.provider.credential.apiKey,
-        deepSeekBaseUrl: (chat.provider.config as { baseUrl: string }).baseUrl,
-        deepSeekChatModel: job.model as typeof config.rag.deepSeekChatModel,
+        chatProvider: chat.provider.type,
+        chatApiKey: chat.provider.credential.apiKey,
+        chatBaseUrl: chatModelBaseUrl(
+          chat.provider.type,
+          chat.provider.config as Record<string, unknown>,
+        ),
+        chatModel: job.model,
         enableThinking: chat.settings.enableThinking === true,
         embeddingModel: embedding.model as typeof config.rag.embeddingModel,
       };

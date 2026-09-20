@@ -8,30 +8,38 @@ EchoWave separates configuration into three boundaries: `apps/api/.env` holds st
 
 EchoWave currently centers on Alibaba Cloud Model Studio and Qwen because one platform covers text generation, embeddings, ASR, and multimodal models while also offering OpenAI-compatible access to third-party models such as DeepSeek. A deployer can enable most model services and OSS under one Alibaba Cloud account, reducing account and billing fragmentation. This does not mean every capability uses the same credential.
 
-- A DashScope connection uses a Model Studio API key for Qwen embedding, file transcription, and acoustic emotion.
-- DeepSeek remains a separate EchoWave logical connection. It may use the official DeepSeek API or a Model Studio workspace's OpenAI-compatible Base URL and Model Studio API key.
+- A DashScope connection uses a Model Studio API key and now carries every capability by default: Qwen embedding, file transcription, acoustic emotion, and text generation (knowledge answers, business role, speaker review, business analysis).
+- DeepSeek is an optional cost fallback. The same model costs less per cache hit on the official DeepSeek API than on Model Studio, so cost-sensitive deployments can rebind text capabilities to a DeepSeek connection. It may use the official DeepSeek API or a Model Studio workspace's OpenAI-compatible Base URL and Model Studio API key.
 - Alibaba Cloud OSS uses an AccessKey ID/AccessKey Secret, not a Model Studio API key. Store it as a separate credential type even under the same cloud account.
 
 Regions, workspaces, endpoints, and model availability differ. When Model Studio hosts the DeepSeek connection, use the endpoint and model actually available in the target region; never copy another account's Workspace ID. See [What is Model Studio](https://help.aliyun.com/zh/model-studio/what-is-model-studio/) and [DeepSeek API on Model Studio](https://help.aliyun.com/zh/model-studio/deepseek-api).
 
 Authoritative defaults come from `packages/contracts/src/settings.ts`:
 
-| Capability                                               | Provider type     | Default model/backend                |
-| -------------------------------------------------------- | ----------------- | ------------------------------------ |
-| Knowledge embedding                                      | DashScope         | `qwen3.7-text-embedding`             |
-| Knowledge answers                                        | DeepSeek          | `deepseek-v4-flash`                  |
-| Audio transcription                                      | DashScope         | `qwen-audio-3.0-asr-flash-filetrans` |
-| Acoustic emotion                                         | DashScope         | `qwen3.5-omni-flash`                 |
-| Business role, speaker review, business analysis         | DeepSeek          | `deepseek-v4-flash`                  |
-| Temporary audio staging and authoritative object storage | Alibaba Cloud OSS | `aliyun-oss`                         |
+| Capability                                               | Provider type             | Default model/backend                |
+| -------------------------------------------------------- | ------------------------- | ------------------------------------ |
+| Knowledge embedding                                      | DashScope (fixed)         | `qwen3.7-text-embedding`             |
+| Knowledge answers                                        | DashScope                 | `qwen3.5-omni-flash`                 |
+| Audio transcription                                      | DashScope (fixed)         | `qwen-audio-3.0-asr-flash-filetrans` |
+| Acoustic emotion                                         | DashScope                 | `qwen3.5-omni-flash`                 |
+| Business role, speaker review, business analysis         | DashScope                 | `qwen3.5-omni-flash`                 |
+| Temporary audio staging and authoritative object storage | Alibaba Cloud OSS (fixed) | `aliyun-oss`                         |
 
-Editable model fields support future adapted releases; they do not imply arbitrary compatibility with prompts, structured output, timestamps, speakers, thinking modes, or recovery protocols. Only repository-adapted defaults are guaranteed today. More models and providers will be added incrementally.
+Embedding and ASR models stay fixed: vector dimensions of 1024 plus the diarization and timestamp contracts are encoded in the shared contracts, SQL, and code constants, so changing them would invalidate existing vector spaces and transcription revisions. Text capabilities (knowledge answers, acoustic emotion, business role, speaker review, business analysis) can search and change models in AI configuration. Candidates come from the official Model Studio model list endpoint `GET /api/v1/models` and are filtered by capability responsibility:
 
-| Runtime mode      | DashScope | DeepSeek                                                 | Alibaba Cloud OSS                                    |
-| ----------------- | --------- | -------------------------------------------------------- | ---------------------------------------------------- |
-| Lightweight local | Required  | Required when using answers, roles, or business analysis | Not required                                         |
-| Hybrid            | Required  | Required when using answers, roles, or business analysis | `audio_staging` required                             |
-| Object storage    | Required  | Required when using answers, roles, or business analysis | `audio_staging` and `audio_primary_storage` required |
+- Text-generation capabilities only list models that support text generation (`TG`);
+- Acoustic emotion additionally requires audio input, so pure text models and ASR-only models never appear;
+- Embedding only accepts `qwen3.7-text-embedding`, and transcription only accepts `qwen-audio-3.0-asr-flash-filetrans`.
+
+Prices and context windows in the model list response are selection hints only; they never drive billing and are not written to business tables. See [List models](https://help.aliyun.com/zh/model-studio/list-models) for the endpoint contract.
+
+Editable model fields support future adapted releases; they do not imply arbitrary compatibility with prompts, structured output, timestamps, speakers, thinking modes, or recovery protocols. Only models that pass the capability filter and the server-side check performed when a binding is saved become effective.
+
+| Runtime mode      | DashScope | DeepSeek (optional text-capability swap) | Alibaba Cloud OSS                                    |
+| ----------------- | --------- | ---------------------------------------- | ---------------------------------------------------- |
+| Lightweight local | Required  | Required only after rebinding text tasks | Not required                                         |
+| Hybrid            | Required  | Required only after rebinding text tasks | `audio_staging` required                             |
+| Object storage    | Required  | Required only after rebinding text tasks | `audio_staging` and `audio_primary_storage` required |
 
 See [Audio Runtime Modes](./audio-runtime-modes.md) and [Server Deployment](./server-deployment.md).
 

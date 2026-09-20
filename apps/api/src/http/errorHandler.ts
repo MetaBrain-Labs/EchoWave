@@ -74,13 +74,17 @@ export function installErrorHandlers(app: Hono): void {
           ? 401
           : error.code === 'INSECURE_CREDENTIAL_TRANSPORT'
             ? 403
-            : error.code === 'NOT_FOUND'
-              ? 404
-              : error.code === 'CONFLICT'
-                ? 409
-                : 400;
+            : error.code === 'MODEL_UNAVAILABLE'
+              ? 503
+              : error.code === 'NOT_FOUND'
+                ? 404
+                : error.code === 'CONFLICT'
+                  ? 409
+                  : 400;
       code = error.code;
       message = error.message;
+      // 模型目录暂时不可用属于可重试的供应商侧失败，客户端应显式暴露重试入口。
+      retryable = error.code === 'MODEL_UNAVAILABLE';
     } else {
       console.error('Unhandled API error', error);
     }

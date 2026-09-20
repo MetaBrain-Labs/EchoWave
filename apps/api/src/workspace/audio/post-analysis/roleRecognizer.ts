@@ -1,5 +1,5 @@
 /**
- * DeepSeek 业务角色识别适配器。
+ * 业务角色识别适配器。
  *
  * 根据完整转写、录音级说话人标识和数据源角色白名单，为每个说话人生成唯一业务角色。
  *
@@ -9,11 +9,13 @@
  *
  * Notes:
  * - 模型不能生成白名单之外的角色；无法判断时必须返回“未知”。
+ * - 思考模式参数按绑定供应商区分，百炼兼容模式使用 enable_thinking。
  */
 import { z } from 'zod';
 import {
   CORE_BUSINESS_ROLES,
   type BusinessRoleKind,
+  type ProviderType,
   type SegmentRoleAnalysis,
   type SupportedLanguage,
 } from '@echowave/contracts';
@@ -24,6 +26,7 @@ import {
   type AiExecutionRecorder,
 } from '../../../ai-observability/executionReporter.ts';
 import { runWithBoundedRetry } from '../../../ai-runtime/boundedRetry.ts';
+import { thinkingModelKwargs } from '../../../ai-runtime/chatModel.ts';
 import type { PostAnalysisTranscriptSegment } from './repository.ts';
 import { PostAnalysisProviderError } from './qwenEmotionAnalyzer.ts';
 import { roleRecognitionContext } from './role/CONTEXT.ts';
@@ -49,10 +52,11 @@ function roleKind(label: string, customRoles: string[]): BusinessRoleKind {
   return 'unknown';
 }
 
-/** 调用 DeepSeek 并返回与录音说话人一一对应的角色结果。 */
-export class DeepSeekRoleRecognizer {
+/** 调用绑定供应商的文本模型并返回与录音说话人一一对应的角色结果。 */
+export class RoleRecognizer {
   constructor(
     private readonly options: {
+      providerType: ProviderType;
       apiKey: string;
       baseUrl: string;
       model: string;
@@ -159,7 +163,7 @@ export class DeepSeekRoleRecognizer {
         const modelCall = beginAiModelCall(recorder, {
           name: 'audio-role-recognition',
           displayName: '根据完整对话识别说话人的业务角色',
-          provider: 'deepseek',
+          provider: this.options.providerType,
           model: this.options.model,
           attempt: modelAttempt,
           reasoningMode: 'disabled',
@@ -177,7 +181,7 @@ export class DeepSeekRoleRecognizer {
               body: JSON.stringify({
                 model: this.options.model,
                 temperature: 0,
-                thinking: { type: 'disabled' },
+                ...thinkingModelKwargs(this.options.providerType, 'disabled'),
                 response_format: { type: 'json_object' },
                 messages: [{ role: 'user', content: prompt }],
               }),

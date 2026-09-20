@@ -22,7 +22,7 @@ Their cost and recovery positioning is:
 
 The only important boundary is that killing the App while audio is still uploading does not mean the Server has taken over in any mode. App and background-task lifecycles are decoupled only after the upload completes and the server task is successfully created/submitted.
 
-All modes require PostgreSQL, FFmpeg/VAD, and DashScope audio capabilities. Role, knowledge-answer, and business-analysis stages also require a DeepSeek logical connection. Hybrid and object-storage modes require their OSS bindings; lightweight local works without OSS.
+All modes require PostgreSQL, FFmpeg/VAD, and DashScope audio capabilities. Text capabilities (knowledge answers, business role, speaker review, business analysis) also default to the Qwen models on the DashScope connection, so a single Model Studio API key runs everything; a DeepSeek connection is needed only when those capabilities are rebound to it for cheaper cache hits. Hybrid and object-storage modes require their OSS bindings; lightweight local works without OSS.
 
 When unsure, start with lightweight local for a functional trial, switch future assets to hybrid when playback or reruns matter, and choose object storage only with an established OSS lifecycle and backup policy. Mode switching is not a storage-migration tool. See [Server Deployment](./server-deployment.md).
 

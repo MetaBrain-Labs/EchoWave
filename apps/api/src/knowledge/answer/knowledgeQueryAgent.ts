@@ -1,7 +1,7 @@
 /**
- * DeepSeek 知识问答适配器。
+ * 知识问答适配器。
  *
- * 负责把可信回答模块提供的检索函数接入 DeepAgent，并隔离 DeepSeek thinking、
+ * 负责把可信回答模块提供的检索函数接入 DeepAgent，并隔离绑定供应商的 thinking 参数、
  * 结构化输出恢复和引用编号纠正等提供商细节；会话审计与引用白名单由上层模块负责。
  *
  * Responsibilities:
@@ -23,7 +23,6 @@ import {
 } from '@langchain/core/messages';
 import { tool } from '@langchain/core/tools';
 import type { BaseCheckpointSaver } from '@langchain/langgraph';
-import { ChatDeepSeek } from '@langchain/deepseek';
 import { createDeepAgent } from 'deepagents';
 import { createMiddleware, modelCallLimitMiddleware, toolCallLimitMiddleware } from 'langchain';
 import { z } from 'zod';
@@ -39,6 +38,7 @@ import {
   createModelCallReportingMiddleware,
   modelMessageForReport,
 } from '../../ai-observability/modelCallReporting.ts';
+import { createChatStyleModel, type ChatStyleModel } from '../../ai-runtime/chatModel.ts';
 import { extractFinalMessageText, parseJsonObject } from '../../ai-runtime/structuredOutput.ts';
 import type { RagConfig } from '../../config/workspace.ts';
 import {
@@ -107,13 +107,13 @@ export type AgentSearchResult = {
   error?: string;
 };
 
-/** DeepSeek 主回答或纠正调用产生的 token 用量。 */
+/** 主回答或纠正调用产生的 token 用量。 */
 export type AgentTokenUsage = {
   inputTokens: number;
   outputTokens: number;
 };
 
-/** DeepSeek 适配器返回给可信回答模块的候选结果。 */
+/** 文本模型适配器返回给可信回答模块的候选结果。 */
 export type AgentExecutionResult = {
   candidate: AgentAnswerCandidate;
   usage: AgentTokenUsage;
@@ -128,10 +128,10 @@ export type AgentGenerationResult = AgentExecutionResult & {
 type QueryAgentOptions = {
   ragConfig: Pick<
     RagConfig,
-    'deepSeekApiKey' | 'deepSeekBaseUrl' | 'deepSeekChatModel' | 'enableThinking'
+    'chatApiKey' | 'chatBaseUrl' | 'chatModel' | 'chatProvider' | 'enableThinking'
   >;
   checkpointer: BaseCheckpointSaver;
-  /** 测试接缝：使用脚本化 HTTP 响应替代真实 DeepSeek 请求。 */
+  /** 测试接缝：使用脚本化 HTTP 响应替代真实供应商请求。 */
   fetchImplementation?: typeof fetch;
 };
 
@@ -206,26 +206,24 @@ function findCurrentRunStart(messages: unknown[]): number {
 }
 
 /**
- * 把 DeepSeek/DeepAgent 的调用约束隐藏在稳定的生成与纠正接口之后。
+ * 把绑定供应商的 DeepAgent 调用约束隐藏在稳定的生成与纠正接口之后。
  */
-export class DeepSeekQueryAgent {
-  private readonly model: ChatDeepSeek;
+export class KnowledgeQueryAgent {
+  private readonly model: ChatStyleModel;
 
   constructor(private readonly options: QueryAgentOptions) {
-    // DeepSeek V4 默认可能开启 thinking；显式配置可避免 sampling 与 tool_choice 语义漂移。
-    const thinking = options.ragConfig.enableThinking ? { type: 'enabled' } : { type: 'disabled' };
-    this.model = new ChatDeepSeek({
-      apiKey: options.ragConfig.deepSeekApiKey,
-      model: options.ragConfig.deepSeekChatModel,
+    // 部分文本模型默认开启 thinking；显式配置可避免 sampling 与 tool_choice 语义漂移。
+    this.model = createChatStyleModel({
+      providerType: options.ragConfig.chatProvider,
+      apiKey: options.ragConfig.chatApiKey,
+      baseUrl: options.ragConfig.chatBaseUrl,
+      model: options.ragConfig.chatModel,
       temperature: 0,
       maxTokens: 1_200,
       maxRetries: 1,
       timeout: 18_000,
-      configuration: {
-        baseURL: options.ragConfig.deepSeekBaseUrl,
-        ...(options.fetchImplementation ? { fetch: options.fetchImplementation } : {}),
-      },
-      modelKwargs: { thinking },
+      thinking: options.ragConfig.enableThinking ? 'enabled' : 'disabled',
+      ...(options.fetchImplementation ? { fetchImplementation: options.fetchImplementation } : {}),
     });
   }
 
@@ -278,8 +276,8 @@ export class DeepSeekQueryAgent {
         createModelCallReportingMiddleware({
           recorder: input.diagnostics ?? noOpAiExecutionRecorder,
           name: 'knowledge-answer-generation',
-          provider: 'deepseek',
-          model: this.options.ragConfig.deepSeekChatModel,
+          provider: this.options.ragConfig.chatProvider,
+          model: this.options.ragConfig.chatModel,
         }),
         modelCallLimitMiddleware({ runLimit: input.maxSearchCalls + 2, exitBehavior: 'error' }),
         toolCallLimitMiddleware({
@@ -369,8 +367,8 @@ export class DeepSeekQueryAgent {
         } catch (error) {
           input.diagnostics?.recordModelCall({
             name: recoveryName,
-            provider: 'deepseek',
-            model: this.options.ragConfig.deepSeekChatModel,
+            provider: this.options.ragConfig.chatProvider,
+            model: this.options.ragConfig.chatModel,
             status: 'failed',
             attempt: 1,
             durationMs: Date.now() - finalizationStartedAt,
@@ -395,8 +393,8 @@ export class DeepSeekQueryAgent {
       recovered = recoverAgentCandidate(finalizationValue, input.maxCitations);
       input.diagnostics?.recordModelCall({
         name: recoveryName,
-        provider: 'deepseek',
-        model: this.options.ragConfig.deepSeekChatModel,
+        provider: this.options.ragConfig.chatProvider,
+        model: this.options.ragConfig.chatModel,
         status: 'completed',
         attempt: 1,
         durationMs: Date.now() - finalizationStartedAt,
@@ -465,8 +463,8 @@ export class DeepSeekQueryAgent {
       } catch (error) {
         diagnostics?.recordModelCall({
           name: 'citation-correction',
-          provider: 'deepseek',
-          model: this.options.ragConfig.deepSeekChatModel,
+          provider: this.options.ragConfig.chatProvider,
+          model: this.options.ragConfig.chatModel,
           status: 'failed',
           attempt: 1,
           durationMs: Date.now() - modelStartedAt,
@@ -485,8 +483,8 @@ export class DeepSeekQueryAgent {
     const recovered = recoverAgentCandidate(correctionValue, maxCitations);
     diagnostics?.recordModelCall({
       name: 'citation-correction',
-      provider: 'deepseek',
-      model: this.options.ragConfig.deepSeekChatModel,
+      provider: this.options.ragConfig.chatProvider,
+      model: this.options.ragConfig.chatModel,
       status: 'completed',
       attempt: 1,
       durationMs: Date.now() - modelStartedAt,
@@ -552,8 +550,8 @@ export class DeepSeekQueryAgent {
       const recovered = recoverAgentCandidate(value, input.maxCitations);
       input.diagnostics?.recordModelCall({
         name: 'grounding-rescue',
-        provider: 'deepseek',
-        model: this.options.ragConfig.deepSeekChatModel,
+        provider: this.options.ragConfig.chatProvider,
+        model: this.options.ragConfig.chatModel,
         status: 'completed',
         attempt: 1,
         durationMs: Date.now() - startedAt,
@@ -573,8 +571,8 @@ export class DeepSeekQueryAgent {
     } catch (error) {
       input.diagnostics?.recordModelCall({
         name: 'grounding-rescue',
-        provider: 'deepseek',
-        model: this.options.ragConfig.deepSeekChatModel,
+        provider: this.options.ragConfig.chatProvider,
+        model: this.options.ragConfig.chatModel,
         status: 'failed',
         attempt: 1,
         durationMs: Date.now() - startedAt,

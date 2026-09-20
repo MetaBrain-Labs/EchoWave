@@ -26,10 +26,14 @@ import {
 } from '@/test/workspaceFixtures';
 
 const mockOfferStarterTemplates = jest.fn();
+const mockStartGuide = jest.fn();
 
 jest.mock('expo-router', () => ({ useFocusEffect: jest.fn() }));
 jest.mock('@/shared/onboarding/StarterTourContext', () => ({
-  useStarterTour: () => ({ offerStarterTemplates: mockOfferStarterTemplates }),
+  useStarterTour: () => ({
+    offerStarterTemplates: mockOfferStarterTemplates,
+    startGuide: mockStartGuide,
+  }),
   useStarterTourTarget: () => undefined,
 }));
 jest.mock('@/shared/api/groupsApi', () => ({
@@ -415,6 +419,22 @@ describe('GroupScreen', () => {
     fireEvent.press(screen.getByLabelText('分组设置'));
 
     expect(onOpenSettings).toHaveBeenCalledWith(groupFixture.id);
+  });
+
+  it('keeps the top bar to content actions and launches the guide from the drawer', async () => {
+    const screen = await renderGroup();
+
+    // 顶栏只保留与当前内容直接相关的操作，帮助入口移入侧栏以降低图标密度。
+    expect(screen.queryByLabelText('开始本功能的引导')).toBeNull();
+    for (const label of ['菜单', '搜索', '问知识库', '分组设置']) {
+      expect(screen.getByLabelText(label)).toBeTruthy();
+    }
+
+    fireEvent.press(screen.getByLabelText('菜单'));
+    fireEvent.press(screen.getByLabelText('开始本功能的引导'));
+    await finishDrawerClose();
+
+    expect(mockStartGuide).toHaveBeenCalledWith('basic', '/');
   });
 
   it('retries a failed group directory request', async () => {

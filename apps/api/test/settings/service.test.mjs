@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import { describe, it } from 'node:test';
 
-import { AI_CAPABILITY_DEFAULTS } from '@echowave/contracts';
+import { AI_CAPABILITY_DEFAULTS, AI_CAPABILITY_PROVIDER_PREFERENCES } from '@echowave/contracts';
 
 import { SettingsService } from '../../dist/settings/service.js';
 
@@ -54,12 +54,50 @@ function storedProvider(type) {
   };
 }
 
-function settingsService(repository, legacy = {}) {
+/** 目录替身：返回固定候选，便于断言“责任不符的模型被拒绝”。 */
+function catalogService(modelsByCapability = {}) {
+  return {
+    async isSelectableModel(capability, _provider, model) {
+      const models = modelsByCapability[capability];
+      if (!models) return undefined;
+      return models.includes(model);
+    },
+    async catalog(capability, providers) {
+      return {
+        capability,
+        providers: providers.map((provider) => ({
+          connectionId: provider.connectionId,
+          providerType: provider.providerType,
+          name: provider.name,
+          catalogAvailable: true,
+          unavailableReason: null,
+          defaultModel: null,
+          models: (modelsByCapability[capability] ?? []).map((model) => ({
+            id: model,
+            displayName: model,
+            description: '',
+            capabilities: [],
+            features: [],
+            contextWindow: null,
+            maxOutputTokens: null,
+            pricing: null,
+            recommended: false,
+          })),
+        })),
+      };
+    },
+  };
+}
+
+function settingsService(repository, legacy = {}, catalog = catalogService({})) {
   return new SettingsService(
     repository,
-    {},
+    {
+      resolve: async () => ({ apiKey: 'resolved-key' }),
+    },
     {
       assertAvailableForBinding: async () => undefined,
+      resolve: async () => ({ apiKey: 'resolved-key' }),
     },
     '00000000-0000-4000-8000-000000000001',
     Buffer.alloc(32),
@@ -69,36 +107,140 @@ function settingsService(repository, legacy = {}) {
       missingVariables: [],
       ...legacy,
     },
+    catalog,
   );
 }
 
 describe('SettingsService defaults', () => {
-  it('accepts the shared default model and rejects a different model', async () => {
+  it('accepts a catalogued model for a text capability and rejects an uncatalogued one', async () => {
     let saved;
-    const provider = storedProvider('deepseek');
-    const service = settingsService({
-      getProvider: async () => provider,
-      saveBinding: async (input) => {
-        saved = input;
-        return input;
+    const provider = storedProvider('dashscope');
+    const service = settingsService(
+      {
+        getProvider: async () => provider,
+        saveBinding: async (input) => {
+          saved = input;
+          return input;
+        },
       },
-    });
+      {},
+      catalogService({ knowledge_chat: ['qwen3.5-omni-flash', 'qwen3-max'] }),
+    );
 
     await service.saveBinding('knowledge_chat', {
       providerConnectionId: provider.id,
       secondaryProviderConnectionId: null,
-      model: AI_CAPABILITY_DEFAULTS.knowledge_chat.model,
-      settings: AI_CAPABILITY_DEFAULTS.knowledge_chat.settings,
+      model: 'qwen3-max',
+      settings: { enableThinking: false },
     });
-    assert.equal(saved.model, AI_CAPABILITY_DEFAULTS.knowledge_chat.model);
+    assert.equal(saved.model, 'qwen3-max');
     assert.equal(saved.providerConnectionId, provider.id);
 
     await assert.rejects(
       service.saveBinding('knowledge_chat', {
         providerConnectionId: provider.id,
         secondaryProviderConnectionId: null,
-        model: 'unsupported-model',
+        model: 'qwen-image-max',
         settings: { enableThinking: false },
+      }),
+      (error) => error.code === 'BAD_REQUEST',
+    );
+  });
+
+  it('keeps DeepSeek available as the fallback provider for text capabilities', async () => {
+    let saved;
+    const provider = storedProvider('deepseek');
+    const service = settingsService(
+      {
+        getProvider: async () => provider,
+        saveBinding: async (input) => {
+          saved = input;
+          return input;
+        },
+      },
+      {},
+      catalogService({ knowledge_chat: ['deepseek-v4-flash'] }),
+    );
+
+    await service.saveBinding('knowledge_chat', {
+      providerConnectionId: provider.id,
+      secondaryProviderConnectionId: null,
+      model: 'deepseek-v4-flash',
+      settings: { enableThinking: false },
+    });
+    assert.equal(saved.model, 'deepseek-v4-flash');
+  });
+
+  it('refuses to persist an unverifiable model while the provider catalog is unavailable', async () => {
+    const provider = storedProvider('dashscope');
+    const service = settingsService(
+      {
+        getProvider: async () => provider,
+        saveBinding: async () => {
+          throw new Error('must not persist');
+        },
+      },
+      {},
+      catalogService({}),
+    );
+
+    await assert.rejects(
+      service.saveBinding('knowledge_chat', {
+        providerConnectionId: provider.id,
+        secondaryProviderConnectionId: null,
+        model: 'qwen3-max',
+        settings: { enableThinking: false },
+      }),
+      (error) => error.code === 'MODEL_UNAVAILABLE',
+    );
+
+    // 目录不可用时，权威默认模型仍然可写入，避免完全无法完成首次配置。
+    const fallbackService = settingsService({
+      getProvider: async () => provider,
+      saveBinding: async (input) => input,
+    });
+    await fallbackService.saveBinding('knowledge_chat', {
+      providerConnectionId: provider.id,
+      secondaryProviderConnectionId: null,
+      model: AI_CAPABILITY_DEFAULTS.knowledge_chat.model,
+      settings: { enableThinking: false },
+    });
+  });
+
+  it('rejects a text capability bound to a non-text provider', async () => {
+    const provider = storedProvider('aliyun_oss');
+    const service = settingsService({
+      getProvider: async () => provider,
+      saveBinding: async () => {
+        throw new Error('must not persist');
+      },
+    });
+
+    await assert.rejects(
+      service.saveBinding('knowledge_chat', {
+        providerConnectionId: provider.id,
+        secondaryProviderConnectionId: null,
+        model: AI_CAPABILITY_DEFAULTS.knowledge_chat.model,
+        settings: { enableThinking: false },
+      }),
+      (error) => error.code === 'BAD_REQUEST',
+    );
+  });
+
+  it('keeps fixed capabilities on their authoritative model', async () => {
+    const provider = storedProvider('dashscope');
+    const service = settingsService({
+      getProvider: async () => provider,
+      saveBinding: async () => {
+        throw new Error('must not persist');
+      },
+    });
+    await assert.rejects(
+      service.saveBinding('knowledge_embedding', {
+        providerConnectionId: provider.id,
+        secondaryProviderConnectionId: null,
+        model: 'qwen3-max',
+        settings: {},
       }),
       (error) => error.code === 'BAD_REQUEST',
     );
@@ -144,15 +286,23 @@ describe('SettingsService defaults', () => {
     await service.importLegacyConfiguration();
 
     assert.equal(marked, true);
-    assert.equal(saved.length, 8);
+    assert.equal(saved.length, 9);
     for (const binding of saved) {
       const defaults = AI_CAPABILITY_DEFAULTS[binding.capability];
       assert.equal(binding.model, defaults.model);
-      assert.equal(byId.get(binding.providerConnectionId).type, defaults.providerType);
+      // 默认优先百炼（通义千问）；DeepSeek 只作为文本能力的成本备选方案保留。
+      assert.equal(
+        byId.get(binding.providerConnectionId).type,
+        AI_CAPABILITY_PROVIDER_PREFERENCES[binding.capability][0],
+      );
     }
     assert.equal(
-      saved.some((binding) => binding.capability === 'audio_primary_storage'),
-      false,
+      saved.find((binding) => binding.capability === 'audio_primary_storage').providerConnectionId,
+      providerIds.aliyun_oss,
     );
+    // 旧 .env 的 Thinking 开关仍写入支持该设置的能力。
+    assert.deepEqual(saved.find((binding) => binding.capability === 'knowledge_chat').settings, {
+      enableThinking: true,
+    });
   });
 });
