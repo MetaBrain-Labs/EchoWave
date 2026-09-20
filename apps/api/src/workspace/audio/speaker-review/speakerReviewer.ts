@@ -1,14 +1,17 @@
 /**
- * DeepSeek 说话人疑点复核适配器。
+ * 说话人疑点复核适配器。
  *
  * 使用词索引化转写寻找需要人工回听的边界，并严格拒绝模型虚构的片段与索引。
  *
  * Responsibilities:
  * - 执行有界网络重试和 JSON 结构校验。
  * - 将模型输出限制在真实词边界内。
+ *
+ * Notes:
+ * - 思考模式参数按绑定供应商区分，百炼兼容模式使用 enable_thinking。
  */
 import { z } from 'zod';
-import type { SupportedLanguage } from '@echowave/contracts';
+import type { ProviderType, SupportedLanguage } from '@echowave/contracts';
 
 import {
   beginAiModelCall,
@@ -16,6 +19,7 @@ import {
   type AiExecutionRecorder,
 } from '../../../ai-observability/executionReporter.ts';
 import { runWithBoundedRetry } from '../../../ai-runtime/boundedRetry.ts';
+import { thinkingModelKwargs } from '../../../ai-runtime/chatModel.ts';
 import { PostAnalysisProviderError } from '../post-analysis/qwenEmotionAnalyzer.ts';
 import { chatCompletionText, parseStructuredJson } from '../post-analysis/structuredJson.ts';
 import { speakerReviewContext } from './CONTEXT.ts';
@@ -41,10 +45,11 @@ const OutputSchema = z
   })
   .strict();
 
-/** 调用文本模型生成仅供人工复核的说话人边界疑点。 */
-export class DeepSeekSpeakerReviewer {
+/** 调用绑定供应商的文本模型生成仅供人工复核的说话人边界疑点。 */
+export class SpeakerReviewer {
   constructor(
     private readonly options: {
+      providerType: ProviderType;
       apiKey: string;
       baseUrl: string;
       model: string;
@@ -121,7 +126,7 @@ export class DeepSeekSpeakerReviewer {
         const modelCall = beginAiModelCall(recorder, {
           name: 'audio-speaker-review',
           displayName: '复核疑似说话人切换边界',
-          provider: 'deepseek',
+          provider: this.options.providerType,
           model: this.options.model,
           attempt,
           reasoningMode: 'disabled',
@@ -139,7 +144,7 @@ export class DeepSeekSpeakerReviewer {
               body: JSON.stringify({
                 model: this.options.model,
                 temperature: 0,
-                thinking: { type: 'disabled' },
+                ...thinkingModelKwargs(this.options.providerType, 'disabled'),
                 response_format: { type: 'json_object' },
                 messages,
               }),

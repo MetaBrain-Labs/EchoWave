@@ -11,18 +11,22 @@
  * - 数据库连接、checkpoint 和报告器由顶层组合根创建。
  */
 import type { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
-import { ChatDeepSeek } from '@langchain/deepseek';
 import { KnowledgeCategoryRepository } from '../../knowledge/categories/categoryRepository.ts';
 import { KnowledgeCategoryService } from '../../knowledge/categories/categoryService.ts';
 import { KnowledgeClassifier } from '../../knowledge/categories/classifier.ts';
 
 import type { AiExecutionReporter } from '../../ai-observability/executionReporter.ts';
+import {
+  chatModelBaseUrl,
+  createChatStyleModel,
+  isTextChatProvider,
+} from '../../ai-runtime/chatModel.ts';
 import type { ApiConfig } from '../../config/env.ts';
 import type { LiveUpdateBroker } from '../../infrastructure/liveUpdateBroker.ts';
 import type { DatabasePool } from '../../infrastructure/postgres.ts';
 import type { WorkerWakeupSource } from '../../infrastructure/workerWakeup.ts';
 import { createKnowledgeAnswerModule } from '../../knowledge/answer/knowledgeAnswer.ts';
-import { DeepSeekQueryAgent } from '../../knowledge/answer/deepSeekQueryAgent.ts';
+import { KnowledgeQueryAgent } from '../../knowledge/answer/knowledgeQueryAgent.ts';
 import { DashScopeEmbeddings } from '../../knowledge/embeddings/dashScopeEmbeddings.ts';
 import { KnowledgeCleanupWorker } from '../../knowledge/ingestion/cleanupWorker.ts';
 import { KnowledgeCleanupRepository } from '../../knowledge/persistence/cleanupRepository.ts';
@@ -60,16 +64,22 @@ export function createKnowledgeRuntime(options: KnowledgeRuntimeOptions) {
   );
   const classifier = new KnowledgeClassifier(async () => {
     const chat = await settingsService.resolveCapability('knowledge_chat');
-    if (chat.provider.type !== 'deepseek' || !('apiKey' in chat.provider.credential))
+    if (!isTextChatProvider(chat.provider.type) || !('apiKey' in chat.provider.credential))
       throw new Error('Resolved classification provider is incompatible.');
     return {
       name: chat.model,
-      model: new ChatDeepSeek({
+      provider: chat.provider.type,
+      model: createChatStyleModel({
+        providerType: chat.provider.type,
         apiKey: chat.provider.credential.apiKey,
+        baseUrl: chatModelBaseUrl(
+          chat.provider.type,
+          chat.provider.config as Record<string, unknown>,
+        ),
         model: chat.model,
         maxTokens: 1024,
-        configuration: { baseURL: (chat.provider.config as { baseUrl: string }).baseUrl },
-        modelKwargs: { thinking: { type: 'disabled' }, response_format: { type: 'json_object' } },
+        thinking: 'disabled',
+        extraModelKwargs: { response_format: { type: 'json_object' } },
       }),
     };
   });
@@ -107,19 +117,22 @@ export function createKnowledgeRuntime(options: KnowledgeRuntimeOptions) {
       if (
         embedding.provider.type !== 'dashscope' ||
         !('apiKey' in embedding.provider.credential) ||
-        chat.provider.type !== 'deepseek' ||
+        !isTextChatProvider(chat.provider.type) ||
         !('apiKey' in chat.provider.credential)
       ) {
         throw new Error('Resolved knowledge providers are incompatible.');
       }
       const embeddingConfig = embedding.provider.config as { baseUrl: string };
-      const chatConfig = chat.provider.config as { baseUrl: string };
       const dynamicRagConfig = {
         ...config.rag,
         embeddingModel: embedding.model as typeof config.rag.embeddingModel,
-        deepSeekApiKey: chat.provider.credential.apiKey,
-        deepSeekBaseUrl: chatConfig.baseUrl,
-        deepSeekChatModel: chat.model as typeof config.rag.deepSeekChatModel,
+        chatProvider: chat.provider.type,
+        chatApiKey: chat.provider.credential.apiKey,
+        chatBaseUrl: chatModelBaseUrl(
+          chat.provider.type,
+          chat.provider.config as Record<string, unknown>,
+        ),
+        chatModel: chat.model,
         enableThinking: chat.settings.enableThinking === true,
       };
       return {
@@ -129,7 +142,7 @@ export function createKnowledgeRuntime(options: KnowledgeRuntimeOptions) {
           model: embedding.model,
           dimensions: 1024,
         }),
-        agent: new DeepSeekQueryAgent({ ragConfig: dynamicRagConfig, checkpointer }),
+        agent: new KnowledgeQueryAgent({ ragConfig: dynamicRagConfig, checkpointer }),
         ragConfig: dynamicRagConfig,
         embeddingBindingRevisionId: embedding.revisionId,
         chatBindingRevisionId: chat.revisionId,

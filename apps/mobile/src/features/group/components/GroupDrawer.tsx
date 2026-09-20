@@ -47,6 +47,7 @@ export function GroupDrawer({
   onArchive,
   onClose,
   onCreate,
+  onOpenGuide,
   onOpenSettings,
   onRename,
   onSelect,
@@ -61,6 +62,8 @@ export function GroupDrawer({
   onArchive: (group: GroupSummary) => void;
   onClose: () => void;
   onCreate: (name: string) => Promise<boolean>;
+  /** 从侧栏启动分组引导，避免在同一顶栏堆叠过多图标入口。 */
+  onOpenGuide: () => void;
   onOpenSettings: (group: GroupSummary) => void;
   onRename: (group: GroupSummary, name: string) => Promise<boolean>;
   onSelect: (group: GroupSummary) => void;
@@ -348,6 +351,18 @@ export function GroupDrawer({
                 })
               )}
             </ScrollView>
+
+            <Pressable
+              accessibilityLabel={t('guideHelp.openTour')}
+              accessibilityRole="button"
+              onPress={() => closeDrawer(onOpenGuide)}
+              style={({ pressed }) => [styles.guideRow, pressed && styles.pressed]}
+              testID="group-guide"
+            >
+              <Ionicons color={colors.ink} name="help-circle-outline" size={22} />
+              <Text style={styles.guideLabel}>{t('groupDrawer.guide')}</Text>
+              <Ionicons color={textColors.tertiary} name="chevron-forward" size={20} />
+            </Pressable>
           </SafeAreaView>
         </Animated.View>
         <Pressable
@@ -394,6 +409,22 @@ const styles = StyleSheet.create({
   addButtonText: {
     ...typography.heading2,
     color: colors.white,
+    fontFamily: fontFamilies.sans,
+  },
+  guideRow: {
+    alignItems: 'center',
+    borderTopColor: colors.divider,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    minHeight: 52,
+    paddingTop: spacing.sm,
+  },
+  guideLabel: {
+    ...typography.body,
+    color: textColors.primary,
+    flex: 1,
     fontFamily: fontFamilies.sans,
   },
   createBox: {

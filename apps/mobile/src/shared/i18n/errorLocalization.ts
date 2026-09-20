@@ -20,6 +20,7 @@ const englishMessages: Record<string, string> = {
   BAD_REQUEST: 'The request is invalid.',
   CONFLICT: 'The operation conflicts with the current resource state.',
   NOT_FOUND: 'The requested data was not found.',
+  MODEL_UNAVAILABLE: 'The model list is temporarily unavailable. Please try again later.',
   TIMEOUT: 'The request timed out. Please try again.',
   NETWORK: 'Unable to connect to the service. Check your network.',
   INVALID_RESPONSE: 'The service returned an invalid response.',

@@ -15,16 +15,23 @@ import { lookup } from 'node:dns/promises';
 
 import {
   AI_CAPABILITY_DEFAULTS,
+  AI_CAPABILITY_PROVIDER_PREFERENCES,
   AliyunOssCredentialInputSchema,
+  CAPABILITY_MODEL_REQUIREMENTS,
   CapabilityBindingWriteSchema,
   DashScopeCredentialInputSchema,
   DeepSeekCredentialInputSchema,
+  EMBEDDING_DIMENSIONS,
+  ModelCatalogQuerySchema,
   ProviderConnectionSchema,
   ProviderConnectionWriteSchema,
   SettingsOverviewSchema,
+  supportsThinkingSetting,
   type AiCapability,
   type CapabilityBindingWrite,
   type CredentialBundleInput,
+  type ModelCatalogQuery,
+  type ModelCatalogResponse,
   type ProviderConnection,
   type ProviderConnectionWrite,
   type ProviderType,
@@ -35,6 +42,7 @@ import { z } from 'zod';
 import type { DatabaseCredentialProvider } from './credentials/databaseCredentialProvider.ts';
 import { encryptCredential } from './credentials/encryption.ts';
 import type { LocalCredentialProvider } from './credentials/localCredentialProvider.ts';
+import { ModelCatalogService, type CatalogProviderInput } from './modelCatalog.ts';
 import type { SettingsRepository, StoredProvider } from './repository.ts';
 import { isPrivateNetworkAddress, type TransportSecurity } from './transportSecurity.ts';
 import type { CredentialBundle, CredentialReference } from './types.ts';
@@ -93,7 +101,7 @@ function credentialSchema(type: ProviderType) {
 }
 
 function validSettings(capability: AiCapability, value: Record<string, unknown>) {
-  return capability === 'knowledge_chat' || capability === 'business_analysis'
+  return supportsThinkingSetting(capability)
     ? ThinkingSettingsSchema.parse(value)
     : EmptySettingsSchema.parse(value);
 }
@@ -108,6 +116,7 @@ export class SettingsService {
     private readonly masterKey: Buffer,
     private readonly adminToken: string,
     private readonly legacy: LegacyAiConfiguration,
+    private readonly modelCatalog = new ModelCatalogService(),
   ) {}
 
   /** 使用定时安全比较校验管理口令。 */
@@ -176,10 +185,12 @@ export class SettingsService {
     return publicProvider(await this.repository.updateProvider(id, input.expectedRevision, record));
   }
 
-  /** 保存一个受支持能力的当前绑定。 */
+  /** 保存一个受支持能力的当前绑定，并按能力责任校验所选模型。 */
   async saveBinding(capability: AiCapability, rawInput: CapabilityBindingWrite) {
     const input = CapabilityBindingWriteSchema.parse(rawInput);
-    if (input.model !== AI_CAPABILITY_DEFAULTS[capability].model) {
+    const requirement = CAPABILITY_MODEL_REQUIREMENTS[capability];
+    if (requirement.fixedModel && input.model !== AI_CAPABILITY_DEFAULTS[capability].model) {
+      // 固定能力（音频中转与权威对象存储）没有可选模型，避免写入无法解析的后端标识。
       throw new SettingsError('BAD_REQUEST', '该能力不支持所选模型。');
     }
     const settings = validSettings(capability, input.settings);
@@ -190,8 +201,51 @@ export class SettingsService {
       throw new SettingsError('BAD_REQUEST', '当前能力不支持第二供应商连接。');
     }
     const provider = await this.repository.getProvider(input.providerConnectionId);
-    if (provider.type !== AI_CAPABILITY_DEFAULTS[capability].providerType) {
+    if (!(requirement.providers as readonly ProviderType[]).includes(provider.type)) {
       throw new SettingsError('BAD_REQUEST', '供应商连接类型与能力不兼容。');
+    }
+    if (!requirement.fixedModel) {
+      const current = (await this.repository.listBindings()).find(
+        (binding) => binding.capability === capability,
+      );
+      const credential = await this.resolveCredential(provider);
+      const catalogProvider = this.catalogProvider(provider, credential);
+      const selectable = await this.modelCatalog.isSelectableModel(
+        capability,
+        catalogProvider,
+        input.model,
+        current?.model ?? null,
+      );
+      if (selectable === false) {
+        throw new SettingsError(
+          'BAD_REQUEST',
+          '该模型尚未在本仓库完成适配，请选择列表中标为已验证的模型。',
+        );
+      }
+      // 目录暂时不可用时只接受现状：不静默写入无法校验的模型。
+      if (selectable === undefined && input.model !== AI_CAPABILITY_DEFAULTS[capability].model) {
+        throw new SettingsError(
+          'MODEL_UNAVAILABLE',
+          '暂时无法从供应商读取模型列表，无法确认所选模型是否可用，请稍后重试。',
+        );
+      }
+      if (capability === 'knowledge_embedding') {
+        // 向量维度写死在 pgvector 列类型中，选错模型会让入库与检索直接失败。
+        const models = await this.modelCatalog.summariesFor(capability, catalogProvider);
+        const dimensions = models?.find(
+          (candidate) => candidate.id === input.model,
+        )?.outputDimensions;
+        if (
+          dimensions !== null &&
+          dimensions !== undefined &&
+          dimensions !== EMBEDDING_DIMENSIONS
+        ) {
+          throw new SettingsError(
+            'BAD_REQUEST',
+            `该模型输出 ${dimensions} 维向量，与当前向量索引的 ${EMBEDDING_DIMENSIONS} 维不一致。`,
+          );
+        }
+      }
     }
     if (provider.credential.source === 'local_file') {
       await this.localCredentials.assertAvailableForBinding(
@@ -211,6 +265,32 @@ export class SettingsService {
       settings,
       ...(input.expectedRevision ? { expectedRevision: input.expectedRevision } : {}),
     });
+  }
+
+  /** 返回该能力的候选模型目录，供管理页面搜索选择。 */
+  async modelCatalogFor(
+    capability: AiCapability,
+    query: ModelCatalogQuery = {},
+  ): Promise<ModelCatalogResponse> {
+    const parsed = ModelCatalogQuerySchema.parse(query);
+    const providers = await this.repository.listProviders();
+    const allowed = CAPABILITY_MODEL_REQUIREMENTS[capability].providers as readonly ProviderType[];
+    const candidates = providers.filter((provider) => allowed.includes(provider.type));
+    const inputs = await Promise.all(
+      candidates.map(async (provider) => {
+        try {
+          return this.catalogProvider(provider, await this.resolveCredential(provider));
+        } catch {
+          // 单个连接的凭据不可用时，该供应商目录按不可用返回，不影响其他连接。
+          return undefined;
+        }
+      }),
+    );
+    return this.modelCatalog.catalog(
+      capability,
+      inputs.filter((input): input is CatalogProviderInput => input !== undefined),
+      parsed,
+    );
   }
 
   /** 将完整 legacy `.env` 显式导入，不覆盖任何已有连接或能力绑定。 */
@@ -256,23 +336,18 @@ export class SettingsService {
     );
     for (const capability of Object.keys(AI_CAPABILITY_DEFAULTS) as AiCapability[]) {
       if (existingBindings.has(capability)) continue;
-      const selected =
-        capability === 'audio_primary_storage'
-          ? undefined
-          : capability === 'audio_staging'
-            ? oss
-            : AI_CAPABILITY_DEFAULTS[capability].providerType === 'dashscope'
-              ? dashScope
-              : deepSeek;
+      // 默认优先使用百炼（通义千问）；未配置时回退到 DeepSeek，并由 saveBinding 校验模型责任。
+      const selected = AI_CAPABILITY_PROVIDER_PREFERENCES[capability]
+        .map((type) => (type === 'dashscope' ? dashScope : type === 'deepseek' ? deepSeek : oss))
+        .find((provider) => provider !== undefined);
       if (!selected) continue;
       await this.saveBinding(capability, {
         providerConnectionId: selected.id,
         secondaryProviderConnectionId: null,
         model: AI_CAPABILITY_DEFAULTS[capability].model,
-        settings:
-          capability === 'knowledge_chat' || capability === 'business_analysis'
-            ? { enableThinking: this.legacy.deepSeek.enableThinking }
-            : {},
+        settings: supportsThinkingSetting(capability)
+          ? { enableThinking: this.legacy.deepSeek.enableThinking }
+          : {},
       });
     }
     await this.repository.markLegacyImported();
@@ -470,6 +545,20 @@ export class SettingsService {
       : this.localCredentials.resolve(reference, provider.type);
   }
 
+  /** 把已存储连接与其 Credential 组合为目录查询输入。 */
+  private catalogProvider(
+    provider: StoredProvider,
+    credential: CredentialBundle,
+  ): CatalogProviderInput {
+    return {
+      connectionId: provider.id,
+      providerType: provider.type,
+      name: provider.name,
+      config: provider.config,
+      credential,
+    };
+  }
+
   private resolveLegacyCapability(capability: AiCapability): ResolvedCapability {
     if (capability === 'audio_primary_storage') {
       throw new SettingsError(
@@ -492,7 +581,8 @@ export class SettingsService {
         },
       };
     }
-    if (AI_CAPABILITY_DEFAULTS[capability].providerType === 'dashscope') {
+    const preferred = AI_CAPABILITY_PROVIDER_PREFERENCES[capability][0];
+    if (preferred === 'dashscope') {
       if (!this.legacy.dashScope) {
         throw new SettingsError('CONFIGURATION_REQUIRED', 'DashScope 尚未配置。');
       }
@@ -513,10 +603,9 @@ export class SettingsService {
     return {
       revisionId: null,
       model: AI_CAPABILITY_DEFAULTS[capability].model,
-      settings:
-        capability === 'knowledge_chat' || capability === 'business_analysis'
-          ? { enableThinking: this.legacy.deepSeek.enableThinking }
-          : {},
+      settings: supportsThinkingSetting(capability)
+        ? { enableThinking: this.legacy.deepSeek.enableThinking }
+        : {},
       provider: {
         type: 'deepseek',
         config: this.legacy.deepSeek.config,

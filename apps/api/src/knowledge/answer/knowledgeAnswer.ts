@@ -40,7 +40,7 @@ import {
 } from '../retrieval/categoryPolicy.ts';
 import type { RetrievalChunk } from '../retrieval/types.ts';
 import { resolveCitationMarkers } from './citationMarkers.ts';
-import type { DeepSeekQueryAgent } from './deepSeekQueryAgent.ts';
+import type { KnowledgeQueryAgent } from './knowledgeQueryAgent.ts';
 
 const INSUFFICIENT_EVIDENCE = '知识库中没有足够依据回答这个问题。';
 const RETRIEVAL_LIMIT_NOTICE =
@@ -83,7 +83,7 @@ export class KnowledgeAnswerError extends Error {
 
 type KnowledgeAnswerEmbeddings = Pick<DashScopeEmbeddings, 'embedQueryWithUsage'>;
 type KnowledgeAnswerAgent = Pick<
-  DeepSeekQueryAgent,
+  KnowledgeQueryAgent,
   'generate' | 'correctCitations' | 'groundAnswer'
 >;
 type KnowledgeAnswerCheckpointer = {
@@ -94,7 +94,7 @@ type ScheduleCleanup = (task: () => void, intervalMs: number) => () => void;
 type KnowledgeAnswerRuntime = {
   embeddings: KnowledgeAnswerEmbeddings;
   agent: KnowledgeAnswerAgent;
-  ragConfig: Pick<RagConfig, 'embeddingModel' | 'deepSeekChatModel'>;
+  ragConfig: Pick<RagConfig, 'embeddingModel' | 'chatModel' | 'chatProvider'>;
   embeddingBindingRevisionId: string | null;
   chatBindingRevisionId: string | null;
 };
@@ -102,7 +102,7 @@ type KnowledgeAnswerRuntime = {
 type KnowledgeAnswerStaticRuntimeOptions = {
   embeddings: KnowledgeAnswerEmbeddings;
   agent: KnowledgeAnswerAgent;
-  ragConfig: Pick<RagConfig, 'embeddingModel' | 'deepSeekChatModel'>;
+  ragConfig: Pick<RagConfig, 'embeddingModel' | 'chatModel' | 'chatProvider'>;
   resolveRuntime?: never;
 };
 
@@ -237,8 +237,8 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         requestedConversationId: request.conversationId,
         questionLength: request.question.length,
         embeddingModel: runtime.ragConfig.embeddingModel,
-        chatModel: runtime.ragConfig.deepSeekChatModel,
-        chatProvider: 'deepseek',
+        chatModel: runtime.ragConfig.chatModel,
+        chatProvider: runtime.ragConfig.chatProvider,
         embeddingBindingRevisionId: runtime.embeddingBindingRevisionId,
         chatBindingRevisionId: runtime.chatBindingRevisionId,
       },
@@ -283,8 +283,8 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         conversationId: conversation.id,
         question: request.question,
         embeddingModel: runtime.ragConfig.embeddingModel,
-        chatModel: runtime.ragConfig.deepSeekChatModel,
-        chatProvider: 'deepseek',
+        chatModel: runtime.ragConfig.chatModel,
+        chatProvider: runtime.ragConfig.chatProvider,
         embeddingBindingRevisionId: runtime.embeddingBindingRevisionId,
         chatBindingRevisionId: runtime.chatBindingRevisionId,
       });

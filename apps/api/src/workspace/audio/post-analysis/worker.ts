@@ -37,7 +37,7 @@ import {
   AudioWindowPreprocessingError,
   AudioWindowPreprocessor,
 } from './audioWindowPreprocessor.ts';
-import type { DeepSeekRoleRecognizer } from './deepSeekRoleRecognizer.ts';
+import type { RoleRecognizer } from './roleRecognizer.ts';
 import { PostAnalysisProviderError, type QwenEmotionAnalyzer } from './qwenEmotionAnalyzer.ts';
 
 const MAX_WINDOW_MS = 5 * 60 * 1_000;
@@ -75,7 +75,7 @@ type WorkerOptions = {
   type: AudioPostAnalysisType;
   repository: PostAnalysisRepository;
   emotionAnalyzer?: QwenEmotionAnalyzer;
-  roleRecognizer?: DeepSeekRoleRecognizer;
+  roleRecognizer?: RoleRecognizer;
   preprocessor?: AudioWindowPreprocessor;
   ossStaging?: AudioArtifactStore;
   resolveRuntime?: (job: ClaimedPostAnalysisJob) => Promise<PostAnalysisRuntime>;
@@ -88,7 +88,7 @@ type WorkerOptions = {
 
 type PostAnalysisRuntime = {
   emotionAnalyzer?: QwenEmotionAnalyzer;
-  roleRecognizer?: DeepSeekRoleRecognizer;
+  roleRecognizer?: RoleRecognizer;
   ossStaging?: AudioArtifactStore;
   primaryStorage?: PrimaryOssStore;
 };

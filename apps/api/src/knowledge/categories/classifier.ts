@@ -16,8 +16,8 @@ import {
   type ClassificationSuggestion,
   type SourceLocator,
 } from '@echowave/contracts';
-import type { ChatDeepSeek } from '@langchain/deepseek';
 import type { AiExecutionRecorder } from '../../ai-observability/executionReporter.ts';
+import type { ChatStyleModel } from '../../ai-runtime/chatModel.ts';
 import { extractFinalMessageText, parseJsonObject } from '../../ai-runtime/structuredOutput.ts';
 import { classificationContext } from './CONTEXT.ts';
 
@@ -63,12 +63,13 @@ export function validateClassificationSuggestion(
     throw new Error('Invalid classification whitelist');
   return suggestion;
 }
-/** 基于现有知识问答模型生成非生效建议。 */
+/** 基于现有知识问答绑定生成非生效建议。 */
 export class KnowledgeClassifier {
   constructor(
     private readonly resolveModel: () => Promise<{
-      model: Pick<ChatDeepSeek, 'invoke'>;
+      model: Pick<ChatStyleModel, 'invoke'>;
       name: string;
+      provider: string;
     }>,
   ) {}
   /** 模型不可用、超时或输出无效时返回可重试失败状态，不传播文件指令。 */
@@ -92,9 +93,11 @@ export class KnowledgeClassifier {
     ];
     const startedAt = Date.now();
     let modelName = 'knowledge_chat';
+    let providerName = 'dashscope';
     try {
       const resolved = await this.resolveModel();
       modelName = resolved.name;
+      providerName = resolved.provider;
       const result = await resolved.model.invoke(messages, { signal: AbortSignal.timeout(12000) });
       const value = parseJsonObject(extractFinalMessageText([result]).text);
       const suggestion = validateClassificationSuggestion(
@@ -104,7 +107,7 @@ export class KnowledgeClassifier {
       );
       report.recordModelCall({
         name: 'knowledge-classification',
-        provider: 'deepseek',
+        provider: providerName,
         model: modelName,
         status: 'completed',
         attempt: 1,
@@ -118,7 +121,7 @@ export class KnowledgeClassifier {
     } catch {
       report.recordModelCall({
         name: 'knowledge-classification',
-        provider: 'deepseek',
+        provider: providerName,
         model: modelName,
         status: 'failed',
         attempt: 1,

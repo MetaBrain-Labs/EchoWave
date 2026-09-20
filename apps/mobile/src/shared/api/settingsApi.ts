@@ -13,11 +13,13 @@
 import {
   AdminSessionResponseSchema,
   CapabilityBindingSchema,
+  ModelCatalogResponseSchema,
   ProviderConnectionSchema,
   SettingsOverviewSchema,
   TransportSecuritySchema,
   type AiCapability,
   type CapabilityBindingWrite,
+  type ModelCatalogQuery,
   type ProviderConnectionWrite,
 } from '@echowave/contracts';
 
@@ -25,6 +27,15 @@ import { request } from './request';
 
 function authorized(token: string) {
   return { Authorization: `Bearer ${token}` };
+}
+
+function catalogQuery(query: ModelCatalogQuery | undefined): string {
+  if (!query) return '';
+  const params = new URLSearchParams();
+  if (query.limit !== undefined) params.set('limit', String(query.limit));
+  if (query.model) params.set('model', query.model);
+  const serialized = params.toString();
+  return serialized ? `?${serialized}` : '';
 }
 
 export const settingsApi = {
@@ -36,6 +47,13 @@ export const settingsApi = {
     }),
   overview: (token: string) =>
     request('/api/settings', SettingsOverviewSchema, { headers: authorized(token) }),
+  /** 读取该能力的候选模型目录；供应商列表接口不可用时由服务端显式标记。 */
+  modelCatalog: (token: string, capability: AiCapability, query?: ModelCatalogQuery) =>
+    request(
+      `/api/settings/model-catalog/${capability}${catalogQuery(query)}`,
+      ModelCatalogResponseSchema,
+      { headers: authorized(token) },
+    ),
   createProvider: (token: string, input: ProviderConnectionWrite) =>
     request('/api/settings/providers', ProviderConnectionSchema, {
       method: 'POST',

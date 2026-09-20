@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import { MemorySaver } from '@langchain/langgraph';
 
 import { createKnowledgeAnswerModule } from '../../../dist/knowledge/answer/knowledgeAnswer.js';
-import { DeepSeekQueryAgent } from '../../../dist/knowledge/answer/deepSeekQueryAgent.js';
+import { KnowledgeQueryAgent } from '../../../dist/knowledge/answer/knowledgeQueryAgent.js';
 import { answerCitationNumbers } from '../../../dist/knowledge/answer/citationMarkers.js';
 import { parseJsonObject } from '../../../dist/knowledge/answer/structuredOutput.js';
 
@@ -37,12 +37,13 @@ function searchToolCall(id, query = `测试问题 ${id}`) {
 
 /**
  * Builds the trusted-answer module with stubbed persistence/embeddings and a fake
- * DeepSeek transport. The fake provider first answers with a search_knowledge
- * tool call, then with the given final answer; an optional correction answer
- * serves the citation-correction model call.
+ * OpenAI-compatible transport. The fake provider first answers with a
+ * search_knowledge tool call, then with the given final answer; an optional
+ * correction answer serves the citation-correction model call.
  */
 function createHarness({
   enableThinking,
+  chatProvider = 'deepseek',
   finalAnswer,
   correctionAnswer,
   reporter,
@@ -115,7 +116,7 @@ function createHarness({
       };
     },
   };
-  const agent = new DeepSeekQueryAgent({
+  const agent = new KnowledgeQueryAgent({
     ragConfig: {
       tenantId: '00000000-0000-4000-8000-000000000001',
       dashScope: {
@@ -124,9 +125,10 @@ function createHarness({
       },
       embeddingModel: 'qwen3.7-text-embedding',
       embeddingDimensions: 1024,
-      deepSeekApiKey: 'deepseek-test-key',
-      deepSeekBaseUrl: 'http://deepseek.test',
-      deepSeekChatModel: 'deepseek-v4-flash',
+      chatProvider,
+      chatApiKey: 'deepseek-test-key',
+      chatBaseUrl: chatProvider === 'dashscope' ? 'http://dashscope.test' : 'http://deepseek.test',
+      chatModel: chatProvider === 'dashscope' ? 'qwen3.5-omni-flash' : 'deepseek-v4-flash',
       enableThinking,
       langGraphSchema: 'echowave_graph',
       uploadTempDir: '.tmp/uploads',
@@ -142,7 +144,8 @@ function createHarness({
     checkpointer,
     ragConfig: {
       embeddingModel: 'qwen3.7-text-embedding',
-      deepSeekChatModel: 'deepseek-v4-flash',
+      chatModel: 'deepseek-v4-flash',
+      chatProvider: 'deepseek',
     },
     scheduleCleanup: () => () => undefined,
     reporter,
@@ -187,7 +190,7 @@ describe('parseJsonObject', () => {
   });
 });
 
-describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
+describe('KnowledgeQueryAgent cross-provider thinking-mode compatibility', () => {
   it('drops earlier turns retrieval transcripts so stale passages cannot be cited', async () => {
     const firstAnswer = JSON.stringify({
       answer: '上一个库的依据。[1]',
@@ -638,6 +641,29 @@ describe('KnowledgeQueryAgent DeepSeek thinking-mode compatibility', () => {
     for (const body of requests) {
       assert.ok(!('tool_choice' in body), 'request must not send tool_choice');
     }
+  });
+
+  it('sends the Qwen-compatible thinking flag when the binding uses DashScope', async () => {
+    const { answers, requests } = createHarness({
+      chatProvider: 'dashscope',
+      enableThinking: false,
+      finalAnswer: JSON.stringify({
+        answer: '依据显示答案为 A。[1]',
+        grounded: true,
+        citedChunkIds: [chunkId],
+      }),
+    });
+
+    const result = await answers.answer({
+      knowledgeBaseId: kbId,
+      request: { question: '答案是什么？' },
+    });
+
+    assert.equal(result.grounded, true);
+    // 百炼兼容模式只接受 enable_thinking；发送 DeepSeek 的 thinking 会被拒绝。
+    assert.equal(requests[0].enable_thinking, false);
+    assert.ok(!('thinking' in requests[0]), 'DashScope requests must not send DeepSeek thinking');
+    assert.equal(requests[0].model, 'qwen3.5-omni-flash');
   });
 
   it('corrects invalid citation IDs through JSON-mode output without tool_choice', async () => {

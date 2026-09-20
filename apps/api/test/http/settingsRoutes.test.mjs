@@ -6,6 +6,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { ModelCatalogQuerySchema } from '@echowave/contracts';
+
 import { createApp } from '../../dist/http/app.js';
 import { SettingsError } from '../../dist/settings/types.js';
 
@@ -28,6 +30,7 @@ const localProvider = {
 function settingsApp() {
   let createdInput;
   let updatedInput;
+  let catalogInput;
   const settingsService = {
     authorize(value) {
       if (value !== 'Bearer correct-admin-token') {
@@ -56,6 +59,23 @@ function settingsApp() {
       return { ...localProvider, ...input, id: providerId, revision: 2 };
     },
     saveBinding: async () => ({}),
+    modelCatalogFor: async (capability, query) => {
+      catalogInput = { capability, query: ModelCatalogQuerySchema.parse(query) };
+      return {
+        capability,
+        providers: [
+          {
+            connectionId: providerId,
+            providerType: 'deepseek',
+            name: '本地 DeepSeek',
+            catalogAvailable: true,
+            unavailableReason: null,
+            defaultModel: 'deepseek-v4-flash',
+            models: [],
+          },
+        ],
+      };
+    },
     importLegacyConfiguration: async () => undefined,
   };
   return {
@@ -65,6 +85,7 @@ function settingsApp() {
     ),
     created: () => createdInput,
     updated: () => updatedInput,
+    catalog: () => catalogInput,
   };
 }
 
@@ -165,5 +186,51 @@ describe('settings routes', () => {
     assert.equal(response.status, 200);
     assert.deepEqual(updated(), body);
     assert.equal(Object.hasOwn(updated(), 'credential'), false);
+  });
+
+  it('requires the management token for the model catalog endpoint', async () => {
+    const { app, catalog } = settingsApp();
+    const unauthorized = await app.request('/api/settings/model-catalog/knowledge_chat');
+    assert.equal(unauthorized.status, 401);
+    assert.equal(catalog(), undefined);
+
+    const invalidCapability = await app.request('/api/settings/model-catalog/not_a_capability', {
+      headers: { Authorization: 'Bearer correct-admin-token' },
+    });
+    assert.equal(invalidCapability.status, 400);
+
+    const response = await app.request(
+      '/api/settings/model-catalog/knowledge_chat?limit=5&model=qwen3-max',
+      { headers: { Authorization: 'Bearer correct-admin-token' } },
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.capability, 'knowledge_chat');
+    assert.equal(body.providers[0].providerType, 'deepseek');
+    assert.deepEqual(catalog(), {
+      capability: 'knowledge_chat',
+      query: { limit: 5, model: 'qwen3-max' },
+    });
+  });
+
+  it('maps an unavailable provider catalog to a retryable 503 without leaking provider details', async () => {
+    const service = {
+      authorize() {},
+      modelCatalogFor: async () => {
+        throw new SettingsError('MODEL_UNAVAILABLE', '暂时无法从供应商读取模型列表，请稍后重试。');
+      },
+    };
+    const app = createApp(
+      { corsOrigins: ['http://localhost:8081'] },
+      { settingsService: service, trustedProxyCidrs: [] },
+    );
+
+    const response = await app.request('/api/settings/model-catalog/knowledge_chat');
+
+    assert.equal(response.status, 503);
+    const body = await response.json();
+    assert.equal(body.error.code, 'MODEL_UNAVAILABLE');
+    assert.equal(body.error.retryable, true);
+    assert.equal(JSON.stringify(body).includes('Bearer'), false);
   });
 });

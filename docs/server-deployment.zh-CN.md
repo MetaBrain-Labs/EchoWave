@@ -478,12 +478,12 @@ Remove-NetFirewallRule -DisplayName 'EchoWave API (Private LAN)'
 ## 5. 配置 AI 连接并启用模式
 
 1. 打开“更多 → AI 配置”，输入 `CONFIGURATION_ADMIN_TOKEN` 进入配置中心。
-2. 创建 DashScope 连接；所有模式都需要它完成 Qwen Embedding、文件转写和声学情绪。
-3. 创建 DeepSeek 逻辑连接；知识问答、角色、说话人复核和业务分析使用它。可以连接 DeepSeek 官方 API，也可以连接阿里云百炼的 DeepSeek OpenAI-compatible endpoint。
+2. 创建 DashScope 连接；所有模式都需要它，默认也由它承担 Qwen Embedding、文件转写、声学情绪以及全部文本类能力（知识问答、角色识别、说话人复核、业务分析）。只配置这一个连接即可跑通全部能力。
+3. 可选：只有想使用成本更低的备用方案时，才创建 DeepSeek 逻辑连接，并把文本类能力改绑到它（DeepSeek 官方 API 的缓存命中价格低于百炼同名模型）。它可以连接 DeepSeek 官方 API，也可以连接阿里云百炼的 DeepSeek OpenAI-compatible endpoint。
 4. 混合或对象存储模式还要创建阿里云 OSS 连接；轻量本地模式可以不配置 OSS。
 5. 检查“能力绑定”中的默认模型与连接，再打开“更多 → 运行模式”选择模式并保存。
 
-配置页允许编辑模型名并不表示任意模型都已经适配；优先保留当前默认值。模型与 Credential 说明见[配置与 Credential 指南](./configuration.md)。
+文本类能力可在“能力绑定”中搜索并改选模型，候选来自百炼官方模型列表接口，并已按能力职责过滤；Embedding 与 ASR 的模型固定，不能改选。模型与 Credential 说明见[配置与 Credential 指南](./configuration.md)。
 
 ## 6. 更新与备份
 

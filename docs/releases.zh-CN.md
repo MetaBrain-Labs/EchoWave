@@ -259,7 +259,7 @@ docker compose logs migrate
 docker compose logs api
 ```
 
-启动成功后，在 App 的“更多 → AI 配置”中创建 DashScope、DeepSeek 逻辑连接，并按运行模式决定是否配置阿里云 OSS。轻量本地模式不需要 OSS；默认混合模式需要 `audio_staging`；对象存储模式还需要 `audio_primary_storage`。随后在“更多 → 运行模式”中保存选择。当前默认模型和使用百炼承载 DeepSeek 的方式见[配置与 Credential 指南](./configuration.md)。
+启动成功后，在 App 的“更多 → AI 配置”中创建 DashScope 连接即可，默认由它承担全部能力；DeepSeek 连接是可选的，只在想把文本类能力改绑到缓存命中价更低的备用方案时才需要。随后按运行模式决定是否配置阿里云 OSS：轻量本地模式不需要 OSS，默认混合模式需要 `audio_staging`，对象存储模式还需要 `audio_primary_storage`。最后在“更多 → 运行模式”中保存选择。当前默认模型与文本类能力的模型选择方式见[配置与 Credential 指南](./configuration.md)。
 
 ## 7. 回退 Server
 

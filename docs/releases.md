@@ -157,7 +157,7 @@ curl http://localhost:3001/api/hello
 
 API starts only after `migrate` succeeds. On failure inspect `docker compose ps -a`, `docker compose logs migrate`, and `docker compose logs api`.
 
-After startup, create DashScope and DeepSeek connections under **More → AI Configuration** and configure OSS according to runtime mode: none for lightweight local, `audio_staging` for hybrid, and both `audio_staging`/`audio_primary_storage` for object storage. Save the mode under **More → Runtime Mode**. See [Configuration and Credentials](./configuration.md).
+After startup, create a DashScope connection under **More → AI Configuration**; it carries every capability by default. A DeepSeek connection is optional and only needed to rebind text capabilities to the cheaper cache-hit fallback. Configure OSS according to runtime mode: none for lightweight local, `audio_staging` for hybrid, and both `audio_staging`/`audio_primary_storage` for object storage. Save the mode under **More → Runtime Mode**. See [Configuration and Credentials](./configuration.md).
 
 ## 7. Roll back the Server
 

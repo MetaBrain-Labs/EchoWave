@@ -359,12 +359,12 @@ Remove-NetFirewallRule -DisplayName 'EchoWave API (Private LAN)'
 ## 5. Configure AI and runtime mode
 
 1. Open **More → AI Configuration** and enter `CONFIGURATION_ADMIN_TOKEN`.
-2. Create DashScope for Qwen embedding, file transcription, and acoustic emotion.
-3. Create a DeepSeek logical connection for knowledge answers, roles, speaker review, and business analysis. It may target official DeepSeek or Model Studio's compatible endpoint.
+2. Create DashScope. Every mode needs it, and it now carries Qwen embedding, file transcription, acoustic emotion, and all text capabilities (knowledge answers, business role, speaker review, business analysis) by default, so one connection is enough.
+3. Optional: create a DeepSeek logical connection only to use the cheaper fallback, then rebind text capabilities to it. The official DeepSeek API costs less per cache hit than the Model Studio model. It may target official DeepSeek or Model Studio's compatible endpoint.
 4. Add Alibaba Cloud OSS for hybrid or object-storage mode; lightweight local needs no OSS.
 5. Verify capability bindings, then save the mode under **More → Runtime Mode**.
 
-Editable model names do not imply arbitrary compatibility. Preserve current defaults unless a release documents an adapted model.
+Text capabilities let you search and change the model in **Capability bindings**; candidates come from the official Model Studio model list and are filtered by capability responsibility. Embedding and transcription models are fixed. See the [Configuration and Credential Guide](./configuration.md).
 
 ## 6. Backup and update
 

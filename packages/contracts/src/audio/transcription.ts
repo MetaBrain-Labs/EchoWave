@@ -1,11 +1,15 @@
 /**
  * 音频转写模型网络契约。
  *
- * 定义固定 DashScope 模型目录、能力、价格快照和转写启动请求响应。
+ * 定义 DashScope 转写默认模型、能力目录、价格快照和转写启动请求响应。
  *
  * Responsibilities:
  * - 保证 API 与移动端使用相同的模型能力声明。
  * - 校验预处理、分段和时间戳能力字段。
+ *
+ * Notes:
+ * - 模型 ID 不再限定为单个字面量：AI 配置允许在能力目录内改选，但只有能力目录中
+ *   已声明适配元数据的模型才能通过服务端绑定校验，运行时不变量仍由该目录兜底。
  */
 import { z } from 'zod';
 
@@ -15,7 +19,7 @@ import { AsrEnhancementSchema } from './asrEnhancement.ts';
 export const AUDIO_TRANSCRIPTION_MODELS = ['qwen-audio-3.0-asr-flash-filetrans'] as const;
 export const QWEN_AUDIO_FILETRANS_MODEL = 'qwen-audio-3.0-asr-flash-filetrans' as const;
 export const DEFAULT_AUDIO_TRANSCRIPTION_MODEL = QWEN_AUDIO_FILETRANS_MODEL;
-export const AudioTranscriptionModelSchema = z.enum(AUDIO_TRANSCRIPTION_MODELS);
+export const AudioTranscriptionModelSchema = z.string().trim().min(1).max(160);
 export const AudioTranscriptionProviderSchema = z.literal('dashscope');
 export const AudioTranscriptionSegmentationModeSchema = z.enum(['readable', 'speaker_turn']);
 export const AudioTranscriptionSpeakerIdentityScopeSchema = z.enum(['recording', 'chunk', 'none']);
@@ -66,7 +70,7 @@ export const AudioTranscriptionModelCapabilitySchema = z.object({
 });
 export const AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES = [
   {
-    id: 'qwen-audio-3.0-asr-flash-filetrans',
+    id: QWEN_AUDIO_FILETRANS_MODEL,
     provider: 'dashscope',
     displayName: 'Qwen Audio 3.0 ASR Flash Filetrans',
     description: '阿里云北京地域整文件转写，支持中文说话人分离与词级时间戳',
@@ -87,6 +91,12 @@ export const AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES = [
     unavailableReason: '需要完整配置 DashScope、北京地域 OSS 和 FFmpeg。',
   },
 ] as const satisfies readonly z.infer<typeof AudioTranscriptionModelCapabilitySchema>[];
+
+/** 读取某个转写模型的适配元数据；未声明适配的模型返回 undefined。 */
+export function audioTranscriptionModelCapability(model: string) {
+  return AUDIO_TRANSCRIPTION_MODEL_CAPABILITIES.find((capability) => capability.id === model);
+}
+
 export const AudioTranscriptionPreprocessingSchema = z.enum(['silero_vad', 'whole_file']);
 export const AudioTranscriptionStartRequestSchema = z
   .object({
@@ -99,19 +109,18 @@ export const AudioTranscriptionStartRequestSchema = z
     asrEnhancement: AsrEnhancementSchema.optional(),
   })
   .superRefine((request, context) => {
-    if (request.model !== undefined && request.model !== QWEN_AUDIO_FILETRANS_MODEL) {
+    // 只有已声明适配元数据的整文件转写模型能被客户端显式选择。
+    if (request.model !== undefined && !audioTranscriptionModelCapability(request.model)) {
       context.addIssue({
         code: 'custom',
         path: ['model'],
-        message: 'Only the DashScope Qwen Audio filetrans model is supported.',
+        message: 'The requested transcription model is not adapted in this repository.',
       });
     }
   });
 export const AudioTranscriptionCapabilitiesResponseSchema = z.object({
   defaultModel: AudioTranscriptionModelSchema,
-  models: z
-    .array(AudioTranscriptionModelCapabilitySchema)
-    .length(AUDIO_TRANSCRIPTION_MODELS.length),
+  models: z.array(AudioTranscriptionModelCapabilitySchema).min(1),
   ffmpeg: z.object({ configured: z.boolean(), available: z.boolean() }),
   sileroVad: z.object({
     model: z.literal('silero-vad-v6.2.1'),
