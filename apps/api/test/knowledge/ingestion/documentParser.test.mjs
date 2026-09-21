@@ -7,8 +7,63 @@ import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 
 import { parseKnowledgeDocument } from '../../../dist/knowledge/ingestion/documentParser.js';
+import { normalizeParsedDocumentSnapshot } from '../../../dist/knowledge/ingestion/parserTypes.js';
 
 const SPREADSHEET_MAIN_NAMESPACE = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+const graphemeSegmenter = new Intl.Segmenter('zh-CN', { granularity: 'grapheme' });
+
+function graphemeLength(value) {
+  return [...graphemeSegmenter.segment(value)].length;
+}
+
+async function wordDocument(paragraphs) {
+  const archive = new JSZip();
+  archive.file(
+    '[Content_Types].xml',
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+      '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>' +
+      '</Types>',
+  );
+  archive.file(
+    '_rels/.rels',
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+      '</Relationships>',
+  );
+  archive.file(
+    'word/_rels/document.xml.rels',
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
+      '</Relationships>',
+  );
+  archive.file(
+    'word/styles.xml',
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style>' +
+      '<w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/></w:style>' +
+      '</w:styles>',
+  );
+  const body = paragraphs
+    .map(({ text, style }) => {
+      const properties = style ? `<w:pPr><w:pStyle w:val="${style}"/></w:pPr>` : '';
+      return `<w:p>${properties}<w:r><w:t>${text}</w:t></w:r></w:p>`;
+    })
+    .join('');
+  archive.file(
+    'word/document.xml',
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      `<w:body>${body}<w:sectPr/></w:body></w:document>`,
+  );
+  return Buffer.from(await archive.generateAsync({ type: 'nodebuffer' }));
+}
 
 function relationshipSourcePath(entryName) {
   if (entryName === '_rels/.rels') return '';
@@ -49,6 +104,34 @@ async function namespacePrefixedWorkbook(buffer) {
 }
 
 describe('knowledge document parser', () => {
+  it('restores legacy revision snapshots with explicit metadata defaults', () => {
+    const restored = normalizeParsedDocumentSnapshot({
+      previewText: '旧内容',
+      warnings: [],
+      chunks: [
+        {
+          index: 1,
+          title: '旧标题',
+          headingPath: [],
+          content: '旧内容',
+          embeddingText: '旧内容',
+          contentSha256: 'a'.repeat(64),
+          locator: { kind: 'markdown', headingPath: [], lineStart: 1, lineEnd: 1 },
+        },
+      ],
+    });
+
+    assert.deepEqual(
+      {
+        contentKind: restored.chunks[0].contentKind,
+        titleSource: restored.chunks[0].titleSource,
+        partIndex: restored.chunks[0].partIndex,
+        partCount: restored.chunks[0].partCount,
+      },
+      { contentKind: 'legacy', titleSource: 'legacy', partIndex: 1, partCount: 1 },
+    );
+  });
+
   it('keeps markdown heading paths and line locations', async () => {
     const result = await parseKnowledgeDocument(
       Buffer.from('# 项目\n\n## 背景\n\n这是背景。\n\n## 结论\n\n这是结论。'),
@@ -57,8 +140,86 @@ describe('knowledge document parser', () => {
     );
 
     assert.deepEqual(result.chunks[0].headingPath, ['项目', '背景']);
+    assert.equal(result.chunks[0].title, '项目 / 背景');
+    assert.equal(result.chunks[0].titleSource, 'heading');
+    assert.equal(result.chunks[0].contentKind, 'prose');
+    assert.equal(result.chunks[0].partIndex, 1);
+    assert.equal(result.chunks[0].partCount, 1);
     assert.equal(result.chunks[0].locator.kind, 'markdown');
     assert.match(result.chunks[1].embeddingText, /Document: 项目\.md/);
+    assert.match(result.chunks[1].embeddingText, /Path: 项目 > 结论/);
+    assert.match(result.chunks[1].embeddingText, /Type: prose/);
+  });
+
+  it('keeps markdown structural kinds, sentence boundaries, graphemes, and deterministic output', async () => {
+    const longSentence = `超长句${'🙂'.repeat(1_250)}结束。`;
+    const source = [
+      '# 手册',
+      '',
+      '## 操作',
+      '',
+      '第一句。第二句用于验证英文 spacing is preserved.',
+      '',
+      '- 步骤一',
+      '- 步骤二',
+      '',
+      '| 字段 | 含义 |',
+      '| --- | --- |',
+      '| id | 编号 |',
+      '',
+      '```ts',
+      'const answer = 42;',
+      '```',
+      '',
+      longSentence,
+    ].join('\n');
+
+    const first = await parseKnowledgeDocument(Buffer.from(source), 'markdown', '手册.md');
+    const second = await parseKnowledgeDocument(Buffer.from(source), 'markdown', '手册.md');
+
+    assert.deepEqual(first, second);
+    assert.ok(first.chunks.every((chunk) => graphemeLength(chunk.content) <= 1_200));
+    assert.ok(first.chunks.some((chunk) => chunk.contentKind === 'mixed'));
+    const fullContent = first.chunks.map((chunk) => chunk.content).join('\n');
+    assert.match(fullContent, /- 步骤一\n- 步骤二/);
+    assert.match(fullContent, /\| 字段 \| 含义 \|\n\| id \| 编号 \|/);
+    assert.match(fullContent, /const answer = 42/);
+    assert.match(first.chunks.map((chunk) => chunk.content).join('\n'), /spacing is preserved\./);
+    const split = first.chunks.filter((chunk) => chunk.partCount > 1);
+    assert.ok(split.length > 1);
+    assert.ok(split.every((chunk) => /（\d+\/\d+）$/.test(chunk.title)));
+  });
+
+  it('merges short Word paragraphs within headings and falls back to the document title', async () => {
+    const buffer = await wordDocument([
+      { text: '无标题导语。' },
+      { text: '产品', style: 'Heading1' },
+      { text: '规格', style: 'Heading2' },
+      { text: '第一段。' },
+      { text: '第二段。' },
+      { text: '售后', style: 'Heading2' },
+      { text: '第三段。' },
+    ]);
+
+    const result = await parseKnowledgeDocument(buffer, 'word', '产品说明.docx');
+
+    assert.equal(result.chunks[0].title, '产品说明.docx · 正文');
+    assert.equal(result.chunks[0].titleSource, 'document');
+    assert.deepEqual(result.chunks[0].locator, {
+      kind: 'word',
+      headingPath: [],
+      paragraphStart: 1,
+      paragraphEnd: 1,
+    });
+    assert.equal(result.chunks[1].title, '产品 / 规格');
+    assert.equal(result.chunks[1].content, '第一段。\n\n第二段。');
+    assert.deepEqual(result.chunks[1].locator, {
+      kind: 'word',
+      headingPath: ['产品', '规格'],
+      paragraphStart: 2,
+      paragraphEnd: 3,
+    });
+    assert.equal(result.chunks[2].title, '产品 / 售后');
   });
 
   it('indexes visible spreadsheet rows with cached formula results', async () => {
@@ -74,6 +235,9 @@ describe('knowledge document parser', () => {
     const result = await parseKnowledgeDocument(buffer, 'spreadsheet', '销售.xlsx');
 
     assert.equal(result.chunks.length, 1);
+    assert.equal(result.chunks[0].title, '销售明细 · 华东');
+    assert.equal(result.chunks[0].titleSource, 'row_identity');
+    assert.equal(result.chunks[0].contentKind, 'spreadsheet_record');
     assert.match(result.chunks[0].content, /销售额: 42/);
     assert.deepEqual(result.chunks[0].locator, {
       kind: 'spreadsheet',
@@ -102,6 +266,8 @@ describe('knowledge document parser', () => {
     const result = await parseKnowledgeDocument(buffer, 'spreadsheet', '产品.xlsx');
 
     assert.equal(result.chunks.length, 2);
+    assert.equal(result.chunks[0].titleSource, 'sheet_preamble');
+    assert.equal(result.chunks[0].contentKind, 'spreadsheet_preamble');
     assert.match(result.chunks[0].content, /说明: 产品知识库/);
     assert.match(result.chunks[0].content, /说明: 仅用于事实核验。/);
     assert.deepEqual(result.chunks[0].locator, {
@@ -193,6 +359,12 @@ describe('knowledge document parser', () => {
     );
 
     assert.ok(result.chunks.length > 1);
+    assert.ok(result.chunks.every((chunk) => graphemeLength(chunk.content) <= 1_200));
+    assert.ok(result.chunks.every((chunk) => chunk.partCount === result.chunks.length));
+    assert.deepEqual(
+      result.chunks.map((chunk) => chunk.partIndex),
+      Array.from({ length: result.chunks.length }, (_, index) => index + 1),
+    );
     assert.ok(
       result.chunks.every(
         (chunk) =>

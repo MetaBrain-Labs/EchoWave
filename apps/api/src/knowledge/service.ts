@@ -79,6 +79,11 @@ export type KnowledgeService = {
     file: File,
     input: { title?: string; expectedVersion: number },
   ): Promise<unknown>;
+  reindexDocument(
+    knowledgeBaseId: string,
+    documentId: string,
+    input: { expectedVersion: number },
+  ): Promise<unknown>;
   getCitationSource(
     knowledgeBaseId: string,
     documentId: string,
@@ -271,6 +276,77 @@ export class DefaultKnowledgeService implements KnowledgeService {
       title: input.title ?? document.latestRevision?.title ?? document.title,
     });
   }
+  /** 使用持久原文件创建 parser v3 revision，旧 active 版本在发布前保持可检索。 */
+  async reindexDocument(
+    knowledgeBaseId: string,
+    documentId: string,
+    input: { expectedVersion: number },
+  ) {
+    const document = await this.repository.getDocument(knowledgeBaseId, documentId);
+    if (document.caseId) throw new RagRepositoryError('CONFLICT', '请通过案例入口更新该文档。');
+    if (document.version !== input.expectedVersion)
+      throw new RagRepositoryError('CONFLICT', '文档版本已变化，请刷新后重试。');
+    const source = await this.repository.getOriginalSource(knowledgeBaseId, documentId);
+    const directory = path.resolve(this.knowledgeStorageDirectory);
+    await mkdir(directory, { recursive: true });
+    const storageKey = `${randomUUID()}.upload`;
+    const stagedPath = knowledgeStoragePath(directory, storageKey);
+    let sourcePath: string | undefined;
+    try {
+      sourcePath = source.storageKey
+        ? knowledgeStoragePath(directory, source.storageKey)
+        : source.stagedPath
+          ? checkedKnowledgeFilePath(source.stagedPath, [
+              directory,
+              ...(this.legacyTempDirectory ? [this.legacyTempDirectory] : []),
+            ])
+          : undefined;
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        ['INVALID_STORAGE_KEY', 'INVALID_STORAGE_PATH'].includes(error.message)
+      ) {
+        throw new RagRepositoryError('CONFLICT', '原文件已不可用，请替换上传文件。');
+      }
+      throw error;
+    }
+    if (!sourcePath) throw new RagRepositoryError('CONFLICT', '原文件已不可用，请替换上传文件。');
+    let committed = false;
+    try {
+      try {
+        await copyFile(sourcePath, stagedPath, constants.COPYFILE_EXCL);
+      } catch (error) {
+        if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+          throw new RagRepositoryError('CONFLICT', '原文件已不可用，请替换上传文件。');
+        }
+        throw error;
+      }
+      const embedding = await this.settings.resolveCapability('knowledge_embedding');
+      const result = await this.ingestionRepository.createIngestion({
+        classificationSourceRevisionId: source.revisionId,
+        knowledgeBaseId,
+        documentId,
+        expectedVersion: input.expectedVersion,
+        title: source.title,
+        format: source.format,
+        sizeBytes: source.sizeBytes,
+        sourceSha256: source.sourceSha256,
+        stagedPath,
+        storageKey,
+        parserVersion: KNOWLEDGE_PARSER_VERSION,
+        embeddingModel: embedding.model,
+        embeddingBindingRevisionId: embedding.revisionId,
+      });
+      committed = true;
+      return DocumentUploadResponseSchema.parse({
+        document: await this.repository.getDocument(knowledgeBaseId, documentId),
+        jobId: result.jobId,
+      });
+    } catch (error) {
+      if (!committed) await unlink(stagedPath).catch(() => undefined);
+      throw error;
+    }
+  }
   /** 改名复制最新原文件，旧部署无文件时使用已固化 chunk 输入。 */
   async renameDocument(
     knowledgeBaseId: string,
@@ -287,17 +363,25 @@ export class DefaultKnowledgeService implements KnowledgeService {
     const rebuildSnapshot = source.rebuildSnapshot
       ? {
           ...source.rebuildSnapshot,
-          chunks: source.rebuildSnapshot.chunks.map((chunk) => ({
-            ...chunk,
-            title: chunk.title === source.revision.title ? input.title : chunk.title,
-            embeddingText: [
-              `Document: ${input.title}`,
-              chunk.headingPath.length ? `Section: ${chunk.headingPath.join(' > ')}` : '',
-              chunk.content,
-            ]
-              .filter(Boolean)
-              .join('\n'),
-          })),
+          chunks: source.rebuildSnapshot.chunks.map((chunk) => {
+            const title =
+              chunk.titleSource === 'document' || chunk.title === source.revision.title
+                ? `${input.title} · 正文${chunk.partCount > 1 ? `（${chunk.partIndex}/${chunk.partCount}）` : ''}`
+                : chunk.title;
+            return {
+              ...chunk,
+              title,
+              embeddingText: [
+                `Document: ${input.title}`,
+                `Chunk: ${title}`,
+                chunk.headingPath.length ? `Path: ${chunk.headingPath.join(' > ')}` : '',
+                `Type: ${chunk.contentKind}`,
+                `Content: ${chunk.content}`,
+              ]
+                .filter(Boolean)
+                .join('\n'),
+            };
+          }),
         }
       : undefined;
     let committed = false;

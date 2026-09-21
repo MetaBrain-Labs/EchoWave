@@ -22,6 +22,7 @@ import type { ParsedDocument } from '../documentParser.ts';
 import { runReportedStep } from '../../../ai-runtime/reportedStep.ts';
 import type { DashScopeEmbeddings } from '../../embeddings/dashScopeEmbeddings.ts';
 import { DocumentParseError, parseKnowledgeDocument } from '../documentParser.ts';
+import { normalizeParsedDocumentSnapshot } from '../parserTypes.ts';
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
@@ -80,7 +81,9 @@ export function createIngestionNodes(options: IngestionNodeOptions) {
       'parse',
       async () => {
         await options.repository.setJobStage(job, 'parse', 'parsing');
-        return job.rebuildSnapshot ?? parseKnowledgeDocument(source, job.format, job.title);
+        return job.rebuildSnapshot
+          ? normalizeParsedDocumentSnapshot(job.rebuildSnapshot)
+          : parseKnowledgeDocument(source, job.format, job.title);
       },
       (value) => ({
         chunkCount: value.chunks.length,

@@ -88,18 +88,58 @@ export const DocumentReplacementRequestSchema = z.object({
     .pipe(z.number().int().nonnegative()),
   title: z.string().trim().min(1).max(255).optional(),
 });
+/** 使用当前解析策略重建已有文档索引时的乐观锁请求。 */
+export const DocumentReindexRequestSchema = z
+  .object({ expectedVersion: z.number().int().nonnegative() })
+  .strict();
+
+/** 文档块承载的主要内容结构。 */
+export const DocumentChunkContentKindSchema = z.enum([
+  'prose',
+  'list',
+  'table',
+  'code',
+  'spreadsheet_record',
+  'spreadsheet_preamble',
+  'mixed',
+  'legacy',
+]);
+/** 文档块展示标题的确定性来源。 */
+export const DocumentChunkTitleSourceSchema = z.enum([
+  'heading',
+  'document',
+  'row_identity',
+  'row_number',
+  'sheet_preamble',
+  'legacy',
+]);
 
 /** 可独立检索和引用的文档块 schema。 */
-export const DocumentChunkSchema = z.object({
-  id: EntityIdSchema,
-  index: z.number().int().positive(),
-  title: z.string(),
-  content: z.string(),
-  charCount: z.number().int().nonnegative(),
-  vectorId: z.string(),
-  locator: SourceLocatorSchema,
-  sourceExcerpt: z.string(),
-});
+export const DocumentChunkSchema = z
+  .object({
+    id: EntityIdSchema,
+    index: z.number().int().positive(),
+    title: z.string(),
+    content: z.string(),
+    charCount: z.number().int().nonnegative(),
+    vectorId: z.string(),
+    locator: SourceLocatorSchema,
+    sourceExcerpt: z.string(),
+    headingPath: z.array(z.string()),
+    contentKind: DocumentChunkContentKindSchema,
+    titleSource: DocumentChunkTitleSourceSchema,
+    partIndex: z.number().int().positive(),
+    partCount: z.number().int().positive(),
+  })
+  .superRefine((value, context) => {
+    if (value.partIndex > value.partCount) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['partIndex'],
+        message: 'partIndex 不能大于 partCount。',
+      });
+    }
+  });
 /** 知识文档列表记录 schema。 */
 export const KnowledgeDocumentSchema = z.object({
   /** 案例生成的文档必须回到案例入口编辑。 */
@@ -114,6 +154,8 @@ export const KnowledgeDocumentSchema = z.object({
   updatedAt: z.string().datetime(),
   version: z.number().int().nonnegative().optional(),
   activeRevisionId: EntityIdSchema.nullable().optional(),
+  parserVersion: z.string(),
+  needsReindex: z.boolean(),
   latestRevision: z
     .object({
       id: EntityIdSchema,
@@ -142,6 +184,10 @@ export const DocumentUploadResponseSchema = z.object({
 
 /** 可引用文档块类型。 */
 export type DocumentChunk = z.infer<typeof DocumentChunkSchema>;
+/** 文档块承载的主要内容结构。 */
+export type DocumentChunkContentKind = z.infer<typeof DocumentChunkContentKindSchema>;
+/** 文档块标题的确定性来源。 */
+export type DocumentChunkTitleSource = z.infer<typeof DocumentChunkTitleSourceSchema>;
 /** 支持的知识文档格式类型。 */
 export type DocumentFormat = z.infer<typeof DocumentFormatSchema>;
 /** 文档处理状态类型。 */

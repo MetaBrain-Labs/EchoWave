@@ -24,6 +24,10 @@ it('validates revision writes and maps conflicts without altering DELETE semanti
           calls.push(args);
           return { accepted: true };
         },
+        reindexDocument: async (...args) => {
+          calls.push(args);
+          return { accepted: true };
+        },
         deleteDocument: async (...args) => {
           calls.push(args);
         },
@@ -54,6 +58,27 @@ it('validates revision writes and maps conflicts without altering DELETE semanti
   form.append('expectedVersion', '3');
   assert.equal((await app.request(`${url}/revisions`, { method: 'POST', body: form })).status, 202);
   assert.deepEqual(calls[1].at(-1), { expectedVersion: 3 });
+  assert.equal(
+    (
+      await app.request(`${url}/reindex`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expectedVersion: 3, force: true }),
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await app.request(`${url}/reindex`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expectedVersion: 3 }),
+      })
+    ).status,
+    202,
+  );
+  assert.deepEqual(calls[2], [kb, doc, { expectedVersion: 3 }]);
   assert.equal((await app.request(url, { method: 'DELETE' })).status, 204);
   assert.deepEqual(await (await app.request(`${url}/revisions/${doc}/source-status`)).json(), {
     status: 'deleted',

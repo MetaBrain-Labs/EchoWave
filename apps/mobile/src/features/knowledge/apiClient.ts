@@ -274,6 +274,18 @@ export const retryDocument = (knowledgeId: string, documentId: string) =>
     { method: 'POST' },
   );
 
+/** 使用服务器持久原文件和当前 parser 重建一个新的文档 revision。 */
+export const reindexDocument = (knowledgeId: string, documentId: string, expectedVersion: number) =>
+  request(
+    `/api/knowledge-bases/${knowledgeId}/documents/${documentId}/reindex`,
+    DocumentUploadResponseSchema,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expectedVersion }),
+    },
+  );
+
 /** 提交问题并读取完整、已通过服务器引用校验的最终回答 JSON。 */
 export const queryKnowledge = (
   knowledgeId: string,

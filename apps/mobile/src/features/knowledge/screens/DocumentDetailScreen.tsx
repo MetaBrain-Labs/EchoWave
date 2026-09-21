@@ -62,6 +62,30 @@ type Tab = (typeof tabKeys)[number];
 type PreviewMode = 'preview' | 'code';
 type ChunkFilter = 'all' | 'important';
 
+function contentKindLabel(
+  kind: DocumentChunk['contentKind'],
+  t: ReturnType<typeof useAppLanguage>['t'],
+): string {
+  switch (kind) {
+    case 'list':
+      return t('documentDetail.kindList');
+    case 'table':
+      return t('documentDetail.kindTable');
+    case 'code':
+      return t('documentDetail.kindCode');
+    case 'spreadsheet_record':
+      return t('documentDetail.kindRecord');
+    case 'spreadsheet_preamble':
+      return t('documentDetail.kindPreamble');
+    case 'mixed':
+      return t('documentDetail.kindMixed');
+    case 'legacy':
+      return t('documentDetail.kindLegacy');
+    default:
+      return t('documentDetail.kindProse');
+  }
+}
+
 function formatBytes(sizeBytes: number, language: SupportedLanguage) {
   const formatter = new Intl.NumberFormat(language, {
     minimumFractionDigits: 1,
@@ -182,7 +206,7 @@ export function DocumentDetailScreen({
     const matching = !normalized
       ? (document?.chunks ?? [])
       : (document?.chunks ?? []).filter((chunk) =>
-          `${chunk.title}\n${chunk.content}\n${chunk.vectorId}`
+          `${chunk.title}\n${chunk.headingPath.join(' ')}\n${chunk.content}\n${chunk.vectorId}`
             .toLocaleLowerCase()
             .includes(normalized),
         );
@@ -451,6 +475,14 @@ export function DocumentDetailScreen({
                       />
                     </View>
                     <View style={styles.chunkMetaRow}>
+                      <Text style={styles.meta}>
+                        {chunk.headingPath.join(' / ') || t('documentDetail.body')} ·{' '}
+                        {contentKindLabel(chunk.contentKind, t)} ·{' '}
+                        {t('documentDetail.part', {
+                          index: formatNumber(chunk.partIndex),
+                          count: formatNumber(chunk.partCount),
+                        })}
+                      </Text>
                       <Text style={styles.meta}>
                         {t('documentDetail.vectorId', { id: chunk.vectorId.slice(0, 8) })}
                       </Text>

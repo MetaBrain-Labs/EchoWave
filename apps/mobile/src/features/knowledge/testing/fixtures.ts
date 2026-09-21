@@ -50,6 +50,8 @@ export const document: KnowledgeDocumentDetail = {
   sizeBytes: 1024,
   status: { kind: 'ready', parsedAt: '2026-08-19T10:00:00.000Z' },
   vectorCount: 2,
+  parserVersion: 'echowave-parser-v3',
+  needsReindex: false,
   updatedAt: '2026-08-19T10:00:00.000Z',
   previewText: '研究背景\n核心需求',
   chunks: [
@@ -62,6 +64,11 @@ export const document: KnowledgeDocumentDetail = {
       vectorId: '33333333-3333-4333-8333-333333333333',
       locator: { kind: 'markdown', headingPath: ['研究背景'], lineStart: 3, lineEnd: 5 },
       sourceExcerpt: '团队正在梳理音频访谈工作流。',
+      headingPath: ['研究背景'],
+      contentKind: 'prose',
+      titleSource: 'heading',
+      partIndex: 1,
+      partCount: 1,
     },
     {
       id: '44444444-4444-4444-8444-444444444444',
@@ -72,6 +79,11 @@ export const document: KnowledgeDocumentDetail = {
       vectorId: '44444444-4444-4444-8444-444444444444',
       locator: { kind: 'markdown', headingPath: ['核心需求'], lineStart: 8, lineEnd: 10 },
       sourceExcerpt: '回答需要关联原始证据。',
+      headingPath: ['核心需求'],
+      contentKind: 'prose',
+      titleSource: 'heading',
+      partIndex: 1,
+      partCount: 1,
     },
   ],
 };

@@ -21,6 +21,7 @@ import {
   deleteDocument,
   getDocument,
   renameDocument,
+  reindexDocument,
   retryDocument,
   uploadDocument,
 } from '../apiClient';
@@ -54,7 +55,9 @@ function DocumentEditorSession({
 }: DocumentEditorProps) {
   const { t } = useAppLanguage();
   const [document, setDocument] = useState(initialDocument);
-  const [mode, setMode] = useState<'rename' | 'delete' | 'failure' | 'retry' | 'reupload'>();
+  const [mode, setMode] = useState<
+    'rename' | 'delete' | 'failure' | 'retry' | 'reupload' | 'reindex'
+  >();
   const [title, setTitle] = useState(
     initialDocument?.latestRevision?.title ?? initialDocument?.title ?? '',
   );
@@ -63,7 +66,7 @@ function DocumentEditorSession({
   const run = async (
     action: () => Promise<unknown>,
     deleting = false,
-    verification?: { kind: 'rename'; title: string } | { kind: 'replace' | 'retry' },
+    verification?: { kind: 'rename'; title: string } | { kind: 'replace' | 'retry' | 'reindex' },
   ) => {
     if (pending || !document) return;
     setPending(true);
@@ -94,7 +97,15 @@ function DocumentEditorSession({
             onClose();
             return;
           }
-          setError(t(code === 'CONFLICT' ? 'knowledgeEdit.conflict' : 'knowledgeEdit.uncertain'));
+          setError(
+            code === 'CONFLICT'
+              ? advanced
+                ? t('knowledgeEdit.conflict')
+                : reason instanceof Error
+                  ? reason.message
+                  : t('knowledgeEdit.conflict')
+              : t('knowledgeEdit.uncertain'),
+          );
         } catch (readError) {
           if (
             deleting &&
@@ -151,6 +162,7 @@ function DocumentEditorSession({
           onReplace={() => void replace()}
           onDelete={() => setMode('delete')}
           onRetry={() => setMode('retry')}
+          onReindex={() => setMode('reindex')}
           onReupload={() => setMode('reupload')}
           onShowFailure={() => setMode('failure')}
           error={error}
@@ -173,9 +185,11 @@ function DocumentEditorSession({
                     ? 'documentActions.failure'
                     : mode === 'retry'
                       ? 'documentDetail.reparse'
-                      : mode === 'reupload'
-                        ? 'documentActions.reupload'
-                        : 'knowledgeEdit.rename',
+                      : mode === 'reindex'
+                        ? 'documentActions.reindex'
+                        : mode === 'reupload'
+                          ? 'documentActions.reupload'
+                          : 'knowledgeEdit.rename',
               )}
             </Text>
             {mode === 'rename' ? (
@@ -195,10 +209,12 @@ function DocumentEditorSession({
               <Text selectable style={styles.text}>
                 {mode === 'delete'
                   ? t('knowledgeEdit.deleteHint', { title: document?.title ?? '' })
-                  : mode === 'retry' || mode === 'reupload'
-                    ? t('knowledgeEdit.retryHint')
-                    : (document?.latestRevision?.error?.message ??
-                      (document?.status.kind === 'failed' ? document.status.message : ''))}
+                  : mode === 'reindex'
+                    ? t('knowledgeEdit.reindexHint')
+                    : mode === 'retry' || mode === 'reupload'
+                      ? t('knowledgeEdit.retryHint')
+                      : (document?.latestRevision?.error?.message ??
+                        (document?.status.kind === 'failed' ? document.status.message : ''))}
               </Text>
             )}
             {error ? (
@@ -228,17 +244,19 @@ function DocumentEditorSession({
                       () =>
                         mode === 'retry'
                           ? retryDocument(knowledgeId, document!.id)
-                          : mode === 'delete'
-                            ? deleteDocument(knowledgeId, document!.id)
-                            : renameDocument(
-                                knowledgeId,
-                                document!.id,
-                                title.trim(),
-                                document!.version ?? 0,
-                              ),
+                          : mode === 'reindex'
+                            ? reindexDocument(knowledgeId, document!.id, document!.version ?? 0)
+                            : mode === 'delete'
+                              ? deleteDocument(knowledgeId, document!.id)
+                              : renameDocument(
+                                  knowledgeId,
+                                  document!.id,
+                                  title.trim(),
+                                  document!.version ?? 0,
+                                ),
                       mode === 'delete',
-                      mode === 'retry'
-                        ? { kind: 'retry' }
+                      mode === 'retry' || mode === 'reindex'
+                        ? { kind: mode }
                         : mode === 'rename'
                           ? { kind: 'rename', title: title.trim() }
                           : undefined,

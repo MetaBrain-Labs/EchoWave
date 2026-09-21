@@ -83,6 +83,7 @@ export function KnowledgeDocumentActions({
   onOpen,
   onReupload,
   onRetry,
+  onReindex,
   onShowFailure,
   pending,
   onRename,
@@ -95,6 +96,7 @@ export function KnowledgeDocumentActions({
   onOpen: () => void;
   onReupload: () => void;
   onRetry: () => void;
+  onReindex?: () => void;
   onShowFailure: () => void;
   pending: boolean;
   onRename?: () => void;
@@ -150,12 +152,26 @@ export function KnowledgeDocumentActions({
         ) : null}
         {statusDescription ? <Text style={styles.description}>{statusDescription}</Text> : null}
         {document?.status.kind === 'ready' ? (
-          <ActionItem
-            disabled={pending}
-            icon="document-text-outline"
-            label={t('documentActions.view')}
-            onPress={onOpen}
-          />
+          <>
+            <ActionItem
+              disabled={pending}
+              icon="document-text-outline"
+              label={t('documentActions.view')}
+              onPress={onOpen}
+            />
+            {!document.caseId && onReindex ? (
+              <ActionItem
+                disabled={pending}
+                icon="sync-outline"
+                label={t(
+                  document.needsReindex
+                    ? 'documentActions.reindexRecommended'
+                    : 'documentActions.reindex',
+                )}
+                onPress={onReindex}
+              />
+            ) : null}
+          </>
         ) : null}
         {failed ? (
           <ActionItem

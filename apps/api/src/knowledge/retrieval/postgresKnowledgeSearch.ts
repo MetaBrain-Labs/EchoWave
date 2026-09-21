@@ -14,6 +14,8 @@ import {
   SourceLocatorSchema,
   KnowledgeCategorySchema,
   KnowledgeCategoryFilterSchema,
+  DocumentChunkContentKindSchema,
+  DocumentChunkTitleSourceSchema,
 } from '@echowave/contracts';
 import { toSql } from 'pgvector';
 
@@ -103,6 +105,7 @@ export class PostgresKnowledgeSearch implements KnowledgeSearchPort {
       await client.query("SET LOCAL hnsw.iterative_scan = 'relaxed_order'");
       const result = await client.query(
         `SELECT c.id, c.knowledge_base_id, c.document_id, c.revision_id, d.title AS document_title,
+                c.title, c.heading_path, c.content_kind, c.title_source, c.part_index, c.part_count,
                 c.content, c.content_sha256, c.locator, c.embedding <=> $3::vector AS distance
          FROM ${this.table('document_chunks')} c
          JOIN ${this.table('documents')} d
@@ -135,29 +138,46 @@ export class PostgresKnowledgeSearch implements KnowledgeSearchPort {
   }
 
   private select(rows: Record<string, any>[], maximum: number, characterLimit: number) {
-    const hashes = new Set<string>();
+    const contextHashes = new Set<string>();
     const perDocument = new Map<string, number>();
     const selected: RetrievalChunk[] = [];
     let characters = 0;
     for (const row of rows) {
-      if (hashes.has(row.content_sha256)) continue;
+      const headingPath = Array.isArray(row.heading_path)
+        ? row.heading_path.map((item: unknown) => String(item))
+        : [];
+      const contextHash = `${headingPath.join('\u001f')}\u001e${row.content_sha256}`;
+      if (contextHashes.has(contextHash)) continue;
       const count = perDocument.get(row.document_id) ?? 0;
+      const payloadCharacters = [
+        row.document_title,
+        row.title,
+        headingPath.join(' > '),
+        row.content_kind,
+        row.content,
+      ].join('\n').length;
       if (
         count >= 3 ||
         selected.length >= maximum ||
-        characters + row.content.length > characterLimit
+        characters + payloadCharacters > characterLimit
       ) {
         continue;
       }
-      hashes.add(row.content_sha256);
+      contextHashes.add(contextHash);
       perDocument.set(row.document_id, count + 1);
-      characters += row.content.length;
+      characters += payloadCharacters;
       selected.push({
         id: row.id,
         knowledgeBaseId: row.knowledge_base_id,
         documentId: row.document_id,
         revisionId: row.revision_id,
         documentTitle: row.document_title,
+        title: String(row.title),
+        headingPath,
+        contentKind: DocumentChunkContentKindSchema.parse(row.content_kind),
+        titleSource: DocumentChunkTitleSourceSchema.parse(row.title_source),
+        partIndex: Number(row.part_index),
+        partCount: Number(row.part_count),
         content: row.content,
         locator: SourceLocatorSchema.parse(row.locator),
         distance: Number(row.distance),

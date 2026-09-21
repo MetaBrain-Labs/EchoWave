@@ -13,10 +13,29 @@ import { toString } from 'mdast-util-to-string';
 import remarkGfm from 'remark-gfm';
 import remarkParse from 'remark-parse';
 import { unified, type Plugin } from 'unified';
-import type { Root, RootContent } from 'mdast';
+import type { Root } from 'mdast';
 
 import { normalizeText } from '../chunking.ts';
 import { DocumentParseError, type SemanticSection } from '../parserTypes.ts';
+
+function markdownNodeText(node: Root['children'][number]): string {
+  if (node.type === 'list') {
+    const start = node.start ?? 1;
+    return node.children
+      .map((item, index) => {
+        const marker = node.ordered ? `${start + index}.` : '-';
+        const content = normalizeText(toString(item)).replace(/\n/g, '\n  ');
+        return `${marker} ${content}`;
+      })
+      .join('\n');
+  }
+  if (node.type === 'table') {
+    return node.children
+      .map((row) => `| ${row.children.map((cell) => normalizeText(toString(cell))).join(' | ')} |`)
+      .join('\n');
+  }
+  return toString(node);
+}
 
 export function parseMarkdown(buffer: Buffer): { sections: SemanticSection[]; warnings: string[] } {
   const source = buffer.toString('utf8');
@@ -41,41 +60,33 @@ export function parseMarkdown(buffer: Buffer): { sections: SemanticSection[]; wa
     .parse(markdown) as Root;
   const sections: SemanticSection[] = [];
   const headingPath: string[] = frontmatterTitle ? [frontmatterTitle] : [];
-  let currentNodes: RootContent[] = [];
-  let currentTitle = '';
-  let lineStart = 1;
-
-  const flush = (lineEnd: number) => {
-    const content = normalizeText(currentNodes.map((node) => toString(node)).join('\n\n'));
-    if (content) {
-      sections.push({
-        title: currentTitle,
-        headingPath: [...headingPath],
-        content,
-        locator: {
-          kind: 'markdown',
-          headingPath: [...headingPath],
-          lineStart,
-          lineEnd: Math.max(lineStart, lineEnd),
-        },
-      });
-    }
-    currentNodes = [];
-  };
-
   for (const node of tree.children) {
     if (node.type === 'heading') {
-      flush((node.position?.start.line ?? lineStart) - 1);
       const title = normalizeText(toString(node));
       headingPath.splice(node.depth - 1);
       headingPath[node.depth - 1] = title;
-      currentTitle = title;
-      lineStart = (node.position?.end.line ?? node.position?.start.line ?? lineStart) + 1;
     } else {
-      if (currentNodes.length === 0) lineStart = node.position?.start.line ?? lineStart;
-      currentNodes.push(node);
+      const content = normalizeText(markdownNodeText(node));
+      if (!content) continue;
+      const lineStart = node.position?.start.line ?? 1;
+      const lineEnd = node.position?.end.line ?? lineStart;
+      const contentKind =
+        node.type === 'list'
+          ? 'list'
+          : node.type === 'table'
+            ? 'table'
+            : node.type === 'code'
+              ? 'code'
+              : 'prose';
+      sections.push({
+        title: headingPath.join(' / '),
+        titleSource: headingPath.length ? 'heading' : 'document',
+        headingPath: [...headingPath],
+        content,
+        contentKind,
+        locator: { kind: 'markdown', headingPath: [...headingPath], lineStart, lineEnd },
+      });
     }
   }
-  flush(tree.position?.end.line ?? lineStart);
   return { sections, warnings: [] };
 }

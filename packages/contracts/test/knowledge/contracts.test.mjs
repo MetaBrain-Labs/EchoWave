@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  DocumentChunkSchema,
+  DocumentReindexRequestSchema,
   KnowledgeBaseCreateRequestSchema,
   KnowledgeBaseDetailSchema,
   KnowledgeBaseGroupLinkRequestSchema,
@@ -11,6 +13,33 @@ import {
 } from '../../dist/index.js';
 
 describe('knowledge contracts', () => {
+  it('requires authoritative chunk metadata and a strict reindex version', () => {
+    const id = '00000000-0000-4000-8000-000000000001';
+    const chunk = {
+      id,
+      index: 1,
+      title: '产品 / 规格',
+      headingPath: ['产品', '规格'],
+      contentKind: 'table',
+      titleSource: 'heading',
+      partIndex: 1,
+      partCount: 2,
+      content: '规格内容',
+      charCount: 4,
+      vectorId: 'vector-1',
+      locator: { kind: 'markdown', headingPath: ['产品', '规格'], lineStart: 3, lineEnd: 6 },
+      sourceExcerpt: '规格内容',
+    };
+
+    assert.equal(DocumentChunkSchema.parse(chunk).contentKind, 'table');
+    assert.throws(() => DocumentChunkSchema.parse({ ...chunk, partIndex: 3 }));
+    assert.throws(() => DocumentChunkSchema.parse({ ...chunk, headingPath: undefined }));
+    assert.deepEqual(DocumentReindexRequestSchema.parse({ expectedVersion: 2 }), {
+      expectedVersion: 2,
+    });
+    assert.throws(() => DocumentReindexRequestSchema.parse({ expectedVersion: 2, force: true }));
+  });
+
   it('validates each source locator without inventing page numbers', () => {
     assert.equal(
       SourceLocatorSchema.parse({

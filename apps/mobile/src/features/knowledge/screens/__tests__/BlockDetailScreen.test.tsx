@@ -40,6 +40,7 @@ describe('BlockDetailScreen', () => {
     );
 
     expect(await screen.findAllByText('来源位置：研究背景，第 3-5 行')).toHaveLength(2);
+    expect(screen.getByText('研究背景 · 正文 · 分段 1/1')).toBeTruthy();
     expect(screen.getByLabelText('下一块：核心需求')).toBeTruthy();
     fireEvent.press(screen.getByText('定位原文'));
     expect(onLocateOriginal).toHaveBeenCalledWith(document.chunks[0]?.id);

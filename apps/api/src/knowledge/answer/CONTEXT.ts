@@ -85,7 +85,16 @@ export function groundedRescueContext(): string {
 /** 构造“补齐依据”调用的问题与候选段落输入。 */
 export function groundedRescueInput(
   question: string,
-  passages: { chunkId: string; documentTitle: string; content: string }[],
+  passages: {
+    chunkId: string;
+    documentTitle: string;
+    title: string;
+    headingPath: string[];
+    contentKind: string;
+    partIndex: number;
+    partCount: number;
+    content: string;
+  }[],
 ): string {
   return `Question: ${question}\nRetrieved passages: ${JSON.stringify(passages)}`;
 }

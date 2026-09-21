@@ -199,7 +199,7 @@ export class CollectionService {
       sourceSha256: createHash('sha256').update(buffer).digest('hex'),
       stagedPath: '',
       rebuildSnapshot: snapshot,
-      parserVersion: 'case-markdown-v1',
+      parserVersion: 'case-markdown-v2',
       embeddingModel: embedding.model,
       embeddingBindingRevisionId: embedding.revisionId,
     });

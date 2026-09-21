@@ -14,6 +14,7 @@ import {
   KnowledgeBaseCreateRequestSchema,
   DocumentRenameRequestSchema,
   DocumentReplacementRequestSchema,
+  DocumentReindexRequestSchema,
   KnowledgeBaseUpdateRequestSchema,
   KnowledgeDocumentStreamEventSchema,
   RagQueryRequestSchema,
@@ -221,6 +222,20 @@ export function registerKnowledgeRoutes(
     await service.retryDocument(knowledgeBaseId, documentId);
     return context.json(await service.getDocument(knowledgeBaseId, documentId), 202);
   });
+  app.post(
+    '/api/knowledge-bases/:knowledgeBaseId/documents/:documentId/reindex',
+    async (context) => {
+      const input = DocumentReindexRequestSchema.parse(await context.req.json());
+      return context.json(
+        await service.reindexDocument(
+          entityId(context.req.param('knowledgeBaseId')),
+          entityId(context.req.param('documentId')),
+          input,
+        ),
+        202,
+      );
+    },
+  );
   app.get('/api/knowledge-bases/:knowledgeBaseId/documents/:documentId/chunks', async (context) =>
     context.json(
       await service.listChunks(

@@ -484,6 +484,11 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
                 chunks: chunks.map((chunk) => ({
                   chunkId: chunk.id,
                   documentTitle: chunk.documentTitle,
+                  title: chunk.title,
+                  headingPath: chunk.headingPath,
+                  contentKind: chunk.contentKind,
+                  partIndex: chunk.partIndex,
+                  partCount: chunk.partCount,
                   locator: chunk.locator,
                   content: chunk.content,
                 })),
@@ -621,6 +626,11 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         const passages = [...retrieved.values()].slice(0, MAX_GROUNDING_PASSAGES).map((chunk) => ({
           chunkId: chunk.id,
           documentTitle: chunk.documentTitle,
+          title: chunk.title,
+          headingPath: chunk.headingPath,
+          contentKind: chunk.contentKind,
+          partIndex: chunk.partIndex,
+          partCount: chunk.partCount,
           content: chunk.content,
         }));
         const rescued = await runtime.agent.groundAnswer({
