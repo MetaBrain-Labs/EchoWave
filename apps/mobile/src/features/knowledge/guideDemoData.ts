@@ -51,6 +51,8 @@ export const guideDemoDocument: KnowledgeDocumentDetail = {
   sizeBytes: 4096,
   status: { kind: 'ready', parsedAt: '2026-09-01T10:00:00.000Z' },
   vectorCount: GUIDE_DEMO_BLOCK_IDS.length,
+  parserVersion: 'echowave-parser-v3',
+  needsReindex: false,
   updatedAt: '2026-09-01T10:00:00.000Z',
   previewText: '复盘目标\n引用原则',
   chunks: [
@@ -63,6 +65,11 @@ export const guideDemoDocument: KnowledgeDocumentDetail = {
       vectorId: GUIDE_DEMO_BLOCK_IDS[0],
       locator: { kind: 'markdown', headingPath: ['复盘目标'], lineStart: 3, lineEnd: 5 },
       sourceExcerpt: '先确认客户需求和下一步行动，再评价沟通表现。',
+      headingPath: ['复盘目标'],
+      contentKind: 'prose',
+      titleSource: 'heading',
+      partIndex: 1,
+      partCount: 1,
     },
     {
       id: GUIDE_DEMO_BLOCK_IDS[1],
@@ -73,6 +80,11 @@ export const guideDemoDocument: KnowledgeDocumentDetail = {
       vectorId: GUIDE_DEMO_BLOCK_IDS[1],
       locator: { kind: 'markdown', headingPath: ['引用原则'], lineStart: 8, lineEnd: 10 },
       sourceExcerpt: '回答需要同时展示结论和可回到原文的证据。',
+      headingPath: ['引用原则'],
+      contentKind: 'prose',
+      titleSource: 'heading',
+      partIndex: 1,
+      partCount: 1,
     },
   ],
 };

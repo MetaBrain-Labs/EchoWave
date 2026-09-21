@@ -74,4 +74,76 @@ describe('KnowledgeRepository overview', () => {
     assert.match(retrieval.sql, /c\.embedding_model = \$4/);
     assert.equal(retrieval.values[3], 'qwen3.7-text-embedding');
   });
+
+  it('returns chunk metadata, deduplicates within heading context, and budgets the full payload', async () => {
+    const documentOne = '33333333-3333-4333-8333-333333333333';
+    const documentTwo = '44444444-4444-4444-8444-444444444444';
+    const revision = '55555555-5555-4555-8555-555555555555';
+    const base = {
+      knowledge_base_id: knowledgeId,
+      revision_id: revision,
+      document_title: '手册.md',
+      title: '产品 / 规格',
+      heading_path: ['产品', '规格'],
+      content_kind: 'table',
+      title_source: 'heading',
+      part_index: 1,
+      part_count: 2,
+      content: '相同正文',
+      content_sha256: 'a'.repeat(64),
+      locator: {
+        kind: 'markdown',
+        headingPath: ['产品', '规格'],
+        lineStart: 2,
+        lineEnd: 4,
+      },
+      distance: 0.1,
+    };
+    const rows = [
+      { ...base, id: '66666666-6666-4666-8666-666666666661', document_id: documentOne },
+      { ...base, id: '66666666-6666-4666-8666-666666666662', document_id: documentTwo },
+      {
+        ...base,
+        id: '66666666-6666-4666-8666-666666666663',
+        document_id: documentTwo,
+        title: '售后 / 规格',
+        heading_path: ['售后', '规格'],
+      },
+      {
+        ...base,
+        id: '66666666-6666-4666-8666-666666666664',
+        document_id: documentTwo,
+        title: '超长标题'.repeat(3_100),
+        heading_path: ['超长'],
+        content_sha256: 'b'.repeat(64),
+      },
+    ];
+    const client = {
+      query: async (sql) => ({ rows: /SELECT c\.id/.test(sql) ? rows : [] }),
+      release: () => undefined,
+    };
+    const repository = new PostgresKnowledgeSearch(
+      { connect: async () => client },
+      'echowave',
+      tenantId,
+    );
+
+    const selected = await repository.search(
+      knowledgeId,
+      Array(1024).fill(0),
+      'qwen3.7-text-embedding',
+    );
+
+    assert.equal(selected.length, 2);
+    assert.deepEqual(
+      selected.map((chunk) => chunk.headingPath),
+      [
+        ['产品', '规格'],
+        ['售后', '规格'],
+      ],
+    );
+    assert.equal(selected[0].title, '产品 / 规格');
+    assert.equal(selected[0].contentKind, 'table');
+    assert.equal(selected[0].partCount, 2);
+  });
 });

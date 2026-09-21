@@ -12,7 +12,13 @@
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { pickDocumentAsync } from '@/shared/files/documentPicker';
 import { document as documentFixture } from '../../testing/fixtures';
-import { deleteDocument, getDocument, renameDocument, uploadDocument } from '../../apiClient';
+import {
+  deleteDocument,
+  getDocument,
+  reindexDocument,
+  renameDocument,
+  uploadDocument,
+} from '../../apiClient';
 import { KnowledgeDocumentEditor } from '../KnowledgeDocumentEditor';
 jest.mock('../../apiClient');
 jest.mock('@/shared/files/documentPicker');
@@ -120,5 +126,45 @@ describe('KnowledgeDocumentEditor', () => {
     fireEvent.press(screen.getByText('替换文件'));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(uploadDocument).not.toHaveBeenCalled();
+  });
+  it('confirms reindex with the observed version and prevents duplicate submission', async () => {
+    let resolveRequest!: () => void;
+    jest.mocked(reindexDocument).mockImplementation(
+      () =>
+        new Promise(
+          (resolve) =>
+            (resolveRequest = () =>
+              resolve({
+                document: { ...documentFixture, version: 4 },
+                jobId: '55555555-5555-4555-8555-555555555555',
+              })),
+        ),
+    );
+    const { screen } = setup();
+    fireEvent.press(screen.getByText('重建索引'));
+    const confirm = screen.getByText('确认');
+    fireEvent.press(confirm);
+    fireEvent.press(confirm);
+    expect(reindexDocument).toHaveBeenCalledTimes(1);
+    expect(reindexDocument).toHaveBeenCalledWith(
+      documentFixture.knowledgeBaseId,
+      documentFixture.id,
+      3,
+    );
+    resolveRequest();
+    await waitFor(() => expect(screen.queryByText('正在处理…')).toBeNull());
+  });
+  it('shows the replace-upload guidance when the original source cannot be reindexed', async () => {
+    jest
+      .mocked(reindexDocument)
+      .mockRejectedValue(
+        Object.assign(new Error('原文件已不可用，请替换上传文件。'), { code: 'CONFLICT' }),
+      );
+    jest.mocked(getDocument).mockResolvedValue({ ...documentFixture, version: 3 });
+    const { screen } = setup();
+    fireEvent.press(screen.getByText('重建索引'));
+    fireEvent.press(screen.getByText('确认'));
+    await waitFor(() => expect(screen.getByText('原文件已不可用，请替换上传文件。')).toBeTruthy());
+    expect(reindexDocument).toHaveBeenCalledTimes(1);
   });
 });

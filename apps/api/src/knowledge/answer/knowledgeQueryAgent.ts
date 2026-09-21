@@ -29,6 +29,7 @@ import { z } from 'zod';
 
 import type { SourceLocator, KnowledgeCategory } from '@echowave/contracts';
 import type { CategorySearchChoice } from '../retrieval/categoryPolicy.ts';
+import type { RetrievalChunk } from '../retrieval/types.ts';
 
 import {
   noOpAiExecutionRecorder,
@@ -101,6 +102,11 @@ export type AgentSearchResult = {
   chunks: {
     chunkId: string;
     documentTitle: string;
+    title: string;
+    headingPath: string[];
+    contentKind: RetrievalChunk['contentKind'];
+    partIndex: number;
+    partCount: number;
     locator: SourceLocator;
     content: string;
   }[];
@@ -516,7 +522,16 @@ export class KnowledgeQueryAgent {
    */
   async groundAnswer(input: {
     question: string;
-    passages: { chunkId: string; documentTitle: string; content: string }[];
+    passages: {
+      chunkId: string;
+      documentTitle: string;
+      title: string;
+      headingPath: string[];
+      contentKind: RetrievalChunk['contentKind'];
+      partIndex: number;
+      partCount: number;
+      content: string;
+    }[];
     maxCitations: number;
     signal?: AbortSignal;
     diagnostics?: AiExecutionRecorder;

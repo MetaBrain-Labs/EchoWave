@@ -61,6 +61,30 @@ function locatorText(chunk: DocumentChunk, t: ReturnType<typeof useAppLanguage>[
   });
 }
 
+function contentKindLabel(
+  kind: DocumentChunk['contentKind'],
+  t: ReturnType<typeof useAppLanguage>['t'],
+): string {
+  switch (kind) {
+    case 'list':
+      return t('documentDetail.kindList');
+    case 'table':
+      return t('documentDetail.kindTable');
+    case 'code':
+      return t('documentDetail.kindCode');
+    case 'spreadsheet_record':
+      return t('documentDetail.kindRecord');
+    case 'spreadsheet_preamble':
+      return t('documentDetail.kindPreamble');
+    case 'mixed':
+      return t('documentDetail.kindMixed');
+    case 'legacy':
+      return t('documentDetail.kindLegacy');
+    default:
+      return t('documentDetail.kindProse');
+  }
+}
+
 /** 加载并展示指定文档块、原文来源及相邻块导航。 */
 export function BlockDetailScreen({
   blockId,
@@ -172,6 +196,14 @@ export function BlockDetailScreen({
             value={formatNumber(block.charCount)}
           />
         </View>
+        <Text style={styles.locator}>
+          {block.headingPath.join(' / ') || t('documentDetail.body')} ·{' '}
+          {contentKindLabel(block.contentKind, t)} ·{' '}
+          {t('documentDetail.part', {
+            index: formatNumber(block.partIndex),
+            count: formatNumber(block.partCount),
+          })}
+        </Text>
 
         <Text style={styles.sectionTitle}>{t('blockDetail.content')}</Text>
         <View collapsable={false} ref={contentTargetRef}>
@@ -318,7 +350,7 @@ export function BlockDetailScreen({
           const normalized = value.toLocaleLowerCase();
           if (!normalized) return;
           const match = document.chunks.find((candidate) =>
-            `${candidate.title}\n${candidate.content}\n${candidate.vectorId}`
+            `${candidate.title}\n${candidate.headingPath.join(' ')}\n${candidate.content}\n${candidate.vectorId}`
               .toLocaleLowerCase()
               .includes(normalized),
           );

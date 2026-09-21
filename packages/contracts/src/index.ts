@@ -43,6 +43,9 @@ export {
 export {
   DocumentChunkListResponseSchema,
   DocumentChunkSchema,
+  DocumentChunkContentKindSchema,
+  DocumentChunkTitleSourceSchema,
+  DocumentReindexRequestSchema,
   DocumentFormatSchema,
   DocumentStatusSchema,
   DocumentUploadResponseSchema,
@@ -54,6 +57,8 @@ export {
   SpreadsheetLocatorSchema,
   WordLocatorSchema,
   type DocumentChunk,
+  type DocumentChunkContentKind,
+  type DocumentChunkTitleSource,
   type DocumentFormat,
   type DocumentStatus,
   type DocumentUploadResponse,

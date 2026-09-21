@@ -9,7 +9,11 @@
  * Notes:
  * - 不包含格式专用依赖。
  */
-import type { SourceLocator } from '@echowave/contracts';
+import type {
+  DocumentChunkContentKind,
+  DocumentChunkTitleSource,
+  SourceLocator,
+} from '@echowave/contracts';
 
 /** 可安全传递到入库状态的文档解析错误。 */
 export class DocumentParseError extends Error {
@@ -32,6 +36,10 @@ export type ParsedChunkDraft = {
   embeddingText: string;
   contentSha256: string;
   locator: SourceLocator;
+  contentKind: DocumentChunkContentKind;
+  titleSource: DocumentChunkTitleSource;
+  partIndex: number;
+  partCount: number;
 };
 
 /** 一次文档解析产生的预览、文档块与非致命警告。 */
@@ -41,10 +49,26 @@ export type ParsedDocument = {
   warnings: string[];
 };
 
+/** 为旧 revision snapshot 补齐 chunk v3 metadata，避免历史重试写入空列。 */
+export function normalizeParsedDocumentSnapshot(snapshot: ParsedDocument): ParsedDocument {
+  return {
+    ...snapshot,
+    chunks: snapshot.chunks.map((chunk) => ({
+      ...chunk,
+      contentKind: chunk.contentKind ?? 'legacy',
+      titleSource: chunk.titleSource ?? 'legacy',
+      partIndex: chunk.partIndex ?? 1,
+      partCount: chunk.partCount ?? 1,
+    })),
+  };
+}
+
 /** 格式解析器返回给统一分块器的可追溯语义段。 */
 export type SemanticSection = {
   title: string;
+  titleSource: Exclude<DocumentChunkTitleSource, 'legacy'>;
   headingPath: string[];
   content: string;
+  contentKind: Exclude<DocumentChunkContentKind, 'mixed' | 'legacy'>;
   locator: SourceLocator;
 };

@@ -24,6 +24,7 @@ import {
 } from '@echowave/contracts';
 
 import { quoteIdentifier, type DatabasePool } from '../../infrastructure/postgres.ts';
+import { KNOWLEDGE_PARSER_VERSION } from '../ingestion/documentParser.ts';
 import { resolveCitationSources } from '../persistence/citationSources.ts';
 import { RagRepositoryError } from '../persistence/errors.ts';
 
@@ -57,10 +58,13 @@ function documentStatus(row: Record<string, unknown>) {
 }
 
 function mapDocument(row: Record<string, unknown>): KnowledgeDocument {
+  const parserVersion = String(row.parser_version ?? 'legacy');
   return KnowledgeDocumentSchema.parse({
     ...(row.knowledge_case_id ? { caseId: row.knowledge_case_id } : {}),
     version: Number(row.version ?? 0),
     activeRevisionId: row.active_revision_id ?? null,
+    parserVersion,
+    needsReindex: !row.knowledge_case_id && parserVersion !== KNOWLEDGE_PARSER_VERSION,
     latestRevision: row.latest_revision ?? null,
     id: row.id,
     knowledgeBaseId: row.knowledge_base_id,
@@ -103,7 +107,8 @@ export class KnowledgeRepository {
   /** 读取活动版本的原文件引用，供应用服务在租户边界内安全下载。 */
   async getOriginalSource(knowledgeBaseId: string, documentId: string) {
     const result = await this.pool.query(
-      `SELECT d.title, d.format, d.size_bytes, r.storage_key, j.staged_path
+      `SELECT d.title, d.format, d.size_bytes, r.id AS revision_id, r.source_sha256,
+              r.storage_key, j.staged_path
        FROM ${this.table('documents')} d
        JOIN ${this.table('knowledge_bases')} kb
          ON kb.tenant_id=d.tenant_id AND kb.id=d.knowledge_base_id AND kb.deleted_at IS NULL
@@ -121,6 +126,8 @@ export class KnowledgeRepository {
       title: String(row.title),
       format: String(row.format) as 'markdown' | 'word' | 'spreadsheet',
       sizeBytes: Number(row.size_bytes),
+      revisionId: String(row.revision_id),
+      sourceSha256: String(row.source_sha256),
       storageKey: row.storage_key ? String(row.storage_key) : null,
       stagedPath: row.staged_path ? String(row.staged_path) : null,
     };
@@ -351,7 +358,10 @@ export class KnowledgeRepository {
   async listDocuments(knowledgeBaseId: string) {
     await this.getKnowledgeBase(knowledgeBaseId);
     const result = await this.pool.query(
-      `SELECT d.*, r.published_at, (SELECT jsonb_build_object('id',lr.id,'version',lr.version,'title',lr.title,
+      `SELECT d.*, r.published_at,
+          (SELECT parser_version FROM ${this.table('document_revisions')} pr
+           WHERE pr.tenant_id=d.tenant_id AND pr.document_id=d.id AND pr.id=coalesce(d.active_revision_id,d.latest_revision_id)) AS parser_version,
+          (SELECT jsonb_build_object('id',lr.id,'version',lr.version,'title',lr.title,
           'status',j.status,'stage',j.stage,'progress',j.progress,
           'error',CASE WHEN j.status='failed' THEN jsonb_build_object('code',j.error_code,
             'message',j.error_message,'retryable',coalesce(j.error_retryable,false)) ELSE NULL END)
@@ -376,7 +386,10 @@ export class KnowledgeRepository {
 
   async getDocument(knowledgeBaseId: string, documentId: string) {
     const result = await this.pool.query(
-      `SELECT d.*, r.published_at, r.preview_text, (SELECT jsonb_build_object('id',lr.id,'version',lr.version,'title',lr.title,
+      `SELECT d.*, r.published_at, r.preview_text,
+          (SELECT parser_version FROM ${this.table('document_revisions')} pr
+           WHERE pr.tenant_id=d.tenant_id AND pr.document_id=d.id AND pr.id=coalesce(d.active_revision_id,d.latest_revision_id)) AS parser_version,
+          (SELECT jsonb_build_object('id',lr.id,'version',lr.version,'title',lr.title,
           'status',j.status,'stage',j.stage,'progress',j.progress,
           'error',CASE WHEN j.status='failed' THEN jsonb_build_object('code',j.error_code,
             'message',j.error_message,'retryable',coalesce(j.error_retryable,false)) ELSE NULL END)
@@ -407,7 +420,8 @@ export class KnowledgeRepository {
 
   async listChunks(knowledgeBaseId: string, documentId: string) {
     const result = await this.pool.query(
-      `SELECT c.id, c.chunk_index, c.title, c.content, c.locator
+      `SELECT c.id, c.chunk_index, c.title, c.heading_path, c.content, c.locator,
+              c.content_kind, c.title_source, c.part_index, c.part_count
        FROM ${this.table('document_chunks')} c
        JOIN ${this.table('documents')} d
          ON d.tenant_id = c.tenant_id AND d.id = c.document_id AND d.knowledge_base_id=c.knowledge_base_id AND d.active_revision_id = c.revision_id
@@ -431,6 +445,11 @@ export class KnowledgeRepository {
           vectorId: row.id,
           locator: SourceLocatorSchema.parse(row.locator),
           sourceExcerpt: row.content.slice(0, 240),
+          headingPath: row.heading_path,
+          contentKind: row.content_kind,
+          titleSource: row.title_source,
+          partIndex: row.part_index,
+          partCount: row.part_count,
         }),
       ),
     };

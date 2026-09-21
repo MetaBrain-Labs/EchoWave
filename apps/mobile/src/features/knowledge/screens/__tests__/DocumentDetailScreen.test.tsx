@@ -40,7 +40,9 @@ describe('DocumentDetailScreen', () => {
     );
 
     expect(await screen.findByText('块 1 · 研究背景')).toBeTruthy();
+    expect(screen.getByText('研究背景 · 正文 · 分段 1/1')).toBeTruthy();
     expect(screen.getByText('文本块列表（2）')).toBeTruthy();
+    expect(screen.getByText('已完成')).toBeTruthy();
     expect(screen.getByText('28')).toBeTruthy();
     expect(screen.getByTestId('document-parsed-scroll').props.stickyHeaderIndices).toEqual([1]);
 
@@ -48,6 +50,49 @@ describe('DocumentDetailScreen', () => {
     expect(screen.queryByText('块 1 · 研究背景')).toBeNull();
     fireEvent.press(screen.getByLabelText('打开文本块：核心需求'));
     expect(onOpenBlock).toHaveBeenCalledWith(document.chunks[1]?.id);
+  });
+
+  it('places the classification entry inside the parsed overview', async () => {
+    const activeRevisionId = '55555555-5555-4555-8555-555555555555';
+    jest.mocked(getDocument).mockResolvedValueOnce({ ...document, activeRevisionId });
+    const screen = render(
+      <DocumentDetailScreen
+        documentId={document.id}
+        knowledgeId={knowledge.id}
+        onBack={jest.fn()}
+        onOpenBlock={jest.fn()}
+      />,
+    );
+
+    const overview = await screen.findByTestId('document-parsed-overview');
+    expect(
+      overview.findAllByProps({ testID: 'document-classification-entry' }).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('searches heading paths even when the display title differs', async () => {
+    jest.mocked(getDocument).mockResolvedValueOnce({
+      ...document,
+      chunks: [
+        {
+          ...document.chunks[0]!,
+          title: '展示标题',
+          headingPath: ['父级', '唯一层级词'],
+        },
+      ],
+    });
+    const screen = render(
+      <DocumentDetailScreen
+        documentId={document.id}
+        knowledgeId={knowledge.id}
+        onBack={jest.fn()}
+        onOpenBlock={jest.fn()}
+      />,
+    );
+
+    await screen.findByText('块 1 · 展示标题');
+    fireEvent.changeText(screen.getByLabelText('搜索解析内容...'), '唯一层级词');
+    expect(screen.getByText('块 1 · 展示标题')).toBeTruthy();
   });
 
   it('switches pages by swipe and supports code and fullscreen preview', async () => {

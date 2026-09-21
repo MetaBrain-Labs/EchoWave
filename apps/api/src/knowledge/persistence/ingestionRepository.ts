@@ -17,6 +17,7 @@ import type { DocumentFormat } from '@echowave/contracts';
 import { quoteIdentifier, type DatabasePool } from '../../infrastructure/postgres.ts';
 import type { LiveUpdateBroker } from '../../infrastructure/liveUpdateBroker.ts';
 import type { ParsedChunkDraft, ParsedDocument } from '../ingestion/documentParser.ts';
+import { normalizeParsedDocumentSnapshot } from '../ingestion/parserTypes.ts';
 import { RagRepositoryError } from './errors.ts';
 
 /** 失效租约只能收敛自身执行，不能写回已更新文档。 */
@@ -326,11 +327,21 @@ export class IngestionRepository {
             embeddingText: row.embedding_text,
             contentSha256: row.content_sha256,
             locator: row.locator,
+            contentKind: row.content_kind ?? 'legacy',
+            titleSource: row.title_source ?? 'legacy',
+            partIndex: Number(row.part_index ?? 1),
+            partCount: Number(row.part_count ?? 1),
           })),
         };
       }
       await client.query('COMMIT');
-      return { version: Number(document.version), revision, rebuildSnapshot };
+      return {
+        version: Number(document.version),
+        revision,
+        rebuildSnapshot: rebuildSnapshot
+          ? normalizeParsedDocumentSnapshot(rebuildSnapshot)
+          : rebuildSnapshot,
+      };
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -470,8 +481,9 @@ export class IngestionRepository {
         await client.query(
           `INSERT INTO ${this.table('document_chunks')}
           (tenant_id,knowledge_base_id,document_id,revision_id,chunk_index,title,heading_path,content,
-           embedding_text,content_sha256,locator,embedding_model,embedding)
-          VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11::jsonb,$12,$13::vector)`,
+           embedding_text,content_sha256,locator,content_kind,title_source,part_index,part_count,
+           embedding_model,embedding)
+          VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11::jsonb,$12,$13,$14,$15,$16,$17::vector)`,
           [
             this.tenantId,
             input.job.knowledgeBaseId,
@@ -484,6 +496,10 @@ export class IngestionRepository {
             chunk.embeddingText,
             chunk.contentSha256,
             JSON.stringify(chunk.locator),
+            chunk.contentKind,
+            chunk.titleSource,
+            chunk.partIndex,
+            chunk.partCount,
             input.embeddingModel,
             toSql(vector),
           ],

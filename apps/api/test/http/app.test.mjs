@@ -726,6 +726,8 @@ describe('workspace routes', () => {
                   sizeBytes: 128,
                   status: reads === 1 ? { kind: 'queued' } : { kind: 'embedding', progress: 35 },
                   vectorCount: 0,
+                  parserVersion: 'echowave-parser-v3',
+                  needsReindex: false,
                   updatedAt: '2026-08-30T01:00:00.000Z',
                 },
               ],

@@ -114,6 +114,28 @@ describe('knowledge category interactions', () => {
     );
     await waitFor(() => expect(screen.getByText('建议已确认')).toBeTruthy());
   });
+  it('keeps category actions in a fixed footer outside the scrollable content', async () => {
+    const screen = render(
+      <DocumentClassificationEditor
+        knowledgeId={knowledge.id}
+        documentId="doc"
+        onChanged={jest.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    fireEvent.press(screen.getByText('类别与工作表'));
+    await waitFor(() =>
+      expect(screen.getByText('建议尚未确认，不影响当前分类。')).toBeTruthy(),
+    );
+
+    const scrollableContent = screen.getByTestId('document-classification-scroll');
+    expect(
+      scrollableContent.findAllByProps({ testID: 'document-classification-footer' }),
+    ).toHaveLength(0);
+    expect(screen.getByTestId('document-classification-footer')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '保存类别' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '关闭' })).toBeTruthy();
+  });
   it('keeps a failed worksheet draft and allows a version-safe retry', async () => {
     jest
       .mocked(updateDocumentClassification)

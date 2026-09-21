@@ -93,6 +93,12 @@ function createHarness({
             id: chunkId,
             documentId: '44444444-4444-4444-8444-444444444444',
             documentTitle: '研究.md',
+            title: '研究 / 结论',
+            headingPath: ['研究', '结论'],
+            contentKind: 'prose',
+            titleSource: 'heading',
+            partIndex: 1,
+            partCount: 2,
             locator: { kind: 'markdown', headingPath: ['结论'], lineStart: 3, lineEnd: 4 },
             content: '答案为 A。',
           },
@@ -432,6 +438,12 @@ describe('KnowledgeQueryAgent cross-provider thinking-mode compatibility', () =>
       'structured-output schema tool must not be bound',
     );
     assert.deepEqual(requests[0].thinking, { type: 'disabled' });
+    const toolMessage = requests[1].messages.find((message) => message.role === 'tool');
+    const toolResult = JSON.parse(toolMessage.content);
+    assert.equal(toolResult.chunks[0].title, '研究 / 结论');
+    assert.deepEqual(toolResult.chunks[0].headingPath, ['研究', '结论']);
+    assert.equal(toolResult.chunks[0].contentKind, 'prose');
+    assert.equal(toolResult.chunks[0].partCount, 2);
   });
 
   it('keeps every valid citation when the model cites more than eight chunks', async () => {

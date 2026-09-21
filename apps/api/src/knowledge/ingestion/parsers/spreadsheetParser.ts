@@ -24,6 +24,15 @@ const MAX_NON_EMPTY_CELLS = 200_000;
 const SPREADSHEET_MAIN_NAMESPACE = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
 
 type SpreadsheetRow = { number: number; values: string[] };
+const IDENTITY_HEADER =
+  /(?:^|[\s_-])(id|编号|编码|名称|姓名|标题|主题|产品|术语|关键词|name|title|subject|product|term|keyword)$/i;
+
+function shortTitle(value: string): string {
+  return [...new Intl.Segmenter('zh-CN', { granularity: 'grapheme' }).segment(value)]
+    .slice(0, 80)
+    .map((item) => item.segment)
+    .join('');
+}
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -141,8 +150,10 @@ function appendPreambleSection(
   if (!firstRow || !lastRow) return;
   sections.push({
     title: `${sheet.name} · 说明`,
+    titleSource: 'sheet_preamble',
     headingPath: [sheet.name, '说明'],
     content: normalizeText(values.map((value) => `说明: ${value}`).join('\n')),
+    contentKind: 'spreadsheet_preamble',
     locator: {
       kind: 'spreadsheet',
       sheet: sheet.name,
@@ -164,10 +175,17 @@ function appendDataRowSection(
     return value ? [`${label}: ${value}`] : [];
   });
   if (fields.length === 0) return;
+  const identityIndex = header.findIndex((label) => IDENTITY_HEADER.test(label.trim()));
+  const fallbackIndex = row.values.findIndex((value) => Boolean(value?.trim()));
+  const titleValue = row.values[identityIndex >= 0 ? identityIndex : fallbackIndex]?.trim();
   sections.push({
-    title: sheet.name,
+    title: titleValue
+      ? `${sheet.name} · ${shortTitle(titleValue)}`
+      : `${sheet.name} · 第 ${row.number} 行`,
+    titleSource: titleValue ? 'row_identity' : 'row_number',
     headingPath: [sheet.name],
     content: normalizeText(fields.join('\n')),
+    contentKind: 'spreadsheet_record',
     locator: {
       kind: 'spreadsheet',
       sheet: sheet.name,

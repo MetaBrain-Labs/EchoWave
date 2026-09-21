@@ -9,7 +9,11 @@
  * Notes:
  * - 类型不包含数据库行或 SQL 实现细节。
  */
-import type { SourceLocator } from '@echowave/contracts';
+import type {
+  DocumentChunkContentKind,
+  DocumentChunkTitleSource,
+  SourceLocator,
+} from '@echowave/contracts';
 
 /** 向知识消费用例返回的可引用检索结果。 */
 export type RetrievalChunk = {
@@ -18,6 +22,12 @@ export type RetrievalChunk = {
   documentId: string;
   revisionId?: string;
   documentTitle: string;
+  title: string;
+  headingPath: string[];
+  contentKind: DocumentChunkContentKind;
+  titleSource: DocumentChunkTitleSource;
+  partIndex: number;
+  partCount: number;
   content: string;
   locator: SourceLocator;
   distance: number;
