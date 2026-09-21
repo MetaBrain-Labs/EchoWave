@@ -340,14 +340,6 @@ export function DocumentDetailScreen({
         title={document.title}
       />
       {guideDemo ? <GuideDemoBanner /> : null}
-      {!guideDemo && document.activeRevisionId ? (
-        <DocumentClassificationEditor
-          key={document.activeRevisionId}
-          knowledgeId={knowledgeId}
-          documentId={documentId}
-          onChanged={load}
-        />
-      ) : null}
       <PageTabs
         activeTab={activeTab}
         onChange={selectTab}
@@ -377,8 +369,23 @@ export function DocumentDetailScreen({
             stickyHeaderIndices={[1]}
             testID="document-parsed-scroll"
           >
-            <View ref={documentStatusTargetRef} collapsable={false} style={styles.parsedOverview}>
-              <Text style={styles.sectionTitle}>{t('documentDetail.parseStatus')}</Text>
+            <View
+              ref={documentStatusTargetRef}
+              collapsable={false}
+              style={styles.parsedOverview}
+              testID="document-parsed-overview"
+            >
+              <View style={styles.statusHeadingRow}>
+                <Text style={styles.sectionTitle}>{t('documentDetail.parseStatus')}</Text>
+                {document.status.kind === 'ready' ? (
+                  <View style={styles.completedBadge}>
+                    <Ionicons color={colors.success} name="checkmark-circle" size={20} />
+                    <Text style={styles.completedBadgeText}>
+                      {t('documentDetail.parseCompleted')}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
               <Text style={styles.timestamp}>
                 {t('documentDetail.parsedAt', { date: formatDateTime(parsedAt) })}
               </Text>
@@ -403,6 +410,14 @@ export function DocumentDetailScreen({
                   value={formatNumber(document.vectorCount)}
                 />
               </View>
+              {!guideDemo && document.activeRevisionId ? (
+                <DocumentClassificationEditor
+                  key={document.activeRevisionId}
+                  knowledgeId={knowledgeId}
+                  documentId={documentId}
+                  onChanged={load}
+                />
+              ) : null}
               <Text style={styles.sectionTitle}>
                 {t('documentDetail.chunkList', {
                   count: formatNumber(document.chunks.length),
@@ -833,9 +848,29 @@ const styles = StyleSheet.create({
   page: { flex: 1, height: '100%' },
   pageContent: { paddingBottom: spacing.lg },
   parsedOverview: { gap: spacing.lg, padding: spacing.md },
+  statusHeadingRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
   sectionTitle: {
     ...typography.heading1,
     color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  completedBadge: {
+    alignItems: 'center',
+    backgroundColor: colors.successSurface,
+    borderRadius: radii.round,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.xs,
+  },
+  completedBadgeText: {
+    ...typography.heading3,
+    color: colors.success,
     fontFamily: fontFamilies.sansBold,
     fontWeight: 'bold',
   },

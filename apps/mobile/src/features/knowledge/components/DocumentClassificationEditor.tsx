@@ -6,15 +6,24 @@
  * Responsibilities:
  * - 失败保留草稿，显式刷新后才重置为服务器数据。
  * - 建议确认和手动覆盖均不触发 embedding。
+ * - 保持类别内容独立滚动，并将主要操作固定在弹层底部。
  *
  * Notes:
  * - 默认关闭，打开后才请求分类数据。
  */
 import type { DocumentClassification, KnowledgeCategory } from '@echowave/contracts';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
-import { colors, radii, spacing, typography } from '@/shared/theme/tokens';
+import {
+  colors,
+  fontFamilies,
+  radii,
+  spacing,
+  textColors,
+  typography,
+} from '@/shared/theme/tokens';
 import {
   getDocumentClassification,
   listKnowledgeCategories,
@@ -22,6 +31,38 @@ import {
   updateDocumentClassification,
 } from '../apiClient';
 import { CategoryPicker } from './CategoryPicker';
+
+function FooterAction({
+  disabled,
+  emphasized = false,
+  icon,
+  label,
+  onPress,
+}: {
+  disabled: boolean;
+  emphasized?: boolean;
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.footerAction,
+        emphasized && styles.emphasizedFooterAction,
+        disabled && styles.disabled,
+        pressed && styles.pressed,
+      ]}
+    >
+      <Ionicons color={colors.ink} name={icon} size={typography.body.lineHeight} />
+      <Text style={styles.footerActionText}>{label}</Text>
+    </Pressable>
+  );
+}
 
 /** 安全管理活动 revision 的文档与工作表分类。 */
 export function DocumentClassificationEditor({
@@ -111,18 +152,30 @@ export function DocumentClassificationEditor({
     <>
       <Pressable
         accessibilityRole="button"
+        accessibilityLabel={t('knowledgeCategory.title')}
         onPress={() => {
           setVisible(true);
           void load();
         }}
-        style={styles.button}
+        style={({ pressed }) => [styles.entryButton, pressed && styles.pressed]}
+        testID="document-classification-entry"
       >
-        <Text>
-          {t('knowledgeCategory.title')}
-          {classification
-            ? ` · ${name(classification.documentCategoryId ?? classification.defaultCategoryId)}`
-            : ''}
-        </Text>
+        <View style={styles.entryMain}>
+          <Ionicons
+            color={colors.ink}
+            name="pricetags-outline"
+            size={typography.heading2.lineHeight}
+          />
+          <View style={styles.entryCopy}>
+            <Text style={styles.entryTitle}>{t('knowledgeCategory.title')}</Text>
+            <Text numberOfLines={1} style={styles.entryValue}>
+              {classification
+                ? name(classification.documentCategoryId ?? classification.defaultCategoryId)
+                : t('knowledgeCategory.hint')}
+            </Text>
+          </View>
+        </View>
+        <Ionicons color={textColors.tertiary} name="chevron-forward" size={24} />
       </Pressable>
       <Modal
         transparent
@@ -132,134 +185,155 @@ export function DocumentClassificationEditor({
         }}
       >
         <View style={styles.overlay} accessibilityViewIsModal>
-          <ScrollView
-            keyboardShouldPersistTaps="handled"
-            style={styles.sheet}
-            contentContainerStyle={styles.content}
-          >
-            <Text accessibilityRole="header" style={styles.heading}>
-              {t('knowledgeCategory.title')}
-            </Text>
-            <Text>{t('knowledgeCategory.hint')}</Text>
-            {loading || pending ? <Text>{t('documentActions.processing')}</Text> : null}
-            {classification ? (
-              <>
-                <Text>
-                  {t('knowledgeCategory.default')}: {name(classification.defaultCategoryId)}
-                </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={pending || loading}
-                  onPress={() => setTarget({ kind: 'document' })}
-                  style={styles.button}
-                >
-                  <Text>
-                    {t('knowledgeCategory.document')}: {name(documentCategoryId)}
+          <View style={styles.sheet}>
+            <View style={styles.modalHeader}>
+              <Text accessibilityRole="header" style={styles.heading}>
+                {t('knowledgeCategory.title')}
+              </Text>
+              <Text style={styles.hint}>{t('knowledgeCategory.hint')}</Text>
+              {loading || pending ? (
+                <Text style={styles.processing}>{t('documentActions.processing')}</Text>
+              ) : null}
+            </View>
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              style={styles.scrollArea}
+              contentContainerStyle={styles.content}
+              testID="document-classification-scroll"
+            >
+              {classification ? (
+                <>
+                  <Text style={styles.bodyText}>
+                    {t('knowledgeCategory.default')}: {name(classification.defaultCategoryId)}
                   </Text>
-                </Pressable>
-                {classification.sheets.map((sheet) => (
                   <Pressable
                     accessibilityRole="button"
-                    key={sheet}
                     disabled={pending || loading}
-                    onPress={() => setTarget({ kind: 'sheet', sheet })}
-                    style={styles.button}
+                    onPress={() => setTarget({ kind: 'document' })}
+                    style={({ pressed }) => [styles.selectorButton, pressed && styles.pressed]}
                   >
-                    <Text>
-                      {sheet}:{' '}
-                      {sheetCategories[sheet]
-                        ? name(sheetCategories[sheet])
-                        : `${t('knowledgeCategory.inherit')} · ${name(documentCategoryId ?? classification.defaultCategoryId)}`}
+                    <Text style={styles.selectorText}>
+                      {t('knowledgeCategory.document')}: {name(documentCategoryId)}
                     </Text>
                   </Pressable>
-                ))}
-                <Text style={styles.heading}>
-                  {target.kind === 'document' ? t('knowledgeCategory.document') : target.sheet}
-                </Text>
-                <CategoryPicker
-                  categories={categories}
-                  selected={selected ? [selected] : []}
-                  emptyLabel={t('knowledgeCategory.inherit')}
-                  disabled={pending || loading}
-                  onChange={(ids) => {
-                    if (target.kind === 'document') setDocumentCategoryId(ids[0] ?? null);
-                    else
-                      setSheetCategories((current) => {
-                        const next = { ...current };
-                        if (ids[0]) next[target.sheet] = ids[0];
-                        else delete next[target.sheet];
-                        return next;
-                      });
-                  }}
-                />
-                {classification.suggestion ? (
-                  <View style={styles.proposal}>
-                    <Text>
-                      {classification.suggestion.status === 'pending'
-                        ? t('knowledgeCategory.pending')
-                        : classification.suggestion.status === 'confirmed'
-                          ? t('knowledgeCategory.confirmed')
-                          : classification.suggestion.message}
-                    </Text>
-                    {classification.suggestion.status === 'pending' ? (
-                      <>
-                        <Text>
-                          {t('knowledgeCategory.document')}:{' '}
-                          {name(classification.suggestion.documentCategoryId)}
-                        </Text>
-                        {classification.suggestion.sheets.map((item) => (
-                          <Text key={item.sheet}>
-                            {item.sheet}: {name(item.categoryId)}
+                  {classification.sheets.map((sheet) => (
+                    <Pressable
+                      accessibilityRole="button"
+                      key={sheet}
+                      disabled={pending || loading}
+                      onPress={() => setTarget({ kind: 'sheet', sheet })}
+                      style={({ pressed }) => [styles.selectorButton, pressed && styles.pressed]}
+                    >
+                      <Text style={styles.selectorText}>
+                        {sheet}:{' '}
+                        {sheetCategories[sheet]
+                          ? name(sheetCategories[sheet])
+                          : `${t('knowledgeCategory.inherit')} · ${name(documentCategoryId ?? classification.defaultCategoryId)}`}
+                      </Text>
+                    </Pressable>
+                  ))}
+                  <Text style={styles.heading}>
+                    {target.kind === 'document' ? t('knowledgeCategory.document') : target.sheet}
+                  </Text>
+                  <CategoryPicker
+                    categories={categories}
+                    selected={selected ? [selected] : []}
+                    emptyLabel={t('knowledgeCategory.inherit')}
+                    disabled={pending || loading}
+                    onChange={(ids) => {
+                      if (target.kind === 'document') setDocumentCategoryId(ids[0] ?? null);
+                      else
+                        setSheetCategories((current) => {
+                          const next = { ...current };
+                          if (ids[0]) next[target.sheet] = ids[0];
+                          else delete next[target.sheet];
+                          return next;
+                        });
+                    }}
+                  />
+                  {classification.suggestion ? (
+                    <View style={styles.proposal}>
+                      <Text>
+                        {classification.suggestion.status === 'pending'
+                          ? t('knowledgeCategory.pending')
+                          : classification.suggestion.status === 'confirmed'
+                            ? t('knowledgeCategory.confirmed')
+                            : classification.suggestion.message}
+                      </Text>
+                      {classification.suggestion.status === 'pending' ? (
+                        <>
+                          <Text>
+                            {t('knowledgeCategory.document')}:{' '}
+                            {name(classification.suggestion.documentCategoryId)}
                           </Text>
-                        ))}
-                        <Pressable
-                          accessibilityRole="button"
-                          disabled={pending || loading}
-                          onPress={() => void save(true)}
-                          style={styles.button}
-                        >
-                          <Text>{t('knowledgeCategory.confirm')}</Text>
-                        </Pressable>
-                      </>
-                    ) : null}
-                  </View>
-                ) : null}
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={pending || loading}
-                  onPress={() => void save()}
-                  style={styles.button}
-                >
-                  <Text>{t('knowledgeCategory.save')}</Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={pending || loading}
+                          {classification.suggestion.sheets.map((item) => (
+                            <Text key={item.sheet}>
+                              {item.sheet}: {name(item.categoryId)}
+                            </Text>
+                          ))}
+                          <Pressable
+                            accessibilityRole="button"
+                            disabled={pending || loading}
+                            onPress={() => void save(true)}
+                            style={({ pressed }) => [
+                              styles.inlineAction,
+                              (pending || loading) && styles.disabled,
+                              pressed && styles.pressed,
+                            ]}
+                          >
+                            <Ionicons
+                              color={colors.ink}
+                              name="checkmark-circle-outline"
+                              size={typography.body.lineHeight}
+                            />
+                            <Text style={styles.footerActionText}>
+                              {t('knowledgeCategory.confirm')}
+                            </Text>
+                          </Pressable>
+                        </>
+                      ) : null}
+                    </View>
+                  ) : null}
+                </>
+              ) : null}
+            </ScrollView>
+            <View style={styles.footer} testID="document-classification-footer">
+              {error ? (
+                <Text accessibilityRole="alert" style={styles.error}>
+                  {error}
+                </Text>
+              ) : null}
+              <View style={styles.footerRow}>
+                <FooterAction
+                  disabled={pending || loading || !classification}
+                  icon="sparkles-outline"
+                  label={t('knowledgeCategory.suggest')}
                   onPress={() => void suggest()}
-                  style={styles.button}
-                >
-                  <Text>{t('knowledgeCategory.suggest')}</Text>
-                </Pressable>
-              </>
-            ) : null}
-            {error ? <Text accessibilityRole="alert">{error}</Text> : null}
-            <Pressable
-              accessibilityRole="button"
-              disabled={pending || loading}
-              onPress={() => void load()}
-              style={styles.button}
-            >
-              <Text>{t('knowledgeCategory.refresh')}</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              disabled={pending}
-              onPress={() => setVisible(false)}
-              style={styles.button}
-            >
-              <Text>{t('common.close')}</Text>
-            </Pressable>
-          </ScrollView>
+                />
+                <FooterAction
+                  disabled={pending || loading}
+                  icon="refresh-outline"
+                  label={t('knowledgeCategory.refresh')}
+                  onPress={() => void load()}
+                />
+              </View>
+              <View style={styles.footerRow}>
+                <FooterAction
+                  disabled={pending}
+                  icon="close-outline"
+                  label={t('common.close')}
+                  onPress={() => setVisible(false)}
+                />
+                <FooterAction
+                  disabled={pending || loading || !classification}
+                  emphasized
+                  icon="save-outline"
+                  label={t('knowledgeCategory.save')}
+                  onPress={() => void save()}
+                />
+              </View>
+            </View>
+          </View>
         </View>
       </Modal>
     </>
@@ -279,9 +353,109 @@ const styles = StyleSheet.create({
     maxHeight: '90%',
     backgroundColor: colors.white,
     borderRadius: radii.default,
+    overflow: 'hidden',
   },
-  content: { padding: spacing.md, gap: spacing.sm },
-  heading: { ...typography.heading2 },
-  button: { padding: spacing.sm, minHeight: 48, justifyContent: 'center' },
-  proposal: { borderWidth: 1, borderColor: colors.divider, padding: spacing.sm, gap: spacing.xs },
+  modalHeader: {
+    borderBottomColor: colors.divider,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: spacing.xs,
+    padding: spacing.md,
+  },
+  scrollArea: { flexShrink: 1 },
+  content: { gap: spacing.sm, padding: spacing.md },
+  heading: {
+    ...typography.heading2,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  hint: { ...typography.description, color: textColors.secondary, fontFamily: fontFamilies.sans },
+  processing: { ...typography.description, color: colors.success, fontFamily: fontFamilies.sans },
+  bodyText: { ...typography.body, color: textColors.secondary, fontFamily: fontFamilies.sans },
+  entryButton: {
+    alignItems: 'center',
+    backgroundColor: colors.canvas,
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    minHeight: 64,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  entryMain: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: spacing.sm },
+  entryCopy: { flex: 1, gap: spacing.xs },
+  entryTitle: {
+    ...typography.body,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  entryValue: {
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+  },
+  selectorButton: {
+    backgroundColor: colors.canvas,
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 48,
+    paddingHorizontal: spacing.md,
+  },
+  selectorText: { ...typography.body, color: textColors.primary, fontFamily: fontFamilies.sans },
+  proposal: {
+    backgroundColor: colors.primarySurface,
+    borderColor: colors.primaryBorder,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    gap: spacing.xs,
+    padding: spacing.sm,
+  },
+  inlineAction: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    justifyContent: 'center',
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+  },
+  footer: {
+    backgroundColor: colors.card,
+    borderTopColor: colors.divider,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  footerRow: { flexDirection: 'row', gap: spacing.sm },
+  footerAction: {
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    justifyContent: 'center',
+    minHeight: 48,
+    paddingHorizontal: spacing.sm,
+  },
+  emphasizedFooterAction: { borderColor: colors.ink, borderWidth: 2 },
+  footerActionText: {
+    ...typography.body,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+    fontWeight: 'bold',
+  },
+  error: { ...typography.description, color: colors.danger, fontFamily: fontFamilies.sans },
+  disabled: { opacity: 0.45 },
+  pressed: { backgroundColor: colors.background },
 });
