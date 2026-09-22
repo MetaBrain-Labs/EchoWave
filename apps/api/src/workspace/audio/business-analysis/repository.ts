@@ -27,6 +27,7 @@ import {
 import type { PoolClient } from 'pg';
 
 import { quoteIdentifier, type DatabasePool } from '../../../infrastructure/postgres.ts';
+import { readRerankDisclosure } from '../../../knowledge/retrieval/rerankDisclosure.ts';
 import type { RetrievalChunk } from '../../../knowledge/retrieval/types.ts';
 import { WorkspaceRepositoryError } from '../../errors.ts';
 import { resolveCitationSources } from '../../../knowledge/persistence/citationSources.ts';
@@ -1003,6 +1004,8 @@ export class BusinessAnalysisRepository {
         0,
         BUSINESS_ANALYSIS_MAX_LIMITATIONS,
       );
+      // 旧报告没有重排审计时该字段缺失，客户端按"不渲染"处理。
+      const rerank = readRerankDisclosure(published.retrieval_audit);
       result = {
         jobId: published.id,
         groupId,
@@ -1017,6 +1020,7 @@ export class BusinessAnalysisRepository {
               ? 'used'
               : 'linked_not_used',
         retrievalCategories: aggregateRetrievalCategories(published.retrieval_audit),
+        ...(rerank ? { rerank } : {}),
         limitations,
         summarySections: sections.rows.map((section) => ({
           id: section.id,

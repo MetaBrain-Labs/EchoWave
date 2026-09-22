@@ -26,6 +26,25 @@ import type { FrozenRerankRuntime } from './settingsService.ts';
 import type { KnowledgeSearchResult, RetrievalChunk } from './types.ts';
 import type { CategorySearchFilter, CategoryCatalogue } from './categoryPolicy.ts';
 
+/**
+ * 计算重排相对纯向量顺序的效果差异。
+ *
+ * 两个入参都是最终入选证据的 id 顺序；重排未生效时一律返回零差异，避免把向量顺序
+ * 误报成重排成果。
+ */
+export function rerankSelectionDelta(
+  vectorChunkIds: readonly string[],
+  rerankedChunkIds: readonly string[],
+  applied: boolean,
+): { promotedCount: number; reordered: boolean } {
+  if (!applied) return { promotedCount: 0, reordered: false };
+  const vectorIds = new Set(vectorChunkIds);
+  return {
+    promotedCount: rerankedChunkIds.filter((id) => !vectorIds.has(id)).length,
+    reordered: rerankedChunkIds.some((id, index) => id !== vectorChunkIds[index]),
+  };
+}
+
 /** 基于 pgvector HNSW 的知识检索适配器。 */
 export class PostgresKnowledgeSearch implements KnowledgeSearchPort {
   constructor(
@@ -130,6 +149,9 @@ export class PostgresKnowledgeSearch implements KnowledgeSearchPort {
           rerankTokens: 0,
           rerankDurationMs: 0,
           fallbackReason: null,
+          selectedCount: 0,
+          promotedCount: 0,
+          reordered: false,
         },
       };
     }
@@ -152,7 +174,9 @@ export class PostgresKnowledgeSearch implements KnowledgeSearchPort {
     characterLimit: number,
   ): Promise<KnowledgeSearchResult> {
     const result = await this.query(knowledgeBaseIds, embedding, embeddingModel, filter);
-    let rows = result.rows.map((row) => ({ ...row, rerank_score: null as number | null }));
+    // 保留向量顺序副本：重排只改变顺序，用它才能算出"重排是否真的改变了入选证据"。
+    const vectorRows = result.rows.map((row) => ({ ...row, rerank_score: null as number | null }));
+    let rows = vectorRows;
     let rerankStatus: 'applied' | 'disabled' | 'fallback' = execution.rerank.enabled
       ? 'applied'
       : 'disabled';
@@ -197,6 +221,13 @@ export class PostgresKnowledgeSearch implements KnowledgeSearchPort {
       fallbackReason = 'NOT_CONFIGURED';
     }
     const chunks = this.select(rows, 5, characterLimit);
+    // 入选集合的差异是纯计算：同一批候选按向量顺序会选出什么，与重排后的实际入选对比。
+    const vectorChunks = this.select(vectorRows, 5, characterLimit);
+    const delta = rerankSelectionDelta(
+      vectorChunks.map((chunk) => chunk.id),
+      chunks.map((chunk) => chunk.id),
+      rerankStatus === 'applied',
+    );
     return {
       chunks,
       audit: {
@@ -208,6 +239,9 @@ export class PostgresKnowledgeSearch implements KnowledgeSearchPort {
         rerankTokens,
         rerankDurationMs,
         fallbackReason,
+        selectedCount: chunks.length,
+        promotedCount: delta.promotedCount,
+        reordered: delta.reordered,
       },
     };
   }

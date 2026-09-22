@@ -18,6 +18,7 @@ import {
   type RagQueryResponse,
 } from '@echowave/contracts';
 
+import { readRerankDisclosure } from '../retrieval/rerankDisclosure.ts';
 import { resolveCitationSources } from './citationSources.ts';
 import { RagRepositoryError } from './errors.ts';
 
@@ -41,7 +42,8 @@ export class ConversationRepository {
   async listRecentRuns(knowledgeBaseId: string): Promise<RagHistoryResponse> {
     const result = await this.pool.query(
       `SELECT id, conversation_id, question, answer, grounded,
-              jsonb_array_length(cited_chunk_ids) AS citation_count, citation_snapshots, created_at
+              jsonb_array_length(cited_chunk_ids) AS citation_count, citation_snapshots,
+              retrieval_audit, created_at
        FROM ${this.table('rag_runs')}
        WHERE tenant_id = $1 AND knowledge_base_id = $2
          AND status = 'completed' AND answer IS NOT NULL
@@ -51,22 +53,29 @@ export class ConversationRepository {
     );
     return RagHistoryResponseSchema.parse({
       items: await Promise.all(
-        result.rows.map(async (row) => ({
-          id: row.id,
-          conversationId: row.conversation_id,
-          question: row.question,
-          answer: row.answer,
-          grounded: row.grounded,
-          citationCount: Number(row.citation_count),
-          citations: await resolveCitationSources(
-            this.pool,
-            this.schema.replaceAll('"', ''),
-            this.tenantId,
-            row.citation_snapshots ?? [],
-          ),
-          createdAt:
-            row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
-        })),
+        result.rows.map(async (row) => {
+          // 旧运行没有重排审计时该字段缺失，客户端按"不渲染"处理。
+          const rerank = readRerankDisclosure(row.retrieval_audit);
+          return {
+            id: row.id,
+            conversationId: row.conversation_id,
+            question: row.question,
+            answer: row.answer,
+            grounded: row.grounded,
+            citationCount: Number(row.citation_count),
+            citations: await resolveCitationSources(
+              this.pool,
+              this.schema.replaceAll('"', ''),
+              this.tenantId,
+              row.citation_snapshots ?? [],
+            ),
+            ...(rerank ? { rerank } : {}),
+            createdAt:
+              row.created_at instanceof Date
+                ? row.created_at.toISOString()
+                : String(row.created_at),
+          };
+        }),
       ),
     });
   }

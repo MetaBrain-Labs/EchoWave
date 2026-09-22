@@ -10,7 +10,7 @@
  * Notes:
  * - 只验证移动端展示交互，不连接真实分析后端。
  */
-import type { AudioAnalysisDetail } from '@echowave/contracts';
+import type { AudioAnalysisDetail, RerankDisclosure } from '@echowave/contracts';
 import { fireEvent, render } from '@testing-library/react-native';
 
 import { analysisFixture } from '@/test/workspaceFixtures';
@@ -25,6 +25,7 @@ function detailWithResult(
     lookupReason: 'explicit' | 'auto' | 'default-route' | 'zero-hits' | 'evidence-insufficient';
     hitCount: number;
   }[],
+  rerank?: RerankDisclosure,
 ) {
   return toAnalysisDetailView({
     ...analysisFixture,
@@ -45,6 +46,7 @@ function detailWithResult(
         knowledgeBaseIds: ['a1000000-0000-4000-8000-000000000010'],
         knowledgeStatus: 'used',
         retrievalCategories,
+        ...(rerank ? { rerank } : {}),
         limitations: [],
         summarySections: [],
         tags: [],
@@ -139,5 +141,36 @@ describe('SummaryContent retrieval categories', () => {
 
     expect(screen.getByText('已使用 1 个关联知识库')).toBeTruthy();
     expect(screen.queryByText(/使用分类：/)).toBeNull();
+    // 旧报告没有重排审计：不渲染重排说明。
+    expect(screen.queryByTestId('rerank-disclosure')).toBeNull();
+  });
+
+  it('discloses the rerank effect recorded for the analysis', () => {
+    const screen = render(
+      <SummaryContent
+        detail={detailWithResult(
+          [{ id: 'c1', name: '产品资料', lookupReason: 'auto', hitCount: 4 }],
+          {
+            status: 'applied',
+            model: 'qwen3.7-text-rerank',
+            candidateCount: 20,
+            selectedCount: 5,
+            promotedCount: 3,
+            reordered: true,
+            measured: true,
+            durationMs: 420,
+            tokens: 11,
+            fallbackReason: null,
+          },
+        )}
+      />,
+    );
+
+    expect(screen.getByTestId('rerank-disclosure')).toBeTruthy();
+    expect(
+      screen.getByText(
+        /已使用智能重排（qwen3\.7-text-rerank）对 20 条候选重新排序：入选 5 条证据，其中 3 条来自重排提升（420 ms）。/,
+      ),
+    ).toBeTruthy();
   });
 });

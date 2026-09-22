@@ -44,6 +44,12 @@ Reading the list degrades in three steps: first a capability-filtered request, t
 
 Editable model fields support future adapted releases; they do not imply arbitrary compatibility with prompts, structured output, timestamps, speakers, thinking modes, or recovery protocols.
 
+## Rerank disclosure
+
+When the tenant reranking switch is on and reranking is configured, knowledge answers, the read-only history panel, business-analysis reports, and the execution trace all state explicitly that reranking ran and what it achieved: the model name, how many candidates were reranked, how many passages were selected, how many of them were promoted by reranking, and the duration. Nothing about reranking appears while the switch is off, and a degraded run names its reason and states that the answer used vector search order.
+
+"Promoted by reranking" is an effect proxy rather than a quality score: it counts the selected passages that vector order alone would not have selected. When neither the set nor the order changed, the copy says the result matched vector order. The disclosure carries only reproducible counts and statuses — never passage text, relevance scores, or credentials.
+
 ## Model Studio workspace-dedicated domains
 
 New and updated DashScope connections store only a Workspace ID and region. That value is the part before the first dot of the **API Host** shown in the console workspace list or API key dialog, never a full host name: early workspaces use `llm-…` and newer ones use `ws-…`, and both are valid. The region must match the region inside that host. The Server derives the native endpoint `https://{workspaceId}.{region}.maas.aliyuncs.com/api/v1` and OpenAI-compatible endpoint `https://{workspaceId}.{region}.maas.aliyuncs.com/compatible-mode/v1`. Embedding, reranking, model discovery, file transcription, and temporary upload policies use the native endpoint; Qwen chat capabilities use the compatible endpoint. The default region is `cn-beijing`; `ap-southeast-1`, `ap-northeast-1`, `eu-central-1`, `cn-hongkong`, and `us-east-1` are also supported. The API key must belong to the same region and workspace.

@@ -21,6 +21,7 @@ import {
 } from 'react-native';
 
 import { useCitationJump } from '@/shared/hooks/useCitationJump';
+import { RerankDisclosure } from '@/shared/ui/RerankDisclosure';
 import {
   colors,
   fontFamilies,
@@ -169,6 +170,7 @@ export function QueryHistoryModal({
                         })
                       : t('queryHistory.noCitations')}
                   </Text>
+                  {item.rerank ? <RerankDisclosure compact disclosure={item.rerank} /> : null}
                 </View>
               ))}
             </ScrollView>

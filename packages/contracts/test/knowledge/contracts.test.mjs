@@ -184,4 +184,86 @@ describe('knowledge contracts', () => {
       }),
     );
   });
+
+  it('accepts an optional rerank disclosure and stays compatible without it', () => {
+    const id = '00000000-0000-4000-8000-000000000001';
+    const disclosure = {
+      status: 'applied',
+      model: 'qwen3.7-text-rerank',
+      candidateCount: 20,
+      selectedCount: 5,
+      promotedCount: 2,
+      reordered: true,
+      measured: true,
+      durationMs: 380,
+      tokens: 12,
+      fallbackReason: null,
+    };
+    const history = RagHistoryResponseSchema.parse({
+      items: [
+        {
+          id,
+          conversationId: id,
+          question: '结论是什么？',
+          answer: '结论来自资料。',
+          grounded: true,
+          citationCount: 2,
+          createdAt: '2026-08-20T12:00:00.000Z',
+          rerank: disclosure,
+        },
+      ],
+    });
+
+    assert.deepEqual(history.items[0].rerank, disclosure);
+    // 旧服务端响应没有该字段时仍然解析成功，客户端据此不渲染。
+    assert.equal(
+      RagHistoryResponseSchema.parse({
+        items: [
+          {
+            id,
+            conversationId: id,
+            question: '旧问题',
+            answer: '旧回答',
+            grounded: true,
+            citationCount: 0,
+            createdAt: '2026-08-20T12:00:00.000Z',
+          },
+        ],
+      }).items[0].rerank,
+      undefined,
+    );
+    // 字段本身仍是严格结构：未知键与负数一律拒绝。
+    assert.throws(() =>
+      RagHistoryResponseSchema.parse({
+        items: [
+          {
+            id,
+            conversationId: id,
+            question: '结论是什么？',
+            answer: '结论来自资料。',
+            grounded: true,
+            citationCount: 2,
+            createdAt: '2026-08-20T12:00:00.000Z',
+            rerank: { ...disclosure, promotedCount: -1 },
+          },
+        ],
+      }),
+    );
+    assert.throws(() =>
+      RagHistoryResponseSchema.parse({
+        items: [
+          {
+            id,
+            conversationId: id,
+            question: '结论是什么？',
+            answer: '结论来自资料。',
+            grounded: true,
+            citationCount: 2,
+            createdAt: '2026-08-20T12:00:00.000Z',
+            rerank: { ...disclosure, scores: [0.9] },
+          },
+        ],
+      }),
+    );
+  });
 });

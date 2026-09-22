@@ -354,6 +354,19 @@ export const zhCN = {
   'rerank.notConfigured': '重排已开启，但百炼业务空间或重排模型尚未配置。',
   'rerank.openConfiguration': '前往服务配置完善重排模型',
   'rerank.degraded': '智能重排暂时不可用，本次已使用向量检索结果继续回答。',
+  'rerank.disclosure.applied':
+    '已使用智能重排（%{model}）对 %{candidates} 条候选重新排序：入选 %{selected} 条证据，其中 %{promoted} 条来自重排提升（%{duration}）。',
+  'rerank.disclosure.appliedReordered':
+    '已使用智能重排（%{model}）对 %{candidates} 条候选重新排序：入选证据集合不变，顺序已按相关性调整（%{duration}）。',
+  'rerank.disclosure.appliedStable':
+    '已使用智能重排（%{model}）对 %{candidates} 条候选重新排序：结果与向量召回一致（%{duration}）。',
+  'rerank.disclosure.appliedUnmeasured':
+    '已使用智能重排（%{model}）对 %{candidates} 条候选重新排序（%{duration}）。',
+  'rerank.disclosure.fallbackNotConfigured':
+    '重排已开启，但百炼业务空间或重排模型尚未配置，本次使用向量检索结果。',
+  'rerank.disclosure.compact':
+    '智能重排 · %{candidates} 条候选 → 入选 %{selected} 条（%{promoted} 条提升）',
+  'rerank.disclosure.compactUnmeasured': '智能重排 · %{candidates} 条候选',
   'dashscopeMigration.title': '百炼域名待升级',
   'dashscopeMigration.description':
     '当前仍有连接使用旧版独立地址。DashScope 共享域名自 2026 年 9 月 30 日起不再迭代新特性。',
@@ -753,6 +766,9 @@ export const zhCN = {
   'execution.modelCall.businessAnalysisStructureRepair': '修复业务分析的结构与引用',
   'execution.modelCall.businessAnalysisWindow': '分层分析窗口',
   'execution.modelCall.businessAnalysisSynthesis': '汇总分层分析结果',
+  'execution.modelCall.knowledgeRerank': '知识重排候选',
+  'execution.rerankCandidates':
+    '候选 %{candidates} 条 · 入选 %{selected} 条（%{promoted} 条来自重排提升）',
   'execution.tokens': 'Token：输入 %{input} / 输出 %{output}',
   'execution.rawReasoning': '原始推理',
   'execution.collapse': '收起',
@@ -2049,6 +2065,7 @@ export const zhCN = {
   'answerProgress.wake': '唤醒 AI',
   'answerProgress.connect': '连接知识库',
   'answerProgress.retrieve': '检索知识库',
+  'answerProgress.rerank': '重排候选',
   'answerProgress.generate': '生成结果中',
   'answerProgress.noEvidence': '未找到可引用依据',
   'answerProgress.sources': '已确认 %{count} 条引用来源',
@@ -2467,6 +2484,19 @@ export const en = {
     'Reranking is enabled, but the Model Studio workspace or model is missing.',
   'rerank.openConfiguration': 'Open Service configuration for reranking',
   'rerank.degraded': 'Smart reranking is unavailable. This answer used vector search order.',
+  'rerank.disclosure.applied':
+    'Smart reranking (%{model}) reordered %{candidates} candidates: %{selected} passages were selected, %{promoted} of them promoted by reranking (%{duration}).',
+  'rerank.disclosure.appliedReordered':
+    'Smart reranking (%{model}) reordered %{candidates} candidates: the selected passages are unchanged, reordered by relevance (%{duration}).',
+  'rerank.disclosure.appliedStable':
+    'Smart reranking (%{model}) reordered %{candidates} candidates: the result matched vector order (%{duration}).',
+  'rerank.disclosure.appliedUnmeasured':
+    'Smart reranking (%{model}) reordered %{candidates} candidates (%{duration}).',
+  'rerank.disclosure.fallbackNotConfigured':
+    'Reranking is enabled but the Model Studio workspace or model is not configured, so this answer used vector search order.',
+  'rerank.disclosure.compact':
+    'Smart reranking · %{candidates} candidates → %{selected} selected (%{promoted} promoted)',
+  'rerank.disclosure.compactUnmeasured': 'Smart reranking · %{candidates} candidates',
   'dashscopeMigration.title': 'Model Studio domain upgrade required',
   'dashscopeMigration.description':
     'Some connections still use separate legacy endpoints. The shared DashScope domain stops receiving new features on September 30, 2026.',
@@ -2889,6 +2919,9 @@ export const en = {
     'Repair business-analysis structure and citations',
   'execution.modelCall.businessAnalysisWindow': 'Analyze a hierarchical window',
   'execution.modelCall.businessAnalysisSynthesis': 'Synthesize hierarchical analysis results',
+  'execution.modelCall.knowledgeRerank': 'Knowledge reranking',
+  'execution.rerankCandidates':
+    '%{candidates} candidates · %{selected} selected (%{promoted} promoted by reranking)',
   'execution.tokens': 'Tokens: %{input} input / %{output} output',
   'execution.rawReasoning': 'Raw reasoning',
   'execution.collapse': 'Collapse',
@@ -4268,6 +4301,7 @@ export const en = {
   'answerProgress.wake': 'Starting AI',
   'answerProgress.connect': 'Connecting to knowledge base',
   'answerProgress.retrieve': 'Retrieving knowledge',
+  'answerProgress.rerank': 'Reranking candidates',
   'answerProgress.generate': 'Generating answer',
   'answerProgress.noEvidence': 'No citable evidence found',
   'answerProgress.sources': '%{count} citation sources confirmed',

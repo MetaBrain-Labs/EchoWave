@@ -106,6 +106,7 @@ const modelCallNameKeys: Record<string, TranslationKey> = {
   'business-analysis-structure-repair': 'execution.modelCall.businessAnalysisStructureRepair',
   'business-analysis-window': 'execution.modelCall.businessAnalysisWindow',
   'business-analysis-synthesis': 'execution.modelCall.businessAnalysisSynthesis',
+  'knowledge-rerank': 'execution.modelCall.knowledgeRerank',
 };
 
 /** 兼容旧执行轨迹中只有中文 displayName、没有可靠 operation 的记录。 */
@@ -281,7 +282,7 @@ function ReasoningViewport({ call }: { call: AudioAiExecutionRun['modelCalls'][n
 }
 
 function ModelCallCard({ call }: { call: AudioAiExecutionRun['modelCalls'][number] }) {
-  const { t } = useAppLanguage();
+  const { formatNumber, t } = useAppLanguage();
   const [expanded, setExpanded] = useState(false);
   const [reasoningExpanded, setReasoningExpanded] = useState(false);
   const [now, setNow] = useState(Date.now);
@@ -320,6 +321,15 @@ function ModelCallCard({ call }: { call: AudioAiExecutionRun['modelCalls'][numbe
               duration: duration(visibleDuration, t),
             })}
           </Text>
+          {call.rerank ? (
+            <Text style={styles.meta}>
+              {t('execution.rerankCandidates', {
+                candidates: formatNumber(call.rerank.candidateCount),
+                selected: formatNumber(call.rerank.selectedCount),
+                promoted: formatNumber(call.rerank.promotedCount),
+              })}
+            </Text>
+          ) : null}
         </View>
         <Ionicons
           color={colors.secondary}

@@ -43,6 +43,8 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 import { textInputText } from '@/shared/theme/textInput';
+import { getKnowledgeRetrievalSettings } from '@/shared/api/knowledgeRetrievalSettingsApi';
+import { fallbackRerankDisclosure, RerankDisclosure } from '@/shared/ui/RerankDisclosure';
 import { listQueryHistory, listRetrievalCategoriesByBase, queryKnowledge } from '../apiClient';
 import { AnswerProgressCard } from '../components/AnswerProgressCard';
 import { AnswerText } from '../components/AnswerText';
@@ -124,6 +126,8 @@ export function KnowledgeQueryScreen({
   const [historyItems, setHistoryItems] = useState<RagHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState('');
+  /** 租户重排开关状态；读取失败时按关闭处理，只影响进度卡片的一个阶段。 */
+  const [rerankStageVisible, setRerankStageVisible] = useState(false);
   const nextTurnId = useRef(1);
   const mounted = useRef(true);
   const completionTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
@@ -161,6 +165,20 @@ export function KnowledgeQueryScreen({
       timers.clear();
     };
   }, []);
+
+  // 进度卡片的"重排候选"阶段只在租户开关开启且重排已配置时出现；失败不阻塞问答。
+  useEffect(() => {
+    if (guideDemo) return undefined;
+    let active = true;
+    void getKnowledgeRetrievalSettings()
+      .then((settings) => {
+        if (active) setRerankStageVisible(settings.rerankEnabled && settings.rerankerConfigured);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [guideDemo]);
 
   // 分组入口默认勾选参与检索的全部启用类别；失败时保持自动路由，不阻塞提问。
   const knowledgeBaseIdsKey = knowledgeBaseKey(knowledgeBases);
@@ -403,81 +421,84 @@ export function KnowledgeQueryScreen({
           >
             <Text style={styles.historyHintText}>{t('knowledgeQuery.history')}</Text>
           </Pressable>
-          {turns.map((turn) => (
-            <View key={turn.id} style={styles.turn}>
-              <View style={styles.questionBubble}>
-                <Text selectable style={styles.questionText}>
-                  {turn.question}
-                </Text>
-              </View>
-              {turn.status === 'pending' || turn.status === 'verified' ? (
-                <AnswerProgressCard
-                  onProgressChange={scrollToLatest}
-                  sourceCount={
-                    turn.status === 'verified' ? turn.response.citations.length : undefined
-                  }
-                />
-              ) : null}
-              {turn.status === 'failed' ? (
-                <View style={styles.failureCard}>
-                  <View style={styles.failureTitleRow}>
-                    <Ionicons color="#b42318" name="alert-circle-outline" size={21} />
-                    <Text style={styles.failureTitle}>{t('knowledgeQuery.incomplete')}</Text>
-                  </View>
-                  <Text accessibilityRole="alert" style={styles.failureText}>
-                    {turn.error}
+          {turns.map((turn) => {
+            // 新服务端直接给出重排披露；旧响应只有粗粒度状态时仅保留降级提示。
+            const rerank =
+              turn.status === 'completed' || turn.status === 'verified'
+                ? (turn.response.rerank ?? fallbackRerankDisclosure(turn.response.retrieval))
+                : undefined;
+            return (
+              <View key={turn.id} style={styles.turn}>
+                <View style={styles.questionBubble}>
+                  <Text selectable style={styles.questionText}>
+                    {turn.question}
                   </Text>
-                  <Pressable
-                    accessibilityLabel={t('knowledgeQuery.retryAccessibility', {
-                      question: turn.question,
-                    })}
-                    accessibilityRole="button"
-                    disabled={activeTurnId !== undefined}
-                    onPress={() => retryTurn(turn)}
-                    style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
-                  >
-                    <Text style={styles.retryText}>{t('knowledgeQuery.retry')}</Text>
-                  </Pressable>
                 </View>
-              ) : null}
-              {turn.status === 'completed' ? (
-                <View
-                  accessibilityLabel={turn.response.citations.length + '条引用来源'}
-                  ref={answerTargetRef}
-                  onLayout={(event) => {
-                    answerContainerOffsets.current.set(turn.id, event.nativeEvent.layout.y);
-                  }}
-                  style={styles.answerCard}
-                >
-                  {turn.response.retrieval.rerankStatus === 'fallback' ? (
-                    <View style={styles.rerankNotice}>
-                      <Ionicons color="#8a4b08" name="information-circle-outline" size={18} />
-                      <Text style={styles.rerankNoticeText}>{t('rerank.degraded')}</Text>
-                    </View>
-                  ) : null}
-                  <AnswerText
-                    answer={turn.response.answer}
-                    citationCount={turn.response.citations.length}
-                    onOpenCitationMarker={(number) => openCitationMarker(turn.id, number)}
-                    style={styles.answerText}
+                {turn.status === 'pending' || turn.status === 'verified' ? (
+                  <AnswerProgressCard
+                    onProgressChange={scrollToLatest}
+                    showRerankStage={rerankStageVisible}
+                    sourceCount={
+                      turn.status === 'verified' ? turn.response.citations.length : undefined
+                    }
                   />
-                  <View
-                    collapsable={false}
-                    onLayout={(event) => jump.setListOffset(event.nativeEvent.layout.y)}
-                    ref={citationTargetRef}
-                  >
-                    <CitationList
-                      citations={turn.response.citations}
-                      highlightedNumber={jump.highlightedNumber}
-                      onOpenCitation={onOpenCitation}
-                      onScrollToOffset={(offset) => scrollToCitationCard(turn.id, offset)}
-                      ref={registerCitationList(turn.id)}
-                    />
+                ) : null}
+                {turn.status === 'failed' ? (
+                  <View style={styles.failureCard}>
+                    <View style={styles.failureTitleRow}>
+                      <Ionicons color="#b42318" name="alert-circle-outline" size={21} />
+                      <Text style={styles.failureTitle}>{t('knowledgeQuery.incomplete')}</Text>
+                    </View>
+                    <Text accessibilityRole="alert" style={styles.failureText}>
+                      {turn.error}
+                    </Text>
+                    <Pressable
+                      accessibilityLabel={t('knowledgeQuery.retryAccessibility', {
+                        question: turn.question,
+                      })}
+                      accessibilityRole="button"
+                      disabled={activeTurnId !== undefined}
+                      onPress={() => retryTurn(turn)}
+                      style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
+                    >
+                      <Text style={styles.retryText}>{t('knowledgeQuery.retry')}</Text>
+                    </Pressable>
                   </View>
-                </View>
-              ) : null}
-            </View>
-          ))}
+                ) : null}
+                {turn.status === 'completed' ? (
+                  <View
+                    accessibilityLabel={turn.response.citations.length + '条引用来源'}
+                    ref={answerTargetRef}
+                    onLayout={(event) => {
+                      answerContainerOffsets.current.set(turn.id, event.nativeEvent.layout.y);
+                    }}
+                    style={styles.answerCard}
+                  >
+                    {rerank ? <RerankDisclosure disclosure={rerank} /> : null}
+                    <AnswerText
+                      answer={turn.response.answer}
+                      citationCount={turn.response.citations.length}
+                      onOpenCitationMarker={(number) => openCitationMarker(turn.id, number)}
+                      style={styles.answerText}
+                    />
+                    <View
+                      collapsable={false}
+                      onLayout={(event) => jump.setListOffset(event.nativeEvent.layout.y)}
+                      ref={citationTargetRef}
+                    >
+                      <CitationList
+                        citations={turn.response.citations}
+                        highlightedNumber={jump.highlightedNumber}
+                        onOpenCitation={onOpenCitation}
+                        onScrollToOffset={(offset) => scrollToCitationCard(turn.id, offset)}
+                        ref={registerCitationList(turn.id)}
+                      />
+                    </View>
+                  </View>
+                ) : null}
+              </View>
+            );
+          })}
         </ScrollView>
         <View ref={composerTargetRef} collapsable={false} style={styles.composer}>
           <TextInput
@@ -563,20 +584,6 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   answerText: { ...typography.body, color: textColors.primary, fontFamily: fontFamilies.sans },
-  rerankNotice: {
-    alignItems: 'center',
-    backgroundColor: '#fff4e5',
-    borderRadius: radii.default,
-    flexDirection: 'row',
-    gap: spacing.xs,
-    padding: spacing.sm,
-  },
-  rerankNoticeText: {
-    ...typography.description,
-    color: '#8a4b08',
-    flex: 1,
-    fontFamily: fontFamilies.sans,
-  },
   failureCard: {
     alignSelf: 'flex-start',
     backgroundColor: '#fff4f2',

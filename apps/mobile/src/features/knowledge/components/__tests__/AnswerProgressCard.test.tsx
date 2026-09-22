@@ -46,4 +46,21 @@ describe('AnswerProgressCard', () => {
     expect(screen.getByLabelText('已确认 3 条引用来源')).toBeTruthy();
     screen.unmount();
   });
+
+  it('inserts the rerank stage only when the tenant has reranking enabled', async () => {
+    const off = render(<AnswerProgressCard />);
+    await act(async () => Promise.resolve());
+    expect(off.queryByText('重排候选')).toBeNull();
+    off.unmount();
+
+    const on = render(<AnswerProgressCard showRerankStage />);
+    await act(async () => Promise.resolve());
+    act(() => jest.advanceTimersByTime(900));
+    expect(on.getByLabelText('检索知识库')).toBeTruthy();
+    act(() => jest.advanceTimersByTime(700));
+    expect(on.getByLabelText('重排候选')).toBeTruthy();
+    act(() => jest.advanceTimersByTime(700));
+    expect(on.getByLabelText('生成结果中')).toBeTruthy();
+    on.unmount();
+  });
 });

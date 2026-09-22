@@ -34,6 +34,7 @@ import {
   REASONING_LIMIT,
   TOOL_DISPLAY_NAMES,
   displayName,
+  safeRerankAudit,
   safeStepSummary,
   safeToolAudit,
   text,
@@ -218,12 +219,21 @@ export class PostgresAudioExecutionRecorder implements AiExecutionRecorder {
         if (completed) return;
         completed = true;
         flush();
+        // 重排调用额外落库一份白名单审计，供轨迹解释"用了重排、效果如何"。
+        const rerank = safeRerankAudit({
+          input: result.input,
+          output: result.output,
+          model: event.model,
+          durationMs: result.durationMs,
+          inputTokens: result.inputTokens,
+        });
         this.enqueue('model_call', operationId, event.name, result.status, result.durationMs, {
           ...baseDetails,
           inputTokens: result.inputTokens,
           outputTokens: result.outputTokens,
           estimatedCost: result.estimatedCost ?? null,
           reasoningTruncated,
+          ...(rerank ? { rerank } : {}),
         });
       },
     };

@@ -27,6 +27,7 @@ import {
   text,
   type EventRow,
 } from './shared.ts';
+import { readRerankDisclosure } from '../../../knowledge/retrieval/rerankDisclosure.ts';
 
 /** 将持久化事件映射为产品执行轨迹。 */
 export class AudioExecutionEventMapper {
@@ -137,6 +138,17 @@ export class AudioExecutionEventMapper {
       ...(object(first.details) ?? {}),
       ...(object(terminal?.details) ?? {}),
     };
+    // 重排审计按披露字段名持久化，这里把 status/model 映射回读取器认识的键。
+    const rerankDetails = object(details.rerank);
+    const rerank = rerankDetails
+      ? readRerankDisclosure([
+          {
+            ...rerankDetails,
+            rerankStatus: rerankDetails.status,
+            rerankerModel: rerankDetails.model,
+          },
+        ])
+      : undefined;
     const reasoningEvents = events.filter((event) => event.event_type === 'reasoning_delta');
     return {
       id: first.operation_id,
@@ -164,6 +176,8 @@ export class AudioExecutionEventMapper {
       inputTokens: integer(details.inputTokens),
       outputTokens: integer(details.outputTokens),
       estimatedCost: object(details.estimatedCost) ?? null,
+      // 旧事件没有重排审计时该字段缺省，客户端按"不渲染"处理。
+      ...(rerank ? { rerank } : {}),
       reasoningMode: text(details.reasoningMode) ?? 'unsupported',
       reasoningContent: reasoningEvents
         .map((event) => text(object(event.details)?.delta) ?? '')

@@ -22,14 +22,17 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 
-const stageDelays = [350, 900, 1_600] as const;
+const stageDelays = [350, 900, 1_600, 2_200] as const;
 
 /** 渲染一轮等待中或已验证的 Assistant 进度。 */
 export function AnswerProgressCard({
   onProgressChange,
+  showRerankStage = false,
   sourceCount,
 }: {
   onProgressChange?: () => void;
+  /** 仅在租户重排开关为"开启且已配置"时插入重排阶段；它只是展示节奏，不是服务端遥测。 */
+  showRerankStage?: boolean;
   sourceCount?: number;
 }) {
   const { formatNumber, t } = useAppLanguage();
@@ -37,8 +40,10 @@ export function AnswerProgressCard({
     t('answerProgress.wake'),
     t('answerProgress.connect'),
     t('answerProgress.retrieve'),
+    ...(showRerankStage ? [t('answerProgress.rerank')] : []),
     t('answerProgress.generate'),
   ];
+  const stageCount = stages.length;
   const [activeStage, setActiveStage] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [pulse] = useState(() => new Animated.Value(0));
@@ -61,14 +66,15 @@ export function AnswerProgressCard({
       onProgressChange?.();
       return undefined;
     }
-    const timers = stageDelays.map((delay, index) =>
+    // 阶段数决定计时器个数，避免关闭重排阶段后仍推进到不存在的阶段。
+    const timers = stageDelays.slice(0, Math.max(0, stageCount - 1)).map((delay, index) =>
       setTimeout(() => {
         setActiveStage(index + 1);
         onProgressChange?.();
       }, delay),
     );
     return () => timers.forEach(clearTimeout);
-  }, [onProgressChange, verified]);
+  }, [onProgressChange, stageCount, verified]);
 
   useEffect(() => {
     if (reduceMotion) {

@@ -11,6 +11,7 @@ import { z } from 'zod';
 
 import { EntityIdSchema, SupportedLanguageSchema } from '../common.ts';
 import { CitationSnapshotFields, SourceLocatorSchema } from '../document.ts';
+import { RerankDisclosureSchema } from '../rerank.ts';
 
 /** 业务分析结果允许返回的限制说明数量上限。 */
 export const BUSINESS_ANALYSIS_MAX_LIMITATIONS = 8;
@@ -102,6 +103,8 @@ export const BusinessAnalysisResultSchema = z
     knowledgeStatus: z.enum(['not_linked', 'linked_not_used', 'used']),
     // 分析当时冻结的分类名与选择方式；旧报告没有该审计时按空数组处理。
     retrievalCategories: z.array(BusinessAnalysisRetrievalCategorySchema).default([]),
+    /** 该次分析知识检索的重排披露；旧报告缺少审计时为 undefined。 */
+    rerank: RerankDisclosureSchema.optional(),
     limitations: z.array(z.string().trim().min(1).max(500)).max(BUSINESS_ANALYSIS_MAX_LIMITATIONS),
     summarySections: z.array(
       z.object({

@@ -15,6 +15,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import type { TranslationKey } from '@/shared/i18n/translations';
 import { colors, fontFamilies, spacing, textColors, typography } from '@/shared/theme/tokens';
+import { RerankDisclosure } from '@/shared/ui/RerankDisclosure';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import type { AnalysisDetailView } from '../model';
 
@@ -93,6 +94,7 @@ export function SummaryContent({
       {retrievalCategoryLabel ? (
         <Text style={styles.knowledgeStatus}>{retrievalCategoryLabel}</Text>
       ) : null}
+      {businessResult?.rerank ? <RerankDisclosure disclosure={businessResult.rerank} /> : null}
       <View style={styles.summaryDivider} />
       {displayLimitations.length ? (
         <View accessibilityRole="summary" style={styles.limitations}>
