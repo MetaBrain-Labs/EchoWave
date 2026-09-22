@@ -37,6 +37,7 @@ export const MODEL_DISPLAY_NAMES: Record<string, string> = {
   'business-analysis-structure-repair': '修复业务分析的结构与引用',
   'business-analysis-window': '分层分析窗口',
   'business-analysis-synthesis': '汇总分层分析结果',
+  'knowledge-rerank': '知识重排候选',
 };
 
 export const TOOL_DISPLAY_NAMES: Record<string, string> = {
@@ -117,6 +118,37 @@ export function safeToolAudit(value: unknown) {
     knowledgeBases: Array.isArray(audit?.knowledgeBases) ? audit.knowledgeBases.slice(0, 50) : [],
     hitCount: integer(audit?.hitCount) ?? 0,
     hits: Array.isArray(audit?.hits) ? audit.hits.slice(0, 100) : [],
+  };
+}
+
+/**
+ * 重排模型调用的白名单审计。
+ *
+ * 只保留可复算的计数与状态，不写入候选正文、相关性分数或提示词。
+ */
+export function safeRerankAudit(value: {
+  input: unknown;
+  output: unknown;
+  model: string;
+  durationMs?: number | null;
+  inputTokens?: number | null;
+}) {
+  const request = object(value.input);
+  const result = object(value.output);
+  const status = text(result?.status);
+  if (status !== 'applied' && status !== 'fallback') return undefined;
+  return {
+    status,
+    model: value.model.slice(0, 160),
+    candidateCount: integer(request?.candidateCount) ?? 0,
+    selectedCount:
+      integer(request?.selectedCount) ??
+      (Array.isArray(result?.finalChunkIds) ? result.finalChunkIds.length : 0),
+    promotedCount: integer(result?.promotedCount) ?? 0,
+    reordered: result?.reordered === true,
+    durationMs: integer(value.durationMs) ?? 0,
+    tokens: integer(value.inputTokens) ?? 0,
+    fallbackReason: text(result?.fallbackReason)?.slice(0, 80) ?? null,
   };
 }
 

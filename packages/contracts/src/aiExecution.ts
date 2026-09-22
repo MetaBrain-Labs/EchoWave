@@ -14,6 +14,7 @@ import { z } from 'zod';
 
 import { EntityIdSchema } from './common.ts';
 import { SourceLocatorSchema } from './document.ts';
+import { RerankDisclosureSchema } from './rerank.ts';
 
 export const AudioAiExecutionKindSchema = z.enum([
   'audio-transcription',
@@ -50,6 +51,8 @@ export const AudioAiExecutionModelCallSchema = z.object({
   estimatedCost: z
     .object({ amount: z.number().nonnegative(), currency: z.enum(['CNY', 'USD']) })
     .nullable(),
+  /** 重排类模型调用的量化审计；其他模型调用与旧记录缺省。 */
+  rerank: RerankDisclosureSchema.optional(),
 });
 
 export const AudioAiExecutionStepSchema = z

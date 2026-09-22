@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { EntityIdSchema } from './common.ts';
 import { KnowledgeCategoryFilterSchema } from './knowledgeCategory.ts';
 import { CitationSnapshotFields, SourceLocatorSchema } from './document.ts';
+import { RerankDisclosureSchema } from './rerank.ts';
 
 /** 用户提交知识库问题的最终 JSON 请求 schema。 */
 export const RagQueryRequestSchema = z.object({
@@ -59,6 +60,12 @@ export const RagQueryResponseSchema = z.object({
       rerankerModel: z.string().min(1).nullable(),
     })
     .strict(),
+  /**
+   * 重排披露；`disabled` 与旧服务端响应缺省时不渲染。
+   *
+   * 顶层对象不是 strict，新增可选字段对旧客户端安全。
+   */
+  rerank: RerankDisclosureSchema.optional(),
 });
 
 /** 最近一次已完成问答的只读历史记录 schema。 */
@@ -71,6 +78,8 @@ export const RagHistoryItemSchema = z.object({
   citationCount: z.number().int().nonnegative(),
   citations: z.array(RagCitationSchema).optional(),
   createdAt: z.string().datetime(),
+  /** 该次运行的重排披露；旧记录缺少审计时为 undefined。 */
+  rerank: RerankDisclosureSchema.optional(),
 });
 
 /** 当前知识库最近六个已完成问答的响应 schema。 */

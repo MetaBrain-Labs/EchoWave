@@ -44,6 +44,12 @@ export type RetrievalAudit = {
   rerankTokens: number;
   rerankDurationMs: number;
   fallbackReason: string | null;
+  /** 最终入选证据条数；重排未执行时也是纯向量顺序的入选条数。 */
+  selectedCount: number;
+  /** 重排后入选、而纯向量顺序不会入选的片段数，用于向用户量化重排效果。 */
+  promotedCount: number;
+  /** 入选集合的顺序是否因重排发生变化。 */
+  reordered: boolean;
 };
 
 /** 带运行审计的检索结果。 */

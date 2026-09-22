@@ -128,6 +128,19 @@ describe('BusinessAnalysisRepository', () => {
                   { length: BUSINESS_ANALYSIS_MAX_LIMITATIONS + 1 },
                   (_, index) => `历史限制 ${index + 1}`,
                 ),
+                retrieval_audit: [
+                  {
+                    rerankStatus: 'applied',
+                    rerankerModel: 'qwen3.7-text-rerank',
+                    candidateCount: 20,
+                    finalChunkIds: [chunkId],
+                    rerankTokens: 9,
+                    rerankDurationMs: 300,
+                    selectedCount: 1,
+                    promotedCount: 1,
+                    reordered: true,
+                  },
+                ],
               },
             ],
           };
@@ -189,6 +202,9 @@ describe('BusinessAnalysisRepository', () => {
 
     const state = await repository.getState(audioId, groupId);
     assert.equal(state.result.limitations.length, BUSINESS_ANALYSIS_MAX_LIMITATIONS);
+    // 报告头部同时公开重排披露，让用户知道分析用了重排以及效果。
+    assert.equal(state.result.rerank?.status, 'applied');
+    assert.equal(state.result.rerank?.promotedCount, 1);
     const excerpt = state.result.tags[0].citations[0].excerpt;
     assert.equal(excerpt.length, 240);
     assert.doesNotMatch(excerpt, /\s{2,}/);

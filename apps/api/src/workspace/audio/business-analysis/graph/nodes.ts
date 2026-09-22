@@ -195,10 +195,16 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
         durationMs: result.audit.rerankDurationMs,
         inputTokens: result.audit.rerankTokens || null,
         outputTokens: 0,
-        input: { queryLength: query.length, candidateCount: result.audit.candidateCount },
+        input: {
+          queryLength: query.length,
+          candidateCount: result.audit.candidateCount,
+          selectedCount: result.audit.selectedCount,
+        },
         output: {
           status: result.audit.rerankStatus,
           finalChunkIds: result.audit.finalChunkIds,
+          promotedCount: result.audit.promotedCount,
+          reordered: result.audit.reordered,
           scores: chunks.map((chunk) => ({ chunkId: chunk.id, score: chunk.rerankScore })),
           fallbackReason: result.audit.fallbackReason,
         },

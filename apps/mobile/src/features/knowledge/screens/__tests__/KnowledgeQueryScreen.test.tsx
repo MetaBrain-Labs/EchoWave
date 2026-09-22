@@ -162,6 +162,77 @@ describe('KnowledgeQueryScreen', () => {
     expect(screen.getByLabelText('1条引用来源')).toBeTruthy();
   });
 
+  it('discloses the applied rerank and its measured effect', async () => {
+    jest.mocked(queryKnowledge).mockResolvedValue({
+      ...response,
+      rerank: {
+        status: 'applied',
+        model: 'qwen3.7-text-rerank',
+        candidateCount: 20,
+        selectedCount: 5,
+        promotedCount: 2,
+        reordered: true,
+        measured: true,
+        durationMs: 380,
+        tokens: 12,
+        fallbackReason: null,
+      },
+    });
+    const screen = render(
+      <KnowledgeQueryScreen
+        knowledgeId={knowledge.id}
+        onBack={jest.fn()}
+        onOpenCitation={jest.fn()}
+      />,
+    );
+
+    fireEvent.changeText(screen.getByLabelText('输入知识库问题'), '用了重排吗');
+    fireEvent.press(screen.getByLabelText('发送问题'));
+    await act(async () => Promise.resolve());
+    act(() => jest.advanceTimersByTime(420));
+
+    expect(screen.getByTestId('rerank-disclosure')).toBeTruthy();
+    expect(
+      screen.getByText(
+        /已使用智能重排（qwen3\.7-text-rerank）对 20 条候选重新排序：入选 5 条证据，其中 2 条来自重排提升（380 ms）。/,
+      ),
+    ).toBeTruthy();
+  });
+
+  it('names the missing rerank configuration instead of a generic degradation', async () => {
+    jest.mocked(queryKnowledge).mockResolvedValue({
+      ...response,
+      rerank: {
+        status: 'fallback',
+        model: 'qwen3.7-text-rerank',
+        candidateCount: 20,
+        selectedCount: 2,
+        promotedCount: 0,
+        reordered: false,
+        measured: false,
+        durationMs: 0,
+        tokens: 0,
+        fallbackReason: 'NOT_CONFIGURED',
+      },
+    });
+    const screen = render(
+      <KnowledgeQueryScreen
+        knowledgeId={knowledge.id}
+        onBack={jest.fn()}
+        onOpenCitation={jest.fn()}
+      />,
+    );
+
+    fireEvent.changeText(screen.getByLabelText('输入知识库问题'), '重排没配好吗');
+    fireEvent.press(screen.getByLabelText('发送问题'));
+    await act(async () => Promise.resolve());
+    act(() => jest.advanceTimersByTime(420));
+
+    expect(
+      screen.getByText('重排已开启，但百炼业务空间或重排模型尚未配置，本次使用向量检索结果。'),
+    ).toBeTruthy();
+  });
+
   it.each([
     ['android', 'height'],
     ['ios', 'padding'],
@@ -387,6 +458,46 @@ describe('KnowledgeQueryScreen', () => {
     fireEvent.press(await screen.findByText('查看当前原文'));
     expect(onOpenCitation).toHaveBeenCalledWith(document.id, document.chunks[0]?.id);
     expect(screen.queryByText('历史问题')).toBeNull();
+  });
+
+  it('marks history items that used reranking with the compact summary', async () => {
+    jest.mocked(listQueryHistory).mockResolvedValue({
+      items: [
+        {
+          id: '66666666-6666-4666-8666-666666666666',
+          conversationId: response.conversationId,
+          question: '历史重排问题',
+          answer: '历史重排回答',
+          grounded: true,
+          citationCount: 2,
+          citations: response.citations,
+          createdAt: '2026-08-20T12:00:00.000Z',
+          rerank: {
+            status: 'applied',
+            model: 'qwen3.7-text-rerank',
+            candidateCount: 20,
+            selectedCount: 5,
+            promotedCount: 2,
+            reordered: true,
+            measured: true,
+            durationMs: 380,
+            tokens: 12,
+            fallbackReason: null,
+          },
+        },
+      ],
+    });
+    const screen = render(
+      <KnowledgeQueryScreen
+        knowledgeId={knowledge.id}
+        onBack={jest.fn()}
+        onOpenCitation={jest.fn()}
+      />,
+    );
+
+    fireEvent.press(screen.getByLabelText('查看历史记录'));
+
+    expect(await screen.findByText('智能重排 · 20 条候选 → 入选 5 条（2 条提升）')).toBeTruthy();
   });
 
   it('opens the history panel from the inline shortcut', async () => {

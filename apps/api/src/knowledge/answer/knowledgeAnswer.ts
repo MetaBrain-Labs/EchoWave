@@ -38,6 +38,7 @@ import {
   isTestSampleQuestion,
   type CategorySearchFilter,
 } from '../retrieval/categoryPolicy.ts';
+import { readRerankDisclosure } from '../retrieval/rerankDisclosure.ts';
 import type { RetrievalChunk } from '../retrieval/types.ts';
 import type { FrozenRerankRuntime } from '../retrieval/settingsService.ts';
 import { resolveCitationMarkers } from './citationMarkers.ts';
@@ -478,10 +479,13 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
                       input: {
                         queryLength: query.length,
                         candidateCount: result.audit.candidateCount,
+                        selectedCount: result.audit.selectedCount,
                       },
                       output: {
                         status: result.audit.rerankStatus,
                         finalChunkIds: result.audit.finalChunkIds,
+                        promotedCount: result.audit.promotedCount,
+                        reordered: result.audit.reordered,
                         scores: result.chunks.map((chunk) => ({
                           chunkId: chunk.id,
                           score: chunk.rerankScore,
@@ -781,6 +785,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         inputTokens: generated.usage.inputTokens + correctionUsage.inputTokens,
         outputTokens: generated.usage.outputTokens + correctionUsage.outputTokens,
       };
+      const rerankDisclosure = readRerankDisclosure(retrievalAudit);
       const response = RagQueryResponseSchema.parse({
         conversationId: conversation.id,
         answer: candidate.answer,
@@ -806,6 +811,8 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
           rerankStatus,
           rerankerModel: runtime.rerank.model,
         },
+        // 重排披露与实时检索审计同源，缺口（旧数据、未启用）时不渲染。
+        ...(rerankDisclosure ? { rerank: rerankDisclosure } : {}),
       });
 
       const auditCompleteStartedAt = now();

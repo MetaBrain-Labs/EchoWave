@@ -104,6 +104,7 @@ export {
   type RagQueryRequest,
   type RagQueryResponse,
 } from './rag.ts';
+export { RerankDisclosureSchema, type RerankDisclosure } from './rerank.ts';
 export {
   DEFAULT_GROUP_ANALYSIS_FOCUS,
   DEFAULT_GROUP_ANALYSIS_TONE,
