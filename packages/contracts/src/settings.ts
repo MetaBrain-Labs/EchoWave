@@ -25,6 +25,7 @@ export const TransportSecurityModeSchema = z.enum([
 ]);
 export const AiCapabilitySchema = z.enum([
   'knowledge_embedding',
+  'knowledge_rerank',
   'knowledge_chat',
   'audio_transcription',
   'audio_emotion',
@@ -55,6 +56,11 @@ export const AI_CAPABILITY_DEFAULTS = {
   knowledge_embedding: {
     providerType: 'dashscope',
     model: 'qwen3.7-text-embedding',
+    settings: {},
+  },
+  knowledge_rerank: {
+    providerType: 'dashscope',
+    model: 'qwen3.7-text-rerank',
     settings: {},
   },
   knowledge_chat: {
@@ -140,6 +146,7 @@ export const DashScopeConnectionConfigSchema = z
   .object({
     baseUrl: HttpsUrlSchema,
     compatibleBaseUrl: HttpsUrlSchema,
+    rerankBaseUrl: HttpsUrlSchema.optional(),
     asyncNotifyMode: z.enum(['polling', 'eventbridge']),
     eventBridgeCallbackUrl: HttpsUrlSchema.nullable(),
   })

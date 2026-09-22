@@ -423,7 +423,7 @@ describe('SettingsService defaults', () => {
     await service.importLegacyConfiguration();
 
     assert.equal(marked, true);
-    assert.equal(saved.length, 9);
+    assert.equal(saved.length, 10);
     for (const binding of saved) {
       const defaults = AI_CAPABILITY_DEFAULTS[binding.capability];
       assert.equal(binding.model, defaults.model);

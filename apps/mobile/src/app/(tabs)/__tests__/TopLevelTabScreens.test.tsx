@@ -10,8 +10,9 @@
  * Notes:
  * - 服务状态与路由使用轻量替身，避免真实网络和导航副作用。
  */
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { Pressable as MockPressable, StyleSheet, Text as MockText } from 'react-native';
+import { useEffect } from 'react';
 
 import CreateScreen from '../create';
 import MoreScreen from '../more';
@@ -19,16 +20,20 @@ import AnalysisRoute from '../../analysis';
 import AnalysisCreateRoute from '../../analysis-create';
 import { colors, radii, spacing } from '@/shared/theme/tokens';
 import { getAudioRuntime } from '@/shared/api/audioRuntimeApi';
-import { AdminSessionProvider } from '@/shared/auth/AdminSessionProvider';
+import {
+  getKnowledgeRetrievalSettings,
+  updateKnowledgeRetrievalSettings,
+} from '@/shared/api/knowledgeRetrievalSettingsApi';
+import { AdminSessionProvider, useAdminSession } from '@/shared/auth/AdminSessionProvider';
 import { ServerConnectionProvider } from '@/shared/api/ServerConnectionProvider';
 
 const mockPush = jest.fn();
 const mockBack = jest.fn();
-let focusCallback: (() => void) | undefined;
+let mockFocusCallbacks: (() => void)[] = [];
 
 jest.mock('expo-router', () => ({
   useFocusEffect: (callback: () => void) => {
-    focusCallback = callback;
+    mockFocusCallbacks.push(callback);
   },
   useRouter: () => ({ back: mockBack, push: mockPush }),
 }));
@@ -52,6 +57,10 @@ jest.mock('@/shared/api/dataSourcesApi', () => ({
 jest.mock('@/shared/api/audioRuntimeApi', () => ({
   getAudioRuntime: jest.fn(),
 }));
+jest.mock('@/shared/api/knowledgeRetrievalSettingsApi', () => ({
+  getKnowledgeRetrievalSettings: jest.fn(),
+  updateKnowledgeRetrievalSettings: jest.fn(),
+}));
 jest.mock('@/shared/api/groupsApi', () => ({ getGroupSettings: jest.fn() }));
 jest.mock('@/shared/api/serverHealth', () => ({
   fetchServerHealth: jest.fn(async () => ({ version: '0.3.0' })),
@@ -73,11 +82,71 @@ const audioRuntimeOverview = {
   ],
 };
 
+/** 为需要管理员身份的交互用例注入仅存于内存的测试会话。 */
+function AdminSessionSeeder({ token }: { token: string }) {
+  const { setSession } = useAdminSession();
+  useEffect(() => setSession(token), [setSession, token]);
+  return null;
+}
+
 describe('Top-level tab screens', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    focusCallback = undefined;
+    mockFocusCallbacks = [];
     jest.mocked(getAudioRuntime).mockResolvedValue({ ...audioRuntimeOverview });
+    jest.mocked(getKnowledgeRetrievalSettings).mockResolvedValue({
+      rerankEnabled: true,
+      rerankerModel: 'qwen3.7-text-rerank',
+      rerankerConfigured: true,
+      revision: 1,
+    });
+  });
+
+  it('loads the authoritative rerank switch and routes unverified writes to service config', async () => {
+    const screen = render(
+      <ServerConnectionProvider>
+        <AdminSessionProvider serverRevision={0}>
+          <MoreScreen />
+        </AdminSessionProvider>
+      </ServerConnectionProvider>,
+    );
+
+    await act(async () => mockFocusCallbacks.forEach((callback) => callback()));
+    const toggle = await screen.findByLabelText('切换 RAG 智能重排');
+    expect(toggle.props.value).toBe(true);
+    fireEvent(toggle, 'valueChange', false);
+    expect(mockPush).toHaveBeenCalledWith('/service-configuration');
+    expect(screen.getByText('请先前往服务配置验证管理员口令。')).toBeTruthy();
+  });
+
+  it('persists rerank changes with the server revision when an administrator is verified', async () => {
+    jest.mocked(updateKnowledgeRetrievalSettings).mockResolvedValue({
+      rerankEnabled: false,
+      rerankerModel: 'qwen3.7-text-rerank',
+      rerankerConfigured: false,
+      revision: 2,
+    });
+    const screen = render(
+      <ServerConnectionProvider>
+        <AdminSessionProvider serverRevision={0}>
+          <AdminSessionSeeder token="admin" />
+          <MoreScreen />
+        </AdminSessionProvider>
+      </ServerConnectionProvider>,
+    );
+
+    await act(async () => mockFocusCallbacks.forEach((callback) => callback()));
+    fireEvent(screen.getByLabelText('切换 RAG 智能重排'), 'valueChange', false);
+
+    await waitFor(() =>
+      expect(updateKnowledgeRetrievalSettings).toHaveBeenCalledWith('admin', {
+        rerankEnabled: false,
+        expectedRevision: 1,
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByLabelText('切换 RAG 智能重排').props.value).toBe(false),
+    );
   });
 
   it('keeps the More header fixed and exposes the service summary plus every entry', async () => {
@@ -206,11 +275,11 @@ describe('Top-level tab screens', () => {
 
     fireEvent.press(await screen.findByRole('button', { name: '更多设置' }));
     expect(await screen.findByText(/本批次冻结模式：object_storage/)).toBeTruthy();
-    await act(async () => focusCallback?.());
+    await act(async () => mockFocusCallbacks.forEach((callback) => callback()));
     jest
       .mocked(getAudioRuntime)
       .mockResolvedValue({ ...audioRuntimeOverview, mode: 'hybrid' } as never);
-    await act(async () => focusCallback?.());
+    await act(async () => mockFocusCallbacks.forEach((callback) => callback()));
 
     expect(await screen.findByText(/本批次冻结模式：hybrid/)).toBeTruthy();
   });

@@ -450,11 +450,12 @@ export class SettingsService {
         ? [
             (input.config as { baseUrl: string }).baseUrl,
             (input.config as { compatibleBaseUrl: string }).compatibleBaseUrl,
+            (input.config as { rerankBaseUrl?: string }).rerankBaseUrl,
           ]
         : input.type === 'deepseek'
           ? [(input.config as { baseUrl: string }).baseUrl]
           : [];
-    for (const value of values) {
+    for (const value of values.filter((item): item is string => Boolean(item))) {
       const hostname = new URL(value).hostname;
       if (
         hostname === 'localhost' ||

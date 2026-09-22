@@ -18,6 +18,7 @@ export const ProviderEnvironmentSchema = z.object({
   DASHSCOPE_API_KEY: OptionalStringSchema,
   DASHSCOPE_BASE_URL: OptionalStringSchema,
   DASHSCOPE_COMPATIBLE_BASE_URL: OptionalStringSchema,
+  DASHSCOPE_RERANK_BASE_URL: OptionalStringSchema,
   DASHSCOPE_ASYNC_NOTIFY_MODE: z.enum(['polling', 'eventbridge']).optional(),
   DASHSCOPE_EVENTBRIDGE_CALLBACK_URL: OptionalStringSchema,
   DASHSCOPE_EVENTBRIDGE_CALLBACK_TOKEN: OptionalStringSchema,
@@ -36,6 +37,7 @@ export type ProviderConfig = {
     apiKey: string;
     baseUrl: string;
     compatibleBaseUrl: string;
+    rerankBaseUrl?: string;
     asyncNotifyMode: 'polling' | 'eventbridge';
     eventBridgeCallback?: { url: string; token: string };
     oss?: { region: string; bucket: string; accessKeyId: string; accessKeySecret: string };
@@ -83,6 +85,7 @@ export function createProviderConfig(
   for (const value of [
     values.DASHSCOPE_BASE_URL,
     values.DASHSCOPE_COMPATIBLE_BASE_URL,
+    values.DASHSCOPE_RERANK_BASE_URL,
     values.DEEPSEEK_BASE_URL,
   ]) {
     if (value) new URL(value);
@@ -163,6 +166,9 @@ export function createProviderConfig(
     compatibleBaseUrl: (
       values.DASHSCOPE_COMPATIBLE_BASE_URL ?? 'https://dashscope.invalid'
     ).replace(/\/$/, ''),
+    ...(values.DASHSCOPE_RERANK_BASE_URL
+      ? { rerankBaseUrl: values.DASHSCOPE_RERANK_BASE_URL.replace(/\/$/, '') }
+      : {}),
     asyncNotifyMode: values.DASHSCOPE_ASYNC_NOTIFY_MODE ?? ('polling' as const),
     ...(eventBridgeCallback ? { eventBridgeCallback } : {}),
     ...(oss ? { oss } : {}),

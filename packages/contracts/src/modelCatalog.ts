@@ -163,6 +163,15 @@ export const CAPABILITY_MODEL_REQUIREMENTS: Readonly<
     verifiedModelIds: ['qwen3.7-text-embedding'],
     prefersStructuredOutput: false,
   },
+  // 重排使用百炼 Workspace 原生接口，协议与模型均固定，避免误选兼容接口模型。
+  knowledge_rerank: {
+    providers: ['dashscope'],
+    capabilities: [],
+    requiredInputModalities: [],
+    fixedModel: true,
+    verifiedModelIds: ['qwen3.7-text-rerank'],
+    prefersStructuredOutput: false,
+  },
   knowledge_chat: {
     providers: ['dashscope', 'deepseek'],
     capabilities: ['TG'],

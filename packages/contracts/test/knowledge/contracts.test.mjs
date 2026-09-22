@@ -7,12 +7,32 @@ import {
   KnowledgeBaseCreateRequestSchema,
   KnowledgeBaseDetailSchema,
   KnowledgeBaseGroupLinkRequestSchema,
+  KnowledgeRetrievalSettingsSchema,
+  KnowledgeRetrievalSettingsUpdateRequestSchema,
   RagHistoryResponseSchema,
   RagQueryResponseSchema,
   SourceLocatorSchema,
 } from '../../dist/index.js';
 
 describe('knowledge contracts', () => {
+  it('validates strict tenant reranking settings and optimistic updates', () => {
+    assert.equal(
+      KnowledgeRetrievalSettingsSchema.parse({
+        rerankEnabled: true,
+        rerankerModel: 'qwen3.7-text-rerank',
+        rerankerConfigured: false,
+        revision: 1,
+      }).rerankEnabled,
+      true,
+    );
+    assert.throws(() =>
+      KnowledgeRetrievalSettingsUpdateRequestSchema.parse({
+        rerankEnabled: false,
+        expectedRevision: 1,
+        localOnly: true,
+      }),
+    );
+  });
   it('requires authoritative chunk metadata and a strict reindex version', () => {
     const id = '00000000-0000-4000-8000-000000000001';
     const chunk = {
@@ -71,6 +91,7 @@ describe('knowledge contracts', () => {
         indexingMode: 'rag',
         embeddingModel: 'qwen3.7-text-embedding',
         rerankerModel: null,
+        rerankingEnabled: true,
         parsingMode: 'automatic',
       },
       totalSizeBytes: 0,
@@ -128,7 +149,8 @@ describe('knowledge contracts', () => {
           excerpt: '资料内容',
         },
       ],
-      usage: { embeddingTokens: 8, inputTokens: 50, outputTokens: 12 },
+      usage: { embeddingTokens: 8, rerankTokens: 6, inputTokens: 50, outputTokens: 12 },
+      retrieval: { rerankStatus: 'applied', rerankerModel: 'qwen3.7-text-rerank' },
     });
 
     assert.equal(result.citations.length, 1);

@@ -174,6 +174,9 @@ export class KnowledgeRepository {
       `SELECT kb.id, kb.name, kb.description, kb.updated_at, kb.default_category_id, kb.category_version,
               kb.storage_location, kb.indexing_mode, kb.embedding_model,
               kb.reranker_model, kb.parsing_mode,
+              coalesce((SELECT s.rerank_enabled
+                FROM ${this.table('tenant_knowledge_retrieval_settings')} s
+                WHERE s.tenant_id=kb.tenant_id), true) AS reranking_enabled,
               coalesce(document_stats.document_count, 0)::int AS document_count,
               coalesce(document_stats.total_size_bytes, 0)::bigint AS total_size_bytes,
               coalesce(document_stats.parsed_document_count, 0)::int AS parsed_document_count,
@@ -217,6 +220,7 @@ export class KnowledgeRepository {
         indexingMode: row.indexing_mode,
         embeddingModel: row.embedding_model,
         rerankerModel: row.reranker_model ?? null,
+        rerankingEnabled: Boolean(row.reranking_enabled),
         parsingMode: row.parsing_mode,
       },
       totalSizeBytes: Number(row.total_size_bytes),

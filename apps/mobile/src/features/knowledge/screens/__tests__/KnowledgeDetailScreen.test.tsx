@@ -70,7 +70,7 @@ describe('KnowledgeDetailScreen', () => {
     expect(screen.getByText('1.0 KB')).toBeTruthy();
     expect(screen.getByText('检索增强（RAG）')).toBeTruthy();
     expect(screen.getByText('qwen3.7-text-embedding')).toBeTruthy();
-    expect(screen.getByText('未启用')).toBeTruthy();
+    expect(screen.getByText('qwen3.7-text-rerank')).toBeTruthy();
     expect(overview.getByText('用户研究执行计划')).toBeTruthy();
   });
 

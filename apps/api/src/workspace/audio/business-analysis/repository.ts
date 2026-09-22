@@ -89,6 +89,8 @@ export type ClaimedBusinessAnalysisJob = {
   recoveryAttempts: number;
   chatBindingRevisionId: string | null;
   embeddingBindingRevisionId: string | null;
+  rerankEnabled: boolean;
+  rerankBindingRevisionId: string | null;
   knowledgeBaseIds: string[];
   knowledgeBases: { id: string; name: string }[];
   knowledgeVersionSnapshot?: KnowledgeVersionSnapshot;
@@ -369,6 +371,8 @@ export class BusinessAnalysisRepository {
     force = false,
     chatBindingRevisionId: string | null = null,
     embeddingBindingRevisionId: string | null = null,
+    rerankEnabled = true,
+    rerankBindingRevisionId: string | null = null,
     frozenInput?: {
       analysisTiming: 'automatic' | 'manual';
       contentFocus: string;
@@ -417,6 +421,19 @@ export class BusinessAnalysisRepository {
           fingerprint,
         };
       }
+      // 重排开关与绑定属于不可变任务输入，必须参与幂等 fingerprint。
+      snapshot = {
+        ...snapshot,
+        fingerprint: createHash('sha256')
+          .update(
+            JSON.stringify({
+              sourceFingerprint: snapshot.fingerprint,
+              rerankEnabled,
+              rerankBindingRevisionId,
+            }),
+          )
+          .digest('hex'),
+      };
       const existing = await client.query(
         `SELECT id, status FROM ${this.table('audio_business_analysis_jobs')}
          WHERE tenant_id = $1 AND group_id = $2 AND audio_file_id = $3
@@ -441,9 +458,10 @@ export class BusinessAnalysisRepository {
            (tenant_id, group_id, audio_file_id, analysis_revision_id,
             transcript_confirmation_id, confirmation_version, model, input_fingerprint,
             settings_snapshot, knowledge_base_ids, emotion_job_id, role_job_id, status, progress,
-            workflow_version, chat_binding_revision_id, embedding_binding_revision_id,knowledge_version_snapshot)
+            workflow_version, chat_binding_revision_id, embedding_binding_revision_id,
+            rerank_enabled, rerank_binding_revision_id, knowledge_version_snapshot)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::uuid[], $11, $12,
-                 'queued', 0, $13, $14, $15,$16::jsonb)
+                 'queued', 0, $13, $14, $15, $16, $17, $18::jsonb)
          RETURNING id`,
         [
           this.tenantId,
@@ -461,6 +479,8 @@ export class BusinessAnalysisRepository {
           BUSINESS_ANALYSIS_WORKFLOW_VERSION,
           chatBindingRevisionId,
           embeddingBindingRevisionId,
+          rerankEnabled,
+          rerankBindingRevisionId,
           JSON.stringify(snapshot.knowledgeVersionSnapshot),
         ],
       );
@@ -613,6 +633,8 @@ export class BusinessAnalysisRepository {
       recoveryAttempts: Number(row.recovery_attempts),
       chatBindingRevisionId: row.chat_binding_revision_id ?? null,
       embeddingBindingRevisionId: row.embedding_binding_revision_id ?? null,
+      rerankEnabled: Boolean(row.rerank_enabled),
+      rerankBindingRevisionId: row.rerank_binding_revision_id ?? null,
       knowledgeBaseIds,
       knowledgeVersionSnapshot: row.knowledge_version_snapshot ?? [],
       knowledgeBases: knowledgeBases.rows.map((item) => ({

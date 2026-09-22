@@ -27,6 +27,7 @@ export const knowledge: KnowledgeBaseDetail = {
     indexingMode: 'rag',
     embeddingModel: 'qwen3.7-text-embedding',
     rerankerModel: null,
+    rerankingEnabled: true,
     parsingMode: 'automatic',
   },
   totalSizeBytes: 1024,

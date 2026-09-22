@@ -146,4 +146,101 @@ describe('KnowledgeRepository overview', () => {
     assert.equal(selected[0].contentKind, 'table');
     assert.equal(selected[0].partCount, 2);
   });
+
+  it('reranks recalled candidates stably and falls back to vector order when unconfigured', async () => {
+    const revision = '55555555-5555-4555-8555-555555555555';
+    const rows = [0, 1, 2].map((index) => ({
+      id: `66666666-6666-4666-8666-66666666666${index + 1}`,
+      knowledge_base_id: knowledgeId,
+      document_id: `33333333-3333-4333-8333-33333333333${index + 1}`,
+      revision_id: revision,
+      document_title: `文档${index + 1}`,
+      title: `标题${index + 1}`,
+      heading_path: ['章节'],
+      content_kind: 'prose',
+      title_source: 'heading',
+      part_index: 1,
+      part_count: 1,
+      content: `正文${index + 1}`,
+      embedding_text: `文档${index + 1}\n标题${index + 1}\n章节\nprose\n正文${index + 1}`,
+      content_sha256: String(index + 1).repeat(64),
+      locator: { kind: 'markdown', headingPath: ['章节'], lineStart: 1, lineEnd: 1 },
+      distance: 0.1 + index * 0.1,
+    }));
+    const client = {
+      query: async (sql) => ({ rows: /SELECT c\.id/.test(sql) ? rows : [] }),
+      release: () => undefined,
+    };
+    const repository = new PostgresKnowledgeSearch(
+      { connect: async () => client },
+      'echowave',
+      tenantId,
+    );
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          output: {
+            results: [
+              { index: 0, relevance_score: 0.2 },
+              { index: 1, relevance_score: 0.9 },
+              { index: 2, relevance_score: 0.9 },
+            ],
+          },
+          usage: { total_tokens: 9 },
+        }),
+        { status: 200 },
+      );
+    try {
+      const reranked = await repository.searchDetailed(
+        knowledgeId,
+        Array(1024).fill(0),
+        'qwen3.7-text-embedding',
+        undefined,
+        {
+          query: '问题',
+          rerank: {
+            enabled: true,
+            revision: 1,
+            bindingRevisionId: '77777777-7777-4777-8777-777777777777',
+            model: 'qwen3.7-text-rerank',
+            apiKey: 'test-key',
+            baseUrl: 'https://workspace.example.com/api/v1',
+          },
+        },
+      );
+      assert.deepEqual(
+        reranked.chunks.map((chunk) => chunk.id),
+        [rows[1].id, rows[2].id, rows[0].id],
+      );
+      assert.equal(reranked.audit.rerankStatus, 'applied');
+      assert.equal(reranked.audit.rerankTokens, 9);
+
+      const fallback = await repository.searchDetailed(
+        knowledgeId,
+        Array(1024).fill(0),
+        'qwen3.7-text-embedding',
+        undefined,
+        {
+          query: '问题',
+          rerank: {
+            enabled: true,
+            revision: 1,
+            bindingRevisionId: null,
+            model: 'qwen3.7-text-rerank',
+            apiKey: '',
+            baseUrl: '',
+          },
+        },
+      );
+      assert.deepEqual(
+        fallback.chunks.map((chunk) => chunk.id),
+        rows.map((row) => row.id),
+      );
+      assert.equal(fallback.audit.rerankStatus, 'fallback');
+      assert.equal(fallback.audit.fallbackReason, 'NOT_CONFIGURED');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

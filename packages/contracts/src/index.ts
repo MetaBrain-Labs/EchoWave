@@ -87,6 +87,12 @@ export {
   type KnowledgeBaseSummary,
 } from './knowledgeBase.ts';
 export {
+  KnowledgeRetrievalSettingsSchema,
+  KnowledgeRetrievalSettingsUpdateRequestSchema,
+  type KnowledgeRetrievalSettings,
+  type KnowledgeRetrievalSettingsUpdateRequest,
+} from './knowledgeRetrievalSettings.ts';
+export {
   RagCitationSchema,
   RagHistoryItemSchema,
   RagHistoryResponseSchema,

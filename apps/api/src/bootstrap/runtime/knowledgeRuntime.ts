@@ -37,6 +37,7 @@ import { IngestionRepository } from '../../knowledge/persistence/ingestionReposi
 import { PostgresKnowledgeSearch } from '../../knowledge/retrieval/postgresKnowledgeSearch.ts';
 import { DefaultKnowledgeService } from '../../knowledge/service.ts';
 import type { SettingsService } from '../../settings/service.ts';
+import type { KnowledgeRetrievalSettingsService } from '../../knowledge/retrieval/settingsService.ts';
 
 type KnowledgeRuntimeOptions = {
   config: ApiConfig;
@@ -46,12 +47,21 @@ type KnowledgeRuntimeOptions = {
   checkpointer: PostgresSaver;
   reporter: AiExecutionReporter;
   settingsService: SettingsService;
+  knowledgeRetrievalSettingsService: KnowledgeRetrievalSettingsService;
 };
 
 /** 创建知识领域应用服务、检索端口和入库 Worker。 */
 export function createKnowledgeRuntime(options: KnowledgeRuntimeOptions) {
-  const { config, pool, liveUpdates, workerWakeup, checkpointer, reporter, settingsService } =
-    options;
+  const {
+    config,
+    pool,
+    liveUpdates,
+    workerWakeup,
+    checkpointer,
+    reporter,
+    settingsService,
+    knowledgeRetrievalSettingsService,
+  } = options;
   const knowledgeRepository = new KnowledgeRepository(
     pool,
     config.database.schema,
@@ -110,9 +120,10 @@ export function createKnowledgeRuntime(options: KnowledgeRuntimeOptions) {
     conversationRepository,
     checkpointer,
     resolveRuntime: async () => {
-      const [embedding, chat] = await Promise.all([
+      const [embedding, chat, rerank] = await Promise.all([
         settingsService.resolveCapability('knowledge_embedding'),
         settingsService.resolveCapability('knowledge_chat'),
+        knowledgeRetrievalSettingsService.freezeRuntime(),
       ]);
       if (
         embedding.provider.type !== 'dashscope' ||
@@ -146,6 +157,7 @@ export function createKnowledgeRuntime(options: KnowledgeRuntimeOptions) {
         ragConfig: dynamicRagConfig,
         embeddingBindingRevisionId: embedding.revisionId,
         chatBindingRevisionId: chat.revisionId,
+        rerank,
       };
     },
     reporter,
@@ -197,6 +209,7 @@ export function createKnowledgeRuntime(options: KnowledgeRuntimeOptions) {
     service,
     worker,
     knowledgeSearch,
+    knowledgeRetrievalSettingsService,
     disposeAnswers: () => answers.dispose(),
   };
 }

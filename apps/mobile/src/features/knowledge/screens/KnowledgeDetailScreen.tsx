@@ -922,7 +922,11 @@ export function KnowledgeDetailScreen({
               <InfoRow
                 icon="hardware-chip-outline"
                 label={t('knowledge.rerankModel')}
-                value={knowledge.settings.rerankerModel ?? t('knowledge.disabled')}
+                value={
+                  knowledge.settings.rerankingEnabled
+                    ? (knowledge.settings.rerankerModel ?? 'qwen3.7-text-rerank')
+                    : t('knowledge.disabled')
+                }
               />
             </View>
             <View style={styles.infoSection}>

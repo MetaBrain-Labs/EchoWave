@@ -9,7 +9,8 @@
  * Notes:
  * - 租户、active revision 和结果上限由实现保证。
  */
-import type { RetrievalChunk } from './types.ts';
+import type { FrozenRerankRuntime } from './settingsService.ts';
+import type { KnowledgeSearchResult, RetrievalChunk } from './types.ts';
 import type { CategoryCatalogue, CategorySearchFilter } from './categoryPolicy.ts';
 
 /** 业务用例可依赖的知识检索能力。 */
@@ -27,4 +28,18 @@ export interface KnowledgeSearchPort {
     embeddingModel: string,
     filter?: CategorySearchFilter,
   ): Promise<RetrievalChunk[]>;
+  searchDetailed?(
+    knowledgeBaseId: string,
+    embedding: number[],
+    embeddingModel: string,
+    filter: CategorySearchFilter | undefined,
+    execution: { query: string; signal?: AbortSignal; rerank: FrozenRerankRuntime },
+  ): Promise<KnowledgeSearchResult>;
+  searchManyDetailed?(
+    knowledgeBaseIds: string[],
+    embedding: number[],
+    embeddingModel: string,
+    filter: CategorySearchFilter | undefined,
+    execution: { query: string; signal?: AbortSignal; rerank: FrozenRerankRuntime },
+  ): Promise<KnowledgeSearchResult>;
 }

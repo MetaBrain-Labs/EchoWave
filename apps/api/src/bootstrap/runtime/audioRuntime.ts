@@ -54,6 +54,10 @@ import { AudioTranscriptionWorker } from '../../workspace/audio/transcription/wo
 import { SpeakerReviewer } from '../../workspace/audio/speaker-review/speakerReviewer.ts';
 import { SpeakerReviewRepository } from '../../workspace/audio/speaker-review/repository.ts';
 import { SpeakerReviewWorker } from '../../workspace/audio/speaker-review/worker.ts';
+import type {
+  FrozenRerankRuntime,
+  KnowledgeRetrievalSettingsService,
+} from '../../knowledge/retrieval/settingsService.ts';
 
 const SOURCE_CLEANUP_INTERVAL_MS = 15 * 60 * 1_000;
 
@@ -69,6 +73,7 @@ type AudioRuntimeOptions = {
   reporter: AiExecutionReporter;
   sttRawResponseReporter: SttRawResponseReporter;
   settingsService: SettingsService;
+  knowledgeRetrievalSettingsService: KnowledgeRetrievalSettingsService;
 };
 
 /** 创建音频应用服务、供应商适配器与全部音频 Worker。 */
@@ -85,6 +90,7 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
     reporter,
     sttRawResponseReporter,
     settingsService,
+    knowledgeRetrievalSettingsService,
   } = options;
   const audioAnalysisRepository = new AudioAnalysisRepository(
     pool,
@@ -133,6 +139,9 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
     settingsService,
     businessAnalysisRepository,
     audioExecutionRepository,
+    undefined,
+    undefined,
+    knowledgeRetrievalSettingsService,
   );
   const transcriptionWorker = new AudioTranscriptionWorker({
     repository: audioAnalysisRepository,
@@ -431,6 +440,62 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
         enableThinking: chat.settings.enableThinking === true,
         embeddingModel: embedding.model as typeof config.rag.embeddingModel,
       };
+      let rerank: FrozenRerankRuntime = {
+        enabled: false,
+        revision: 1,
+        bindingRevisionId: null,
+        model: null,
+      };
+      if (job.rerankEnabled && job.rerankBindingRevisionId) {
+        try {
+          const resolved = await settingsService.resolveCapability(
+            'knowledge_rerank',
+            job.rerankBindingRevisionId,
+          );
+          const rerankConfig = resolved.provider.config as { rerankBaseUrl?: string };
+          rerank =
+            resolved.provider.type === 'dashscope' &&
+            resolved.model === 'qwen3.7-text-rerank' &&
+            'apiKey' in resolved.provider.credential &&
+            rerankConfig.rerankBaseUrl
+              ? {
+                  enabled: true,
+                  revision: 1,
+                  bindingRevisionId: resolved.revisionId,
+                  model: 'qwen3.7-text-rerank',
+                  apiKey: resolved.provider.credential.apiKey,
+                  baseUrl: rerankConfig.rerankBaseUrl.replace(/\/$/, ''),
+                }
+              : {
+                  enabled: true,
+                  revision: 1,
+                  bindingRevisionId: job.rerankBindingRevisionId,
+                  model: 'qwen3.7-text-rerank',
+                  apiKey: '',
+                  baseUrl: '',
+                };
+        } catch {
+          // 冻结绑定不可用只降低排序质量，不让业务分析任务失败。
+          rerank = {
+            enabled: true,
+            revision: 1,
+            bindingRevisionId: job.rerankBindingRevisionId,
+            model: 'qwen3.7-text-rerank',
+            apiKey: '',
+            baseUrl: '',
+          };
+        }
+      } else if (job.rerankEnabled) {
+        // 入队时未能冻结绑定的任务始终降级，禁止重试时漂移到后来新增的配置。
+        rerank = {
+          enabled: true,
+          revision: 1,
+          bindingRevisionId: null,
+          model: 'qwen3.7-text-rerank',
+          apiKey: '',
+          baseUrl: '',
+        };
+      }
       return new BusinessAnalysisWorkflow({
         repository: businessAnalysisRepository,
         knowledgeRepository: knowledgeSearch,
@@ -441,6 +506,7 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
           dimensions: 1024,
         }),
         embeddingModel: embedding.model,
+        rerank,
         agent: new SalesAnalysisAgent({ ragConfig: dynamicRagConfig }),
         checkpointer,
         saveWindowResult: (jobId, window) =>

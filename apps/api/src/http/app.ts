@@ -43,6 +43,8 @@ import { registerAudioAutomationRoutes } from './routes/audioAutomation.ts';
 import { registerPushDeviceRoutes } from './routes/pushDevices.ts';
 import { registerAudioAnalysisRunsRoutes } from './routes/audioAnalysisRuns.ts';
 import { registerAsrPreferenceRoutes } from './routes/asrPreferences.ts';
+import type { KnowledgeRetrievalSettingsService } from '../knowledge/retrieval/settingsService.ts';
+import { registerKnowledgeRetrievalSettingsRoutes } from './routes/knowledgeRetrievalSettings.ts';
 
 export type AppDependencies = {
   collectionService?: CollectionService;
@@ -61,6 +63,7 @@ export type AppDependencies = {
   audioAnalysisRunsService?: AudioAnalysisRunsService;
   asrPreferenceRepository?: AsrPreferenceRepository;
   remotePushEnabled?: boolean;
+  knowledgeRetrievalSettingsService?: KnowledgeRetrievalSettingsService;
 };
 
 /** 创建不启动监听器的 Hono 应用，使生产服务器和测试共享传输入口。 */
@@ -82,6 +85,9 @@ export function createApp(
   );
 
   registerHealthRoutes(app, dependencies.remotePushEnabled ?? false);
+  if (dependencies.knowledgeRetrievalSettingsService) {
+    registerKnowledgeRetrievalSettingsRoutes(app, dependencies.knowledgeRetrievalSettingsService);
+  }
   if (dependencies.collectionService) registerCollectionRoutes(app, dependencies.collectionService);
   if (dependencies.settingsService) {
     registerSettingsRoutes(app, dependencies.settingsService, dependencies.trustedProxyCidrs ?? []);

@@ -43,6 +43,8 @@ import { PushNotificationWorker } from '../notifications/worker.ts';
 import { AudioAnalysisRunsRepository } from '../workspace/audio/analysis-runs/repository.ts';
 import { AudioAnalysisRunsService } from '../workspace/audio/analysis-runs/service.ts';
 import { AsrPreferenceRepository } from '../workspace/audio/transcription/asrPreferenceRepository.ts';
+import { KnowledgeRetrievalSettingsRepository } from '../knowledge/retrieval/settingsRepository.ts';
+import { KnowledgeRetrievalSettingsService } from '../knowledge/retrieval/settingsService.ts';
 
 /** 装配完整 API 运行时，并返回服务器依赖、Worker 与关闭函数。 */
 export function createRagRuntime(config: ApiConfig) {
@@ -74,6 +76,9 @@ export function createRagRuntime(config: ApiConfig) {
             config: {
               baseUrl: config.legacyProviders.dashScope.baseUrl,
               compatibleBaseUrl: config.legacyProviders.dashScope.compatibleBaseUrl,
+              ...(config.legacyProviders.dashScope.rerankBaseUrl
+                ? { rerankBaseUrl: config.legacyProviders.dashScope.rerankBaseUrl }
+                : {}),
               asyncNotifyMode: config.legacyProviders.dashScope.asyncNotifyMode,
               eventBridgeCallbackUrl:
                 config.legacyProviders.dashScope.eventBridgeCallback?.url ?? null,
@@ -123,6 +128,10 @@ export function createRagRuntime(config: ApiConfig) {
     config.settingsSecurity.configurationAdminToken,
     legacyConfiguration,
   );
+  const knowledgeRetrievalSettingsService = new KnowledgeRetrievalSettingsService(
+    new KnowledgeRetrievalSettingsRepository(pool, config.database.schema, config.rag.tenantId),
+    settingsService,
+  );
   const asrPreferenceRepository = new AsrPreferenceRepository(
     pool,
     config.database.schema,
@@ -152,6 +161,7 @@ export function createRagRuntime(config: ApiConfig) {
     checkpointer,
     reporter: executionReporter,
     settingsService,
+    knowledgeRetrievalSettingsService,
   });
   const audioRuntimeRepository = new AudioRuntimeRepository(
     pool,
@@ -171,6 +181,7 @@ export function createRagRuntime(config: ApiConfig) {
     reporter: audioExecutionReporter,
     sttRawResponseReporter,
     settingsService,
+    knowledgeRetrievalSettingsService,
   });
   const audioRuntimeService = new AudioRuntimeService(
     audioRuntimeRepository,
@@ -262,6 +273,7 @@ export function createRagRuntime(config: ApiConfig) {
     liveUpdates,
     workerWakeup,
     settingsService,
+    knowledgeRetrievalSettingsService,
     asrPreferenceRepository,
     async close(): Promise<void> {
       await collection.worker.stop();

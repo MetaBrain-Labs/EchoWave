@@ -97,6 +97,7 @@ function providerLabel(type: ProviderType, t: TranslationFunction): string {
 function capabilityLabel(capability: AiCapability, t: TranslationFunction): string {
   const keys = {
     knowledge_embedding: 'aiSettings.capEmbedding',
+    knowledge_rerank: 'aiSettings.capRerank',
     knowledge_chat: 'aiSettings.capChat',
     audio_transcription: 'aiSettings.capTranscription',
     audio_emotion: 'aiSettings.capEmotion',
@@ -116,6 +117,7 @@ type ProviderDraft = {
   name: string;
   baseUrl: string;
   compatibleBaseUrl: string;
+  rerankBaseUrl: string;
   notifyMode: 'polling' | 'eventbridge';
   callbackUrl: string;
   region: string;
@@ -132,6 +134,7 @@ type ProviderDraftDefaults = Pick<
   ProviderDraft,
   | 'baseUrl'
   | 'compatibleBaseUrl'
+  | 'rerankBaseUrl'
   | 'notifyMode'
   | 'callbackUrl'
   | 'region'
@@ -146,6 +149,7 @@ const providerDraftDefaults: Record<ProviderType, ProviderDraftDefaults> = {
   dashscope: {
     baseUrl: 'https://dashscope.aliyuncs.com/api/v1',
     compatibleBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    rerankBaseUrl: '',
     notifyMode: 'polling',
     callbackUrl: '',
     region: '',
@@ -158,6 +162,7 @@ const providerDraftDefaults: Record<ProviderType, ProviderDraftDefaults> = {
   deepseek: {
     baseUrl: 'https://api.deepseek.com',
     compatibleBaseUrl: '',
+    rerankBaseUrl: '',
     notifyMode: 'polling',
     callbackUrl: '',
     region: '',
@@ -170,6 +175,7 @@ const providerDraftDefaults: Record<ProviderType, ProviderDraftDefaults> = {
   aliyun_oss: {
     baseUrl: '',
     compatibleBaseUrl: '',
+    rerankBaseUrl: '',
     notifyMode: 'polling',
     callbackUrl: '',
     region: 'oss-cn-beijing',
@@ -232,6 +238,8 @@ function draftFromProvider(provider: ProviderConnection): ProviderDraft {
       typeof config.compatibleBaseUrl === 'string'
         ? config.compatibleBaseUrl
         : draft.compatibleBaseUrl,
+    rerankBaseUrl:
+      typeof config.rerankBaseUrl === 'string' ? config.rerankBaseUrl : draft.rerankBaseUrl,
     notifyMode: config.asyncNotifyMode === 'eventbridge' ? 'eventbridge' : 'polling',
     callbackUrl:
       typeof config.eventBridgeCallbackUrl === 'string' ? config.eventBridgeCallbackUrl : '',
@@ -248,6 +256,7 @@ function providerInput(draft: ProviderDraft): ProviderConnectionWrite {
       ? {
           baseUrl: draft.baseUrl.trim(),
           compatibleBaseUrl: draft.compatibleBaseUrl.trim(),
+          ...(draft.rerankBaseUrl.trim() ? { rerankBaseUrl: draft.rerankBaseUrl.trim() } : {}),
           asyncNotifyMode: draft.notifyMode,
           eventBridgeCallbackUrl:
             draft.notifyMode === 'eventbridge' ? draft.callbackUrl.trim() : null,
@@ -1184,6 +1193,11 @@ function ProviderEditor({
                 label="Compatible Base URL"
                 onChangeText={(compatibleBaseUrl) => patch({ compatibleBaseUrl })}
                 value={draft.compatibleBaseUrl}
+              />
+              <Field
+                label="Workspace Base URL (Rerank)"
+                onChangeText={(rerankBaseUrl) => patch({ rerankBaseUrl })}
+                value={draft.rerankBaseUrl}
               />
               <ChoiceRow
                 options={[
