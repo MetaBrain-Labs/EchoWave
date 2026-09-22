@@ -50,7 +50,8 @@ const response = {
       excerpt: document.chunks[0]!.content,
     },
   ],
-  usage: { embeddingTokens: 4, inputTokens: 12, outputTokens: 8 },
+  usage: { embeddingTokens: 4, rerankTokens: 6, inputTokens: 12, outputTokens: 8 },
+  retrieval: { rerankStatus: 'applied' as const, rerankerModel: 'qwen3.7-text-rerank' },
 };
 
 function setPlatform(os: 'android' | 'ios' | 'web') {
@@ -134,6 +135,31 @@ describe('KnowledgeQueryScreen', () => {
       ['cat-1', 'cat-2'].sort(),
       [knowledge.id, secondBase.id].sort(),
     );
+  });
+
+  it('shows a non-blocking notice when reranking falls back to vector order', async () => {
+    jest.mocked(queryKnowledge).mockResolvedValue({
+      ...response,
+      retrieval: {
+        rerankStatus: 'fallback',
+        rerankerModel: 'qwen3.7-text-rerank',
+      },
+    });
+    const screen = render(
+      <KnowledgeQueryScreen
+        knowledgeId={knowledge.id}
+        onBack={jest.fn()}
+        onOpenCitation={jest.fn()}
+      />,
+    );
+
+    fireEvent.changeText(screen.getByLabelText('输入知识库问题'), '发生降级时仍要回答');
+    fireEvent.press(screen.getByLabelText('发送问题'));
+    await act(async () => Promise.resolve());
+    act(() => jest.advanceTimersByTime(420));
+
+    expect(screen.getByText('智能重排暂时不可用，本次已使用向量检索结果继续回答。')).toBeTruthy();
+    expect(screen.getByLabelText('1条引用来源')).toBeTruthy();
   });
 
   it.each([

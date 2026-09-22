@@ -133,7 +133,7 @@ it('applies category and test exclusions in tenant-scoped SQL without changing r
   assert.match(query.sql, /c\.category_id=ANY\(\$5::uuid\[\]\)/);
   assert.match(query.sql, /key='test'/);
   assert.match(query.sql, /active_revision_id = c.revision_id/);
-  assert.match(query.sql, /LIMIT 40/);
+  assert.match(query.sql, /LIMIT 20/);
   assert.deepEqual(query.values[4], [ids[3]]);
   assert.equal(query.values[5], false);
   assert.ok(calls.some((item) => /hnsw.iterative_scan/.test(item.sql)));

@@ -449,6 +449,12 @@ export function KnowledgeQueryScreen({
                   }}
                   style={styles.answerCard}
                 >
+                  {turn.response.retrieval.rerankStatus === 'fallback' ? (
+                    <View style={styles.rerankNotice}>
+                      <Ionicons color="#8a4b08" name="information-circle-outline" size={18} />
+                      <Text style={styles.rerankNoticeText}>{t('rerank.degraded')}</Text>
+                    </View>
+                  ) : null}
                   <AnswerText
                     answer={turn.response.answer}
                     citationCount={turn.response.citations.length}
@@ -557,6 +563,20 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   answerText: { ...typography.body, color: textColors.primary, fontFamily: fontFamilies.sans },
+  rerankNotice: {
+    alignItems: 'center',
+    backgroundColor: '#fff4e5',
+    borderRadius: radii.default,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    padding: spacing.sm,
+  },
+  rerankNoticeText: {
+    ...typography.description,
+    color: '#8a4b08',
+    flex: 1,
+    fontFamily: fontFamilies.sans,
+  },
   failureCard: {
     alignSelf: 'flex-start',
     backgroundColor: '#fff4f2',

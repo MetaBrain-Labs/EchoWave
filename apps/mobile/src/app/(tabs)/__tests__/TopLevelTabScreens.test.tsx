@@ -10,8 +10,9 @@
  * Notes:
  * - 服务状态与路由使用轻量替身，避免真实网络和导航副作用。
  */
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { Pressable as MockPressable, StyleSheet, Text as MockText } from 'react-native';
+import { useEffect } from 'react';
 
 import CreateScreen from '../create';
 import MoreScreen from '../more';
@@ -19,19 +20,31 @@ import AnalysisRoute from '../../analysis';
 import AnalysisCreateRoute from '../../analysis-create';
 import { colors, radii, spacing } from '@/shared/theme/tokens';
 import { getAudioRuntime } from '@/shared/api/audioRuntimeApi';
-import { AdminSessionProvider } from '@/shared/auth/AdminSessionProvider';
+import {
+  getKnowledgeRetrievalSettings,
+  updateKnowledgeRetrievalSettings,
+} from '@/shared/api/knowledgeRetrievalSettingsApi';
+import { settingsApi } from '@/shared/api/settingsApi';
+import { AdminSessionProvider, useAdminSession } from '@/shared/auth/AdminSessionProvider';
 import { ServerConnectionProvider } from '@/shared/api/ServerConnectionProvider';
 
 const mockPush = jest.fn();
 const mockBack = jest.fn();
-let focusCallback: (() => void) | undefined;
+let mockFocusCallbacks: (() => void)[] = [];
 
 jest.mock('expo-router', () => ({
   useFocusEffect: (callback: () => void) => {
-    focusCallback = callback;
+    mockFocusCallbacks.push(callback);
   },
   useRouter: () => ({ back: mockBack, push: mockPush }),
 }));
+jest.mock('react-native-safe-area-context', () => {
+  const actual = jest.requireActual('react-native-safe-area-context');
+  return {
+    ...actual,
+    useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+  };
+});
 jest.mock('@/features/analysis-runs/AnalysisRunsScreen', () => ({
   AnalysisRunsScreen: ({ onBack }: { onBack?: () => void }) => (
     <MockPressable accessibilityLabel="返回分析工作区" onPress={onBack}>
@@ -51,6 +64,16 @@ jest.mock('@/shared/api/dataSourcesApi', () => ({
 }));
 jest.mock('@/shared/api/audioRuntimeApi', () => ({
   getAudioRuntime: jest.fn(),
+}));
+jest.mock('@/shared/api/knowledgeRetrievalSettingsApi', () => ({
+  getKnowledgeRetrievalSettings: jest.fn(),
+  updateKnowledgeRetrievalSettings: jest.fn(),
+}));
+jest.mock('@/shared/api/settingsApi', () => ({
+  settingsApi: {
+    dashScopeWorkspaceStatus: jest.fn(),
+    migrateDashScopeWorkspace: jest.fn(),
+  },
 }));
 jest.mock('@/shared/api/groupsApi', () => ({ getGroupSettings: jest.fn() }));
 jest.mock('@/shared/api/serverHealth', () => ({
@@ -73,11 +96,150 @@ const audioRuntimeOverview = {
   ],
 };
 
+/** 为需要管理员身份的交互用例注入仅存于内存的测试会话。 */
+function AdminSessionSeeder({ token }: { token: string }) {
+  const { setSession } = useAdminSession();
+  useEffect(() => setSession(token), [setSession, token]);
+  return null;
+}
+
 describe('Top-level tab screens', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    focusCallback = undefined;
+    mockFocusCallbacks = [];
     jest.mocked(getAudioRuntime).mockResolvedValue({ ...audioRuntimeOverview });
+    jest.mocked(getKnowledgeRetrievalSettings).mockResolvedValue({
+      rerankEnabled: true,
+      rerankerModel: 'qwen3.7-text-rerank',
+      rerankerConfigured: true,
+      revision: 1,
+    });
+    jest.mocked(settingsApi.dashScopeWorkspaceStatus).mockResolvedValue({
+      status: 'dedicated',
+      migrationRequired: false,
+      totalConnectionCount: 1,
+      legacyConnectionCount: 0,
+    });
+  });
+
+  it('migrates legacy DashScope connections with the default Beijing workspace domain', async () => {
+    jest.mocked(settingsApi.dashScopeWorkspaceStatus).mockResolvedValue({
+      status: 'legacy',
+      migrationRequired: true,
+      totalConnectionCount: 2,
+      legacyConnectionCount: 2,
+    });
+    jest.mocked(settingsApi.migrateDashScopeWorkspace).mockResolvedValue({
+      workspace: {
+        status: 'dedicated',
+        migrationRequired: false,
+        totalConnectionCount: 2,
+        legacyConnectionCount: 0,
+      },
+      updatedConnectionCount: 2,
+      rerankBindingCreated: true,
+    });
+    const screen = render(
+      <ServerConnectionProvider>
+        <AdminSessionProvider serverRevision={0}>
+          <AdminSessionSeeder token="admin" />
+          <MoreScreen />
+        </AdminSessionProvider>
+      </ServerConnectionProvider>,
+    );
+
+    await act(async () => mockFocusCallbacks.forEach((callback) => callback()));
+    fireEvent.press(await screen.findByLabelText('迁移到业务空间专属域名'));
+    expect(screen.getByText('华北 2（北京）')).toBeTruthy();
+    fireEvent.changeText(screen.getByLabelText('Workspace ID'), 'ws-echowave');
+    expect(screen.getByText('https://ws-echowave.cn-beijing.maas.aliyuncs.com')).toBeTruthy();
+    fireEvent.press(screen.getByText('验证并迁移'));
+
+    await waitFor(() =>
+      expect(settingsApi.migrateDashScopeWorkspace).toHaveBeenCalledWith('admin', {
+        workspaceId: 'ws-echowave',
+        region: 'cn-beijing',
+      }),
+    );
+    await waitFor(() => expect(screen.queryByText('百炼域名待升级')).toBeNull());
+  });
+
+  it('rejects a full API Host locally instead of posting an invalid parameter', async () => {
+    jest.mocked(settingsApi.dashScopeWorkspaceStatus).mockResolvedValue({
+      status: 'legacy',
+      migrationRequired: true,
+      totalConnectionCount: 1,
+      legacyConnectionCount: 1,
+    });
+    const screen = render(
+      <ServerConnectionProvider>
+        <AdminSessionProvider serverRevision={0}>
+          <AdminSessionSeeder token="admin" />
+          <MoreScreen />
+        </AdminSessionProvider>
+      </ServerConnectionProvider>,
+    );
+
+    await act(async () => mockFocusCallbacks.forEach((callback) => callback()));
+    fireEvent.press(await screen.findByLabelText('迁移到业务空间专属域名'));
+    fireEvent.changeText(
+      screen.getByLabelText('Workspace ID'),
+      'ws-echowave.cn-beijing.maas.aliyuncs.com',
+    );
+    fireEvent.press(screen.getByText('验证并迁移'));
+
+    // 完整域名不是单段 DNS 标签：本地就给出具体原因，不能退化成服务端的通用参数错误。
+    expect(
+      screen.getByText(
+        '业务空间域名前缀无效：只填 API Host 中第一个点之前的部分，例如 ws-xxxxxxxx。',
+      ),
+    ).toBeTruthy();
+    expect(settingsApi.migrateDashScopeWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('loads the authoritative rerank switch and routes unverified writes to service config', async () => {
+    const screen = render(
+      <ServerConnectionProvider>
+        <AdminSessionProvider serverRevision={0}>
+          <MoreScreen />
+        </AdminSessionProvider>
+      </ServerConnectionProvider>,
+    );
+
+    await act(async () => mockFocusCallbacks.forEach((callback) => callback()));
+    const toggle = await screen.findByLabelText('切换 RAG 智能重排');
+    expect(toggle.props.value).toBe(true);
+    fireEvent(toggle, 'valueChange', false);
+    expect(mockPush).toHaveBeenCalledWith('/service-configuration');
+    expect(screen.getByText('请先前往服务配置验证管理员口令。')).toBeTruthy();
+  });
+
+  it('persists rerank changes with the server revision when an administrator is verified', async () => {
+    jest.mocked(updateKnowledgeRetrievalSettings).mockResolvedValue({
+      rerankEnabled: false,
+      rerankerModel: 'qwen3.7-text-rerank',
+      rerankerConfigured: false,
+      revision: 2,
+    });
+    const screen = render(
+      <ServerConnectionProvider>
+        <AdminSessionProvider serverRevision={0}>
+          <AdminSessionSeeder token="admin" />
+          <MoreScreen />
+        </AdminSessionProvider>
+      </ServerConnectionProvider>,
+    );
+
+    await act(async () => mockFocusCallbacks.forEach((callback) => callback()));
+    fireEvent(screen.getByLabelText('切换 RAG 智能重排'), 'valueChange', false);
+
+    await waitFor(() =>
+      expect(updateKnowledgeRetrievalSettings).toHaveBeenCalledWith('admin', {
+        rerankEnabled: false,
+        expectedRevision: 1,
+      }),
+    );
+    await waitFor(() => expect(screen.getByLabelText('切换 RAG 智能重排').props.value).toBe(false));
   });
 
   it('keeps the More header fixed and exposes the service summary plus every entry', async () => {
@@ -206,11 +368,11 @@ describe('Top-level tab screens', () => {
 
     fireEvent.press(await screen.findByRole('button', { name: '更多设置' }));
     expect(await screen.findByText(/本批次冻结模式：object_storage/)).toBeTruthy();
-    await act(async () => focusCallback?.());
+    await act(async () => mockFocusCallbacks.forEach((callback) => callback()));
     jest
       .mocked(getAudioRuntime)
       .mockResolvedValue({ ...audioRuntimeOverview, mode: 'hybrid' } as never);
-    await act(async () => focusCallback?.());
+    await act(async () => mockFocusCallbacks.forEach((callback) => callback()));
 
     expect(await screen.findByText(/本批次冻结模式：hybrid/)).toBeTruthy();
   });

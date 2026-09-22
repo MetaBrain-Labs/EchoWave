@@ -39,6 +39,7 @@ import {
   type CategorySearchFilter,
 } from '../retrieval/categoryPolicy.ts';
 import type { RetrievalChunk } from '../retrieval/types.ts';
+import type { FrozenRerankRuntime } from '../retrieval/settingsService.ts';
 import { resolveCitationMarkers } from './citationMarkers.ts';
 import type { KnowledgeQueryAgent } from './knowledgeQueryAgent.ts';
 
@@ -91,12 +92,17 @@ type KnowledgeAnswerCheckpointer = {
 };
 type ScheduleCleanup = (task: () => void, intervalMs: number) => () => void;
 
+function disabledRerankRuntime(): FrozenRerankRuntime {
+  return { enabled: false, revision: 1, bindingRevisionId: null, model: null };
+}
+
 type KnowledgeAnswerRuntime = {
   embeddings: KnowledgeAnswerEmbeddings;
   agent: KnowledgeAnswerAgent;
   ragConfig: Pick<RagConfig, 'embeddingModel' | 'chatModel' | 'chatProvider'>;
   embeddingBindingRevisionId: string | null;
   chatBindingRevisionId: string | null;
+  rerank: FrozenRerankRuntime;
 };
 
 type KnowledgeAnswerStaticRuntimeOptions = {
@@ -172,7 +178,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
     if (this.disposed) throw new Error('Knowledge answer module is disposed.');
 
     const request = RagQueryRequestSchema.parse(command.request);
-    const runtime = this.options.resolveRuntime
+    const resolvedRuntime = this.options.resolveRuntime
       ? await this.options.resolveRuntime()
       : {
           embeddings: this.options.embeddings,
@@ -180,7 +186,13 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
           ragConfig: this.options.ragConfig,
           embeddingBindingRevisionId: null,
           chatBindingRevisionId: null,
+          rerank: disabledRerankRuntime(),
         };
+    // 兼容迁移期间的旧调用方；生产动态运行时始终显式提供冻结设置。
+    const runtime: KnowledgeAnswerRuntime = {
+      ...resolvedRuntime,
+      rerank: resolvedRuntime.rerank ?? disabledRerankRuntime(),
+    };
     const now = this.options.now ?? Date.now;
     /**
      * 本次检索范围：路由知识库始终参与，请求可追加同租户的其他知识库。
@@ -241,6 +253,9 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         chatProvider: runtime.ragConfig.chatProvider,
         embeddingBindingRevisionId: runtime.embeddingBindingRevisionId,
         chatBindingRevisionId: runtime.chatBindingRevisionId,
+        rerankEnabled: runtime.rerank.enabled,
+        rerankerModel: runtime.rerank.model,
+        rerankBindingRevisionId: runtime.rerank.bindingRevisionId,
       },
     });
     report.recordContext({ question: request.question });
@@ -287,6 +302,9 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         chatProvider: runtime.ragConfig.chatProvider,
         embeddingBindingRevisionId: runtime.embeddingBindingRevisionId,
         chatBindingRevisionId: runtime.chatBindingRevisionId,
+        rerankEnabled: runtime.rerank.enabled,
+        rerankerModel: runtime.rerank.model,
+        rerankBindingRevisionId: runtime.rerank.bindingRevisionId,
       });
       report.recordMetadata({ ragRunId: runId });
       report.recordStep({
@@ -308,6 +326,10 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
     let retrievalLimited = false;
     let blockedRetrievalCalls = 0;
     let embeddingTokens = 0;
+    let rerankTokens = 0;
+    let rerankStatus: 'applied' | 'disabled' | 'fallback' = runtime.rerank.enabled
+      ? 'applied'
+      : 'disabled';
     const signal = (this.options.createAbortSignal ?? AbortSignal.timeout)(
       KNOWLEDGE_ANSWER_TIMEOUT_MS,
     );
@@ -419,22 +441,89 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
                 embeddingTokens += embedded.tokens;
                 queryEmbeddings.set(query, embedded);
               }
-              // 单库沿用原有召回与上下文预算；多库使用跨库检索的全局配额。
-              const retrieve = () =>
-                crossBase
-                  ? this.options.knowledgeRepository.searchMany(
+              /** 执行一次带重排审计的检索；旧测试替身仍可走数组兼容路径。 */
+              const retrieve = async (scope: CategorySearchFilter) => {
+                const detailed = crossBase
+                  ? this.options.knowledgeRepository.searchManyDetailed
+                  : this.options.knowledgeRepository.searchDetailed;
+                if (detailed) {
+                  const result = crossBase
+                    ? await this.options.knowledgeRepository.searchManyDetailed!(
+                        searchBaseIds,
+                        embedded!.vectors[0] ?? [],
+                        runtime.ragConfig.embeddingModel,
+                        scope,
+                        { query, signal, rerank: runtime.rerank },
+                      )
+                    : await this.options.knowledgeRepository.searchDetailed!(
+                        command.knowledgeBaseId,
+                        embedded!.vectors[0] ?? [],
+                        runtime.ragConfig.embeddingModel,
+                        scope,
+                        { query, signal, rerank: runtime.rerank },
+                      );
+                  rerankTokens += result.audit.rerankTokens;
+                  if (result.audit.rerankStatus === 'fallback') rerankStatus = 'fallback';
+                  else if (rerankStatus !== 'fallback') rerankStatus = result.audit.rerankStatus;
+                  if (result.audit.rerankStatus !== 'disabled' && result.audit.candidateCount > 0) {
+                    report.recordModelCall({
+                      name: 'knowledge-rerank',
+                      provider: 'dashscope',
+                      model: result.audit.rerankerModel ?? 'qwen3.7-text-rerank',
+                      status: result.audit.rerankStatus === 'fallback' ? 'failed' : 'completed',
+                      attempt: 1,
+                      durationMs: result.audit.rerankDurationMs,
+                      inputTokens: result.audit.rerankTokens || null,
+                      outputTokens: 0,
+                      input: {
+                        queryLength: query.length,
+                        candidateCount: result.audit.candidateCount,
+                      },
+                      output: {
+                        status: result.audit.rerankStatus,
+                        finalChunkIds: result.audit.finalChunkIds,
+                        scores: result.chunks.map((chunk) => ({
+                          chunkId: chunk.id,
+                          score: chunk.rerankScore,
+                        })),
+                        fallbackReason: result.audit.fallbackReason,
+                      },
+                      metadata: {
+                        bindingRevisionId: result.audit.rerankBindingRevisionId,
+                      },
+                    });
+                  }
+                  return result;
+                }
+                const chunks = crossBase
+                  ? await this.options.knowledgeRepository.searchMany(
                       searchBaseIds,
-                      embedded.vectors[0] ?? [],
+                      embedded!.vectors[0] ?? [],
                       runtime.ragConfig.embeddingModel,
-                      filter,
+                      scope,
                     )
-                  : this.options.knowledgeRepository.search(
+                  : await this.options.knowledgeRepository.search(
                       command.knowledgeBaseId,
-                      embedded.vectors[0] ?? [],
+                      embedded!.vectors[0] ?? [],
                       runtime.ragConfig.embeddingModel,
-                      filter,
+                      scope,
                     );
-              let chunks = await retrieve();
+                return {
+                  chunks,
+                  audit: {
+                    rerankStatus: 'disabled' as const,
+                    rerankerModel: null,
+                    rerankBindingRevisionId: null,
+                    candidateCount: chunks.length,
+                    finalChunkIds: chunks.map((chunk) => chunk.id),
+                    rerankTokens: 0,
+                    rerankDurationMs: 0,
+                    fallbackReason: null,
+                  },
+                };
+              };
+              let retrievalResult = await retrieve(filter);
+              let chunks = retrievalResult.chunks;
               retrievalAudit.push({
                 call: retrievalCall,
                 query,
@@ -442,6 +531,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
                 reason: filter.reason,
                 knowledgeBaseIds: searchBaseIds,
                 hitCount: chunks.length,
+                ...retrievalResult.audit,
                 durationMs: now() - retrievalStartedAt,
               });
               if (!chunks.length && retrievalCalls < MAX_SEARCH_CALLS) {
@@ -450,19 +540,8 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
                   retrievalCalls += 1;
                   const fallbackStartedAt = now();
                   filter = fallback;
-                  chunks = crossBase
-                    ? await this.options.knowledgeRepository.searchMany(
-                        searchBaseIds,
-                        embedded.vectors[0] ?? [],
-                        runtime.ragConfig.embeddingModel,
-                        fallback,
-                      )
-                    : await this.options.knowledgeRepository.search(
-                        command.knowledgeBaseId,
-                        embedded.vectors[0] ?? [],
-                        runtime.ragConfig.embeddingModel,
-                        fallback,
-                      );
+                  retrievalResult = await retrieve(fallback);
+                  chunks = retrievalResult.chunks;
                   retrievalAudit.push({
                     call: retrievalCalls,
                     query,
@@ -470,6 +549,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
                     reason: fallback.reason,
                     knowledgeBaseIds: searchBaseIds,
                     hitCount: chunks.length,
+                    ...retrievalResult.audit,
                     durationMs: now() - fallbackStartedAt,
                   });
                 }
@@ -491,6 +571,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
                   partCount: chunk.partCount,
                   locator: chunk.locator,
                   content: chunk.content,
+                  rerankScore: chunk.rerankScore,
                 })),
               };
               const summary = {
@@ -720,7 +801,11 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
             excerpt: chunk.content.slice(0, 320),
           };
         }),
-        usage: { embeddingTokens, ...usage },
+        usage: { embeddingTokens, rerankTokens, ...usage },
+        retrieval: {
+          rerankStatus,
+          rerankerModel: runtime.rerank.model,
+        },
       });
 
       const auditCompleteStartedAt = now();
@@ -733,6 +818,8 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
           citedChunkIds: validIds,
           citations: response.citations,
           embeddingTokens,
+          rerankTokens,
+          rerankStatus,
           ...usage,
           durationMs: now() - startedAt,
         });
@@ -760,6 +847,8 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
           blockedRetrievalCalls,
           maxSearchCalls: MAX_SEARCH_CALLS,
           embeddingTokens,
+          rerankTokens,
+          rerankStatus,
           ...usage,
         },
       });
@@ -794,6 +883,8 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
           blockedRetrievalCalls,
           maxSearchCalls: MAX_SEARCH_CALLS,
           embeddingTokens,
+          rerankTokens,
+          rerankStatus,
           failureAuditCompleted,
         },
       });

@@ -46,6 +46,7 @@ import type { SettingsService } from '../../../settings/service.ts';
 import { SettingsError } from '../../../settings/types.ts';
 import { PrimaryOssStore } from '../runtime-mode/primaryOssStore.ts';
 import { resolveAsrEnhancement } from '../transcription/asrEnhancement.ts';
+import type { KnowledgeRetrievalSettingsService } from '../../../knowledge/retrieval/settingsService.ts';
 
 /** HTTP 音频流接口可读取的本地文件描述。 */
 export type AudioPlaybackFile = {
@@ -66,6 +67,7 @@ export type FrozenAudioCapabilityBindings = {
   role?: string | null;
   businessAnalysis?: string | null;
   knowledgeEmbedding?: string | null;
+  knowledgeRerank?: string | null;
 };
 
 /** 自动业务分析冻结的分组输入。 */
@@ -133,6 +135,7 @@ export class DefaultAudioService implements AudioService {
   private readonly settingsService: Pick<SettingsService, 'resolveCapability'>;
   private readonly businessAnalysisRepository?: BusinessAnalysisRepository;
   private readonly audioExecutionRepository?: AudioExecutionQuery;
+  private readonly knowledgeRetrievalSettingsService?: KnowledgeRetrievalSettingsService;
 
   constructor(
     private readonly repository: AudioCoreRepository,
@@ -147,7 +150,9 @@ export class DefaultAudioService implements AudioService {
     stagingOrExecutionRepository?: boolean | AudioExecutionQuery,
     legacyBusinessAnalysisRepository?: BusinessAnalysisRepository,
     legacyAudioExecutionRepository?: AudioExecutionQuery,
+    knowledgeRetrievalSettingsService?: KnowledgeRetrievalSettingsService,
   ) {
+    this.knowledgeRetrievalSettingsService = knowledgeRetrievalSettingsService;
     if (
       settingsOrEmotionModel &&
       typeof settingsOrEmotionModel === 'object' &&
@@ -520,7 +525,7 @@ export class DefaultAudioService implements AudioService {
     if (!this.businessAnalysisRepository) {
       throw new WorkspaceRepositoryError('CONFLICT', '业务分析服务尚未配置。');
     }
-    const [chat, embedding] = await Promise.all([
+    const [chat, embedding, rerank] = await Promise.all([
       this.settingsService.resolveCapability(
         'business_analysis',
         frozenBindings?.businessAnalysis ?? undefined,
@@ -529,6 +534,13 @@ export class DefaultAudioService implements AudioService {
         'knowledge_embedding',
         frozenBindings?.knowledgeEmbedding ?? undefined,
       ),
+      this.knowledgeRetrievalSettingsService?.freezeRuntime() ??
+        Promise.resolve({
+          enabled: false as const,
+          revision: 1,
+          bindingRevisionId: null,
+          model: null,
+        }),
     ]);
     return this.businessAnalysisRepository.queue(
       id,
@@ -537,6 +549,8 @@ export class DefaultAudioService implements AudioService {
       input.force,
       chat.revisionId,
       embedding.revisionId,
+      rerank.enabled,
+      rerank.bindingRevisionId,
       frozenInput,
       input.language,
     );

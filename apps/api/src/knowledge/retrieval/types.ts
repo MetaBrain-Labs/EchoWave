@@ -31,4 +31,20 @@ export type RetrievalChunk = {
   content: string;
   locator: SourceLocator;
   distance: number;
+  rerankScore: number | null;
 };
+
+/** 一次检索的重排状态与安全审计摘要。 */
+export type RetrievalAudit = {
+  rerankStatus: 'applied' | 'disabled' | 'fallback';
+  rerankerModel: string | null;
+  rerankBindingRevisionId: string | null;
+  candidateCount: number;
+  finalChunkIds: string[];
+  rerankTokens: number;
+  rerankDurationMs: number;
+  fallbackReason: string | null;
+};
+
+/** 带运行审计的检索结果。 */
+export type KnowledgeSearchResult = { chunks: RetrievalChunk[]; audit: RetrievalAudit };

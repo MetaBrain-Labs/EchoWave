@@ -10,6 +10,8 @@
  * Notes:
  * - Credential 加解密和供应商兼容性校验由上层服务负责。
  */
+import { randomUUID } from 'node:crypto';
+
 import {
   CapabilityBindingSchema,
   ProviderConnectionSchema,
@@ -69,6 +71,11 @@ export type ResolvedCapabilityRecord = {
     reference:
       { source: 'database'; credentialVersionId: string } | { source: 'local_file'; alias: string };
   };
+};
+
+export type DashScopeProviderMigrationRecord = {
+  expectedRevision: number;
+  record: ProviderWriteRecord;
 };
 
 function provider(row: ProviderRow): StoredProvider {
@@ -202,6 +209,66 @@ export class SettingsRepository {
     return this.getProvider(id);
   }
 
+  /** 原子发布全部 DashScope Workspace revision，并在缺失时建立知识重排绑定。 */
+  async migrateDashScopeProviders(
+    migrations: DashScopeProviderMigrationRecord[],
+    rerankModel: string,
+  ): Promise<{ updatedConnectionCount: number; rerankBindingCreated: boolean }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const locked = await client.query<{
+        id: string;
+        revision_no: number;
+        provider_type: ProviderType;
+      }>(
+        `SELECT connection.id, revision.revision_no, connection.provider_type
+         FROM ${this.table('provider_connections')} connection
+         JOIN ${this.table('provider_connection_revisions')} revision
+           ON revision.tenant_id = connection.tenant_id
+          AND revision.id = connection.current_revision_id
+         WHERE connection.tenant_id = $1 AND connection.provider_type = 'dashscope'
+         ORDER BY connection.id
+         FOR UPDATE OF connection`,
+        [this.tenantId],
+      );
+      const currentById = new Map(locked.rows.map((row) => [row.id, row]));
+      if (
+        currentById.size !== migrations.length ||
+        migrations.some(
+          ({ expectedRevision, record }) =>
+            currentById.get(record.connectionId)?.revision_no !== expectedRevision,
+        )
+      ) {
+        throw new SettingsError('CONFLICT', '百炼连接已被修改，请刷新后重试。');
+      }
+      for (const migration of [...migrations].sort((left, right) =>
+        left.record.connectionId.localeCompare(right.record.connectionId),
+      )) {
+        await this.insertProviderRevision(client, migration.record, migration.expectedRevision + 1);
+        await this.revisionBindingsForProvider(
+          client,
+          migration.record.connectionId,
+          migration.record.providerRevisionId,
+        );
+        await client.query(
+          `UPDATE ${this.table('provider_connections')}
+           SET current_revision_id = $3, updated_at = now()
+           WHERE tenant_id = $1 AND id = $2`,
+          [this.tenantId, migration.record.connectionId, migration.record.providerRevisionId],
+        );
+      }
+      const rerankBindingCreated = await this.ensureKnowledgeRerankBinding(client, rerankModel);
+      await client.query('COMMIT');
+      return { updatedConnectionCount: migrations.length, rerankBindingCreated };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async listBindings(): Promise<CapabilityBinding[]> {
     const result = await this.pool.query<{
       capability: AiCapability;
@@ -255,24 +322,27 @@ export class SettingsRepository {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      const existing = await client.query<{ id: string; revision_no: number }>(
+      const existing = await client.query<{ id: string; revision_no: number | null }>(
         `SELECT binding.id, revision.revision_no
          FROM ${this.table('ai_capability_bindings')} binding
-         JOIN ${this.table('ai_capability_binding_revisions')} revision
+         LEFT JOIN ${this.table('ai_capability_binding_revisions')} revision
            ON revision.tenant_id = binding.tenant_id AND revision.id = binding.current_revision_id
          WHERE binding.tenant_id = $1 AND binding.capability = $2
          FOR UPDATE OF binding`,
         [this.tenantId, input.capability],
       );
-      const current = existing.rows[0];
-      if (current && input.expectedRevision !== current.revision_no) {
+      const stored = existing.rows[0];
+      // 历史中断可能留下没有当前 revision 的绑定行，而且这种行可能已经带了一条未发布的
+      // revision：它只能被修复，既不能再插入同名能力，也不能复用已有 revision 号。
+      const publishedRevision = stored?.revision_no ?? undefined;
+      if (publishedRevision !== undefined && input.expectedRevision !== publishedRevision) {
         throw new SettingsError('CONFLICT', '能力配置已被修改，请刷新后重试。');
       }
-      if (!current && input.expectedRevision !== undefined) {
+      if (publishedRevision === undefined && input.expectedRevision !== undefined) {
         throw new SettingsError('CONFLICT', '能力配置不存在，请刷新后重试。');
       }
-      const bindingId = current?.id ?? input.bindingId;
-      if (!current) {
+      const bindingId = stored?.id ?? input.bindingId;
+      if (!stored) {
         await client.query(
           `INSERT INTO ${this.table('ai_capability_bindings')}
              (id, tenant_id, capability)
@@ -280,6 +350,13 @@ export class SettingsRepository {
           [bindingId, this.tenantId, input.capability],
         );
       }
+      // revision 号以实际存在的 revision 为准：未发布的残留 revision 不会让新版本号回退。
+      const nextRevision = await client.query<{ revision_no: number }>(
+        `SELECT coalesce(max(revision_no), 0) + 1 AS revision_no
+         FROM ${this.table('ai_capability_binding_revisions')}
+         WHERE tenant_id = $1 AND binding_id = $2`,
+        [this.tenantId, bindingId],
+      );
       const providerRevisionId = await this.currentProviderRevision(
         client,
         input.providerConnectionId,
@@ -297,7 +374,7 @@ export class SettingsRepository {
           input.bindingRevisionId,
           this.tenantId,
           bindingId,
-          (current?.revision_no ?? 0) + 1,
+          nextRevision.rows[0]!.revision_no,
           providerRevisionId,
           secondaryProviderRevisionId,
           input.model,
@@ -559,5 +636,58 @@ export class SettingsRepository {
         [this.tenantId, binding.binding_id, nextRevisionId],
       );
     }
+  }
+
+  private async ensureKnowledgeRerankBinding(
+    client: pg.PoolClient,
+    model: string,
+  ): Promise<boolean> {
+    const existing = await client.query(
+      `SELECT 1 FROM ${this.table('ai_capability_bindings')}
+       WHERE tenant_id = $1 AND capability = 'knowledge_rerank'`,
+      [this.tenantId],
+    );
+    if (existing.rowCount) return false;
+    const embedding = await client.query<{ provider_revision_id: string }>(
+      `SELECT revision.provider_revision_id
+       FROM ${this.table('ai_capability_bindings')} binding
+       JOIN ${this.table('ai_capability_binding_revisions')} revision
+         ON revision.tenant_id = binding.tenant_id
+        AND revision.id = binding.current_revision_id
+       JOIN ${this.table('provider_connection_revisions')} provider_revision
+         ON provider_revision.tenant_id = revision.tenant_id
+        AND provider_revision.id = revision.provider_revision_id
+       JOIN ${this.table('provider_connections')} connection
+         ON connection.tenant_id = provider_revision.tenant_id
+        AND connection.id = provider_revision.provider_connection_id
+       WHERE binding.tenant_id = $1
+         AND binding.capability = 'knowledge_embedding'
+         AND connection.provider_type = 'dashscope'`,
+      [this.tenantId],
+    );
+    const providerRevisionId = embedding.rows[0]?.provider_revision_id;
+    if (!providerRevisionId) return false;
+    const bindingId = randomUUID();
+    const revisionId = randomUUID();
+    await client.query(
+      `INSERT INTO ${this.table('ai_capability_bindings')}
+         (id, tenant_id, capability)
+       VALUES ($1, $2, 'knowledge_rerank')`,
+      [bindingId, this.tenantId],
+    );
+    await client.query(
+      `INSERT INTO ${this.table('ai_capability_binding_revisions')}
+         (id, tenant_id, binding_id, revision_no, provider_revision_id,
+          secondary_provider_revision_id, model, settings)
+       VALUES ($1, $2, $3, 1, $4, NULL, $5, '{}'::jsonb)`,
+      [revisionId, this.tenantId, bindingId, providerRevisionId, model],
+    );
+    await client.query(
+      `UPDATE ${this.table('ai_capability_bindings')}
+       SET current_revision_id = $3, updated_at = now()
+       WHERE tenant_id = $1 AND id = $2`,
+      [this.tenantId, bindingId, revisionId],
+    );
+    return true;
   }
 }

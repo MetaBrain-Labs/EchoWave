@@ -11,11 +11,22 @@
  * - 摘要卡只读观测，权威状态仍由服务端与各配置页持有。
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useRouter, type Href } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect, useRouter, type Href } from 'expo-router';
+import { useCallback, useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  View,
+} from 'react-native';
+import type { KnowledgeRetrievalSettings } from '@echowave/contracts';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ServiceSummaryCard } from '@/features/system-status/ServiceSummaryCard';
+import { DashScopeWorkspaceMigrationCard } from '@/features/service-config/DashScopeWorkspaceMigrationCard';
 import {
   colors,
   fontFamilies,
@@ -27,12 +38,68 @@ import {
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
+import { useAdminSession } from '@/shared/auth/AdminSessionProvider';
+import {
+  getKnowledgeRetrievalSettings,
+  updateKnowledgeRetrievalSettings,
+} from '@/shared/api/knowledgeRetrievalSettingsApi';
+import { WorkspaceRequestError } from '@/shared/api/request';
 
 /** 将“更多”页面渲染为统一的导航与引导入口。 */
 export default function MoreScreen() {
   const router = useRouter();
   const { t } = useAppLanguage();
   const collectionEntryRef = useStarterTourTarget('collection-entry');
+  const { token, clearSession } = useAdminSession();
+  const [retrieval, setRetrieval] = useState<KnowledgeRetrievalSettings>();
+  const [retrievalError, setRetrievalError] = useState('');
+  const [savingRerank, setSavingRerank] = useState(false);
+
+  const loadRetrievalSettings = useCallback(async () => {
+    try {
+      setRetrievalError('');
+      setRetrieval(await getKnowledgeRetrievalSettings());
+    } catch (error) {
+      setRetrievalError(error instanceof Error ? error.message : t('rerank.loadFailed'));
+    }
+  }, [t]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadRetrievalSettings();
+    }, [loadRetrievalSettings]),
+  );
+
+  const toggleRerank = async (enabled: boolean) => {
+    if (!retrieval || savingRerank) return;
+    if (!token) {
+      setRetrievalError(t('rerank.adminRequired'));
+      router.push('/service-configuration' as Href);
+      return;
+    }
+    setSavingRerank(true);
+    setRetrievalError('');
+    try {
+      setRetrieval(
+        await updateKnowledgeRetrievalSettings(token, {
+          rerankEnabled: enabled,
+          expectedRevision: retrieval.revision,
+        }),
+      );
+    } catch (error) {
+      if (error instanceof WorkspaceRequestError && error.code === 'UNAUTHORIZED') {
+        clearSession();
+        setRetrievalError(t('rerank.adminRequired'));
+        router.push('/service-configuration' as Href);
+      } else if (error instanceof WorkspaceRequestError && error.code === 'CONFLICT') {
+        await loadRetrievalSettings();
+      } else {
+        setRetrievalError(error instanceof Error ? error.message : t('rerank.saveFailed'));
+      }
+    } finally {
+      setSavingRerank(false);
+    }
+  };
   // AI 配置与运行模式都属于租户级服务配置，由“服务配置”页统一承载，避免重复入口。
   const navigationCards = [
     { key: 'collection', href: '/collection' as Href, icon: 'library-outline' as const },
@@ -51,6 +118,46 @@ export default function MoreScreen() {
       <TopLevelPageHeader subtitle={t('more.subtitle')} title={t('more.title')} />
       <ScrollView contentContainerStyle={styles.content} testID="more-scroll">
         <ServiceSummaryCard onOpenDetails={() => router.push('/service-status' as Href)} />
+        <DashScopeWorkspaceMigrationCard onMigrated={() => void loadRetrievalSettings()} />
+        <View style={styles.rerankCard}>
+          <View style={styles.navigationCopy}>
+            <Text style={styles.navigationTitle}>{t('rerank.title')}</Text>
+            <Text style={styles.navigationText}>{t('rerank.description')}</Text>
+          </View>
+          {retrieval ? (
+            <Switch
+              accessibilityLabel={t('rerank.toggleAccessibility')}
+              accessibilityState={{ disabled: savingRerank }}
+              disabled={savingRerank}
+              onValueChange={(value) => void toggleRerank(value)}
+              value={retrieval.rerankEnabled}
+            />
+          ) : (
+            <ActivityIndicator color={colors.ink} />
+          )}
+          {savingRerank ? <Text style={styles.rerankState}>{t('rerank.saving')}</Text> : null}
+          {retrieval?.rerankEnabled && !retrieval.rerankerConfigured ? (
+            <Pressable
+              accessibilityLabel={t('rerank.openConfiguration')}
+              accessibilityRole="button"
+              onPress={() => router.push('/service-configuration' as Href)}
+              style={styles.rerankWarning}
+            >
+              <Text style={styles.rerankWarningText}>{t('rerank.notConfigured')}</Text>
+            </Pressable>
+          ) : null}
+          {retrievalError ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => void loadRetrievalSettings()}
+              style={styles.rerankError}
+            >
+              <Text accessibilityRole="alert" style={styles.rerankErrorText}>
+                {retrievalError}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
         {navigationCards.map((card) => (
           <Pressable
             accessibilityLabel={t(`more.${card.key}.accessibility`)}
@@ -116,6 +223,28 @@ const styles = StyleSheet.create({
     minHeight: 88,
     padding: spacing.md,
   },
+  rerankCard: {
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderColor: colors.divider,
+    borderRadius: radii.default,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    minHeight: 88,
+    padding: spacing.md,
+  },
+  rerankState: { ...typography.description, color: textColors.tertiary, width: '100%' },
+  rerankWarning: {
+    backgroundColor: '#fff4e5',
+    borderRadius: radii.default,
+    padding: spacing.sm,
+    width: '100%',
+  },
+  rerankWarningText: { ...typography.description, color: '#8a4b08' },
+  rerankError: { paddingTop: spacing.xs, width: '100%' },
+  rerankErrorText: { ...typography.description, color: '#b42318' },
   navigationIcon: {
     alignItems: 'center',
     backgroundColor: colors.background,

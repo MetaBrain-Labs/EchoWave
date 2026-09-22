@@ -35,6 +35,7 @@ export const guideDemoKnowledge: KnowledgeBaseDetail = {
     indexingMode: 'rag',
     embeddingModel: 'demo-embedding-model',
     rerankerModel: null,
+    rerankingEnabled: true,
     parsingMode: 'automatic',
   },
   totalSizeBytes: 4096,
@@ -111,5 +112,6 @@ export const guideDemoQueryResponse: RagQueryResponse = {
       excerpt: guideDemoDocument.chunks[1].sourceExcerpt,
     },
   ],
-  usage: { embeddingTokens: 0, inputTokens: 0, outputTokens: 0 },
+  usage: { embeddingTokens: 0, rerankTokens: 0, inputTokens: 0, outputTokens: 0 },
+  retrieval: { rerankStatus: 'applied', rerankerModel: 'qwen3.7-text-rerank' },
 };

@@ -104,7 +104,12 @@ function repositoryStub(overrides = {}) {
   return { listBindings: async () => [], ...overrides };
 }
 
-function settingsService(repository, legacy = {}, catalog = catalogService({})) {
+function settingsService(
+  repository,
+  legacy = {},
+  catalog = catalogService({}),
+  fetchImplementation,
+) {
   return new SettingsService(
     repository,
     {
@@ -123,6 +128,7 @@ function settingsService(repository, legacy = {}, catalog = catalogService({})) 
       ...legacy,
     },
     catalog,
+    fetchImplementation,
   );
 }
 
@@ -423,7 +429,7 @@ describe('SettingsService defaults', () => {
     await service.importLegacyConfiguration();
 
     assert.equal(marked, true);
-    assert.equal(saved.length, 9);
+    assert.equal(saved.length, 10);
     for (const binding of saved) {
       const defaults = AI_CAPABILITY_DEFAULTS[binding.capability];
       assert.equal(binding.model, defaults.model);
@@ -441,5 +447,85 @@ describe('SettingsService defaults', () => {
     assert.deepEqual(saved.find((binding) => binding.capability === 'knowledge_chat').settings, {
       enableThinking: true,
     });
+  });
+
+  it('reports legacy endpoints and atomically migrates every DashScope connection', async () => {
+    const provider = storedProvider('dashscope');
+    let migrated;
+    const requested = [];
+    const service = settingsService(
+      repositoryStub({
+        listProviders: async () => [provider],
+        migrateDashScopeProviders: async (records) => {
+          migrated = records;
+          provider.config = records[0].record.config;
+          provider.revision += 1;
+          return { updatedConnectionCount: 1, rerankBindingCreated: true };
+        },
+      }),
+      {},
+      catalogService({}),
+      async (url) => {
+        requested.push(String(url));
+        return new Response(JSON.stringify({ data: [] }), { status: 200 });
+      },
+    );
+
+    assert.deepEqual(await service.dashScopeWorkspaceStatus(), {
+      status: 'legacy',
+      migrationRequired: true,
+      totalConnectionCount: 1,
+      legacyConnectionCount: 1,
+    });
+    const result = await service.migrateDashScopeWorkspace('Bearer admin-token', {
+      workspaceId: 'llm-echowave',
+    });
+    assert.deepEqual(requested, [
+      'https://llm-echowave.cn-beijing.maas.aliyuncs.com/api/v1/models?page_no=1&page_size=1',
+    ]);
+    assert.equal(migrated[0].record.config.workspaceId, 'llm-echowave');
+    assert.deepEqual(result, {
+      workspace: {
+        status: 'dedicated',
+        migrationRequired: false,
+        totalConnectionCount: 1,
+        legacyConnectionCount: 0,
+      },
+      updatedConnectionCount: 1,
+      rerankBindingCreated: true,
+    });
+  });
+
+  it('does not persist any migration when Workspace preflight fails', async () => {
+    const providers = [
+      storedProvider('dashscope'),
+      { ...storedProvider('dashscope'), id: '44444444-4444-4444-8444-444444444444' },
+    ];
+    let migrationCalls = 0;
+    let requests = 0;
+    const service = settingsService(
+      repositoryStub({
+        listProviders: async () => providers,
+        migrateDashScopeProviders: async () => {
+          migrationCalls += 1;
+          throw new Error('must not persist');
+        },
+      }),
+      {},
+      catalogService({}),
+      async () => {
+        requests += 1;
+        return new Response('', { status: requests === 1 ? 200 : 401 });
+      },
+    );
+
+    await assert.rejects(
+      service.migrateDashScopeWorkspace('Bearer admin-token', {
+        workspaceId: 'llm-echowave',
+        region: 'cn-beijing',
+      }),
+      (error) => error.code === 'BAD_REQUEST',
+    );
+    assert.equal(migrationCalls, 0);
   });
 });

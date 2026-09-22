@@ -66,6 +66,7 @@ import { textInputText } from '@/shared/theme/textInput';
 
 const capabilities: readonly { id: AiCapability }[] = [
   { id: 'knowledge_embedding' },
+  { id: 'knowledge_rerank' },
   { id: 'knowledge_chat' },
   { id: 'audio_transcription' },
   { id: 'audio_emotion' },
@@ -97,6 +98,7 @@ function providerLabel(type: ProviderType, t: TranslationFunction): string {
 function capabilityLabel(capability: AiCapability, t: TranslationFunction): string {
   const keys = {
     knowledge_embedding: 'aiSettings.capEmbedding',
+    knowledge_rerank: 'aiSettings.capRerank',
     knowledge_chat: 'aiSettings.capChat',
     audio_transcription: 'aiSettings.capTranscription',
     audio_emotion: 'aiSettings.capEmotion',
@@ -114,8 +116,15 @@ type ProviderDraft = {
   expectedRevision?: number;
   type: ProviderType;
   name: string;
+  workspaceId: string;
+  dashScopeRegion:
+    | 'cn-beijing'
+    | 'ap-southeast-1'
+    | 'ap-northeast-1'
+    | 'eu-central-1'
+    | 'cn-hongkong'
+    | 'us-east-1';
   baseUrl: string;
-  compatibleBaseUrl: string;
   notifyMode: 'polling' | 'eventbridge';
   callbackUrl: string;
   region: string;
@@ -131,7 +140,8 @@ type ProviderDraft = {
 type ProviderDraftDefaults = Pick<
   ProviderDraft,
   | 'baseUrl'
-  | 'compatibleBaseUrl'
+  | 'workspaceId'
+  | 'dashScopeRegion'
   | 'notifyMode'
   | 'callbackUrl'
   | 'region'
@@ -144,8 +154,9 @@ type ProviderDraftDefaults = Pick<
 
 const providerDraftDefaults: Record<ProviderType, ProviderDraftDefaults> = {
   dashscope: {
-    baseUrl: 'https://dashscope.aliyuncs.com/api/v1',
-    compatibleBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    workspaceId: '',
+    dashScopeRegion: 'cn-beijing',
+    baseUrl: '',
     notifyMode: 'polling',
     callbackUrl: '',
     region: '',
@@ -156,8 +167,9 @@ const providerDraftDefaults: Record<ProviderType, ProviderDraftDefaults> = {
     accessKeySecret: '',
   },
   deepseek: {
+    workspaceId: '',
+    dashScopeRegion: 'cn-beijing',
     baseUrl: 'https://api.deepseek.com',
-    compatibleBaseUrl: '',
     notifyMode: 'polling',
     callbackUrl: '',
     region: '',
@@ -168,8 +180,9 @@ const providerDraftDefaults: Record<ProviderType, ProviderDraftDefaults> = {
     accessKeySecret: '',
   },
   aliyun_oss: {
+    workspaceId: '',
+    dashScopeRegion: 'cn-beijing',
     baseUrl: '',
-    compatibleBaseUrl: '',
     notifyMode: 'polling',
     callbackUrl: '',
     region: 'oss-cn-beijing',
@@ -227,11 +240,12 @@ function draftFromProvider(provider: ProviderConnection): ProviderDraft {
     expectedRevision: provider.revision,
     type: provider.type,
     name: provider.name,
+    workspaceId: typeof config.workspaceId === 'string' ? config.workspaceId : '',
+    dashScopeRegion:
+      typeof config.region === 'string' && !config.region.startsWith('oss-')
+        ? (config.region as ProviderDraft['dashScopeRegion'])
+        : draft.dashScopeRegion,
     baseUrl: typeof config.baseUrl === 'string' ? config.baseUrl : draft.baseUrl,
-    compatibleBaseUrl:
-      typeof config.compatibleBaseUrl === 'string'
-        ? config.compatibleBaseUrl
-        : draft.compatibleBaseUrl,
     notifyMode: config.asyncNotifyMode === 'eventbridge' ? 'eventbridge' : 'polling',
     callbackUrl:
       typeof config.eventBridgeCallbackUrl === 'string' ? config.eventBridgeCallbackUrl : '',
@@ -246,8 +260,8 @@ function providerInput(draft: ProviderDraft): ProviderConnectionWrite {
   const config =
     draft.type === 'dashscope'
       ? {
-          baseUrl: draft.baseUrl.trim(),
-          compatibleBaseUrl: draft.compatibleBaseUrl.trim(),
+          workspaceId: draft.workspaceId.trim(),
+          region: draft.dashScopeRegion,
           asyncNotifyMode: draft.notifyMode,
           eventBridgeCallbackUrl:
             draft.notifyMode === 'eventbridge' ? draft.callbackUrl.trim() : null,
@@ -1171,40 +1185,57 @@ function ProviderEditor({
           <Field label="Region" onChangeText={(region) => patch({ region })} value={draft.region} />
           <Field label="Bucket" onChangeText={(bucket) => patch({ bucket })} value={draft.bucket} />
         </>
-      ) : (
+      ) : draft.type === 'dashscope' ? (
         <>
           <Field
-            label={t('aiSettings.publicHttps')}
-            onChangeText={(baseUrl) => patch({ baseUrl })}
-            value={draft.baseUrl}
+            label={t('dashscopeMigration.workspaceId')}
+            onChangeText={(workspaceId) => patch({ workspaceId })}
+            value={draft.workspaceId}
           />
-          {draft.type === 'dashscope' ? (
-            <>
-              <Field
-                label="Compatible Base URL"
-                onChangeText={(compatibleBaseUrl) => patch({ compatibleBaseUrl })}
-                value={draft.compatibleBaseUrl}
-              />
-              <ChoiceRow
-                options={[
-                  { id: 'polling', label: 'Polling' },
-                  { id: 'eventbridge', label: 'EventBridge' },
-                ]}
-                selected={draft.notifyMode}
-                onSelect={(notifyMode) =>
-                  patch({ notifyMode: notifyMode as ProviderDraft['notifyMode'] })
-                }
-              />
-              {draft.notifyMode === 'eventbridge' ? (
-                <Field
-                  label="Callback URL"
-                  onChangeText={(callbackUrl) => patch({ callbackUrl })}
-                  value={draft.callbackUrl}
-                />
-              ) : null}
-            </>
+          {/* 该字段是专属域名的 DNS 标签，不是控制台里可能以 ws- 或 llm- 开头的完整域名。 */}
+          <Text style={styles.fieldHint}>{t('dashscopeMigration.workspaceIdHint')}</Text>
+          <Text style={styles.fieldLabel}>{t('dashscopeMigration.regionLabel')}</Text>
+          <ChoiceRow
+            options={[
+              { id: 'cn-beijing', label: t('dashscopeMigration.region.beijing') },
+              { id: 'ap-southeast-1', label: t('dashscopeMigration.region.singapore') },
+              { id: 'ap-northeast-1', label: t('dashscopeMigration.region.tokyo') },
+              { id: 'eu-central-1', label: t('dashscopeMigration.region.frankfurt') },
+              { id: 'cn-hongkong', label: t('dashscopeMigration.region.hongKong') },
+              { id: 'us-east-1', label: t('dashscopeMigration.region.virginia') },
+            ]}
+            selected={draft.dashScopeRegion}
+            onSelect={(dashScopeRegion) =>
+              patch({ dashScopeRegion: dashScopeRegion as ProviderDraft['dashScopeRegion'] })
+            }
+          />
+          <Text style={styles.fieldHint}>
+            {`https://${draft.workspaceId || '{workspaceId}'}.${draft.dashScopeRegion}.maas.aliyuncs.com`}
+          </Text>
+          <ChoiceRow
+            options={[
+              { id: 'polling', label: 'Polling' },
+              { id: 'eventbridge', label: 'EventBridge' },
+            ]}
+            selected={draft.notifyMode}
+            onSelect={(notifyMode) =>
+              patch({ notifyMode: notifyMode as ProviderDraft['notifyMode'] })
+            }
+          />
+          {draft.notifyMode === 'eventbridge' ? (
+            <Field
+              label="Callback URL"
+              onChangeText={(callbackUrl) => patch({ callbackUrl })}
+              value={draft.callbackUrl}
+            />
           ) : null}
         </>
+      ) : (
+        <Field
+          label={t('aiSettings.publicHttps')}
+          onChangeText={(baseUrl) => patch({ baseUrl })}
+          value={draft.baseUrl}
+        />
       )}
       <Text style={styles.fieldLabel}>{t('aiSettings.credentialSource')}</Text>
       <ChoiceRow
@@ -1836,6 +1867,11 @@ const styles = StyleSheet.create({
   fieldLabel: {
     ...typography.description,
     color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
+  },
+  fieldHint: {
+    ...typography.description,
+    color: textColors.tertiary,
     fontFamily: fontFamilies.sans,
   },
   input: {

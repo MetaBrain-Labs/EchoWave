@@ -29,8 +29,8 @@ const completeValues = {
   TRUSTED_PROXY_CIDRS: '127.0.0.1/32, ::1/128',
   DEV_TENANT_ID: '00000000-0000-4000-8000-000000000001',
   DASHSCOPE_API_KEY: 'dashscope-test-key',
-  DASHSCOPE_BASE_URL: 'https://workspace.example.com/api/v1/',
-  DASHSCOPE_COMPATIBLE_BASE_URL: 'https://workspace.example.com/compatible-mode/v1/',
+  DASHSCOPE_WORKSPACE_ID: 'llm-echowave',
+  DASHSCOPE_REGION: 'cn-beijing',
   DASHSCOPE_ASYNC_NOTIFY_MODE: 'eventbridge',
   DASHSCOPE_EVENTBRIDGE_CALLBACK_URL:
     'https://api.example.com/api/webhooks/dashscope/async-task-finished',
@@ -89,8 +89,10 @@ describe('API environment', () => {
     const config = readApiConfig(completeValues);
     assert.deepEqual(config.rag.dashScope, {
       apiKey: 'dashscope-test-key',
-      baseUrl: 'https://workspace.example.com/api/v1',
-      compatibleBaseUrl: 'https://workspace.example.com/compatible-mode/v1',
+      workspaceId: 'llm-echowave',
+      region: 'cn-beijing',
+      baseUrl: 'https://llm-echowave.cn-beijing.maas.aliyuncs.com/api/v1',
+      compatibleBaseUrl: 'https://llm-echowave.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
       asyncNotifyMode: 'eventbridge',
       eventBridgeCallback: {
         url: 'https://api.example.com/api/webhooks/dashscope/async-task-finished',
@@ -196,18 +198,13 @@ describe('API environment', () => {
 
   it('starts without legacy provider variables and exposes their import completeness', () => {
     const { DASHSCOPE_API_KEY: _apiKey, ...withoutKey } = completeValues;
-    const { DASHSCOPE_BASE_URL: _baseUrl, ...withoutBaseUrl } = completeValues;
-    const { DASHSCOPE_COMPATIBLE_BASE_URL: _compatibleBaseUrl, ...withoutCompatibleBaseUrl } =
-      completeValues;
+    const { DASHSCOPE_WORKSPACE_ID: _workspaceId, ...withoutWorkspaceId } = completeValues;
     assert.ok(
       readApiConfig(withoutKey).legacyProviders.missingVariables.includes('DASHSCOPE_API_KEY'),
     );
     assert.ok(
-      readApiConfig(withoutBaseUrl).legacyProviders.missingVariables.includes('DASHSCOPE_BASE_URL'),
-    );
-    assert.ok(
-      readApiConfig(withoutCompatibleBaseUrl).legacyProviders.missingVariables.includes(
-        'DASHSCOPE_COMPATIBLE_BASE_URL',
+      readApiConfig(withoutWorkspaceId).legacyProviders.missingVariables.includes(
+        'DASHSCOPE_WORKSPACE_ID',
       ),
     );
     const bootstrapOnly = { ...completeValues };

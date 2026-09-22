@@ -471,7 +471,12 @@ describe('trusted knowledge answer module', () => {
 
     assert.equal(response.grounded, true);
     assert.equal(response.citations[0].chunkId, chunkId);
-    assert.deepEqual(response.usage, { embeddingTokens: 7, inputTokens: 10, outputTokens: 20 });
+    assert.deepEqual(response.usage, {
+      embeddingTokens: 7,
+      rerankTokens: 0,
+      inputTokens: 10,
+      outputTokens: 20,
+    });
     assert.deepEqual(events.slice(0, 4), ['conversation', 'begin', 'generate', 'search']);
     assert.equal(events.at(-1)[0], 'complete');
   });
@@ -593,7 +598,12 @@ describe('trusted knowledge answer module', () => {
     assert.equal(response.grounded, false);
     assert.equal(response.answer, '知识库中没有足够依据回答这个问题。');
     assert.deepEqual(response.citations, []);
-    assert.deepEqual(response.usage, { embeddingTokens: 7, inputTokens: 5, outputTokens: 5 });
+    assert.deepEqual(response.usage, {
+      embeddingTokens: 7,
+      rerankTokens: 0,
+      inputTokens: 5,
+      outputTokens: 5,
+    });
     assert.deepEqual(events.at(-1)[1].citedChunkIds, []);
   });
 

@@ -43,6 +43,7 @@ export const KnowledgeBaseSettingsSchema = z.object({
   indexingMode: z.enum(['full_context', 'rag']),
   embeddingModel: z.string().min(1),
   rerankerModel: z.string().min(1).nullable(),
+  rerankingEnabled: z.boolean(),
   parsingMode: z.enum(['automatic', 'manual']),
 });
 

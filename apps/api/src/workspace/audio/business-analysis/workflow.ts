@@ -17,6 +17,7 @@ import type { AiExecutionRecorder } from '../../../ai-observability/executionRep
 import type { DashScopeEmbeddings } from '../../../knowledge/embeddings/dashScopeEmbeddings.ts';
 import type { KnowledgeSearchPort } from '../../../knowledge/retrieval/port.ts';
 import type { RetrievalChunk } from '../../../knowledge/retrieval/types.ts';
+import type { FrozenRerankRuntime } from '../../../knowledge/retrieval/settingsService.ts';
 import type {
   BusinessAnalysisPublication,
   BusinessAnalysisRepository,
@@ -34,6 +35,7 @@ type BusinessAnalysisWorkflowOptions = {
   knowledgeRepository: KnowledgeSearchPort;
   embeddings: Pick<DashScopeEmbeddings, 'embedQuery'>;
   embeddingModel: string;
+  rerank: FrozenRerankRuntime;
   agent: SalesAnalysisAgent;
   checkpointer: BaseCheckpointSaver;
   saveWindowResult?: BusinessAnalysisNodeOptions['saveWindowResult'];

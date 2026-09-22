@@ -21,6 +21,7 @@ import {
 import type { DashScopeEmbeddings } from '../../../../knowledge/embeddings/dashScopeEmbeddings.ts';
 import type { KnowledgeSearchPort } from '../../../../knowledge/retrieval/port.ts';
 import type { RetrievalChunk } from '../../../../knowledge/retrieval/types.ts';
+import type { FrozenRerankRuntime } from '../../../../knowledge/retrieval/settingsService.ts';
 import {
   CategoryRetrievalPolicy,
   type CategoryCatalogue,
@@ -48,6 +49,7 @@ export type BusinessAnalysisNodeOptions = {
   knowledgeRepository: KnowledgeSearchPort;
   embeddings: Pick<DashScopeEmbeddings, 'embedQuery'>;
   embeddingModel: string;
+  rerank: FrozenRerankRuntime;
   agent: SalesAnalysisAgent;
   saveWindowResult?: (
     jobId: string,
@@ -143,12 +145,24 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
       return [];
     }
     const startedAt = Date.now();
-    const chunks = await options.knowledgeRepository.searchMany(
-      job.knowledgeBaseIds,
-      embedding,
-      options.embeddingModel,
-      filter,
-    );
+    const result = options.knowledgeRepository.searchManyDetailed
+      ? await options.knowledgeRepository.searchManyDetailed(
+          job.knowledgeBaseIds,
+          embedding,
+          options.embeddingModel,
+          filter,
+          { query, rerank: options.rerank },
+        )
+      : {
+          chunks: await options.knowledgeRepository.searchMany(
+            job.knowledgeBaseIds,
+            embedding,
+            options.embeddingModel,
+            filter,
+          ),
+          audit: undefined,
+        };
+    const chunks = result.chunks;
     // 分类名随本次检索一起冻结：目录改名或停用后，历史报告仍能显示分析当时使用的分类。
     const frozenCategories = (filter.categoryIds ?? [])
       .map((id) => categories.find((item) => item.id === id))
@@ -164,8 +178,33 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
       reason: filter.reason,
       hitCount: chunks.length,
       durationMs: Date.now() - startedAt,
+      ...(result.audit ?? {}),
     };
     await options.repository.recordCategoryRetrieval?.(job.id, audit);
+    if (
+      result.audit &&
+      result.audit.rerankStatus !== 'disabled' &&
+      result.audit.candidateCount > 0
+    ) {
+      report.recordModelCall({
+        name: 'knowledge-rerank',
+        provider: 'dashscope',
+        model: result.audit.rerankerModel ?? 'qwen3.7-text-rerank',
+        status: result.audit.rerankStatus === 'fallback' ? 'failed' : 'completed',
+        attempt: 1,
+        durationMs: result.audit.rerankDurationMs,
+        inputTokens: result.audit.rerankTokens || null,
+        outputTokens: 0,
+        input: { queryLength: query.length, candidateCount: result.audit.candidateCount },
+        output: {
+          status: result.audit.rerankStatus,
+          finalChunkIds: result.audit.finalChunkIds,
+          scores: chunks.map((chunk) => ({ chunkId: chunk.id, score: chunk.rerankScore })),
+          fallbackReason: result.audit.fallbackReason,
+        },
+        metadata: { bindingRevisionId: result.audit.rerankBindingRevisionId },
+      });
+    }
     report.recordToolCall({
       name: 'search_knowledge',
       status: 'completed',

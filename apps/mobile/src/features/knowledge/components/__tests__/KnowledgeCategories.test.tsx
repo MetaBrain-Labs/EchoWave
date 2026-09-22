@@ -124,9 +124,7 @@ describe('knowledge category interactions', () => {
     );
 
     fireEvent.press(screen.getByText('类别与工作表'));
-    await waitFor(() =>
-      expect(screen.getByText('建议尚未确认，不影响当前分类。')).toBeTruthy(),
-    );
+    await waitFor(() => expect(screen.getByText('建议尚未确认，不影响当前分类。')).toBeTruthy());
 
     const scrollableContent = screen.getByTestId('document-classification-scroll');
     expect(

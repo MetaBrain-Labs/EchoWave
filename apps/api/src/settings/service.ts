@@ -19,6 +19,9 @@ import {
   AliyunOssCredentialInputSchema,
   CAPABILITY_MODEL_REQUIREMENTS,
   CapabilityBindingWriteSchema,
+  DashScopeWorkspaceMigrationRequestSchema,
+  DashScopeWorkspaceMigrationResponseSchema,
+  DashScopeWorkspaceStatusSchema,
   DashScopeCredentialInputSchema,
   DeepSeekCredentialInputSchema,
   EMBEDDING_DIMENSIONS,
@@ -30,6 +33,9 @@ import {
   type AiCapability,
   type CapabilityBindingWrite,
   type CredentialBundleInput,
+  type DashScopeWorkspaceMigrationRequest,
+  type DashScopeWorkspaceMigrationResponse,
+  type DashScopeWorkspaceStatus,
   type ModelCatalogQuery,
   type ModelCatalogResponse,
   type ProviderConnection,
@@ -39,6 +45,10 @@ import {
 } from '@echowave/contracts';
 import { z } from 'zod';
 
+import {
+  isDedicatedDashScopeConfig,
+  resolveDashScopeEndpoints,
+} from '../ai-runtime/dashScopeEndpoints.ts';
 import type { DatabaseCredentialProvider } from './credentials/databaseCredentialProvider.ts';
 import { encryptCredential } from './credentials/encryption.ts';
 import type { LocalCredentialProvider } from './credentials/localCredentialProvider.ts';
@@ -55,7 +65,7 @@ export type LegacyAiConfiguration = {
   detectedVariables: string[];
   missingVariables: string[];
   dashScope?: {
-    config: ProviderConnectionWrite['config'];
+    config: ProviderConnection['config'];
     credential: CredentialBundleInput;
   };
   deepSeek?: {
@@ -75,7 +85,7 @@ export type ResolvedCapability = {
   settings: Record<string, unknown>;
   provider: {
     type: ProviderType;
-    config: ProviderConnectionWrite['config'];
+    config: ProviderConnection['config'];
     credential: CredentialBundle;
   };
 };
@@ -117,7 +127,96 @@ export class SettingsService {
     private readonly adminToken: string,
     private readonly legacy: LegacyAiConfiguration,
     private readonly modelCatalog = new ModelCatalogService(),
+    private readonly fetchImplementation: typeof fetch = fetch,
   ) {}
+
+  /** 返回不含业务空间 ID 与 Credential 的公开迁移状态。 */
+  async dashScopeWorkspaceStatus(): Promise<DashScopeWorkspaceStatus> {
+    const providers = (await this.repository.listProviders()).filter(
+      (provider) => provider.type === 'dashscope',
+    );
+    const legacyConnectionCount = providers.filter(
+      (provider) => !isDedicatedDashScopeConfig(provider.config),
+    ).length;
+    const totalConnectionCount = providers.length;
+    const status =
+      totalConnectionCount === 0
+        ? 'not_configured'
+        : legacyConnectionCount === 0
+          ? 'dedicated'
+          : legacyConnectionCount === totalConnectionCount
+            ? 'legacy'
+            : 'mixed';
+    return DashScopeWorkspaceStatusSchema.parse({
+      status,
+      migrationRequired: status === 'legacy' || status === 'mixed',
+      totalConnectionCount,
+      legacyConnectionCount,
+    });
+  }
+
+  /** 校验目标 Workspace 后，原子迁移当前全部 DashScope 连接。 */
+  async migrateDashScopeWorkspace(
+    authorization: string | undefined,
+    rawInput: DashScopeWorkspaceMigrationRequest,
+  ): Promise<DashScopeWorkspaceMigrationResponse> {
+    this.authorize(authorization);
+    const input = DashScopeWorkspaceMigrationRequestSchema.parse(rawInput);
+    const providers = (await this.repository.listProviders()).filter(
+      (provider) => provider.type === 'dashscope',
+    );
+    if (providers.length === 0) {
+      throw new SettingsError('NOT_FOUND', '尚未配置百炼连接。');
+    }
+    const endpoints = resolveDashScopeEndpoints({
+      ...input,
+      asyncNotifyMode: 'polling',
+      eventBridgeCallbackUrl: null,
+    });
+    await Promise.all(
+      providers.map(async (provider) => {
+        const credential = await this.resolveCredential(provider);
+        if (!('apiKey' in credential)) {
+          throw new SettingsError('BAD_REQUEST', '百炼连接 Credential 类型不匹配。');
+        }
+        await this.verifyDashScopeWorkspace(endpoints.nativeBaseUrl, credential.apiKey);
+      }),
+    );
+    const migrations = await Promise.all(
+      providers.map(async (provider) => {
+        const notify = provider.config as {
+          asyncNotifyMode: 'polling' | 'eventbridge';
+          eventBridgeCallbackUrl: string | null;
+        };
+        const write: ProviderConnectionWrite = {
+          type: 'dashscope',
+          name: provider.name,
+          config: {
+            workspaceId: input.workspaceId,
+            region: input.region,
+            asyncNotifyMode: notify.asyncNotifyMode,
+            eventBridgeCallbackUrl: notify.eventBridgeCallbackUrl,
+          },
+          credentialSource: provider.credential.source,
+          ...(provider.credential.source === 'local_file'
+            ? { localCredentialAlias: provider.credential.alias! }
+            : {}),
+          expectedRevision: provider.revision,
+        };
+        const record = await this.providerRecord(write, provider);
+        record.connectionId = provider.id;
+        return { expectedRevision: provider.revision, record };
+      }),
+    );
+    const result = await this.repository.migrateDashScopeProviders(
+      migrations,
+      AI_CAPABILITY_DEFAULTS.knowledge_rerank.model,
+    );
+    return DashScopeWorkspaceMigrationResponseSchema.parse({
+      workspace: await this.dashScopeWorkspaceStatus(),
+      ...result,
+    });
+  }
 
   /** 使用定时安全比较校验管理口令。 */
   authorize(value: string | undefined): void {
@@ -308,20 +407,30 @@ export class SettingsService {
     const ensureProvider = async (
       type: ProviderType,
       name: string,
-      item: { config: ProviderConnectionWrite['config']; credential: CredentialBundleInput },
+      item: { config: ProviderConnection['config']; credential: CredentialBundleInput },
     ) => {
       const existing = byType.get(type);
       if (existing) return existing;
-      const created = await this.createProvider(
-        {
-          type,
-          name,
-          config: item.config,
-          credentialSource: 'database',
-          credential: item.credential,
-        },
-        { mode: 'localhost', secretSubmissionAllowed: true, warning: null },
-      );
+      const input = {
+        type,
+        name,
+        config: item.config,
+        credentialSource: 'database' as const,
+        credential: item.credential,
+      };
+      const created =
+        type === 'dashscope' && !isDedicatedDashScopeConfig(item.config)
+          ? publicProvider(
+              await this.repository.createProvider(
+                // 旧 `.env` 只允许经此受信导入路径原样落库；公开写接口仍严格拒绝 URL 结构。
+                await this.providerRecord(input as ProviderConnectionWrite),
+              ),
+            )
+          : await this.createProvider(input as ProviderConnectionWrite, {
+              mode: 'localhost',
+              secretSubmissionAllowed: true,
+              warning: null,
+            });
       const stored = await this.repository.getProvider(created.id);
       byType.set(type, stored);
       return stored;
@@ -370,7 +479,7 @@ export class SettingsService {
         settings: stored.settings,
         provider: {
           type: stored.provider.type,
-          config: stored.provider.config as ProviderConnectionWrite['config'],
+          config: stored.provider.config as ProviderConnection['config'],
           credential,
         },
       };
@@ -447,14 +556,11 @@ export class SettingsService {
   private async validateOutboundUrls(input: ProviderConnectionWrite) {
     const values =
       input.type === 'dashscope'
-        ? [
-            (input.config as { baseUrl: string }).baseUrl,
-            (input.config as { compatibleBaseUrl: string }).compatibleBaseUrl,
-          ]
+        ? [resolveDashScopeEndpoints(input.config).origin]
         : input.type === 'deepseek'
           ? [(input.config as { baseUrl: string }).baseUrl]
           : [];
-    for (const value of values) {
+    for (const value of values.filter((item): item is string => Boolean(item))) {
       const hostname = new URL(value).hostname;
       if (
         hostname === 'localhost' ||
@@ -543,6 +649,26 @@ export class SettingsService {
     return reference.source === 'database'
       ? this.databaseCredentials.resolve(reference, provider.type)
       : this.localCredentials.resolve(reference, provider.type);
+  }
+
+  private async verifyDashScopeWorkspace(baseUrl: string, apiKey: string): Promise<void> {
+    let response: Response;
+    try {
+      response = await this.fetchImplementation(`${baseUrl}/models?page_no=1&page_size=1`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(8_000),
+      });
+    } catch {
+      throw new SettingsError('MODEL_UNAVAILABLE', '无法连接目标百炼业务空间，请稍后重试。');
+    }
+    if (!response.ok) {
+      throw new SettingsError(
+        'BAD_REQUEST',
+        response.status === 401 || response.status === 403
+          ? 'Workspace ID、地域或 API Key 不匹配。'
+          : '目标百炼业务空间校验失败，请检查地域和模型权限。',
+      );
+    }
   }
 
   /** 把已存储连接与其 Credential 组合为目录查询输入。 */

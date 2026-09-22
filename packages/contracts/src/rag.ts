@@ -42,6 +42,7 @@ export const RagCitationSchema = z.object({
 /** 一次可信回答产生的 embedding 与模型 token 用量 schema。 */
 export const RagUsageSchema = z.object({
   embeddingTokens: z.number().int().nonnegative(),
+  rerankTokens: z.number().int().nonnegative(),
   inputTokens: z.number().int().nonnegative(),
   outputTokens: z.number().int().nonnegative(),
 });
@@ -52,6 +53,12 @@ export const RagQueryResponseSchema = z.object({
   grounded: z.boolean(),
   citations: z.array(RagCitationSchema),
   usage: RagUsageSchema,
+  retrieval: z
+    .object({
+      rerankStatus: z.enum(['applied', 'disabled', 'fallback']),
+      rerankerModel: z.string().min(1).nullable(),
+    })
+    .strict(),
 });
 
 /** 最近一次已完成问答的只读历史记录 schema。 */

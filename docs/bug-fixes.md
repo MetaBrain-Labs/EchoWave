@@ -6,11 +6,14 @@ This document records verified defects with their reproduction, root cause, reso
 
 ## Fixed defects
 
-| ID       | Symptom                                                                                           | Scope                          | Status |
-| -------- | ------------------------------------------------------------------------------------------------- | ------------------------------ | ------ |
-| `EW-001` | Web dev server fails with `Unable to resolve module ./apps/mobile/node_modules/expo-router/entry` | Windows + pnpm workspace links | Fixed  |
-| `EW-002` | Trusted answer cites `[9]` while the returned citation list ends at `[8]`                         | Knowledge answer rendering     | Fixed  |
-| `EW-003` | Query screen and history panel log `Text strings must be rendered within a <Text> component`      | Knowledge answer rendering     | Fixed  |
+| ID       | Symptom                                                                                                   | Scope                                                 | Status |
+| -------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- | ------ |
+| `EW-001` | Web dev server fails with `Unable to resolve module ./apps/mobile/node_modules/expo-router/entry`         | Windows + pnpm workspace links                        | Fixed  |
+| `EW-002` | Trusted answer cites `[9]` while the returned citation list ends at `[8]`                                 | Knowledge answer rendering                            | Fixed  |
+| `EW-003` | Query screen and history panel log `Text strings must be rendered within a <Text> component`              | Knowledge answer rendering                            | Fixed  |
+| `EW-005` | A newer workspace's `ws-` dedicated domain prefix is rejected as an invalid parameter                     | Model Studio workspace migration and connection setup | Fixed  |
+| `EW-006` | The AI configuration roster omits knowledge reranking, so it can never be bound                           | AI configuration bindings and knowledge reranking     | Fixed  |
+| `EW-007` | Saving a capability binding fails with a unique-constraint 500, so an orphaned binding cannot be repaired | Capability binding writes and knowledge reranking     | Fixed  |
 
 ## EW-001: Metro cannot resolve the Expo web entry point on Windows
 
@@ -110,6 +113,65 @@ A local execution report reproduces the chain: `retrievedCount: 14`, `citedCount
 **Verification**: `apps/mobile/src/shared/theme/__tests__/textInputStyles.test.ts` scans every `.tsx` under `src`, resolves each `TextInput` element's style keys and fails when a style has neither the shared token nor an explicit `includeFontPadding: false` plus `textAlignVertical`; it also pins the token rules themselves. Existing metrics assertions for the group drawer and the AI configuration center inputs still pass unchanged.
 
 **Boundaries**: the caret only renders on device, so the fix is verified statically plus through the existing interaction tests; visual confirmation requires an Android build. Multiline text areas intentionally keep their own padding and top alignment.
+
+## EW-005: a newer workspace's `ws-` dedicated domain prefix is rejected as an invalid parameter
+
+**Symptom**: migrating in More → migrate to a workspace domain with the part before the first dot of the console API Host (for example `ws-rcn333095ds1qzij`) plus a region only shows a red `请求参数无效。` line, with no field-level reason, although the same value is the working dedicated domain prefix in the Model Studio console.
+
+**Affected paths**: More → migrate to a workspace domain, AI configuration → create or edit the Qwen (Model Studio) connection, and the startup-only `DASHSCOPE_WORKSPACE_ID` legacy import. All three share `DashScopeWorkspaceIdSchema`.
+
+**Root cause**: the contract mistook the first DNS label of the API Host for a fixed prefix allow-list.
+
+1. `DashScopeWorkspaceIdSchema` in `packages/contracts/src/settings.ts` accepted only `^llm-…$`. The `apiHost` returned by the Alibaba Cloud `CreateWorkspace` and `ListWorkspaces` APIs starts with `llm-…` for early workspaces and `ws-…` for newer ones, so a valid value failed Zod validation.
+2. `apps/api/src/http/errorHandler.ts` folds every `ZodError` into 400 plus the fixed text `请求参数无效。`, dropping the field and the reason. The Chinese client renders that text verbatim, so the failure carried no diagnosable information.
+3. The migration card performed no local validation, so the only feedback was that generic error after a round trip.
+
+**Resolution**:
+
+- `DashScopeWorkspaceIdSchema` now validates one DNS label: lowercase letters, digits and inner hyphens only, at most 63 characters. Both `llm-…` and `ws-…` pass, while full host names, uppercase and leading or trailing hyphens are still rejected.
+- The migration card and the AI configuration field now explain where the value comes from, the placeholder changed from `llm-xxxxxxxxxxxx` to `ws-xxxxxxxxxxxx`, and the card validates against the shared contract before submitting: an invalid shape reports `业务空间域名前缀无效…` without sending a request.
+- `docs/configuration*.md` and `apps/api/.env.example` document that the value is the part before the first dot of the console API Host and that the region must match that host.
+
+**Verification**: under `packages/contracts`, `node --test --test-isolation=none "test/settings/settings.test.mjs"` runs the new `accepts every Model Studio workspace domain prefix and rejects non-label values` case, which asserts that `ws-…` derives a dedicated domain, that `llm-…` still works, and that full host names, uppercase, and leading or trailing hyphens are rejected. The `apps/mobile` `TopLevelTabScreens.test.tsx` migration case now uses `ws-echowave` end to end, and the new `rejects a full API Host locally instead of posting an invalid parameter` case asserts local rejection without a request. Root `pnpm check` passes.
+
+**Boundaries**: this fix only covers value validation and diagnosability. The region is still chosen manually and must match the host; the dedicated-domain preview in the card remains the only cross-check, and the fix does not derive the region from the host.
+
+## EW-006: the AI configuration roster omits knowledge reranking
+
+**Symptom**: the capability list under More → AI configuration has no knowledge reranking entry, so its binding state is invisible and there is no way to bind it. With the reranking switch on, More only shows `重排已开启，但百炼业务空间或重排模型尚未配置。` and the query log prints `Knowledge rerank degraded to vector order { reason: 'NOT_CONFIGURED', candidateCount: 20 }`.
+
+**Affected paths**: the capability binding section of the mobile AI configuration screen, the `应用默认配置（N 项）` bulk default action, and every flow that derives "missing capabilities" from that list.
+
+**Root cause**: the capability roster in `SettingsScreen.tsx` is a hardcoded array that never contained `knowledge_rerank` (`HEAD` and the working tree agree), even though `capabilityLabel` already carried its label. The Server fully supports the capability: `AiCapabilitySchema`, `AI_CAPABILITY_DEFAULTS.knowledge_rerank` (fixed `qwen3.7-text-rerank`), `CAPABILITY_MODEL_REQUIREMENTS`, and `POST /api/settings/capabilities/knowledge_rerank` are all in place. The missing entry has two consequences: the binding editor is unreachable, and `missingCapabilities` never contains reranking, so the bulk default action never fills it. Reranking therefore had to come from the migration endpoint's `ensureKnowledgeRerankBinding` or the one-shot SQL migration `045`, and both require an existing `knowledge_embedding` binding on a dashscope connection at the moment they run.
+
+**Resolution**: `{ id: 'knowledge_rerank' }` is back in the capability roster, positioned to match `AiCapabilitySchema` order (directly after knowledge embedding).
+
+**Verification**: `SettingsScreen.test.tsx` under `apps/mobile` updates the bulk-default counts (7→8, 6→7, and "已应用 5 项"→6) and adds an assertion that the bulk action calls `saveCapability('knowledge_rerank', { model: 'qwen3.7-text-rerank' })`. Root `pnpm check` passes.
+
+**Boundaries**: the reranking model stays fixed and its model field stays a static value. This fix only makes the capability visible and bindable; it neither changes the reranking protocol nor replaces the migration endpoint's automatic top-up for existing tenants.
+
+## EW-007: saving a capability binding fails with a unique-constraint 500
+
+**Symptom**: saving a capability binding (the app's save action, the bulk default action, or `PUT /api/settings/capabilities/:capability`) returns 500 and the server logs:
+
+```text
+Unhandled API error error: duplicate key value violates unique constraint "ai_capability_bindings_tenant_id_capability_key"
+Key (tenant_id, capability)=(00000000-0000-4000-8000-000000000001, knowledge_rerank) already exists.
+  at async SettingsRepository.saveBinding (apps/api/src/settings/repository.ts)
+  at async apps/api/src/http/routes/settings.ts:112
+```
+
+The same capability keeps reporting `重排已开启，但百炼业务空间或重排模型尚未配置。` and the query log prints `Knowledge rerank degraded to vector order { reason: 'NOT_CONFIGURED', candidateCount: 20 }`. The observed row had `current_revision_id` NULL with `revision_count = 1`: the binding had no published revision but already carried one unpublished revision.
+
+**Affected paths**: `PUT /api/settings/capabilities/:capability`, the capability binding saves and bulk default action in the AI configuration screen, and any flow that republishes an existing capability binding.
+
+**Root cause**: `SettingsRepository.saveBinding` decided whether a capability was already bound with an inner join (`JOIN ... ON revision.id = binding.current_revision_id`). When a binding row's `current_revision_id` is NULL — a shell row left behind by an interrupted write — that query returns no rows, so the code took the "create binding" branch, collided with `UNIQUE (tenant_id, capability)`, rolled back, and raised a 500. Reusing the row is not enough on its own either: numbering the new revision from 1 because no revision is published collides with `(tenant_id, binding_id, revision_no)`, because a stray revision on a shell row does not disappear when the pointer is NULL. Both collisions made such a row impossible to repair through the app or the API. The same data is filtered out by the inner joins in `resolveCapability` and `listBindings`, which is why the capability reported as unconfigured.
+
+**Resolution**: `saveBinding` now looks the row up with a `LEFT JOIN` and treats "row exists without a published revision" as a repairable state: it reuses that row's id and numbers the new revision as `max(revision_no) + 1` over the revisions that binding actually has, inserting a binding row only when none exists. Optimistic locking is unchanged: the published revision is compared first, and a write carrying `expectedRevision` is rejected while no revision is published.
+
+**Verification**: `apps/api` `test/settings/repository.test.mjs` gains three cases: an unpublished row carrying a stray revision is repaired — reusing the row, not inserting a duplicate binding row, and numbering the new revision 2 rather than 1, with the lookup asserted to use `LEFT JOIN` — a published binding receives the next revision while a stale `expectedRevision` throws `CONFLICT` and rolls back, and a never-bound capability still inserts the binding row. Root `pnpm check` passes.
+
+**Boundaries**: `resolveCapability` and `listBindings` still treat "no published revision" as unusable, which is the correct semantics — without a revision there is no provider or model — so such a capability shows as unconfigured until it is repaired. The migration endpoint's `ensureKnowledgeRerankBinding` only creates a binding when the row is entirely absent and does not repair shell rows; this fix makes the app and API save paths responsible for the repair.
 
 ## Reporting a new defect
 

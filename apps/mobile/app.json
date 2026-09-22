@@ -43,14 +43,8 @@
         "expo-localization",
         {
           "supportedLocales": {
-            "ios": [
-              "en",
-              "zh-CN"
-            ],
-            "android": [
-              "en",
-              "zh-CN"
-            ]
+            "ios": ["en", "zh-CN"],
+            "android": ["en", "zh-CN"]
           }
         }
       ],
