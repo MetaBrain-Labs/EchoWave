@@ -50,7 +50,12 @@ describe('KnowledgeRetrievalSettingsService', () => {
           provider: {
             type: 'dashscope',
             credential: { apiKey: 'secret' },
-            config: { rerankBaseUrl: 'https://workspace.example.com/api/v1/' },
+            config: {
+              workspaceId: 'llm-echowave',
+              region: 'cn-beijing',
+              asyncNotifyMode: 'polling',
+              eventBridgeCallbackUrl: null,
+            },
           },
         }),
       },
@@ -61,7 +66,7 @@ describe('KnowledgeRetrievalSettingsService', () => {
       bindingRevisionId: '11111111-1111-4111-8111-111111111111',
       model: 'qwen3.7-text-rerank',
       apiKey: 'secret',
-      baseUrl: 'https://workspace.example.com/api/v1',
+      baseUrl: 'https://llm-echowave.cn-beijing.maas.aliyuncs.com/api/v1',
     });
 
     const missing = new KnowledgeRetrievalSettingsService(

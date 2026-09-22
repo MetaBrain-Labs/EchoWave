@@ -13,12 +13,15 @@
 import {
   AdminSessionResponseSchema,
   CapabilityBindingSchema,
+  DashScopeWorkspaceMigrationResponseSchema,
+  DashScopeWorkspaceStatusSchema,
   ModelCatalogResponseSchema,
   ProviderConnectionSchema,
   SettingsOverviewSchema,
   TransportSecuritySchema,
   type AiCapability,
   type CapabilityBindingWrite,
+  type DashScopeWorkspaceMigrationRequest,
   type ModelCatalogQuery,
   type ProviderConnectionWrite,
 } from '@echowave/contracts';
@@ -47,6 +50,18 @@ export const settingsApi = {
     }),
   overview: (token: string) =>
     request('/api/settings', SettingsOverviewSchema, { headers: authorized(token) }),
+  dashScopeWorkspaceStatus: () =>
+    request('/api/dashscope-workspace-status', DashScopeWorkspaceStatusSchema),
+  migrateDashScopeWorkspace: (token: string, input: DashScopeWorkspaceMigrationRequest) =>
+    request(
+      '/api/settings/dashscope-workspace/migrate',
+      DashScopeWorkspaceMigrationResponseSchema,
+      {
+        method: 'POST',
+        body: input,
+        headers: authorized(token),
+      },
+    ),
   /** 读取该能力的候选模型目录；供应商列表接口不可用时由服务端显式标记。 */
   modelCatalog: (token: string, capability: AiCapability, query?: ModelCatalogQuery) =>
     request(

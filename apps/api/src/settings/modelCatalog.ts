@@ -22,20 +22,21 @@ import {
   type CapabilityModelRequirement,
   type ModelCatalogQuery,
   type ModelCatalogResponse,
-  type ProviderConnectionWrite,
+  type ProviderConnection,
   type ProviderModelCatalog,
   type ProviderModelSummary,
   type ProviderType,
 } from '@echowave/contracts';
 
 import type { CredentialBundle } from './types.ts';
+import { resolveDashScopeEndpoints } from '../ai-runtime/dashScopeEndpoints.ts';
 
 /** 参与目录查询的供应商连接快照，不包含 Credential 明文以外的任何状态。 */
 export type CatalogProviderInput = {
   connectionId: string;
   providerType: ProviderType;
   name: string;
-  config: ProviderConnectionWrite['config'];
+  config: ProviderConnection['config'];
   credential: CredentialBundle;
 };
 
@@ -374,9 +375,13 @@ export class ModelCatalogService {
     const requirement = CAPABILITY_MODEL_REQUIREMENTS[capability];
     const apiKey = apiKeyOf(provider.credential);
     if (!apiKey) throw new CatalogFetchError('凭据不可用');
-    const baseUrl = (provider.config as { baseUrl?: string }).baseUrl;
-    if (!baseUrl) throw new CatalogFetchError('未配置 Base URL');
-    const endpoint = `${baseUrl.replace(/\/$/, '')}/models`;
+    let baseUrl: string;
+    try {
+      baseUrl = resolveDashScopeEndpoints(provider.config).nativeBaseUrl;
+    } catch {
+      throw new CatalogFetchError('未配置有效的百炼业务空间端点');
+    }
+    const endpoint = `${baseUrl}/models`;
     // 供应商列表接口的筛选参数并非所有地域与版本都支持：先带责任筛选请求，失败再退回
     // 最小分页请求，最后退回一次不带分页的请求，任何一次成功都用本地责任规则过滤。
     const attempts = [

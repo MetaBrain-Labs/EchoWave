@@ -13,11 +13,20 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect, useRouter, type Href } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  View,
+} from 'react-native';
 import type { KnowledgeRetrievalSettings } from '@echowave/contracts';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ServiceSummaryCard } from '@/features/system-status/ServiceSummaryCard';
+import { DashScopeWorkspaceMigrationCard } from '@/features/service-config/DashScopeWorkspaceMigrationCard';
 import {
   colors,
   fontFamilies,
@@ -109,6 +118,7 @@ export default function MoreScreen() {
       <TopLevelPageHeader subtitle={t('more.subtitle')} title={t('more.title')} />
       <ScrollView contentContainerStyle={styles.content} testID="more-scroll">
         <ServiceSummaryCard onOpenDetails={() => router.push('/service-status' as Href)} />
+        <DashScopeWorkspaceMigrationCard onMigrated={() => void loadRetrievalSettings()} />
         <View style={styles.rerankCard}>
           <View style={styles.navigationCopy}>
             <Text style={styles.navigationTitle}>{t('rerank.title')}</Text>
@@ -226,7 +236,12 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   rerankState: { ...typography.description, color: textColors.tertiary, width: '100%' },
-  rerankWarning: { backgroundColor: '#fff4e5', borderRadius: radii.default, padding: spacing.sm, width: '100%' },
+  rerankWarning: {
+    backgroundColor: '#fff4e5',
+    borderRadius: radii.default,
+    padding: spacing.sm,
+    width: '100%',
+  },
   rerankWarningText: { ...typography.description, color: '#8a4b08' },
   rerankError: { paddingTop: spacing.xs, width: '100%' },
   rerankErrorText: { ...typography.description, color: '#b42318' },

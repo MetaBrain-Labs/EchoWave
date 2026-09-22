@@ -11,11 +11,19 @@
  * - 凭据只存在于服务端配置对象，不得进入客户端或诊断日志。
  */
 import { z } from 'zod';
+import {
+  DashScopeRegionSchema,
+  DashScopeWorkspaceIdSchema,
+  dashScopeWorkspaceEndpoints,
+  type DashScopeRegion,
+} from '@echowave/contracts';
 
 import { BooleanStringSchema, OptionalStringSchema } from './schema.ts';
 
 export const ProviderEnvironmentSchema = z.object({
   DASHSCOPE_API_KEY: OptionalStringSchema,
+  DASHSCOPE_WORKSPACE_ID: OptionalStringSchema,
+  DASHSCOPE_REGION: DashScopeRegionSchema.optional(),
   DASHSCOPE_BASE_URL: OptionalStringSchema,
   DASHSCOPE_COMPATIBLE_BASE_URL: OptionalStringSchema,
   DASHSCOPE_RERANK_BASE_URL: OptionalStringSchema,
@@ -35,9 +43,10 @@ export const ProviderEnvironmentSchema = z.object({
 export type ProviderConfig = {
   dashScope: {
     apiKey: string;
+    workspaceId?: string;
+    region?: DashScopeRegion;
     baseUrl: string;
     compatibleBaseUrl: string;
-    rerankBaseUrl?: string;
     asyncNotifyMode: 'polling' | 'eventbridge';
     eventBridgeCallback?: { url: string; token: string };
     oss?: { region: string; bucket: string; accessKeyId: string; accessKeySecret: string };
@@ -71,8 +80,6 @@ export function createProviderConfig(
     .map(([key]) => key);
   const requiredLegacyVariables = [
     'DASHSCOPE_API_KEY',
-    'DASHSCOPE_BASE_URL',
-    'DASHSCOPE_COMPATIBLE_BASE_URL',
     'DASHSCOPE_ASYNC_NOTIFY_MODE',
     'DEEPSEEK_API_KEY',
     'DEEPSEEK_BASE_URL',
@@ -82,6 +89,13 @@ export function createProviderConfig(
   const missingVariables: string[] = requiredLegacyVariables.filter(
     (key) => values[key] === undefined,
   );
+  const hasWorkspaceConfig = Boolean(values.DASHSCOPE_WORKSPACE_ID);
+  const hasLegacyEndpointConfig = Boolean(
+    values.DASHSCOPE_BASE_URL && values.DASHSCOPE_COMPATIBLE_BASE_URL,
+  );
+  if (!hasWorkspaceConfig && !hasLegacyEndpointConfig) {
+    missingVariables.push('DASHSCOPE_WORKSPACE_ID');
+  }
   for (const value of [
     values.DASHSCOPE_BASE_URL,
     values.DASHSCOPE_COMPATIBLE_BASE_URL,
@@ -160,15 +174,30 @@ export function createProviderConfig(
         }
       : undefined;
 
+  const workspace = values.DASHSCOPE_WORKSPACE_ID
+    ? dashScopeWorkspaceEndpoints({
+        workspaceId: DashScopeWorkspaceIdSchema.parse(values.DASHSCOPE_WORKSPACE_ID),
+        region: values.DASHSCOPE_REGION ?? 'cn-beijing',
+      })
+    : undefined;
   const dashScope = {
     apiKey: values.DASHSCOPE_API_KEY ?? '',
-    baseUrl: (values.DASHSCOPE_BASE_URL ?? 'https://dashscope.invalid').replace(/\/$/, ''),
-    compatibleBaseUrl: (
-      values.DASHSCOPE_COMPATIBLE_BASE_URL ?? 'https://dashscope.invalid'
-    ).replace(/\/$/, ''),
-    ...(values.DASHSCOPE_RERANK_BASE_URL
-      ? { rerankBaseUrl: values.DASHSCOPE_RERANK_BASE_URL.replace(/\/$/, '') }
+    ...(values.DASHSCOPE_WORKSPACE_ID
+      ? {
+          workspaceId: values.DASHSCOPE_WORKSPACE_ID,
+          region: values.DASHSCOPE_REGION ?? ('cn-beijing' as const),
+        }
       : {}),
+    baseUrl: (
+      workspace?.nativeBaseUrl ??
+      values.DASHSCOPE_BASE_URL ??
+      'https://dashscope.invalid'
+    ).replace(/\/$/, ''),
+    compatibleBaseUrl: (
+      workspace?.compatibleBaseUrl ??
+      values.DASHSCOPE_COMPATIBLE_BASE_URL ??
+      'https://dashscope.invalid'
+    ).replace(/\/$/, ''),
     asyncNotifyMode: values.DASHSCOPE_ASYNC_NOTIFY_MODE ?? ('polling' as const),
     ...(eventBridgeCallback ? { eventBridgeCallback } : {}),
     ...(oss ? { oss } : {}),

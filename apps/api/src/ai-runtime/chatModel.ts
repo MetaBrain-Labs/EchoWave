@@ -16,6 +16,8 @@
 import type { ProviderType } from '@echowave/contracts';
 import { ChatDeepSeek } from '@langchain/deepseek';
 
+import { resolveDashScopeEndpoints } from './dashScopeEndpoints.ts';
+
 /** 文本类能力实际使用的聊天模型类型。 */
 export type ChatStyleModel = ChatDeepSeek;
 
@@ -80,7 +82,7 @@ export function chatModelBaseUrl(
   config: Record<string, unknown>,
 ): string {
   if (providerType === 'deepseek') return String(config.baseUrl ?? '');
-  return String(config.compatibleBaseUrl ?? config.baseUrl ?? '');
+  return resolveDashScopeEndpoints(config).compatibleBaseUrl;
 }
 
 /** 判断供应商类型是否可用于文本类能力（百炼兼容模式或 DeepSeek 官方 API）。 */

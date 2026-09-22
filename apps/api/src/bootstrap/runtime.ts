@@ -73,16 +73,23 @@ export function createRagRuntime(config: ApiConfig) {
     ...(config.legacyProviders.dashScope
       ? {
           dashScope: {
-            config: {
-              baseUrl: config.legacyProviders.dashScope.baseUrl,
-              compatibleBaseUrl: config.legacyProviders.dashScope.compatibleBaseUrl,
-              ...(config.legacyProviders.dashScope.rerankBaseUrl
-                ? { rerankBaseUrl: config.legacyProviders.dashScope.rerankBaseUrl }
-                : {}),
-              asyncNotifyMode: config.legacyProviders.dashScope.asyncNotifyMode,
-              eventBridgeCallbackUrl:
-                config.legacyProviders.dashScope.eventBridgeCallback?.url ?? null,
-            },
+            config:
+              config.legacyProviders.dashScope.workspaceId &&
+              config.legacyProviders.dashScope.region
+                ? {
+                    workspaceId: config.legacyProviders.dashScope.workspaceId,
+                    region: config.legacyProviders.dashScope.region,
+                    asyncNotifyMode: config.legacyProviders.dashScope.asyncNotifyMode,
+                    eventBridgeCallbackUrl:
+                      config.legacyProviders.dashScope.eventBridgeCallback?.url ?? null,
+                  }
+                : {
+                    baseUrl: config.legacyProviders.dashScope.baseUrl,
+                    compatibleBaseUrl: config.legacyProviders.dashScope.compatibleBaseUrl,
+                    asyncNotifyMode: config.legacyProviders.dashScope.asyncNotifyMode,
+                    eventBridgeCallbackUrl:
+                      config.legacyProviders.dashScope.eventBridgeCallback?.url ?? null,
+                  },
             credential: {
               apiKey: config.legacyProviders.dashScope.apiKey,
               ...(config.legacyProviders.dashScope.eventBridgeCallback

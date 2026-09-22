@@ -6,11 +6,14 @@
 
 ## 已修复缺陷
 
-| ID       | 现象                                                                                 | 影响范围                      | 状态   |
-| -------- | ------------------------------------------------------------------------------------ | ----------------------------- | ------ |
-| `EW-001` | 网页端启动报 `Unable to resolve module ./apps/mobile/node_modules/expo-router/entry` | Windows + pnpm workspace 链接 | 已修复 |
-| `EW-002` | 可信回答正文出现 `[9]`，但引用清单只到 `[8]`                                         | 知识问答引用展示              | 已修复 |
-| `EW-003` | 问答页与历史面板报 `Text strings must be rendered within a <Text> component`         | 知识问答正文与引用渲染        | 已修复 |
+| ID       | 现象                                                                                 | 影响范围                       | 状态   |
+| -------- | ------------------------------------------------------------------------------------ | ------------------------------ | ------ |
+| `EW-001` | 网页端启动报 `Unable to resolve module ./apps/mobile/node_modules/expo-router/entry` | Windows + pnpm workspace 链接  | 已修复 |
+| `EW-002` | 可信回答正文出现 `[9]`，但引用清单只到 `[8]`                                         | 知识问答引用展示               | 已修复 |
+| `EW-003` | 问答页与历史面板报 `Text strings must be rendered within a <Text> component`         | 知识问答正文与引用渲染         | 已修复 |
+| `EW-005` | 新业务空间的 `ws-` 专属域名前缀被判为非法参数，迁移只报“请求参数无效。”              | 百炼业务空间迁移与百炼连接配置 | 已修复 |
+| `EW-006` | AI 配置的能力清单漏掉“知识重排”，重排无法绑定，只能降级为向量顺序                    | AI 配置能力绑定与知识重排      | 已修复 |
+| `EW-007` | 保存能力绑定撞唯一约束报 500，没有当前 revision 的历史绑定行无法修复                 | 能力绑定保存与知识重排         | 已修复 |
 
 ## EW-001：Metro 在 Windows 上无法解析 Expo 网页端入口
 
@@ -110,6 +113,65 @@ pnpm exec expo start --web --clear
 **验证**：新增 `apps/mobile/src/shared/theme/__tests__/textInputStyles.test.ts`，扫描 `src` 下全部 `.tsx`，解析每个 `TextInput` 的样式键，缺少共享令牌、也没有显式 `includeFontPadding: false` 与 `textAlignVertical` 时失败；同时锁定令牌本身的关键声明。分组侧栏与 AI 配置中心既有的输入框尺寸断言保持不变并通过。
 
 **边界说明**：光标只在真机渲染，因此本修复以静态扫描加既有交互测试验证，视觉确认仍需 Android 构建。多行文本域刻意保留自己的内边距与顶部对齐。
+
+## EW-005：新业务空间的 `ws-` 专属域名前缀被判为非法参数
+
+**现象**：在“更多 → 迁移到业务空间专属域名”里填入控制台 API Host 的第一个点之前的部分（例如 `ws-rcn333095ds1qzij`）并选择地域后，点“验证并迁移”只在面板里显示一行红字“请求参数无效。”，没有任何字段级原因；而同一个值在百炼控制台里正是可用的专属域名前缀。
+
+**受影响路径**：`更多 → 迁移到业务空间专属域名`、`AI 配置 → 新建/编辑通义千问（百炼）连接`，以及启动期 `DASHSCOPE_WORKSPACE_ID` 的旧环境导入。三者共用 `DashScopeWorkspaceIdSchema`。
+
+**根因**：契约把“API Host 的第一个 DNS 标签”误当成固定前缀白名单。
+
+1. `packages/contracts/src/settings.ts` 的 `DashScopeWorkspaceIdSchema` 只接受 `^llm-…$`。阿里云 `CreateWorkspace` 与 `ListWorkspaces` 返回的 `apiHost` 早期是 `llm-…`，较新的业务空间是 `ws-…`，于是合法取值在 Zod 校验阶段就被拒绝。
+2. `apps/api/src/http/errorHandler.ts` 把所有 `ZodError` 折叠成 400 加固定文案“请求参数无效。”，丢弃字段与原因；客户端在中文环境原样展示该文案，现场因此看不到任何可诊断信息。
+3. 迁移卡片此前不做本地校验，用户只能拿到这一次往返之后的通用报错。
+
+**修复**：
+
+- `DashScopeWorkspaceIdSchema` 改为按单段 DNS 标签校验：只允许小写字母、数字与中间的连字符，长度不超过 63。`llm-…` 与 `ws-…` 都合法；完整域名、大写和首尾连字符仍被拒绝。
+- 迁移卡片与 AI 配置的该字段补上 API Host 取值说明，占位符由 `llm-xxxxxxxxxxxx` 改为 `ws-xxxxxxxxxxxx`；卡片在提交前用共享契约本地校验，格式不对时直接提示“业务空间域名前缀无效…”，且不发起请求。
+- `docs/configuration*.md` 与 `apps/api/.env.example` 说明该值取自控制台 API Host 的第一个点之前的部分，且地域必须与 Host 中的地域一致。
+
+**验证**：`packages/contracts` 下 `node --test --test-isolation=none "test/settings/settings.test.mjs"` 新增用例 `accepts every Model Studio workspace domain prefix and rejects non-label values`，断言 `ws-…` 能派生专属域名、`llm-…` 仍可用，完整域名、大写与首尾连字符被拒绝；`apps/mobile` 的 `TopLevelTabScreens.test.tsx` 迁移用例改用 `ws-echowave` 走通整条链路，并新增 `rejects a full API Host locally instead of posting an invalid parameter` 断言本地拦截且不发请求。根 `pnpm check` 通过。
+
+**边界说明**：本文只收敛取值校验与错误可诊断性。地域仍需人工选择并与 API Host 中的地域一致；卡片里的专属域名预览是唯一对照手段，本修复不自动从 Host 推导地域。
+
+## EW-006：AI 配置的能力清单漏掉“知识重排”，重排无法绑定
+
+**现象**：`更多 → AI 配置` 的能力列表里没有「知识重排」这一项，既看不到它的绑定状态，也没有任何入口绑定它。重排开关打开后，`更多` 页只显示「重排已开启，但百炼业务空间或重排模型尚未配置。」，问答日志出现 `Knowledge rerank degraded to vector order { reason: 'NOT_CONFIGURED', candidateCount: 20 }`。
+
+**受影响路径**：`apps/mobile` AI 配置页的能力绑定区、`应用默认配置（N 项）` 一键补齐，以及所有按该清单判定“缺失能力”的流程。
+
+**根因**：`SettingsScreen.tsx` 的能力清单是硬编码数组，从一开始就没有 `knowledge_rerank`（`HEAD` 与工作区版本一致），而 `capabilityLabel` 早已为它准备了文案。服务端完全支持该能力：`AiCapabilitySchema`、`AI_CAPABILITY_DEFAULTS.knowledge_rerank`（固定 `qwen3.7-text-rerank`）、`CAPABILITY_MODEL_REQUIREMENTS` 与 `POST /api/settings/capabilities/knowledge_rerank` 都已就绪。清单缺项有两个后果：绑定编辑器无法触达；`missingCapabilities` 永不含重排，`应用默认配置` 也不会补它。于是重排绑定只能由迁移接口的 `ensureKnowledgeRerankBinding` 或一次性 SQL 迁移 `045` 创建，而这两者都要求执行时已存在指向 dashscope 连接的 `knowledge_embedding` 绑定。
+
+**修复**：把 `{ id: 'knowledge_rerank' }` 加回能力清单，位置与 `AiCapabilitySchema` 顺序一致（紧跟知识嵌入）。
+
+**验证**：`apps/mobile` 的 `SettingsScreen.test.tsx` 同步更新 `应用默认配置` 的项数断言（7→8、6→7、“已应用 5 项”→6），并新增断言：一键补齐必须调用 `saveCapability('knowledge_rerank', { model: 'qwen3.7-text-rerank' })`。根 `pnpm check` 通过。
+
+**边界说明**：重排模型固定，行内模型仍是静态值；本修复只让这一项可被看见与绑定，不改变重排协议，也不替代迁移接口对既有租户的自动补齐。
+
+## EW-007：保存能力绑定撞唯一约束，没有当前 revision 的历史绑定行无法修复
+
+**现象**：保存能力绑定（App 的「保存能力绑定」/「应用默认配置」，或 `PUT /api/settings/capabilities/:capability`）返回 500，服务端日志为：
+
+```text
+Unhandled API error error: duplicate key value violates unique constraint "ai_capability_bindings_tenant_id_capability_key"
+Key (tenant_id, capability)=(00000000-0000-4000-8000-000000000001, knowledge_rerank) already exists.
+  at async SettingsRepository.saveBinding (apps/api/src/settings/repository.ts)
+  at async apps/api/src/http/routes/settings.ts:112
+```
+
+同一条能力（这里是重排）持续显示「重排已开启，但百炼业务空间或重排模型尚未配置。」，日志出现 `Knowledge rerank degraded to vector order { reason: 'NOT_CONFIGURED', candidateCount: 20 }`。现场数据为 `current_revision_id` 为空、`revision_count = 1`：即绑定行没有已发布的 revision，却已经带着一条未发布的 revision。
+
+**受影响路径**：`PUT /api/settings/capabilities/:capability`、AI 配置页的能力绑定保存与一键补齐，以及任何需要重新发布已有能力绑定的流程。
+
+**根因**：`SettingsRepository.saveBinding` 用内连接判断能力是否已绑定（`JOIN ... ON revision.id = binding.current_revision_id`）。当绑定行的 `current_revision_id` 为 NULL 时（历史中断留下的空壳行），该查询返回空集，代码于是走"新建绑定"分支插入同名能力，撞上 `UNIQUE (tenant_id, capability)`，事务回滚并抛 500。即使改成复用该行，版本号如果按"没有已发布 revision 就从 1 开始"计算，还会再撞 `(tenant_id, binding_id, revision_no)` —— 空壳行上的残留 revision 并不会因为指针为空而消失。两处都会让这类行永远无法通过 App 或 API 修复。同一条数据在 `resolveCapability` 与 `listBindings` 里也被内连接过滤，所以该能力表现为"尚未配置"。
+
+**修复**：`saveBinding` 的存在性判断改为 `LEFT JOIN`，把"绑定行存在但没有已发布 revision"当作可修复状态：复用该行 id，并且版本号改为按该绑定实际存在的 revision 取 `max(revision_no) + 1`，只有确实没有行时才插入绑定行。乐观锁语义保持不变：先比较已发布 revision，没有已发布 revision 时拒绝携带 `expectedRevision` 的写入。
+
+**验证**：`apps/api` 的 `test/settings/repository.test.mjs` 新增三个用例 —— 带残留 revision 的未发布历史行会被修复（断言复用该行、不重复插入绑定行、版本号取 2 而不是 1，并断言查询确实使用 `LEFT JOIN`）、已发布绑定发布下一 revision 且过期 `expectedRevision` 抛 `CONFLICT` 并回滚、从未绑定的能力仍会插入绑定行。根 `pnpm check` 通过。
+
+**边界说明**：`resolveCapability` 与 `listBindings` 仍按"没有已发布 revision 即不可用"处理，这是正确语义（没有 revision 就没有供应商与模型），所以这类能力在修复前显示为"尚未配置"。迁移接口的 `ensureKnowledgeRerankBinding` 只在完全没有绑定行时补建，不修复已存在的空壳行；本修复让 App 与 API 的保存路径承担修复职责。
 
 ## 新增缺陷的登记方式
 

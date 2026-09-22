@@ -71,7 +71,11 @@ export class DashScopeReranker {
   }
 
   /** 返回与输入 documents 一一对应的相关性分数。 */
-  async rerank(query: string, documents: string[], parentSignal?: AbortSignal): Promise<RerankResult> {
+  async rerank(
+    query: string,
+    documents: string[],
+    parentSignal?: AbortSignal,
+  ): Promise<RerankResult> {
     if (!this.options.apiKey || !this.options.baseUrl) {
       throw new RerankProviderError('NOT_CONFIGURED', '重排模型尚未完整配置。');
     }

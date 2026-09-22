@@ -152,8 +152,8 @@ describe('SettingsScreen', () => {
           name: '主连接',
           revision: 1,
           config: {
-            baseUrl: 'https://dashscope.aliyuncs.com/api/v1',
-            compatibleBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+            workspaceId: 'llm-echowave',
+            region: 'cn-beijing',
             asyncNotifyMode: 'polling',
             eventBridgeCallbackUrl: null,
           },
@@ -317,10 +317,7 @@ describe('SettingsScreen', () => {
     await enterConfigurationCenter(screen);
 
     fireEvent.press(screen.getByText('修改'));
-    fireEvent.changeText(
-      screen.getByLabelText('Base URL（必须为公网 HTTPS）'),
-      'https://example.invalid/custom',
-    );
+    fireEvent.changeText(screen.getByLabelText('Workspace ID'), 'llm-custom');
     fireEvent.press(screen.getByLabelText('DeepSeek'));
 
     expect(screen.getByLabelText('名称').props.value).toBe('主连接');
@@ -346,12 +343,9 @@ describe('SettingsScreen', () => {
 
     fireEvent.press(screen.getByText('修改'));
     fireEvent.press(screen.getByLabelText('通义千问（百炼）'));
-    expect(screen.getByLabelText('Base URL（必须为公网 HTTPS）').props.value).toBe(
-      'https://dashscope.aliyuncs.com/api/v1',
-    );
-    expect(screen.getByLabelText('Compatible Base URL').props.value).toBe(
-      'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    );
+    expect(screen.getByLabelText('Workspace ID').props.value).toBe('llm-echowave');
+    expect(screen.getByLabelText('华北 2（北京）').props.accessibilityState.checked).toBe(true);
+    expect(screen.queryByLabelText('Compatible Base URL')).toBeNull();
   });
 
   it('uses stable single-line input metrics and the standard app radius', async () => {
@@ -790,7 +784,7 @@ describe('SettingsScreen', () => {
     expect(screen.getByLabelText('应用默认配置（0 项）')).toBeDisabled();
     fireEvent.press(screen.getByLabelText('主连接'));
     // 默认全部能力都优先使用通义千问连接，因此两项 OSS 能力之外的能力都会补齐。
-    expect(screen.getByLabelText('应用默认配置（7 项）')).not.toBeDisabled();
+    expect(screen.getByLabelText('应用默认配置（8 项）')).not.toBeDisabled();
   });
 
   it('applies only missing defaults and reports skipped and failed capabilities', async () => {
@@ -824,8 +818,8 @@ describe('SettingsScreen', () => {
     );
     await enterConfigurationCenter(screen);
 
-    fireEvent.press(screen.getByText('应用默认配置（6 项）'));
-    await waitFor(() => expect(mockedApi.saveCapability).toHaveBeenCalledTimes(6));
+    fireEvent.press(screen.getByText('应用默认配置（7 项）'));
+    await waitFor(() => expect(mockedApi.saveCapability).toHaveBeenCalledTimes(7));
     expect(mockedApi.saveCapability).not.toHaveBeenCalledWith(
       'admin-token',
       'knowledge_embedding',
@@ -844,9 +838,16 @@ describe('SettingsScreen', () => {
       model: 'qwen3.5-omni-flash',
       settings: { enableThinking: false },
     });
+    // 重排模型固定，但这一项必须在能力清单里，否则页面既看不到它也无法绑定。
+    expect(mockedApi.saveCapability).toHaveBeenCalledWith('admin-token', 'knowledge_rerank', {
+      providerConnectionId: overview.providers[0]!.id,
+      secondaryProviderConnectionId: null,
+      model: 'qwen3.7-text-rerank',
+      settings: {},
+    });
     await waitFor(() =>
       expect(
-        screen.getByText(/已应用 5 项，跳过 2 项，失败 1 项。.*失败能力：情绪分析/),
+        screen.getByText(/已应用 6 项，跳过 2 项，失败 1 项。.*失败能力：情绪分析/),
       ).toBeTruthy(),
     );
     expect(mockedApi.overview).toHaveBeenCalledTimes(2);

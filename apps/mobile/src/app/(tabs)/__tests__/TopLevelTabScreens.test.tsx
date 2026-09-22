@@ -24,6 +24,7 @@ import {
   getKnowledgeRetrievalSettings,
   updateKnowledgeRetrievalSettings,
 } from '@/shared/api/knowledgeRetrievalSettingsApi';
+import { settingsApi } from '@/shared/api/settingsApi';
 import { AdminSessionProvider, useAdminSession } from '@/shared/auth/AdminSessionProvider';
 import { ServerConnectionProvider } from '@/shared/api/ServerConnectionProvider';
 
@@ -37,6 +38,13 @@ jest.mock('expo-router', () => ({
   },
   useRouter: () => ({ back: mockBack, push: mockPush }),
 }));
+jest.mock('react-native-safe-area-context', () => {
+  const actual = jest.requireActual('react-native-safe-area-context');
+  return {
+    ...actual,
+    useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+  };
+});
 jest.mock('@/features/analysis-runs/AnalysisRunsScreen', () => ({
   AnalysisRunsScreen: ({ onBack }: { onBack?: () => void }) => (
     <MockPressable accessibilityLabel="返回分析工作区" onPress={onBack}>
@@ -60,6 +68,12 @@ jest.mock('@/shared/api/audioRuntimeApi', () => ({
 jest.mock('@/shared/api/knowledgeRetrievalSettingsApi', () => ({
   getKnowledgeRetrievalSettings: jest.fn(),
   updateKnowledgeRetrievalSettings: jest.fn(),
+}));
+jest.mock('@/shared/api/settingsApi', () => ({
+  settingsApi: {
+    dashScopeWorkspaceStatus: jest.fn(),
+    migrateDashScopeWorkspace: jest.fn(),
+  },
 }));
 jest.mock('@/shared/api/groupsApi', () => ({ getGroupSettings: jest.fn() }));
 jest.mock('@/shared/api/serverHealth', () => ({
@@ -100,6 +114,87 @@ describe('Top-level tab screens', () => {
       rerankerConfigured: true,
       revision: 1,
     });
+    jest.mocked(settingsApi.dashScopeWorkspaceStatus).mockResolvedValue({
+      status: 'dedicated',
+      migrationRequired: false,
+      totalConnectionCount: 1,
+      legacyConnectionCount: 0,
+    });
+  });
+
+  it('migrates legacy DashScope connections with the default Beijing workspace domain', async () => {
+    jest.mocked(settingsApi.dashScopeWorkspaceStatus).mockResolvedValue({
+      status: 'legacy',
+      migrationRequired: true,
+      totalConnectionCount: 2,
+      legacyConnectionCount: 2,
+    });
+    jest.mocked(settingsApi.migrateDashScopeWorkspace).mockResolvedValue({
+      workspace: {
+        status: 'dedicated',
+        migrationRequired: false,
+        totalConnectionCount: 2,
+        legacyConnectionCount: 0,
+      },
+      updatedConnectionCount: 2,
+      rerankBindingCreated: true,
+    });
+    const screen = render(
+      <ServerConnectionProvider>
+        <AdminSessionProvider serverRevision={0}>
+          <AdminSessionSeeder token="admin" />
+          <MoreScreen />
+        </AdminSessionProvider>
+      </ServerConnectionProvider>,
+    );
+
+    await act(async () => mockFocusCallbacks.forEach((callback) => callback()));
+    fireEvent.press(await screen.findByLabelText('迁移到业务空间专属域名'));
+    expect(screen.getByText('华北 2（北京）')).toBeTruthy();
+    fireEvent.changeText(screen.getByLabelText('Workspace ID'), 'ws-echowave');
+    expect(screen.getByText('https://ws-echowave.cn-beijing.maas.aliyuncs.com')).toBeTruthy();
+    fireEvent.press(screen.getByText('验证并迁移'));
+
+    await waitFor(() =>
+      expect(settingsApi.migrateDashScopeWorkspace).toHaveBeenCalledWith('admin', {
+        workspaceId: 'ws-echowave',
+        region: 'cn-beijing',
+      }),
+    );
+    await waitFor(() => expect(screen.queryByText('百炼域名待升级')).toBeNull());
+  });
+
+  it('rejects a full API Host locally instead of posting an invalid parameter', async () => {
+    jest.mocked(settingsApi.dashScopeWorkspaceStatus).mockResolvedValue({
+      status: 'legacy',
+      migrationRequired: true,
+      totalConnectionCount: 1,
+      legacyConnectionCount: 1,
+    });
+    const screen = render(
+      <ServerConnectionProvider>
+        <AdminSessionProvider serverRevision={0}>
+          <AdminSessionSeeder token="admin" />
+          <MoreScreen />
+        </AdminSessionProvider>
+      </ServerConnectionProvider>,
+    );
+
+    await act(async () => mockFocusCallbacks.forEach((callback) => callback()));
+    fireEvent.press(await screen.findByLabelText('迁移到业务空间专属域名'));
+    fireEvent.changeText(
+      screen.getByLabelText('Workspace ID'),
+      'ws-echowave.cn-beijing.maas.aliyuncs.com',
+    );
+    fireEvent.press(screen.getByText('验证并迁移'));
+
+    // 完整域名不是单段 DNS 标签：本地就给出具体原因，不能退化成服务端的通用参数错误。
+    expect(
+      screen.getByText(
+        '业务空间域名前缀无效：只填 API Host 中第一个点之前的部分，例如 ws-xxxxxxxx。',
+      ),
+    ).toBeTruthy();
+    expect(settingsApi.migrateDashScopeWorkspace).not.toHaveBeenCalled();
   });
 
   it('loads the authoritative rerank switch and routes unverified writes to service config', async () => {
@@ -144,9 +239,7 @@ describe('Top-level tab screens', () => {
         expectedRevision: 1,
       }),
     );
-    await waitFor(() =>
-      expect(screen.getByLabelText('切换 RAG 智能重排').props.value).toBe(false),
-    );
+    await waitFor(() => expect(screen.getByLabelText('切换 RAG 智能重排').props.value).toBe(false));
   });
 
   it('keeps the More header fixed and exposes the service summary plus every entry', async () => {

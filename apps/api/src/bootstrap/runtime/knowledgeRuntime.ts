@@ -21,6 +21,7 @@ import {
   createChatStyleModel,
   isTextChatProvider,
 } from '../../ai-runtime/chatModel.ts';
+import { resolveDashScopeEndpoints } from '../../ai-runtime/dashScopeEndpoints.ts';
 import type { ApiConfig } from '../../config/env.ts';
 import type { LiveUpdateBroker } from '../../infrastructure/liveUpdateBroker.ts';
 import type { DatabasePool } from '../../infrastructure/postgres.ts';
@@ -133,7 +134,7 @@ export function createKnowledgeRuntime(options: KnowledgeRuntimeOptions) {
       ) {
         throw new Error('Resolved knowledge providers are incompatible.');
       }
-      const embeddingConfig = embedding.provider.config as { baseUrl: string };
+      const embeddingEndpoints = resolveDashScopeEndpoints(embedding.provider.config);
       const dynamicRagConfig = {
         ...config.rag,
         embeddingModel: embedding.model as typeof config.rag.embeddingModel,
@@ -149,7 +150,7 @@ export function createKnowledgeRuntime(options: KnowledgeRuntimeOptions) {
       return {
         embeddings: new DashScopeEmbeddings({
           apiKey: embedding.provider.credential.apiKey,
-          baseUrl: embeddingConfig.baseUrl,
+          baseUrl: embeddingEndpoints.nativeBaseUrl,
           model: embedding.model,
           dimensions: 1024,
         }),
@@ -176,7 +177,7 @@ export function createKnowledgeRuntime(options: KnowledgeRuntimeOptions) {
       }
       return new DashScopeEmbeddings({
         apiKey: resolved.provider.credential.apiKey,
-        baseUrl: (resolved.provider.config as { baseUrl: string }).baseUrl,
+        baseUrl: resolveDashScopeEndpoints(resolved.provider.config).nativeBaseUrl,
         model: job.embeddingModel,
         dimensions: 1024,
       });

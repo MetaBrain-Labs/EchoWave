@@ -181,7 +181,11 @@ export function createBusinessAnalysisNodes(options: BusinessAnalysisNodeOptions
       ...(result.audit ?? {}),
     };
     await options.repository.recordCategoryRetrieval?.(job.id, audit);
-    if (result.audit && result.audit.rerankStatus !== 'disabled' && result.audit.candidateCount > 0) {
+    if (
+      result.audit &&
+      result.audit.rerankStatus !== 'disabled' &&
+      result.audit.candidateCount > 0
+    ) {
       report.recordModelCall({
         name: 'knowledge-rerank',
         provider: 'dashscope',

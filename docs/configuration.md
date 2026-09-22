@@ -44,6 +44,14 @@ Reading the list degrades in three steps: first a capability-filtered request, t
 
 Editable model fields support future adapted releases; they do not imply arbitrary compatibility with prompts, structured output, timestamps, speakers, thinking modes, or recovery protocols.
 
+## Model Studio workspace-dedicated domains
+
+New and updated DashScope connections store only a Workspace ID and region. That value is the part before the first dot of the **API Host** shown in the console workspace list or API key dialog, never a full host name: early workspaces use `llm-…` and newer ones use `ws-…`, and both are valid. The region must match the region inside that host. The Server derives the native endpoint `https://{workspaceId}.{region}.maas.aliyuncs.com/api/v1` and OpenAI-compatible endpoint `https://{workspaceId}.{region}.maas.aliyuncs.com/compatible-mode/v1`. Embedding, reranking, model discovery, file transcription, and temporary upload policies use the native endpoint; Qwen chat capabilities use the compatible endpoint. The default region is `cn-beijing`; `ap-southeast-1`, `ap-northeast-1`, `eu-central-1`, `cn-hongkong`, and `us-east-1` are also supported. The API key must belong to the same region and workspace.
+
+Existing database configs containing `baseUrl`, `compatibleBaseUrl`, and `rerankBaseUrl` remain read-only-compatible but cannot be saved through the public write API. More shows a migration card for these connections. After an administrator supplies one Workspace ID and region, the Server verifies every connection's own credential against the target `/api/v1/models`; only if all checks pass does one transaction create provider revisions, revise current capability bindings, and create a missing `knowledge_rerank` binding. Historical revisions and frozen jobs are unchanged.
+
+See [Model Studio regions and endpoints](https://help.aliyun.com/en/model-studio/regions/) for the authoritative region and deployment-scope matrix.
+
 | Runtime mode      | DashScope | DeepSeek (optional text-capability swap) | Alibaba Cloud OSS                                    |
 | ----------------- | --------- | ---------------------------------------- | ---------------------------------------------------- |
 | Lightweight local | Required  | Required only after rebinding text tasks | Not required                                         |
@@ -62,7 +70,7 @@ Create local `apps/api/.env` from `apps/api/.env.example`. The API reads only th
 - `TRUSTED_PROXY_CIDRS`: comma-separated reverse-proxy IPv4/IPv6 CIDRs allowed to assert `X-Forwarded-Proto`; set an explicit empty value without a trusted proxy.
 - `PUSH_NOTIFICATIONS_ENABLED`: explicitly `true` or `false`; self-hosted defaults to `false`.
 
-Provider URLs, buckets, models, thinking modes, DashScope notification mode, callback URL, and capability bindings are tenant configuration rather than startup environment. Set optional `EXPO_PUSH_ACCESS_TOKEN` only when Expo access-token security is enabled. It is a Server secret and must never use an `EXPO_PUBLIC_` prefix.
+Provider URLs, buckets, models, thinking modes, DashScope notification mode, callback URL, and capability bindings are tenant configuration rather than startup environment. During legacy environment import only, `DASHSCOPE_WORKSPACE_ID` and optional `DASHSCOPE_REGION` replace the three old URL variables; structured workspace configuration wins and defaults to `cn-beijing`. Set optional `EXPO_PUSH_ACCESS_TOKEN` only when Expo access-token security is enabled. It is a Server secret and must never use an `EXPO_PUBLIC_` prefix.
 
 ## Local Credential Provider
 
@@ -153,7 +161,7 @@ Changing a secret creates an immutable Credential version. Changing a connection
 
 ## Importing legacy `.env` settings
 
-During upgrade, legacy `DASHSCOPE_*`, `DEEPSEEK_*`, and `ALIYUN_OSS_*` variables may temporarily remain. The page exposes only detected variable names and completeness, not values. **Import legacy Server `.env`** reads secrets internally, encrypts them into PostgreSQL, never overwrites current database configuration, and is idempotent per tenant.
+During upgrade, legacy `DASHSCOPE_*`, `DEEPSEEK_*`, and `ALIYUN_OSS_*` variables may temporarily remain. New environments should set `DASHSCOPE_WORKSPACE_ID` and optional `DASHSCOPE_REGION`; when present, import derives the dedicated native and compatible endpoints from them. Existing deployments may still read `DASHSCOPE_BASE_URL`, `DASHSCOPE_COMPATIBLE_BASE_URL`, and `DASHSCOPE_RERANK_BASE_URL`, but the standalone rerank URL no longer participates in runtime routing. The page exposes only detected variable names and completeness, not values. **Import legacy Server `.env`** reads secrets internally, encrypts them into PostgreSQL, never overwrites current database configuration, and is idempotent per tenant.
 
 Remote HTTP may trigger this import because its request body carries no secret. A successful import makes the database authoritative and disables legacy fallback for the tenant. Remove old provider variables, restart, and verify capabilities afterward. Startup-level fields remain. Alternatively, create `credentials.yaml` and configure Local aliases without importing old secrets.
 

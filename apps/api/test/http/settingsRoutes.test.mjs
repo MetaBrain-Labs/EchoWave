@@ -31,6 +31,7 @@ function settingsApp() {
   let createdInput;
   let updatedInput;
   let catalogInput;
+  let migrationInput;
   const settingsService = {
     authorize(value) {
       if (value !== 'Bearer correct-admin-token') {
@@ -77,6 +78,26 @@ function settingsApp() {
       };
     },
     importLegacyConfiguration: async () => undefined,
+    dashScopeWorkspaceStatus: async () => ({
+      status: 'legacy',
+      migrationRequired: true,
+      totalConnectionCount: 1,
+      legacyConnectionCount: 1,
+    }),
+    migrateDashScopeWorkspace: async (authorization, input) => {
+      settingsService.authorize(authorization);
+      migrationInput = input;
+      return {
+        workspace: {
+          status: 'dedicated',
+          migrationRequired: false,
+          totalConnectionCount: 1,
+          legacyConnectionCount: 0,
+        },
+        updatedConnectionCount: 1,
+        rerankBindingCreated: true,
+      };
+    },
   };
   return {
     app: createApp(
@@ -86,6 +107,7 @@ function settingsApp() {
     created: () => createdInput,
     updated: () => updatedInput,
     catalog: () => catalogInput,
+    migration: () => migrationInput,
   };
 }
 
@@ -107,6 +129,36 @@ describe('settings routes', () => {
     const response = await app.request('/api/settings');
     assert.equal(response.status, 401);
     assert.equal((await response.json()).error.code, 'UNAUTHORIZED');
+  });
+
+  it('exposes safe workspace status and requires admin authorization for migration', async () => {
+    const { app, migration } = settingsApp();
+    const status = await app.request('/api/dashscope-workspace-status');
+    assert.equal(status.status, 200);
+    assert.deepEqual(await status.json(), {
+      status: 'legacy',
+      migrationRequired: true,
+      totalConnectionCount: 1,
+      legacyConnectionCount: 1,
+    });
+
+    const unauthorized = await app.request('/api/settings/dashscope-workspace/migrate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspaceId: 'llm-echowave' }),
+    });
+    assert.equal(unauthorized.status, 401);
+
+    const response = await app.request('/api/settings/dashscope-workspace/migrate', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer correct-admin-token',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ workspaceId: 'llm-echowave' }),
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(migration(), { workspaceId: 'llm-echowave', region: 'cn-beijing' });
   });
 
   it('rejects a nested Secret before provider parsing on insecure HTTP', async () => {

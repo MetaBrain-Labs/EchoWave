@@ -19,6 +19,7 @@ import {
 
 import type { SettingsService } from '../../settings/service.ts';
 import { SettingsError } from '../../settings/types.ts';
+import { resolveDashScopeEndpoints } from '../../ai-runtime/dashScopeEndpoints.ts';
 import type { KnowledgeRetrievalSettingsRepository } from './settingsRepository.ts';
 
 export const KNOWLEDGE_RERANK_MODEL = 'qwen3.7-text-rerank' as const;
@@ -46,22 +47,22 @@ export class KnowledgeRetrievalSettingsService {
     if (!stored.rerankEnabled) return undefined;
     try {
       const resolved = await this.settings.resolveCapability('knowledge_rerank');
-      const config = resolved.provider.config as { rerankBaseUrl?: string };
       if (
         resolved.provider.type !== 'dashscope' ||
         resolved.model !== KNOWLEDGE_RERANK_MODEL ||
-        !('apiKey' in resolved.provider.credential) ||
-        !config.rerankBaseUrl
+        !('apiKey' in resolved.provider.credential)
       ) {
         return undefined;
       }
+      const endpoints = resolveDashScopeEndpoints(resolved.provider.config);
       return {
         bindingRevisionId: resolved.revisionId,
         apiKey: resolved.provider.credential.apiKey,
-        baseUrl: config.rerankBaseUrl.replace(/\/$/, ''),
+        baseUrl: endpoints.nativeBaseUrl,
       };
     } catch (error) {
-      if (error instanceof SettingsError && error.code === 'CONFIGURATION_REQUIRED') return undefined;
+      if (error instanceof SettingsError && error.code === 'CONFIGURATION_REQUIRED')
+        return undefined;
       throw error;
     }
   }

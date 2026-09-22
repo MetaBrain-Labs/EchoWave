@@ -351,9 +351,31 @@ export const zhCN = {
   'rerank.adminRequired': '请先前往服务配置验证管理员口令。',
   'rerank.loadFailed': '无法读取智能重排设置，点此重试。',
   'rerank.saveFailed': '智能重排设置保存失败，已保留服务器状态。',
-  'rerank.notConfigured': '重排已开启，但模型或 Workspace Base URL 尚未配置。',
+  'rerank.notConfigured': '重排已开启，但百炼业务空间或重排模型尚未配置。',
   'rerank.openConfiguration': '前往服务配置完善重排模型',
   'rerank.degraded': '智能重排暂时不可用，本次已使用向量检索结果继续回答。',
+  'dashscopeMigration.title': '百炼域名待升级',
+  'dashscopeMigration.description':
+    '当前仍有连接使用旧版独立地址。DashScope 共享域名自 2026 年 9 月 30 日起不再迭代新特性。',
+  'dashscopeMigration.open': '迁移到业务空间专属域名',
+  'dashscopeMigration.sheetTitle': '迁移百炼业务空间',
+  'dashscopeMigration.sheetDescription':
+    '系统会先验证所有百炼连接，再统一发布新的专属域名配置；已有任务快照不会改变。',
+  'dashscopeMigration.workspaceId': 'Workspace ID',
+  'dashscopeMigration.workspaceIdHint':
+    '填控制台“业务空间管理”或 API Key 弹窗里 API Host 的第一个点之前的部分（如 ws-xxxxxxxx 或 llm-xxxxxxxx）；地域必须与该 Host 中的地域一致。',
+  'dashscopeMigration.workspaceIdInvalid':
+    '业务空间域名前缀无效：只填 API Host 中第一个点之前的部分，例如 ws-xxxxxxxx。',
+  'dashscopeMigration.regionLabel': '地域',
+  'dashscopeMigration.preview': '专属域名预览',
+  'dashscopeMigration.confirm': '验证并迁移',
+  'dashscopeMigration.failed': '百炼业务空间迁移失败，请检查配置后重试。',
+  'dashscopeMigration.region.beijing': '华北 2（北京）',
+  'dashscopeMigration.region.singapore': '新加坡',
+  'dashscopeMigration.region.tokyo': '日本（东京）',
+  'dashscopeMigration.region.frankfurt': '德国（法兰克福）',
+  'dashscopeMigration.region.hongKong': '中国香港',
+  'dashscopeMigration.region.virginia': '美国（弗吉尼亚）',
   'adminSession.requiredTitle': '需要管理员校验',
   'adminSession.requiredDescription':
     '此页面依赖管理员口令。为避免重复输入，请先在“服务配置”校验一次口令，其他服务器配置页会自动复用。',
@@ -2441,9 +2463,32 @@ export const en = {
   'rerank.adminRequired': 'Verify the administrator token under Service configuration first.',
   'rerank.loadFailed': 'Unable to load reranking settings. Tap to retry.',
   'rerank.saveFailed': 'Unable to save reranking settings. Server state was preserved.',
-  'rerank.notConfigured': 'Reranking is enabled, but the model or Workspace Base URL is missing.',
+  'rerank.notConfigured':
+    'Reranking is enabled, but the Model Studio workspace or model is missing.',
   'rerank.openConfiguration': 'Open Service configuration for reranking',
   'rerank.degraded': 'Smart reranking is unavailable. This answer used vector search order.',
+  'dashscopeMigration.title': 'Model Studio domain upgrade required',
+  'dashscopeMigration.description':
+    'Some connections still use separate legacy endpoints. The shared DashScope domain stops receiving new features on September 30, 2026.',
+  'dashscopeMigration.open': 'Migrate to a workspace domain',
+  'dashscopeMigration.sheetTitle': 'Migrate Model Studio workspace',
+  'dashscopeMigration.sheetDescription':
+    'All Model Studio connections are verified before the new dedicated endpoint revisions are published. Existing task snapshots remain unchanged.',
+  'dashscopeMigration.workspaceId': 'Workspace ID',
+  'dashscopeMigration.workspaceIdHint':
+    'Enter the part before the first dot of the API Host shown in the console workspace list or API key dialog, for example ws-xxxxxxxx or llm-xxxxxxxx. The region must match that host.',
+  'dashscopeMigration.workspaceIdInvalid':
+    'Invalid workspace domain prefix. Enter only the part before the first dot of the API Host, for example ws-xxxxxxxx.',
+  'dashscopeMigration.regionLabel': 'Region',
+  'dashscopeMigration.preview': 'Dedicated domain preview',
+  'dashscopeMigration.confirm': 'Verify and migrate',
+  'dashscopeMigration.failed': 'Workspace migration failed. Check the configuration and try again.',
+  'dashscopeMigration.region.beijing': 'China North 2 (Beijing)',
+  'dashscopeMigration.region.singapore': 'Singapore',
+  'dashscopeMigration.region.tokyo': 'Japan (Tokyo)',
+  'dashscopeMigration.region.frankfurt': 'Germany (Frankfurt)',
+  'dashscopeMigration.region.hongKong': 'China (Hong Kong)',
+  'dashscopeMigration.region.virginia': 'US (Virginia)',
   'adminSession.requiredTitle': 'Administrator verification required',
   'adminSession.requiredDescription':
     'This page needs the administrator token. Verify it once under Service configuration instead of re-entering it here; the other server configuration pages reuse it.',

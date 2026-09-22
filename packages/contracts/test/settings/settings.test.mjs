@@ -9,8 +9,11 @@ import { describe, it } from 'node:test';
 import {
   AI_CAPABILITY_DEFAULTS,
   AiCapabilitySchema,
+  DashScopeConnectionConfigSchema,
+  DashScopeWorkspaceMigrationRequestSchema,
   ProviderConnectionWriteSchema,
   SettingsOverviewSchema,
+  dashScopeWorkspaceEndpoints,
 } from '../../dist/settings.js';
 
 describe('settings contracts', () => {
@@ -57,6 +60,58 @@ describe('settings contracts', () => {
       }).success,
       false,
     );
+  });
+
+  it('derives every DashScope endpoint from one Workspace and defaults to Beijing', () => {
+    assert.deepEqual(
+      DashScopeWorkspaceMigrationRequestSchema.parse({ workspaceId: 'llm-echowave' }),
+      { workspaceId: 'llm-echowave', region: 'cn-beijing' },
+    );
+    assert.deepEqual(dashScopeWorkspaceEndpoints({ workspaceId: 'llm-echowave' }), {
+      origin: 'https://llm-echowave.cn-beijing.maas.aliyuncs.com',
+      nativeBaseUrl: 'https://llm-echowave.cn-beijing.maas.aliyuncs.com/api/v1',
+      compatibleBaseUrl: 'https://llm-echowave.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+    });
+    assert.equal(
+      DashScopeConnectionConfigSchema.safeParse({
+        workspaceId: 'llm-echowave',
+        asyncNotifyMode: 'polling',
+        eventBridgeCallbackUrl: null,
+        baseUrl: 'https://dashscope.aliyuncs.com/api/v1',
+      }).success,
+      false,
+    );
+    assert.equal(
+      DashScopeWorkspaceMigrationRequestSchema.safeParse({ workspaceId: 'WORKSPACE' }).success,
+      false,
+    );
+  });
+
+  it('accepts every Model Studio workspace domain prefix and rejects non-label values', () => {
+    // 早期业务空间的 API Host 以 llm- 开头，较新的业务空间以 ws- 开头；两者都必须能派生专属域名。
+    assert.deepEqual(dashScopeWorkspaceEndpoints({ workspaceId: 'ws-echowave' }), {
+      origin: 'https://ws-echowave.cn-beijing.maas.aliyuncs.com',
+      nativeBaseUrl: 'https://ws-echowave.cn-beijing.maas.aliyuncs.com/api/v1',
+      compatibleBaseUrl: 'https://ws-echowave.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+    });
+    assert.deepEqual(
+      DashScopeWorkspaceMigrationRequestSchema.parse({ workspaceId: ' ws-echowave ' }),
+      { workspaceId: 'ws-echowave', region: 'cn-beijing' },
+    );
+    // 完整域名、大写和首尾连字符都不是单段 DNS 标签，必须在请求边界被拒绝。
+    for (const workspaceId of [
+      'ws-echowave.cn-beijing.maas.aliyuncs.com',
+      'WS-echowave',
+      '-ws-echowave',
+      'ws-echowave-',
+      '',
+    ]) {
+      assert.equal(
+        DashScopeWorkspaceMigrationRequestSchema.safeParse({ workspaceId }).success,
+        false,
+        `must reject ${JSON.stringify(workspaceId)}`,
+      );
+    }
   });
 
   it('defines a valid default for every AI capability', () => {

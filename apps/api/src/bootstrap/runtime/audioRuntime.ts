@@ -19,6 +19,7 @@ import type { LiveUpdateBroker } from '../../infrastructure/liveUpdateBroker.ts'
 import type { DatabasePool } from '../../infrastructure/postgres.ts';
 import type { WorkerWakeupSource } from '../../infrastructure/workerWakeup.ts';
 import { chatModelBaseUrl, isTextChatProvider } from '../../ai-runtime/chatModel.ts';
+import { resolveDashScopeEndpoints } from '../../ai-runtime/dashScopeEndpoints.ts';
 import { DashScopeEmbeddings } from '../../knowledge/embeddings/dashScopeEmbeddings.ts';
 import type { KnowledgeSearchPort } from '../../knowledge/retrieval/port.ts';
 import type { SettingsService } from '../../settings/service.ts';
@@ -158,14 +159,14 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
         throw new Error('Resolved audio transcription providers are incompatible.');
       }
       const transcriptionConfig = transcription.provider.config as {
-        baseUrl: string;
         asyncNotifyMode: 'polling' | 'eventbridge';
       };
+      const transcriptionEndpoints = resolveDashScopeEndpoints(transcription.provider.config);
       let ossStaging;
       if (job.runtimeMode === 'lightweight_local') {
         ossStaging = new DashScopeInstantStore({
           apiKey: transcription.provider.credential.apiKey,
-          baseUrl: transcriptionConfig.baseUrl,
+          baseUrl: transcriptionEndpoints.nativeBaseUrl,
           model: job.model,
         });
       } else {
@@ -212,7 +213,7 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
       return {
         dashScope: new DashScopeFileTranscription(
           transcription.provider.credential.apiKey,
-          transcriptionConfig.baseUrl,
+          transcriptionEndpoints.nativeBaseUrl,
           fetch,
           (durationMs) => new Promise((resolve) => setTimeout(resolve, durationMs)),
           sttRawResponseReporter,
@@ -284,15 +285,12 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
       if (emotion.provider.type !== 'dashscope' || !('apiKey' in emotion.provider.credential)) {
         throw new Error('Resolved emotion analysis providers are incompatible.');
       }
-      const emotionConfig = emotion.provider.config as {
-        baseUrl: string;
-        compatibleBaseUrl: string;
-      };
+      const emotionEndpoints = resolveDashScopeEndpoints(emotion.provider.config);
       let ossStaging;
       if (job.runtimeMode === 'lightweight_local') {
         ossStaging = new DashScopeInstantStore({
           apiKey: emotion.provider.credential.apiKey,
-          baseUrl: emotionConfig.baseUrl,
+          baseUrl: emotionEndpoints.nativeBaseUrl,
           model: job.model,
         });
       } else {
@@ -339,7 +337,7 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
       return {
         emotionAnalyzer: new QwenEmotionAnalyzer({
           apiKey: emotion.provider.credential.apiKey,
-          baseUrl: emotionConfig.compatibleBaseUrl,
+          baseUrl: emotionEndpoints.compatibleBaseUrl,
           model: job.model,
         }),
         ossStaging,
@@ -452,19 +450,22 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
             'knowledge_rerank',
             job.rerankBindingRevisionId,
           );
-          const rerankConfig = resolved.provider.config as { rerankBaseUrl?: string };
+          const rerankEndpoints =
+            resolved.provider.type === 'dashscope'
+              ? resolveDashScopeEndpoints(resolved.provider.config)
+              : undefined;
           rerank =
             resolved.provider.type === 'dashscope' &&
             resolved.model === 'qwen3.7-text-rerank' &&
             'apiKey' in resolved.provider.credential &&
-            rerankConfig.rerankBaseUrl
+            rerankEndpoints
               ? {
                   enabled: true,
                   revision: 1,
                   bindingRevisionId: resolved.revisionId,
                   model: 'qwen3.7-text-rerank',
                   apiKey: resolved.provider.credential.apiKey,
-                  baseUrl: rerankConfig.rerankBaseUrl.replace(/\/$/, ''),
+                  baseUrl: rerankEndpoints.nativeBaseUrl,
                 }
               : {
                   enabled: true,
@@ -501,7 +502,7 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
         knowledgeRepository: knowledgeSearch,
         embeddings: new DashScopeEmbeddings({
           apiKey: embedding.provider.credential.apiKey,
-          baseUrl: (embedding.provider.config as { baseUrl: string }).baseUrl,
+          baseUrl: resolveDashScopeEndpoints(embedding.provider.config).nativeBaseUrl,
           model: embedding.model,
           dimensions: 1024,
         }),

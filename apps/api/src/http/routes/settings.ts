@@ -14,6 +14,7 @@ import {
   AdminSessionResponseSchema,
   AiCapabilitySchema,
   CapabilityBindingWriteSchema,
+  DashScopeWorkspaceMigrationRequestSchema,
   ProviderConnectionWriteSchema,
   TransportSecuritySchema,
 } from '@echowave/contracts';
@@ -56,6 +57,10 @@ export function registerSettingsRoutes(
     service.authorize(context.req.header('authorization'));
     return context.json(AdminSessionResponseSchema.parse({ ok: true }));
   });
+
+  app.get('/api/dashscope-workspace-status', async (context) =>
+    context.json(await service.dashScopeWorkspaceStatus()),
+  );
 
   app.get('/api/settings', async (context) => {
     service.authorize(context.req.header('authorization'));
@@ -112,6 +117,13 @@ export function registerSettingsRoutes(
     await service.importLegacyConfiguration();
     return context.json(
       await service.overview(transportSecurityFromContext(context, trustedProxyCidrs)),
+    );
+  });
+
+  app.post('/api/settings/dashscope-workspace/migrate', async (context) => {
+    const input = DashScopeWorkspaceMigrationRequestSchema.parse(await context.req.json());
+    return context.json(
+      await service.migrateDashScopeWorkspace(context.req.header('authorization'), input),
     );
   });
 }

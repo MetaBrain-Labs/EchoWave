@@ -465,10 +465,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
                   rerankTokens += result.audit.rerankTokens;
                   if (result.audit.rerankStatus === 'fallback') rerankStatus = 'fallback';
                   else if (rerankStatus !== 'fallback') rerankStatus = result.audit.rerankStatus;
-                  if (
-                    result.audit.rerankStatus !== 'disabled' &&
-                    result.audit.candidateCount > 0
-                  ) {
+                  if (result.audit.rerankStatus !== 'disabled' && result.audit.candidateCount > 0) {
                     report.recordModelCall({
                       name: 'knowledge-rerank',
                       provider: 'dashscope',

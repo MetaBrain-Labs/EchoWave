@@ -44,6 +44,14 @@ EchoWave 当前以阿里云百炼和通义千问能力为主，是因为百炼�
 
 配置页允许编辑模型名是为了支持经过适配和验证的后续版本，不代表任意模型现在都与 Prompt、结构化输出、时间戳、Speaker、Thinking 或恢复协议兼容。
 
+## 百炼业务空间专属域名
+
+新建或编辑 DashScope 连接只配置 Workspace ID 与地域。该字段填控制台“业务空间管理”或 API Key 弹窗中 **API Host** 的第一个点之前的部分，不要填完整域名：早期业务空间是 `llm-…`，较新的业务空间是 `ws-…`，二者都是合法取值。地域必须与 API Host 中的地域一致。服务端统一派生业务空间域名，并分别使用原生接口 `https://{workspaceId}.{region}.maas.aliyuncs.com/api/v1` 和 OpenAI 兼容接口 `https://{workspaceId}.{region}.maas.aliyuncs.com/compatible-mode/v1`。Embedding、重排、模型目录、文件转写和临时上传策略走原生接口；Qwen 对话类能力走兼容接口。默认地域为 `cn-beijing`，还支持 `ap-southeast-1`、`ap-northeast-1`、`eu-central-1`、`cn-hongkong` 与 `us-east-1`；API Key 必须属于同一地域和业务空间。
+
+数据库中已有的 `baseUrl`、`compatibleBaseUrl` 和 `rerankBaseUrl` 仅作为只读兼容配置继续运行，不能再通过公开写接口保存。“更多”页会为旧配置显示迁移卡片；管理员输入统一的 Workspace ID 和地域后，服务端先用每条连接自己的 Credential 校验目标 `/api/v1/models`，所有连接都通过才在单个事务内创建新版连接 revision、更新当前能力绑定，并在缺失时补齐 `knowledge_rerank`。历史 revision 和已冻结任务不变。
+
+官方地域、部署范围和域名见[百炼地域与接入域名](https://help.aliyun.com/zh/model-studio/regions/)。
+
 运行模式决定 OSS 是否必需：
 
 | 运行模式 | DashScope | DeepSeek（可选替换文本类能力） | 阿里云 OSS                                      |
@@ -64,7 +72,7 @@ EchoWave 当前以阿里云百炼和通义千问能力为主，是因为百炼�
 - `TRUSTED_PROXY_CIDRS`：可覆写 `X-Forwarded-Proto` 的反向代理 IPv4/IPv6 CIDR，多个值用逗号分隔；没有可信代理时显式设置为空字符串。
 - `PUSH_NOTIFICATIONS_ENABLED`：必须显式为 `true` 或 `false`；Self-hosted 默认使用 `false`。
 
-供应商 URL、Bucket、模型、Thinking、DashScope 通知模式、回调 URL 和能力绑定不再属于启动级 `.env`。只有启用了 Expo Push access-token 安全的项目才设置可选 `EXPO_PUSH_ACCESS_TOKEN`；它是服务端 Secret，不能使用 `EXPO_PUBLIC_` 前缀。
+供应商 URL、Bucket、模型、Thinking、DashScope 通知模式、回调 URL 和能力绑定不再属于启动级 `.env`。仅在升级期保留旧环境导入时，可用 `DASHSCOPE_WORKSPACE_ID` 和可选 `DASHSCOPE_REGION` 替代三个旧 URL 变量；结构化业务空间配置优先，地域省略时使用 `cn-beijing`。只有启用了 Expo Push access-token 安全的项目才设置可选 `EXPO_PUSH_ACCESS_TOKEN`；它是服务端 Secret，不能使用 `EXPO_PUBLIC_` 前缀。
 
 ## Local Credential Provider
 
@@ -159,7 +167,7 @@ Database Credential 使用随机 12 字节 IV、AES-256-GCM 认证标签以及�
 
 ## 从旧 `.env` 导入
 
-升级期间可暂时保留旧 `DASHSCOPE_*`、`DEEPSEEK_*` 和 `ALIYUN_OSS_*` 变量。配置页只显示检测到的变量名和完整性，不显示值。点击“从服务器旧 `.env` 导入”后，API 在服务器内部读取 Secret、加密入库且不覆盖已有数据库配置；同一租户重复操作是幂等的。
+升级期间可暂时保留旧 `DASHSCOPE_*`、`DEEPSEEK_*` 和 `ALIYUN_OSS_*` 变量。新环境应设置 `DASHSCOPE_WORKSPACE_ID` 和可选 `DASHSCOPE_REGION`；若它们存在，导入时优先派生专属原生/兼容地址。原有 `DASHSCOPE_BASE_URL`、`DASHSCOPE_COMPATIBLE_BASE_URL` 和 `DASHSCOPE_RERANK_BASE_URL` 仍可被旧部署读取，其中独立重排地址不再参与运行时路由。配置页只显示检测到的变量名和完整性，不显示值。点击“从服务器旧 `.env` 导入”后，API 在服务器内部读取 Secret、加密入库且不覆盖已有数据库配置；同一租户重复操作是幂等的。
 
 导入可以在远程 HTTP 下触发，因为请求体不携带 Secret。导入成功后数据库立即优先并关闭该租户的 legacy fallback。随后删除旧供应商变量并重启，确认对应能力仍可运行；启动级字段继续保留。
 

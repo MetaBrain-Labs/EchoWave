@@ -142,31 +142,119 @@ const HttpsUrlSchema = z
     message: 'Provider URL must use HTTPS.',
   });
 
+export const DashScopeRegionSchema = z.enum([
+  'cn-beijing',
+  'ap-southeast-1',
+  'ap-northeast-1',
+  'eu-central-1',
+  'cn-hongkong',
+  'us-east-1',
+]);
+
+/**
+ * 业务空间专属域名的第一个 DNS 标签。
+ *
+ * 该值取自控制台 API Host 中第一个点之前的部分：早期业务空间是 `llm-…`，较新的业务空间是
+ * `ws-…`。百炼没有公开稳定的前缀白名单，因此只能按单段 DNS 标签校验；一旦按固定前缀白名单
+ * 校验，新业务空间的正确取值会被判成非法参数，迁移请求直接以 BAD_REQUEST 失败。
+ */
+export const DashScopeWorkspaceIdSchema = z
+  .string()
+  .trim()
+  .max(63)
+  .regex(
+    /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/,
+    'Workspace domain prefix must be one lowercase DNS label, for example ws-xxxxxxxx.',
+  );
+
+const DashScopeNotifyFields = {
+  asyncNotifyMode: z.enum(['polling', 'eventbridge']),
+  eventBridgeCallbackUrl: HttpsUrlSchema.nullable(),
+} as const;
+
+function validateDashScopeNotifyConfig(
+  value: { asyncNotifyMode: 'polling' | 'eventbridge'; eventBridgeCallbackUrl: string | null },
+  context: z.RefinementCtx,
+) {
+  if (value.asyncNotifyMode === 'eventbridge' && !value.eventBridgeCallbackUrl) {
+    context.addIssue({
+      code: 'custom',
+      path: ['eventBridgeCallbackUrl'],
+      message: 'EventBridge mode requires a callback URL.',
+    });
+  }
+  if (value.asyncNotifyMode === 'polling' && value.eventBridgeCallbackUrl) {
+    context.addIssue({
+      code: 'custom',
+      path: ['eventBridgeCallbackUrl'],
+      message: 'Polling mode must not configure a callback URL.',
+    });
+  }
+}
+
 export const DashScopeConnectionConfigSchema = z
+  .object({
+    workspaceId: DashScopeWorkspaceIdSchema,
+    region: DashScopeRegionSchema.default('cn-beijing'),
+    ...DashScopeNotifyFields,
+  })
+  .strict()
+  .superRefine(validateDashScopeNotifyConfig);
+
+/** 仅用于读取历史 revision；新的网络写入不得继续提交独立 URL。 */
+export const LegacyDashScopeConnectionConfigSchema = z
   .object({
     baseUrl: HttpsUrlSchema,
     compatibleBaseUrl: HttpsUrlSchema,
     rerankBaseUrl: HttpsUrlSchema.optional(),
-    asyncNotifyMode: z.enum(['polling', 'eventbridge']),
-    eventBridgeCallbackUrl: HttpsUrlSchema.nullable(),
+    ...DashScopeNotifyFields,
   })
   .strict()
-  .superRefine((value, context) => {
-    if (value.asyncNotifyMode === 'eventbridge' && !value.eventBridgeCallbackUrl) {
-      context.addIssue({
-        code: 'custom',
-        path: ['eventBridgeCallbackUrl'],
-        message: 'EventBridge mode requires a callback URL.',
-      });
-    }
-    if (value.asyncNotifyMode === 'polling' && value.eventBridgeCallbackUrl) {
-      context.addIssue({
-        code: 'custom',
-        path: ['eventBridgeCallbackUrl'],
-        message: 'Polling mode must not configure a callback URL.',
-      });
-    }
-  });
+  .superRefine(validateDashScopeNotifyConfig);
+
+export const DashScopeStoredConnectionConfigSchema = z.union([
+  DashScopeConnectionConfigSchema,
+  LegacyDashScopeConnectionConfigSchema,
+]);
+
+export const DashScopeWorkspaceMigrationRequestSchema = z
+  .object({
+    workspaceId: DashScopeWorkspaceIdSchema,
+    region: DashScopeRegionSchema.default('cn-beijing'),
+  })
+  .strict();
+
+export const DashScopeWorkspaceStatusSchema = z
+  .object({
+    status: z.enum(['not_configured', 'legacy', 'dedicated', 'mixed']),
+    migrationRequired: z.boolean(),
+    totalConnectionCount: z.number().int().nonnegative(),
+    legacyConnectionCount: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const DashScopeWorkspaceMigrationResponseSchema = z
+  .object({
+    workspace: DashScopeWorkspaceStatusSchema,
+    updatedConnectionCount: z.number().int().nonnegative(),
+    rerankBindingCreated: z.boolean(),
+  })
+  .strict();
+
+/** 从业务空间信息派生所有百炼调用地址，禁止各能力自行拼装域名。 */
+export function dashScopeWorkspaceEndpoints(input: {
+  workspaceId: string;
+  region?: z.infer<typeof DashScopeRegionSchema>;
+}) {
+  const workspaceId = DashScopeWorkspaceIdSchema.parse(input.workspaceId);
+  const region = DashScopeRegionSchema.parse(input.region ?? 'cn-beijing');
+  const origin = `https://${workspaceId}.${region}.maas.aliyuncs.com`;
+  return {
+    origin,
+    nativeBaseUrl: `${origin}/api/v1`,
+    compatibleBaseUrl: `${origin}/compatible-mode/v1`,
+  } as const;
+}
 
 export const DeepSeekConnectionConfigSchema = z.object({ baseUrl: HttpsUrlSchema }).strict();
 
@@ -178,6 +266,12 @@ export const AliyunOssConnectionConfigSchema = z
   .strict();
 
 export const ProviderConnectionConfigSchema = z.union([
+  DashScopeStoredConnectionConfigSchema,
+  DeepSeekConnectionConfigSchema,
+  AliyunOssConnectionConfigSchema,
+]);
+
+const ProviderConnectionWriteConfigSchema = z.union([
   DashScopeConnectionConfigSchema,
   DeepSeekConnectionConfigSchema,
   AliyunOssConnectionConfigSchema,
@@ -203,7 +297,7 @@ export const ProviderConnectionWriteSchema = z
   .object({
     type: ProviderTypeSchema,
     name: z.string().trim().min(1).max(80),
-    config: ProviderConnectionConfigSchema,
+    config: ProviderConnectionWriteConfigSchema,
     credentialSource: CredentialSourceSchema,
     localCredentialAlias: z
       .string()
@@ -333,6 +427,17 @@ export const AdminSessionResponseSchema = z.object({ ok: z.literal(true) }).stri
 
 export type CredentialSource = z.infer<typeof CredentialSourceSchema>;
 export type TransportSecurityMode = z.infer<typeof TransportSecurityModeSchema>;
+export type DashScopeRegion = z.infer<typeof DashScopeRegionSchema>;
+export type DashScopeConnectionConfig = z.infer<typeof DashScopeConnectionConfigSchema>;
+export type LegacyDashScopeConnectionConfig = z.infer<typeof LegacyDashScopeConnectionConfigSchema>;
+export type DashScopeStoredConnectionConfig = z.infer<typeof DashScopeStoredConnectionConfigSchema>;
+export type DashScopeWorkspaceMigrationRequest = z.infer<
+  typeof DashScopeWorkspaceMigrationRequestSchema
+>;
+export type DashScopeWorkspaceStatus = z.infer<typeof DashScopeWorkspaceStatusSchema>;
+export type DashScopeWorkspaceMigrationResponse = z.infer<
+  typeof DashScopeWorkspaceMigrationResponseSchema
+>;
 export type ProviderConnectionWrite = z.infer<typeof ProviderConnectionWriteSchema>;
 export type ProviderConnection = z.infer<typeof ProviderConnectionSchema>;
 export type CapabilityBindingWrite = z.infer<typeof CapabilityBindingWriteSchema>;
