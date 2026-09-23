@@ -20,7 +20,7 @@
 **把音频、业务分析与团队知识库连接起来的开源自托管工作台。** 音频 → ASR → 说话人/情绪 → 人工确认 → 业务分析 → 知识库/RAG → 可审计结果。
 
 > [!WARNING]
-> **早期预览版：** EchoWave `v0.1.x` 只面向自托管或私有部署，尚不适合作为公开多用户服务；目前还没有真实账号、权限控制和速率限制。部署前请阅读[安全策略](./SECURITY.zh-CN.md)与[当前边界](#当前边界)。
+> **1.0.0 Beta 预览版：** EchoWave 只面向自托管或私有部署，尚不适合作为公开多用户服务；目前还没有真实账号、权限控制和速率限制。部署前请阅读[安全策略](./SECURITY.zh-CN.md)与[当前边界](#当前边界)。
 
 [快速开始](#快速开始) · [典型场景](#典型场景) · [当前能力](#当前能力) · [架构](#系统如何工作) · [项目边界](#当前边界) · [Future](#future) · [完整文档](./docs/README.zh-CN.md) · [贡献指南](./CONTRIBUTING.zh-CN.md)
 
@@ -39,21 +39,23 @@ EchoWave 面向需要从访谈、销售通话、会议等音频中沉淀结构�
 
 - **从音频到报告**：上传音频，完成 ASR、说话人复核、转写确认、角色/情绪识别和业务分析。
 - **结果可校正、可追溯**：原始转写、确认版本和后续分析分层保存；重试、取消、恢复和供应商调用均保留审计事实。
-- **知识库增强**：将 Markdown、Word 和表格文档写入 pgvector，通过带引用的检索回答支撑业务分析。
+- **知识库增强**：将 Markdown、Word 和表格文档通过版本化、结构感知的分块写入 pgvector，以定向检索、可选且可审计的重排和引用校验支撑问答与业务分析。
 - **自托管优先**：服务端、数据库、音频与 Credential 边界由部署者掌控，App 在运行时连接指定服务器。
 - **跨平台与双语**：同一 Expo 工程覆盖 Android、iOS 和 Web，App 与分析输出支持简体中文和英文。
 
 ## 当前能力
 
-| 能力       | 已实现内容                                                                      |
-| ---------- | ------------------------------------------------------------------------------- |
-| 工作空间   | 分组、知识库、数据源、关联关系、音频上传、软归档与起步模板                      |
-| 音频处理   | DashScope 文件转写、Silero VAD、说话人分段、转写确认、重试/取消/恢复            |
-| 后续分析   | 说话人复核、业务角色、声学/文本情绪、LangGraph 销售复盘与自定义关注点           |
-| 知识库     | Markdown、DOCX、XLSX 文档解析，DashScope embedding、pgvector 检索与可信引用回答 |
-| 自动化     | 立即或定时批次、断点恢复、SSE 实时状态、应用内状态与可选 Expo Push              |
-| 配置与审计 | Provider/Credential revision、能力绑定、任务配置快照和脱敏 AI 执行报告          |
-| 客户端     | Android/iOS/Web、运行时服务器选择、新手引导、中文/英文界面与分析语言            |
+| 能力       | 已实现内容                                                                                                |
+| ---------- | --------------------------------------------------------------------------------------------------------- |
+| 工作空间   | 分组、知识库、数据源、关联关系、音频上传、软归档与起步模板                                                |
+| 音频处理   | DashScope 文件转写、Silero VAD、说话人分段、转写确认、重试/取消/恢复                                      |
+| 后续分析   | 说话人复核、业务角色、声学/文本情绪、LangGraph 销售复盘与自定义关注点                                     |
+| 知识库     | 结构感知的 Markdown、DOCX、XLSX 分块，DashScope embedding、定向 pgvector 检索、可选审计重排与可信引用回答 |
+| 自动化     | 立即或定时批次、断点恢复、SSE 实时状态、应用内状态与可选 Expo Push                                        |
+| 配置与审计 | Provider/Credential revision、能力绑定、任务配置快照和脱敏 AI 执行报告                                    |
+| 客户端     | Android/iOS/Web、运行时服务器选择、新手引导、中文/英文界面与分析语言                                      |
+
+知识文档改名及替换文件在解析和 embedding 全部成功前保留旧 active revision。启动或迁移 API 前须配置 `KNOWLEDGE_STORAGE_DIR`；详见[配置说明](./docs/configuration.zh-CN.md)及[数据库升级说明](./docs/database-schema.zh-CN.md)。
 
 ## 系统如何工作
 
@@ -83,7 +85,7 @@ Server 可以运行在 Ubuntu 22.04 x86_64，或运行在使用 Linux containers
 
 ### 我想直接使用 EchoWave
 
-这是最快的服务端体验路径。普通用户应从 [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases) 下载同一版本的 Android APK 与 `EchoWave-server-vX.Y.Z.zip`，校验 SHA-256 后按压缩包内 README 启动；发布只通过 `vMAJOR.MINOR.PATCH` Tag 提供，不要从 `main` 安装。完整升级和回退规则见[发布指南](./docs/releases.zh-CN.md)。
+这是最快的服务端体验路径。普通用户应从 [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases) 下载同一版本的 Android APK 与 Server ZIP，校验 SHA-256 后按压缩包内 README 启动。稳定版使用 `vMAJOR.MINOR.PATCH` Tag，Beta 使用 `vMAJOR.MINOR.PATCH-beta.N`；不要从 `main` 安装。完整升级和回退规则见[发布指南](./docs/releases.zh-CN.md)。
 
 ```bash
 unzip EchoWave-server-vX.Y.Z.zip -d echowave-server
@@ -159,7 +161,7 @@ pnpm start
 
 服务启动后，在 App 的“更多 → AI 配置”中建立 Provider、选择 Local Credential alias 或安全写入 Database Credential，并绑定各项能力。项目当前以阿里云百炼/通义千问为主，是因为一个阿里云账号可以开通覆盖 Embedding、ASR、全模态和第三方 DeepSeek 的大部分模型服务，并同时管理 OSS；百炼 API Key 与 OSS AccessKey 仍是不同 Credential。轻量本地无需 OSS，混合/对象存储模式必须配置 OSS。
 
-当前只有仓库已适配的默认模型保证可用，后续会逐步增加更多模型和 Provider。详细默认绑定、百炼 DeepSeek 配置、安全传输限制和 Credential 轮换方式见[配置与 Credential 指南](./docs/configuration.zh-CN.md)。
+模型选择器会搜索当前 Provider 的模型目录并按能力过滤，但只有仓库已完成契约适配和验证的模型可以保存；其余候选仅供浏览，避免把“目录可见”误解为“已兼容”。详细默认绑定、百炼 DeepSeek 配置、安全传输限制和 Credential 轮换方式见[配置与 Credential 指南](./docs/configuration.zh-CN.md)。
 
 ## 常用命令
 
@@ -206,5 +208,3 @@ Android 真机回归由 `.maestro/` 和 `scripts/e2e/android-e2e.mjs` 管理，�
 ## 许可证
 
 EchoWave 使用 [Apache License 2.0](./LICENSE)。提交贡献即表示你同意按照该许可证提供贡献内容。
-
-知识文档改名及替换文件在解析和 embedding 全部成功前保留旧 active 版本。启动或迁移 API 前须配置 `KNOWLEDGE_STORAGE_DIR`；详见[配置说明](./docs/configuration.zh-CN.md)及[数据库升级说明](./docs/database-schema.zh-CN.md)。

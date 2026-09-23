@@ -4,7 +4,7 @@
 
 This guide covers downloading and verifying the EchoWave Android App and Server from GitHub Releases, first installation, upgrades, rollback, and maintainer publishing.
 
-Stable versions are distributed only through a `vMAJOR.MINOR.PATCH` tag and its matching GitHub Release. GitHub-generated source archives are not Server installation bundles.
+Stable versions use a `vMAJOR.MINOR.PATCH` tag. Beta versions use `vMAJOR.MINOR.PATCH-beta.N`, are explicitly marked as GitHub prereleases, and are never marked Latest. GitHub-generated source archives are not Server installation bundles.
 
 > EchoWave is a fixed-development-tenant preview without real authentication, RBAC, or rate limiting. HTTP is allowed on localhost and trusted LANs. Every public/cloud App Server requires HTTPS, a reverse proxy, narrowly scoped access, and no public 3001/5432. These controls still do not make it a public multi-user service.
 
@@ -18,16 +18,16 @@ See [Server Deployment](./server-deployment.md) for Ubuntu source, Windows Docke
 
 ## 2. Select and download a version
 
-Open [EchoWave Releases](https://github.com/MetaBrain-Labs/EchoWave/releases). Use the latest stable version for a first installation; historical releases exist for rollback and reproduction.
+Open [EchoWave Releases](https://github.com/MetaBrain-Labs/EchoWave/releases). Use the latest stable version for a normal installation, or select a clearly marked Beta when testing preview behavior; historical releases exist for rollback and reproduction.
 
-| Asset                          | Purpose                                                                 |
-| ------------------------------ | ----------------------------------------------------------------------- |
-| `EchoWave-android-vX.Y.Z.apk`  | Android installer                                                       |
-| `EchoWave-server-vX.Y.Z.zip`   | Docker Compose Server bundle pinned to an image digest                  |
-| `EchoWave-release-vX.Y.Z.json` | Machine-readable commit, image, platform, migration, and rollback facts |
-| `SHA256SUMS-vX.Y.Z.txt`        | SHA-256 for APK, Server ZIP, and manifest                               |
+| Asset                                   | Purpose                                                                 |
+| --------------------------------------- | ----------------------------------------------------------------------- |
+| `EchoWave-android-vX.Y.Z[-beta.N].apk`  | Android installer                                                       |
+| `EchoWave-server-vX.Y.Z[-beta.N].zip`   | Docker Compose Server bundle pinned to an image digest                  |
+| `EchoWave-release-vX.Y.Z[-beta.N].json` | Machine-readable commit, image, platform, migration, and rollback facts |
+| `SHA256SUMS-vX.Y.Z[-beta.N].txt`        | SHA-256 for APK, Server ZIP, and manifest                               |
 
-Use App and Server from the same Release when possible. `X.Y.Z` is a placeholder; replace it with the exact version.
+Use App and Server from the same Release when possible. `X.Y.Z[-beta.N]` is a placeholder; use the exact Release version, including the Beta suffix when present.
 
 ## 3. Verify downloads
 
@@ -216,17 +216,19 @@ The first GHCR package may be private. Anonymous-access gates intentionally stop
 
 ### 9.1 Version and rollback metadata
 
-Set the same `X.Y.Z` in root, API, mobile, and contracts `package.json`, Expo `apps/mobile/app.json`, and `deploy/release/release.json`. Set `minimumDirectRollbackVersion` to current version for the first Release, or no higher than the previous stable version thereafter. Migrations must follow expand-contract so at least N-1 remains startable.
+Run `pnpm release:bump X.Y.Z` for a stable release or `pnpm release:bump X.Y.Z-beta.N` for a Beta. The script writes the full Release version to every workspace `package.json` and `deploy/release/release.json`, while Expo `apps/mobile/app.json` and `release.json.appVersion` keep the native `X.Y.Z` version without a Beta suffix.
+
+Update `minimumDirectRollbackVersion` to the current native App version for the first Release, or no higher than the previous stable version thereafter. Update the structured `releaseNotes` object with the real Highlights, Audio, Analysis, Knowledge, Deployment, breaking changes, and known limitations. Migrations must follow expand-contract so at least N-1 remains startable.
 
 ### 9.2 Local validation
 
 ```bash
-RELEASE_TAG=vX.Y.Z RELEASE_COMMIT=$(git rev-parse HEAD) RELEASE_MAIN_REF=HEAD pnpm release:validate
+RELEASE_TAG=vX.Y.Z-beta.N RELEASE_COMMIT=$(git rev-parse HEAD) RELEASE_MAIN_REF=HEAD pnpm release:validate
 pnpm check
 ```
 
 ```powershell
-$env:RELEASE_TAG = "vX.Y.Z"
+$env:RELEASE_TAG = "vX.Y.Z-beta.N"
 $env:RELEASE_COMMIT = git rev-parse HEAD
 $env:RELEASE_MAIN_REF = "HEAD"
 pnpm release:validate
@@ -255,17 +257,17 @@ After the version commit is merged to `main` and CI passes:
 ```bash
 git switch main
 git pull --ff-only
-git tag -a vX.Y.Z -m "EchoWave vX.Y.Z"
-git push origin vX.Y.Z
+git tag -a vX.Y.Z-beta.N -m "EchoWave vX.Y.Z-beta.N"
+git push origin vX.Y.Z-beta.N
 ```
 
-Do not tag a feature branch or publish prerelease/`latest` tags through the stable workflow.
+Use `vX.Y.Z` only for a stable release and `vX.Y.Z-beta.N` only for a Beta. Do not tag a feature branch, reuse an existing tag, or publish `rc`, `alpha`, or `latest` tags through this workflow.
 
 ### 9.4 Workflow result
 
-The Release workflow validates metadata, runs `pnpm check`, builds and verifies a signed APK, publishes amd64/arm64 immutable GHCR images, verifies runtime dependencies and anonymous pulls, creates the Server ZIP/manifest/checksums, runs current and N-1 integration smoke tests, then publishes a complete draft. Failure before completion publishes nothing. Never rebuild an existing public Release; issue a new patch version.
+The Release workflow validates metadata, runs `pnpm check`, builds and verifies a signed APK, publishes amd64/arm64 immutable GHCR images, verifies runtime dependencies and anonymous pulls, creates the Server ZIP/manifest/checksums, runs current and N-1 integration smoke tests, then publishes a complete draft. A Beta is published with GitHub's prerelease flag and never becomes Latest. Failure before completion publishes nothing. Never rebuild an existing public Release; increment the Beta sequence or issue a new patch version.
 
-Release notes are rendered from the public manifest in a fixed user-facing order: Highlights, Downloads, What's new, Breaking changes, Known limitations, and Upgrade, followed by collapsed `Database migrations` and `Full changelog` details blocks. Before publishing the draft, add this version's user-visible highlights and move each change under the Audio, Analysis, Knowledge, or Deployment heading; the generated PR list stays in the collapsed changelog.
+Release notes are rendered from the validated `deploy/release/release.json.releaseNotes` metadata in a fixed user-facing order: Highlights, Downloads, What's new, Breaking changes, Known limitations, and Upgrade, followed by collapsed `Database migrations` and `Full changelog` details blocks. The generated PR list stays in the collapsed changelog.
 
 ## 10. Troubleshooting
 

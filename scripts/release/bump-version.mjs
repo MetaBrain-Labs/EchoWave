@@ -1,13 +1,23 @@
+/**
+ * EchoWave 版本来源同步脚本。
+ *
+ * 将稳定版或 Beta 预发布版本写入 workspace package 与发布元数据，同时让 Expo 原生展示
+ * 版本保持不含预发布后缀的 MAJOR.MINOR.PATCH。
+ */
 import fs from 'node:fs';
 import path from 'node:path';
 
 const version = process.argv[2];
+const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-beta\.(0|[1-9]\d*))?$/.exec(
+  version ?? '',
+);
 
-if (!version || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)) {
+if (!version || !match) {
   console.error('Usage: pnpm release:bump <version>');
-  console.error('Example: pnpm release:bump 0.2.0');
+  console.error('Examples: pnpm release:bump 1.0.0 or pnpm release:bump 1.0.0-beta.1');
   process.exit(1);
 }
+const appVersion = match.slice(1, 4).join('.');
 
 const root = process.cwd();
 
@@ -36,11 +46,12 @@ for (const file of packageFiles) {
 }
 
 updateJson('apps/mobile/app.json', (json) => {
-  json.expo.version = version;
+  json.expo.version = appVersion;
 });
 
 updateJson('deploy/release/release.json', (json) => {
   json.version = version;
+  json.appVersion = appVersion;
 });
 
-console.log(`\nEchoWave version bumped to ${version}`);
+console.log(`\nEchoWave release version bumped to ${version}; native App version is ${appVersion}`);

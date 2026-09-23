@@ -19,12 +19,25 @@ import {
   findNewMigrationNames,
   findPreviousStableTag,
   parseEasBuildResult,
+  parseReleaseTag,
   parseStableTag,
   releaseAssetNames,
   sha256File,
   validateImageManifest,
   validateReleaseConfiguration,
 } from './release-lib.mjs';
+
+const releaseNotesFixture = {
+  highlights: ['Added audited reranking.'],
+  changes: {
+    Audio: [],
+    Analysis: ['Recorded rerank snapshots.'],
+    Knowledge: ['Added structure-aware chunks.'],
+    Deployment: ['Added Beta release support.'],
+  },
+  breakingChanges: [],
+  knownLimitations: ['Private deployments only.'],
+};
 
 function writeFixture(rootDirectory, relativePath, content) {
   const filePath = path.join(rootDirectory, relativePath);
@@ -43,11 +56,21 @@ function createReleaseFixture(testContext, version = '1.2.3', rollbackVersion = 
   ]) {
     writeFixture(rootDirectory, relativePath, JSON.stringify({ version }));
   }
-  writeFixture(rootDirectory, 'apps/mobile/app.json', JSON.stringify({ expo: { version } }));
+  const appVersion = version.split('-')[0];
+  writeFixture(
+    rootDirectory,
+    'apps/mobile/app.json',
+    JSON.stringify({ expo: { version: appVersion } }),
+  );
   writeFixture(
     rootDirectory,
     'deploy/release/release.json',
-    JSON.stringify({ version, minimumDirectRollbackVersion: rollbackVersion }),
+    JSON.stringify({
+      version,
+      appVersion,
+      minimumDirectRollbackVersion: rollbackVersion,
+      releaseNotes: releaseNotesFixture,
+    }),
   );
   writeFixture(
     rootDirectory,
@@ -75,10 +98,14 @@ function createReleaseFixture(testContext, version = '1.2.3', rollbackVersion = 
   return rootDirectory;
 }
 
-test('accepts stable tags and compares numeric semantic versions', () => {
+test('accepts stable and Beta tags and compares semantic versions', () => {
   assert.equal(parseStableTag('v1.2.3'), '1.2.3');
+  assert.equal(parseReleaseTag('v1.2.3-beta.1'), '1.2.3-beta.1');
   assert.equal(compareVersions('1.10.0', '1.2.9') > 0, true);
+  assert.equal(compareVersions('1.2.3-beta.2', '1.2.3-beta.1') > 0, true);
+  assert.equal(compareVersions('1.2.3', '1.2.3-beta.2') > 0, true);
   assert.throws(() => parseStableTag('v1.2.3-rc.1'), /vMAJOR\.MINOR\.PATCH/);
+  assert.throws(() => parseReleaseTag('v1.2.3-rc.1'), /vMAJOR\.MINOR\.PATCH-beta\.N/);
   assert.throws(() => parseStableTag('1.2.3'), /vMAJOR\.MINOR\.PATCH/);
 });
 
@@ -104,13 +131,54 @@ test('keeps the checked-in release metadata aligned with repository versions', (
   );
 });
 
-test('uses stable versioned asset names', () => {
-  assert.deepEqual(releaseAssetNames('1.2.3'), {
-    apk: 'EchoWave-android-v1.2.3.apk',
-    server: 'EchoWave-server-v1.2.3.zip',
-    manifest: 'EchoWave-release-v1.2.3.json',
-    checksums: 'SHA256SUMS-v1.2.3.txt',
+test('uses release-versioned asset names', () => {
+  assert.deepEqual(releaseAssetNames('1.2.3-beta.1'), {
+    apk: 'EchoWave-android-v1.2.3-beta.1.apk',
+    server: 'EchoWave-server-v1.2.3-beta.1.zip',
+    manifest: 'EchoWave-release-v1.2.3-beta.1.json',
+    checksums: 'SHA256SUMS-v1.2.3-beta.1.txt',
   });
+});
+
+test('keeps Beta release and native App versions distinct', (testContext) => {
+  const rootDirectory = createReleaseFixture(testContext, '1.2.3-beta.1', '1.2.2');
+  const result = validateReleaseConfiguration(rootDirectory, 'v1.2.3-beta.1', 'v1.2.2');
+  assert.equal(result.version, '1.2.3-beta.1');
+  assert.equal(result.appVersion, '1.2.3');
+  assert.equal(result.prerelease, true);
+});
+
+test('rejects mismatched native App versions and incomplete release notes', (testContext) => {
+  const rootDirectory = createReleaseFixture(testContext, '1.2.3-beta.1', '1.2.2');
+  writeFixture(
+    rootDirectory,
+    'deploy/release/release.json',
+    JSON.stringify({
+      version: '1.2.3-beta.1',
+      appVersion: '1.2.4',
+      minimumDirectRollbackVersion: '1.2.2',
+      releaseNotes: releaseNotesFixture,
+    }),
+  );
+  assert.throws(
+    () => validateReleaseConfiguration(rootDirectory, 'v1.2.3-beta.1', 'v1.2.2'),
+    /appVersion must be 1\.2\.3/,
+  );
+
+  writeFixture(
+    rootDirectory,
+    'deploy/release/release.json',
+    JSON.stringify({
+      version: '1.2.3-beta.1',
+      appVersion: '1.2.3',
+      minimumDirectRollbackVersion: '1.2.2',
+      releaseNotes: { ...releaseNotesFixture, knownLimitations: [] },
+    }),
+  );
+  assert.throws(
+    () => validateReleaseConfiguration(rootDirectory, 'v1.2.3-beta.1', 'v1.2.2'),
+    /knownLimitations must be a non-empty array/,
+  );
 });
 
 test('validates every version source and the N-1 rollback floor', (testContext) => {
@@ -165,6 +233,7 @@ test('selects the latest earlier stable tag from main history', () => {
     stdout: 'v2.0.0\nv1.4.0\nv1.3.1\nv1.3.0-rc.1\nnot-a-release\n',
   });
   assert.equal(findPreviousStableTag('.', 'v1.4.0', 'origin/main', runner), 'v1.3.1');
+  assert.equal(findPreviousStableTag('.', 'v1.4.0-beta.1', 'origin/main', runner), 'v1.3.1');
 });
 
 test('lists only newly added ordered migrations since the previous stable tag', (testContext) => {
@@ -248,10 +317,14 @@ test('packages an immutable server bundle and matching public checksums', async 
   assert.match(compose, /^  echowave_postgres:$/m);
 
   const internalManifest = JSON.parse(await archive.file('release.json').async('string'));
+  assert.equal(internalManifest.schemaVersion, 2);
+  assert.equal(internalManifest.appVersion, '1.2.3');
+  assert.equal(internalManifest.prerelease, false);
   assert.equal(internalManifest.database.minimumDirectRollbackVersion, '1.2.2');
   assert.deepEqual(internalManifest.database.migrations, ['001_initial.sql']);
   assert.deepEqual(internalManifest.database.newMigrations, ['001_initial.sql']);
   assert.equal('easBuildUrl' in result.manifest.android, false);
+  assert.deepEqual(result.manifest.releaseNotes, releaseNotesFixture);
   assert.equal(result.manifest.assets.android.sha256, sha256File(result.paths.finalApkPath));
   assert.match(
     readFileSync(result.paths.checksumsPath, 'utf8'),
@@ -264,6 +337,8 @@ test('renders operational release notes from the public manifest', () => {
     {
       tag: 'v1.2.3',
       version: '1.2.3',
+      appVersion: '1.2.3',
+      prerelease: false,
       createdAt: '2026-09-13T04:21:18Z',
       assets: {
         android: { name: 'EchoWave-android-v1.2.3.apk' },
@@ -277,6 +352,7 @@ test('renders operational release notes from the public manifest', () => {
         minimumDirectRollbackVersion: '1.2.2',
         newMigrations: ['003_audio.sql'],
       },
+      releaseNotes: releaseNotesFixture,
     },
     '## Changes\n\n- Fixed a regression.\n',
   );
@@ -286,6 +362,10 @@ test('renders operational release notes from the public manifest', () => {
   assert.match(notes, /Fixed a regression/);
   assert.match(notes, /^# EchoWave v1\.2\.3$/mu);
   assert.match(notes, /发布日期：2026-09-13/);
+  assert.match(notes, /发布渠道：稳定版/);
+  assert.match(notes, /Added audited reranking/);
+  assert.match(notes, /Added structure-aware chunks/);
+  assert.equal(notes.includes('### Audio\n\n- 本次无变化。'), true);
   for (const heading of [
     '## Highlights',
     '## Downloads',
@@ -309,16 +389,31 @@ test('omits the release date when the manifest has no usable timestamp', () => {
     {
       tag: 'v1.2.3',
       version: '1.2.3',
+      appVersion: '1.2.3',
+      prerelease: true,
       assets: {
         android: { name: 'EchoWave-android-v1.2.3.apk' },
         server: { name: 'EchoWave-server-v1.2.3.zip' },
       },
       image: { reference: 'ghcr.io/example/api@sha256:0', platforms: ['linux/amd64'] },
       database: { minimumDirectRollbackVersion: '1.2.2', newMigrations: [] },
+      releaseNotes: releaseNotesFixture,
     },
     '',
   );
   assert.equal(notes.includes('发布日期'), false);
+  assert.match(notes, /发布渠道：Beta 预发布/);
   assert.match(notes, /本次新增 migration：无/);
   assert.match(notes, /首次自动化发布/);
+});
+
+test('publishes Beta releases as prerelease and never marks them Latest', () => {
+  const workflow = readFileSync(
+    path.resolve(import.meta.dirname, '../../.github/workflows/release.yml'),
+    'utf8',
+  );
+  assert.match(workflow, /IS_PRERELEASE:.*outputs\.prerelease/);
+  assert.match(workflow, /release_flags\+=\(--prerelease --latest=false\)/);
+  assert.match(workflow, /publish_flags=\(--draft=false --prerelease --latest=false\)/);
+  assert.match(workflow, /APP_VERSION:.*outputs\.app_version/);
 });

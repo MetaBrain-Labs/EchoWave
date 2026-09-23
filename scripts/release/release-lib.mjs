@@ -1,8 +1,8 @@
 /**
  * EchoWave Release 发布工具库。
  *
- * 集中实现稳定版本校验、EAS 结果解析、服务器部署包生成与产物摘要，确保本地测试和
- * GitHub Actions 使用同一套发布规则。
+ * 集中实现稳定版与 Beta 预发布版本校验、EAS 结果解析、服务器部署包生成与产物摘要，
+ * 确保本地测试和 GitHub Actions 使用同一套发布规则。
  */
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -23,26 +23,37 @@ export const RELEASE_IMAGE_REPOSITORY = 'ghcr.io/metabrain-labs/echowave-api';
 export const REQUIRED_IMAGE_PLATFORMS = ['linux/amd64', 'linux/arm64'];
 
 const STABLE_TAG_PATTERN = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
-const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+const RELEASE_TAG_PATTERN = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-beta\.(0|[1-9]\d*))?$/;
+const RELEASE_VERSION_PATTERN =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-beta\.(0|[1-9]\d*))?$/;
 const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
 const ZIP_DATE = new Date('1980-01-01T00:00:00.000Z');
+const RELEASE_NOTE_SECTIONS = ['Audio', 'Analysis', 'Knowledge', 'Deployment'];
 
 const VERSION_SOURCES = [
   ['package.json', (value) => value.version],
   ['apps/api/package.json', (value) => value.version],
   ['apps/mobile/package.json', (value) => value.version],
   ['packages/contracts/package.json', (value) => value.version],
-  ['apps/mobile/app.json', (value) => value.expo?.version],
 ];
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, 'utf8'));
 }
 
-function parseVersion(version, label) {
-  const match = VERSION_PATTERN.exec(version);
-  if (!match) throw new Error(`${label} must be a stable semantic version, received ${version}.`);
-  return match.slice(1).map(Number);
+function parseVersion(version, label, stableOnly = false) {
+  const match = RELEASE_VERSION_PATTERN.exec(version);
+  if (!match || (stableOnly && match[4] !== undefined)) {
+    throw new Error(
+      `${label} must be a ${stableOnly ? 'stable ' : ''}semantic version, received ${version}.`,
+    );
+  }
+  const parts = match.slice(1, 4).map(Number);
+  return {
+    parts,
+    baseVersion: parts.join('.'),
+    prereleaseNumber: match[4] === undefined ? null : Number(match[4]),
+  };
 }
 
 /** 将稳定发布 Tag 转换为不含 v 前缀的版本号。 */
@@ -52,14 +63,30 @@ export function parseStableTag(tag) {
   return match.slice(1).join('.');
 }
 
-/** 比较两个不含前缀的稳定语义版本。 */
-export function compareVersions(left, right) {
-  const leftParts = parseVersion(left, 'Left version');
-  const rightParts = parseVersion(right, 'Right version');
-  for (let index = 0; index < leftParts.length; index += 1) {
-    if (leftParts[index] !== rightParts[index]) return leftParts[index] - rightParts[index];
+/** 将稳定版或 Beta 预发布 Tag 转换为不含 v 前缀的版本号。 */
+export function parseReleaseTag(tag) {
+  const match = RELEASE_TAG_PATTERN.exec(tag);
+  if (!match) {
+    throw new Error(
+      `Release tag must match vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-beta.N, received ${tag}.`,
+    );
   }
-  return 0;
+  return tag.slice(1);
+}
+
+/** 比较两个不含前缀的稳定版或 Beta 预发布语义版本。 */
+export function compareVersions(left, right) {
+  const leftVersion = parseVersion(left, 'Left version');
+  const rightVersion = parseVersion(right, 'Right version');
+  for (let index = 0; index < leftVersion.parts.length; index += 1) {
+    if (leftVersion.parts[index] !== rightVersion.parts[index]) {
+      return leftVersion.parts[index] - rightVersion.parts[index];
+    }
+  }
+  if (leftVersion.prereleaseNumber === rightVersion.prereleaseNumber) return 0;
+  if (leftVersion.prereleaseNumber === null) return 1;
+  if (rightVersion.prereleaseNumber === null) return -1;
+  return leftVersion.prereleaseNumber - rightVersion.prereleaseNumber;
 }
 
 /** 返回固定、可预测的 Release 资产名称。 */
@@ -73,9 +100,46 @@ export function releaseAssetNames(version) {
   };
 }
 
+function validateStringList(value, label, allowEmpty = false) {
+  if (
+    !Array.isArray(value) ||
+    (!allowEmpty && value.length === 0) ||
+    value.some((entry) => typeof entry !== 'string' || entry.trim() === '')
+  ) {
+    throw new Error(`${label} must be ${allowEmpty ? 'an' : 'a non-empty'} array of strings.`);
+  }
+  return value;
+}
+
+function validateReleaseNotes(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('releaseNotes must be an object.');
+  }
+  if (!value.changes || typeof value.changes !== 'object' || Array.isArray(value.changes)) {
+    throw new Error('releaseNotes.changes must be an object.');
+  }
+  const changes = Object.fromEntries(
+    RELEASE_NOTE_SECTIONS.map((section) => [
+      section,
+      validateStringList(value.changes[section], `releaseNotes.changes.${section}`, true),
+    ]),
+  );
+  return {
+    highlights: validateStringList(value.highlights, 'releaseNotes.highlights'),
+    changes,
+    breakingChanges: validateStringList(
+      value.breakingChanges,
+      'releaseNotes.breakingChanges',
+      true,
+    ),
+    knownLimitations: validateStringList(value.knownLimitations, 'releaseNotes.knownLimitations'),
+  };
+}
+
 /** 校验仓库内全部版本来源和数据库直接回退窗口。 */
 export function validateReleaseConfiguration(rootDirectory, tag, previousStableTag = null) {
-  const version = parseStableTag(tag);
+  const version = parseReleaseTag(tag);
+  const parsedVersion = parseVersion(version, 'Release version');
   const versionSources = VERSION_SOURCES.map(([relativePath, select]) => {
     const value = select(readJson(path.join(rootDirectory, relativePath)));
     if (value !== version) {
@@ -89,12 +153,22 @@ export function validateReleaseConfiguration(rootDirectory, tag, previousStableT
   if (metadata.version !== version) {
     throw new Error(`deploy/release/release.json version must be ${version}.`);
   }
-  parseVersion(metadata.minimumDirectRollbackVersion, 'minimumDirectRollbackVersion');
+  parseVersion(metadata.appVersion, 'appVersion', true);
+  if (metadata.appVersion !== parsedVersion.baseVersion) {
+    throw new Error(`deploy/release/release.json appVersion must be ${parsedVersion.baseVersion}.`);
+  }
+  const expoVersion = readJson(path.join(rootDirectory, 'apps/mobile/app.json')).expo?.version;
+  if (expoVersion !== metadata.appVersion) {
+    throw new Error(
+      `apps/mobile/app.json version must be ${metadata.appVersion}, received ${String(expoVersion)}.`,
+    );
+  }
+  parseVersion(metadata.minimumDirectRollbackVersion, 'minimumDirectRollbackVersion', true);
   if (compareVersions(metadata.minimumDirectRollbackVersion, version) > 0) {
     throw new Error('minimumDirectRollbackVersion cannot be newer than the release version.');
   }
 
-  if (!previousStableTag && metadata.minimumDirectRollbackVersion !== version) {
+  if (!previousStableTag && metadata.minimumDirectRollbackVersion !== metadata.appVersion) {
     throw new Error(
       'The first stable release minimumDirectRollbackVersion must equal its version.',
     );
@@ -115,8 +189,11 @@ export function validateReleaseConfiguration(rootDirectory, tag, previousStableT
   return {
     tag,
     version,
+    appVersion: metadata.appVersion,
+    prerelease: parsedVersion.prereleaseNumber !== null,
     previousStableTag,
     minimumDirectRollbackVersion: metadata.minimumDirectRollbackVersion,
+    releaseNotes: validateReleaseNotes(metadata.releaseNotes),
     versionSources,
   };
 }
@@ -148,7 +225,7 @@ export function findPreviousStableTag(
   mainRef = 'origin/main',
   runner = spawnSync,
 ) {
-  const currentVersion = parseStableTag(currentTag);
+  const currentVersion = parseReleaseTag(currentTag);
   const result = runner('git', ['tag', '--merged', mainRef, '--sort=-version:refname'], {
     cwd: rootDirectory,
     encoding: 'utf8',
@@ -280,9 +357,9 @@ export async function buildReleaseArtifacts(options) {
     throw new Error(`Image digest must be sha256:<64 lowercase hex characters>.`);
   }
   if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error('Commit must be a full lowercase Git SHA.');
-  if (easBuildResult.appVersion && easBuildResult.appVersion !== validation.version) {
+  if (easBuildResult.appVersion && easBuildResult.appVersion !== validation.appVersion) {
     throw new Error(
-      `EAS app version must be ${validation.version}, received ${easBuildResult.appVersion}.`,
+      `EAS app version must be ${validation.appVersion}, received ${easBuildResult.appVersion}.`,
     );
   }
 
@@ -318,8 +395,10 @@ export async function buildReleaseArtifacts(options) {
     newMigrations: newMigrations ?? findNewMigrationNames(rootDirectory, previousStableTag, commit),
   };
   const serverRelease = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     version: validation.version,
+    appVersion: validation.appVersion,
+    prerelease: validation.prerelease,
     tag,
     commit,
     image: {
@@ -356,8 +435,10 @@ export async function buildReleaseArtifacts(options) {
   );
 
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     version: validation.version,
+    appVersion: validation.appVersion,
+    prerelease: validation.prerelease,
     tag,
     commit,
     createdAt,
@@ -370,6 +451,7 @@ export async function buildReleaseArtifacts(options) {
     },
     image: serverRelease.image,
     database,
+    releaseNotes: validation.releaseNotes,
     assets: {
       android: {
         name: names.apk,
