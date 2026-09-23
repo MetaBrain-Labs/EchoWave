@@ -16,6 +16,10 @@ function releaseDate(createdAt) {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
 }
 
+function bulletList(items, emptyText) {
+  return items.length > 0 ? items.map((item) => `- ${item}`).join('\n') : `- ${emptyText}`;
+}
+
 /** 将发布 manifest 与 GitHub changelog 渲染为最终 Release 说明。 */
 export function renderReleaseNotes(manifest, generatedNotes) {
   const newMigrations = manifest.database.newMigrations;
@@ -23,11 +27,18 @@ export function renderReleaseNotes(manifest, generatedNotes) {
     newMigrations.length > 0 ? newMigrations.map((name) => `\`${name}\``).join('、') : '无';
   const date = releaseDate(manifest.createdAt);
   const changelog = generatedNotes.trim() || '首次自动化发布。';
+  const notes = manifest.releaseNotes;
+  const releaseChannel = manifest.prerelease ? 'Beta 预发布' : '稳定版';
   return `# EchoWave ${manifest.tag}
-${date ? `\n> 发布日期：${date}\n` : ''}
+${
+  date
+    ? `\n> 发布日期：${date}
+> 发布渠道：${releaseChannel}\n`
+    : `\n> 发布渠道：${releaseChannel}\n`
+}
 ## Highlights
 
-- 本次发布的重点变更：请在下方的 **What's new** 中按模块查看，完整条目见末尾的 **Full changelog**。
+${bulletList(notes.highlights, '本次无重点变更。')}
 
 ## Downloads
 
@@ -39,28 +50,27 @@ ${date ? `\n> 发布日期：${date}\n` : ''}
 
 ### Audio
 
-- 本次无变化。
+${bulletList(notes.changes.Audio, '本次无变化。')}
 
 ### Analysis
 
-- 本次无变化。
+${bulletList(notes.changes.Analysis, '本次无变化。')}
 
 ### Knowledge
 
-- 本次无变化。
+${bulletList(notes.changes.Knowledge, '本次无变化。')}
 
 ### Deployment
 
-- 本次无变化。
+${bulletList(notes.changes.Deployment, '本次无变化。')}
 
 ## Breaking changes
 
-- 无。
+${bulletList(notes.breakingChanges, '无。')}
 
 ## Known limitations
 
-- EchoWave 目前仍只适合可信局域网或私有部署，不要把 API 端口直接暴露到公网。
-- 尚无鉴权、RBAC 与速率限制；如需公网访问，必须自行提供 HTTPS 反向代理与最小化网络访问范围。
+${bulletList(notes.knownLimitations, '无已知限制。')}
 
 ## Upgrade
 

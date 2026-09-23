@@ -55,7 +55,7 @@ The goal is to expand import formats, model choice, and analysis scenarios while
 - Add controlled data-source connectors and incremental synchronization without making third-party systems authoritative business storage.
 - Support PDF, OCR, and legacy Office formats while retaining page-, cell-, or paragraph-level source locations.
 - Add pluggable ASR, embedding, and text-model capabilities with regional, pricing, lifecycle, and output-quality validation.
-- Improve hybrid retrieval, reranking, answer streaming, and large knowledge-base pagination.
+- Extend the current scoped retrieval and audited DashScope reranking baseline with broader provider support, evaluation tooling, answer streaming, and large knowledge-base pagination.
 - Evolve sales review into versioned analysis templates and domain vocabularies while preserving structured output contracts.
 
 Completion signal: adding a provider, document format, or analysis template never requires bypassing shared contracts, audit, retry, or citation validation.

@@ -20,7 +20,7 @@
 **Open-source, self-hosted workspace connecting audio, business analysis, and team knowledge.** Audio → ASR → Speaker/emotion → Human review → Business analysis → Knowledge/RAG → Auditable result.
 
 > [!WARNING]
-> **Early preview:** EchoWave `v0.1.x` is intended for self-hosted or private deployments and is not yet suitable as a public multi-user service. It has no real accounts, authorization, or rate limits. See [Security](./SECURITY.md) and [Current limitations](#current-limitations) before deploying.
+> **1.0.0 Beta preview:** EchoWave is intended for self-hosted or private deployments and is not yet suitable as a public multi-user service. It has no real accounts, authorization, or rate limits. See [Security](./SECURITY.md) and [Current limitations](#current-limitations) before deploying.
 
 [Quick start](#quick-start) · [Use cases](#use-cases) · [Capabilities](#current-capabilities) · [Architecture](#how-it-works) · [Limitations](#current-limitations) · [Future](#future) · [Docs](./docs/README.md) · [Contributing](./CONTRIBUTING.md)
 
@@ -39,21 +39,23 @@ EchoWave helps teams turn interviews, sales calls, meetings, and other recording
 
 - **Audio to report**: ASR, speaker review, transcript confirmation, role/emotion recognition, and business analysis.
 - **Reviewable and traceable results**: raw transcripts, confirmed versions, downstream analysis, retries, cancellation, recovery, and provider calls keep distinct audit facts.
-- **Knowledge-grounded output**: ingest Markdown, DOCX, and XLSX files into pgvector and answer with validated citations.
+- **Knowledge-grounded output**: ingest Markdown, DOCX, and XLSX files through versioned, structure-aware chunking, then use scoped pgvector retrieval, optional audited reranking, and citation checks for answers and business analysis.
 - **Self-hosted control**: operators control the server, database, audio lifecycle, and credential boundary; the app connects to a runtime-selected server.
 - **Cross-platform and bilingual**: one Expo codebase targets Android, iOS, and Web, with Simplified Chinese and English UI and analysis output.
 
 ## Current capabilities
 
-| Area          | Available today                                                                                         |
-| ------------- | ------------------------------------------------------------------------------------------------------- |
-| Workspace     | Groups, knowledge bases, data sources, links, audio uploads, soft archive, and starter templates        |
-| Audio         | DashScope file transcription, Silero VAD, speaker turns, transcript confirmation, retry/cancel/recovery |
-| Analysis      | Speaker review, business roles, acoustic/text emotion, LangGraph sales review, custom focus areas       |
-| Knowledge     | Markdown/DOCX/XLSX parsing, DashScope embeddings, pgvector retrieval, citation-checked answers          |
-| Automation    | Immediate or scheduled batches, checkpoint recovery, SSE live status, optional Expo Push                |
-| Configuration | Provider and credential revisions, capability bindings, task snapshots, redacted AI reports             |
-| Client        | Android/iOS/Web, runtime server selection, onboarding, Chinese/English UI and analysis language         |
+| Area          | Available today                                                                                                                                    |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Workspace     | Groups, knowledge bases, data sources, links, audio uploads, soft archive, and starter templates                                                   |
+| Audio         | DashScope file transcription, Silero VAD, speaker turns, transcript confirmation, retry/cancel/recovery                                            |
+| Analysis      | Speaker review, business roles, acoustic/text emotion, LangGraph sales review, custom focus areas                                                  |
+| Knowledge     | Structure-aware Markdown/DOCX/XLSX chunking, DashScope embeddings, scoped pgvector retrieval, optional audited reranking, citation-checked answers |
+| Automation    | Immediate or scheduled batches, checkpoint recovery, SSE live status, optional Expo Push                                                           |
+| Configuration | Provider and credential revisions, capability bindings, task snapshots, redacted AI reports                                                        |
+| Client        | Android/iOS/Web, runtime server selection, onboarding, Chinese/English UI and analysis language                                                    |
+
+Knowledge-file title changes and replacements keep the previous active revision online until parsing and embedding finish. Configure `KNOWLEDGE_STORAGE_DIR` before starting or migrating the API; see [configuration](./docs/configuration.md) and [database upgrade instructions](./docs/database-schema.md).
 
 ## How it works
 
@@ -83,7 +85,7 @@ Choose an audio runtime mode during setup: all three modes support closing the A
 
 ### I want to use EchoWave
 
-Download the latest signed Android APK and the matching `EchoWave-server-vX.Y.Z.zip` from [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases), verify their SHA-256 checksums, and follow the bundled README. Releases are published through a `vMAJOR.MINOR.PATCH` tag; do not install from `main`.
+Download the latest signed Android APK and matching Server ZIP from [GitHub Releases](https://github.com/MetaBrain-Labs/EchoWave/releases), verify their SHA-256 checksums, and follow the bundled README. Stable releases use `vMAJOR.MINOR.PATCH`; Beta releases use `vMAJOR.MINOR.PATCH-beta.N`. Do not install from `main`.
 
 ```bash
 unzip EchoWave-server-vX.Y.Z.zip -d echowave-server
@@ -120,7 +122,7 @@ EXPO_PUBLIC_API_URL=http://<SERVER_LAN_IP>:<API_PORT>
 
 You can also run `pnpm dev:api` and `pnpm dev:mobile -- --lan` in separate terminals. Without a Development Build, `pnpm --filter @echowave/mobile dev:go -- --lan` can preview compatible features, but Expo Go cannot validate the complete remote-push flow.
 
-After startup, open **More → AI Configuration** to create providers, select a Local Credential alias or securely store a Database Credential, and bind capabilities. EchoWave currently centers on Alibaba Cloud Model Studio/Qwen because one Alibaba Cloud account can cover embedding, ASR, multimodal, third-party DeepSeek model access, and OSS. Model Studio API keys and OSS AccessKeys remain separate credentials, and EchoWave still uses separate DashScope, DeepSeek, and OSS logical connections. Lightweight local does not need OSS; hybrid and object-storage modes do. Only the repository's adapted default models are guaranteed today, with more models and providers planned. See the [configuration and credential guide](./docs/configuration.md).
+After startup, open **More → AI Configuration** to create providers, select a Local Credential alias or securely store a Database Credential, and bind capabilities. EchoWave currently centers on Alibaba Cloud Model Studio/Qwen because one Alibaba Cloud account can cover embedding, ASR, multimodal, third-party DeepSeek model access, and OSS. Model Studio API keys and OSS AccessKeys remain separate credentials, and EchoWave still uses separate DashScope, DeepSeek, and OSS logical connections. Lightweight local does not need OSS; hybrid and object-storage modes do. The model picker searches the active provider catalog and filters by capability, but saving remains restricted to models whose contracts have been adapted and verified by the repository. See the [configuration and credential guide](./docs/configuration.md).
 
 ## Common commands
 
@@ -164,5 +166,3 @@ Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request. Use [Gi
 `main` is protected, so every change lands through a pull request and the `CI` workflow must pass before merge. Maintainers keep the branch ruleset, CI requirement, and discussion channels enabled in the repository settings.
 
 EchoWave is licensed under the [Apache License 2.0](./LICENSE). Contributions are submitted under the same license.
-
-Knowledge file updates now preserve the previous active revision until parsing and embedding succeed. Configure the required `KNOWLEDGE_STORAGE_DIR` before starting or migrating the API; see [configuration](./docs/configuration.md) and [database upgrade instructions](./docs/database-schema.md).

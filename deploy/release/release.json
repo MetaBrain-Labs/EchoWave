@@ -1,4 +1,41 @@
 {
-  "version": "0.4.0",
-  "minimumDirectRollbackVersion": "0.3.0"
+  "version": "1.0.0-beta.1",
+  "appVersion": "1.0.0",
+  "minimumDirectRollbackVersion": "0.4.0",
+  "releaseNotes": {
+    "highlights": [
+      "知识库新增租户级可配置的 DashScope Qwen 重排，并完整记录模型、Token、状态与失败回退原因。",
+      "知识文档升级为结构感知 Chunk v3，保留标题层级、列表、表格与来源定位元数据。",
+      "AI 配置支持浏览和筛选 DashScope 模型目录，同时只允许保存经过 EchoWave 验证的能力绑定。",
+      "分组、知识库、数据源、音频和分析页面迁移到真实 Workspace API 与 PostgreSQL 权威数据。"
+    ],
+    "changes": {
+      "Audio": [
+        "移动端音频列表、上传历史和处理状态改为读取 Workspace API，不再依赖页面内静态记录。"
+      ],
+      "Analysis": [
+        "业务分析任务冻结知识重排能力绑定和配置快照，使重试与历史结果保持可追溯。",
+        "分析与知识回答继续保留引用证据、运行耗时、模型用量和失败审计。"
+      ],
+      "Knowledge": [
+        "Markdown、DOCX 与 XLSX 入库使用结构感知 Chunk v3，并在文档详情中展示可追踪的版本与处理状态。",
+        "检索先取得最多 20 个候选片段，可选调用 qwen3.7-text-rerank，并在 8 秒超时或供应商失败时安全回退。",
+        "最终回答最多使用 5 个片段；RAG 运行记录保存重排模型、绑定 revision、Token 与 applied、disabled 或 fallback 状态。"
+      ],
+      "Deployment": [
+        "发布流程支持 vMAJOR.MINOR.PATCH-beta.N，并将 GitHub Beta 标记与 Expo 原生 App 版本分离。",
+        "Release manifest 升级到 schemaVersion 2，新增 appVersion、prerelease 和结构化 releaseNotes。",
+        "更新 Hono、DOCX 解析和 ONNX Runtime 依赖链，并重新执行生产依赖安全审计。"
+      ]
+    },
+    "breakingChanges": [
+      "Release manifest 的 schemaVersion 从 1 升级为 2；读取 manifest 的外部自动化需要兼容 appVersion、prerelease 与 releaseNotes 字段。",
+      "本版本新增 043、044、045 migration。升级前必须备份 PostgreSQL；升级后允许直接回退到的最低 Server 版本是 v0.4.0。"
+    ],
+    "knownLimitations": [
+      "EchoWave 1.0.0 Beta 仍只适合自托管、可信局域网或受控私有部署，不要把 API 端口直接暴露到公网。",
+      "当前没有真实账号、RBAC 与速率限制；公网入口必须自行配置 HTTPS 反向代理和最小化网络访问范围，但这些措施不能替代应用级鉴权。",
+      "官方发布流程当前生成 Android APK 与 Server 包；iOS 原生发布仍需要在 macOS 与 Xcode 环境完成验证。"
+    ]
+  }
 }

@@ -5,8 +5,9 @@
 本文说明如何从 GitHub Release 下载 EchoWave Android App 和 Server、完成校验与首次安装，
 以及如何升级、回退和发布新版本。
 
-EchoWave 的稳定版本以 `vMAJOR.MINOR.PATCH` Tag 和对应的 GitHub Release 为唯一分发入口。
-GitHub 自动生成的 Source code 压缩包不是 Server 安装包。
+EchoWave 的稳定版使用 `vMAJOR.MINOR.PATCH` Tag；Beta 使用
+`vMAJOR.MINOR.PATCH-beta.N`，必须标记为 GitHub Prerelease，且不能成为 Latest。GitHub 自动
+生成的 Source code 压缩包不是 Server 安装包。
 
 > EchoWave 当前是固定开发租户的预览版本，没有真实鉴权、RBAC 或速率限制。可信本机和局域网
 > 可以使用 HTTP；任何云服务器或公网 App 服务端都必须使用 HTTPS、反向代理和最小网络访问
@@ -22,23 +23,23 @@ Ubuntu 22.04 x86_64 源码部署、Windows Docker Desktop、运行模式、HTTPS
 
 ## 2. 选择并下载版本
 
-打开 [EchoWave Releases](https://github.com/MetaBrain-Labs/EchoWave/releases)，选择需要的稳定
-版本。最新版本适合首次安装；历史版本用于回退或复现旧环境。
+打开 [EchoWave Releases](https://github.com/MetaBrain-Labs/EchoWave/releases)。普通安装选择最新
+稳定版；测试预览功能时可选择明确标记的 Beta；历史版本用于回退或复现旧环境。
 
 每个完整 Release 固定提供：
 
-| 文件                           | 用途                                                   |
-| ------------------------------ | ------------------------------------------------------ |
-| `EchoWave-android-vX.Y.Z.apk`  | Android 安装包                                         |
-| `EchoWave-server-vX.Y.Z.zip`   | 已固定镜像 digest 的 Docker Compose Server 包          |
-| `EchoWave-release-vX.Y.Z.json` | Commit、镜像、平台、migration 和回退窗口等机器可读信息 |
-| `SHA256SUMS-vX.Y.Z.txt`        | APK、Server ZIP 和 manifest 的 SHA-256                 |
+| 文件                                    | 用途                                                   |
+| --------------------------------------- | ------------------------------------------------------ |
+| `EchoWave-android-vX.Y.Z[-beta.N].apk`  | Android 安装包                                         |
+| `EchoWave-server-vX.Y.Z[-beta.N].zip`   | 已固定镜像 digest 的 Docker Compose Server 包          |
+| `EchoWave-release-vX.Y.Z[-beta.N].json` | Commit、镜像、平台、migration 和回退窗口等机器可读信息 |
+| `SHA256SUMS-vX.Y.Z[-beta.N].txt`        | APK、Server ZIP 和 manifest 的 SHA-256                 |
 
 同一次安装使用的 App 和 Server 最好来自同一个 Release。Server 回退时必须另外遵守第 7 节
 的数据库兼容边界。
 
-文档中的 `X.Y.Z` 是占位符。例如使用 `v0.1.0` 时，应把
-`EchoWave-server-vX.Y.Z.zip` 替换为 `EchoWave-server-v0.1.0.zip`。
+文档中的 `X.Y.Z[-beta.N]` 是占位符。下载时必须使用完整 Release 版本；Beta 文件名不能省略
+`-beta.N` 后缀。
 
 ## 3. 校验下载文件
 
@@ -345,19 +346,19 @@ GHCR 容器包第一次创建时可能仍是 private。此时发布工作流会�
 
 ### 9.1 更新版本和回退元数据
 
-把以下六个位置更新为同一个 `X.Y.Z`：
-
-1. 根目录 `package.json`。
-2. `apps/api/package.json`。
-3. `apps/mobile/package.json`。
-4. `packages/contracts/package.json`。
-5. `apps/mobile/app.json` 中的 Expo `version`。
-6. `deploy/release/release.json` 中的 `version`。
+稳定版运行 `pnpm release:bump X.Y.Z`；Beta 运行
+`pnpm release:bump X.Y.Z-beta.N`。脚本把完整 Release 版本写入四个 workspace
+`package.json` 和 `deploy/release/release.json.version`，同时让 `apps/mobile/app.json` 与
+`release.json.appVersion` 保持不含 Beta 后缀的原生 `X.Y.Z` 版本。
 
 同时更新 `deploy/release/release.json` 的 `minimumDirectRollbackVersion`：
 
 - 首个 Release：必须等于当前版本。
 - 后续 Release：不得高于上一稳定版本，确保至少支持 N-1 直接回退。
+
+同时更新 `deploy/release/release.json.releaseNotes` 中的 Highlights、Audio、Analysis、
+Knowledge、Deployment、Breaking changes 与 Known limitations；发布脚本会校验并直接渲染这些
+内容。
 
 普通 migration 必须采用 expand-contract，使上一稳定 Server 能在升级后的数据库上启动。发布
 manifest 会自动记录仓库内全部 migration 和相对上一稳定 Tag 本次新增的 migration。
@@ -367,14 +368,14 @@ manifest 会自动记录仓库内全部 migration 和相对上一稳定 Tag 本�
 在版本提交上执行：
 
 ```bash
-RELEASE_TAG=vX.Y.Z RELEASE_COMMIT=$(git rev-parse HEAD) RELEASE_MAIN_REF=HEAD pnpm release:validate
+RELEASE_TAG=vX.Y.Z-beta.N RELEASE_COMMIT=$(git rev-parse HEAD) RELEASE_MAIN_REF=HEAD pnpm release:validate
 pnpm check
 ```
 
 PowerShell：
 
 ```powershell
-$env:RELEASE_TAG = "vX.Y.Z"
+$env:RELEASE_TAG = "vX.Y.Z-beta.N"
 $env:RELEASE_COMMIT = git rev-parse HEAD
 $env:RELEASE_MAIN_REF = "HEAD"
 pnpm release:validate
@@ -403,11 +404,12 @@ pnpm check
 ```bash
 git switch main
 git pull --ff-only
-git tag -a vX.Y.Z -m "EchoWave vX.Y.Z"
-git push origin vX.Y.Z
+git tag -a vX.Y.Z-beta.N -m "EchoWave vX.Y.Z-beta.N"
+git push origin vX.Y.Z-beta.N
 ```
 
-不要从功能分支创建 Tag，也不要推送 `v1.2.3-rc.1`、`latest` 或其他非稳定版本 Tag。
+稳定版只能使用 `vX.Y.Z`，Beta 只能使用 `vX.Y.Z-beta.N`。不要从功能分支创建 Tag、复用已
+发布 Tag，或推送 `rc`、`alpha`、`latest` 等工作流不支持的 Tag。
 
 ### 9.4 查看发布结果
 
@@ -420,15 +422,15 @@ git push origin vX.Y.Z
 5. 验证 Node、FFmpeg、`onnxruntime-node` 和匿名 GHCR 拉取。
 6. 生成 Server ZIP、Release manifest 和 SHA-256。
 7. 运行当前版本集成烟测及 N-1 直接回退烟测。
-8. 创建完整 Draft，上传四个资产，最后公开 Release。
+8. 创建完整 Draft，上传四个资产，最后公开 Release；Beta 会标记为 Prerelease 且不会成为 Latest。
 
 任何步骤失败都不会公开不完整 Release。已公开的 Release 不允许覆盖或重建；修复发布问题后
-应创建新的 Patch 版本，而不是复用旧 Tag。
+应递增 Beta 序号或创建新的 Patch 版本，而不是复用旧 Tag。
 
-Release 说明由公开 manifest 渲染，并固定为用户优先的顺序：Highlights、Downloads、What's
-new、Breaking changes、Known limitations、Upgrade，最后是折叠的 `Database migrations` 与
-`Full changelog`。公开 Draft 前，请补上本版本的用户可见重点，并把变更分别归入 Audio、
-Analysis、Knowledge、Deployment 小节；自动生成的 PR 列表保留在折叠的 changelog 中。
+Release 说明由经过校验的 `deploy/release/release.json.releaseNotes` 渲染，并固定为用户优先
+的顺序：Highlights、Downloads、What's new、Breaking changes、Known limitations、Upgrade，
+最后是折叠的 `Database migrations` 与 `Full changelog`。自动生成的 PR 列表保留在折叠的
+changelog 中。
 
 ## 10. 常见问题
 

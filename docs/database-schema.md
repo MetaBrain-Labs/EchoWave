@@ -68,7 +68,11 @@ A stable connection identity points to immutable revisions containing provider t
 
 ### `ai_capability_bindings` and `ai_capability_binding_revisions`
 
-Stable capability identities bind knowledge embedding/chat, transcription, emotion, role, speaker review, business analysis, staging, and primary storage to a provider revision plus model/backend settings. Publication creates a revision rather than mutating task history.
+Stable capability identities bind knowledge embedding/reranking/chat, transcription, emotion, role, speaker review, business analysis, staging, and primary storage to a provider revision plus model/backend settings. Publication creates a revision rather than mutating task history.
+
+### `tenant_knowledge_retrieval_settings`
+
+Stores the tenant-authoritative reranking switch and optimistic-lock revision. The client cannot override it per question. Whether a specific run can apply reranking is additionally frozen through the selected `knowledge_rerank` binding revision.
 
 ### `configuration_imports`
 
@@ -90,7 +94,7 @@ Immutable parse/publication attempt with content hash, parser/model facts, statu
 
 ### `document_chunks`
 
-Tenant-, knowledge-, document-, and revision-scoped evidence text with ordinal, source locator, token/character facts, and `vector(1024)` embedding. Unique revision/ordinal keys make retries idempotent. HNSW cosine search is restricted to the current active revision.
+Tenant-, knowledge-, document-, and revision-scoped evidence text with ordinal, source locator, token/character facts, and `vector(1024)` embedding. Chunk v3 also records `content_kind`, `title_source`, and `part_index`/`part_count`, so split table rows, spreadsheet records, lists, code, and prose retain auditable structure. Unique revision/ordinal keys make retries idempotent. HNSW cosine search is restricted to the current active revision.
 
 ### `ingestion_jobs`
 
@@ -98,7 +102,7 @@ Durable queue rows with lease, attempts, retry schedule, progress, and error fac
 
 ### `rag_conversations` and `rag_runs`
 
-Conversations hold bounded multi-turn context anchored to one knowledge base; `knowledge_base_ids` records the set of knowledge bases the conversation covered (migration 042 backfills it as a single-element array) and its first element matches `knowledge_base_id`. Runs audit one question, final grounded answer, validated citations, usage, status, and errors, and `knowledge_base_ids` records the effective retrieval scope of that run (single-base runs keep it equal to `knowledge_base_id`). Recent history reads only completed run summaries and does not revive old conversations.
+Conversations hold bounded multi-turn context anchored to one knowledge base; `knowledge_base_ids` records the set of knowledge bases the conversation covered (migration 042 backfills it as a single-element array) and its first element matches `knowledge_base_id`. Runs audit one question, final grounded answer, validated citations, usage, status, errors, and the effective retrieval scope. Migration 044 adds the frozen rerank switch/model/binding plus token and terminal status fields; the append-only retrieval audit carries candidate/selection counts, duration, promoted evidence and a safe fallback reason. Recent history reads only completed run summaries and does not revive old conversations.
 
 ## Groups and relationships
 
@@ -177,6 +181,7 @@ Results are versioned and published through revision pointers; a failure or reru
 - `group_analysis_settings` stores the group's versioned template/role configuration.
 - `audio_business_analysis_jobs` is the durable status, progress, retry, checkpoint-thread, and error authority.
 - `audio_business_analysis_jobs` also carries the category retrieval audit added by migration 040: `category_snapshot` (content/category versions for publish-time staleness checks), `category_retrieval_calls` and `category_fallback_used` (retrieval budget and the single expansion, both shared across resumes), and the append-only `retrieval_audit` JSONB. Each real SQL retrieval appends `{call, query, knowledgeBaseIds, categoryIds, categories, includeTestSamples, reason, hitCount, durationMs}`, where `categories` freezes the category `id` and `name` so a report keeps showing the categories actually used even after a rename, and `reason` explains whether the scope came from an explicit filter, model choice, default routing, or the zero-hit/insufficient-evidence fallback. Requests that cannot reserve budget write no audit entry.
+- Migration 044 adds `rerank_enabled` and `rerank_binding_revision_id`; job creation freezes both so retries and checkpoint resumes cannot silently change retrieval policy.
 - `audio_business_analysis_windows` stores long-transcript window results so resume reruns only the earliest incomplete window.
 - `audio_group_business_analysis_heads` selects the current published result per audio/group.
 - `business_analysis_summary_sections` and structured tag/evidence tables store the immutable report publication.
@@ -253,3 +258,9 @@ Remove-Item Env:ECHOWAVE_LIVE_KNOWLEDGE_TEST
 ```
 
 Regression covers mixed-category filters, inheritance precedence, confirmation/version conflicts, cross-tenant rejection, test-fixture exclusion, unchanged text/vectors and filtered SQL query plans.
+
+## Chunk metadata and reranking migrations
+
+- `043_knowledge_chunk_metadata.sql` backfills legacy chunks and adds auditable content kind, title source, and part ordering for chunk v3.
+- `044_knowledge_reranking.sql` adds the tenant rerank switch, `knowledge_rerank` capability, RAG run audit columns, and the frozen business-analysis rerank snapshot. Historical runs and already queued jobs remain explicitly disabled.
+- `045_dashscope_workspace_endpoints.sql` backfills a fixed `qwen3.7-text-rerank` binding only for tenants that already have a current DashScope knowledge-embedding binding and no rerank binding. It does not overwrite an existing binding or repair unpublished shell rows.

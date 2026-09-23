@@ -255,6 +255,9 @@ it(
         chatProvider: 'test',
         embeddingBindingRevisionId: null,
         chatBindingRevisionId: null,
+        rerankEnabled: false,
+        rerankerModel: null,
+        rerankBindingRevisionId: null,
       });
       const citation = {
         number: 1,
@@ -273,6 +276,8 @@ it(
         citedChunkIds: [oldHit.id],
         citations: [citation],
         embeddingTokens: 0,
+        rerankTokens: 0,
+        rerankStatus: 'disabled',
         inputTokens: 0,
         outputTokens: 0,
         durationMs: 1,

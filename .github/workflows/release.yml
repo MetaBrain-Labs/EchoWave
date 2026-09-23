@@ -100,13 +100,13 @@ jobs:
 
       - name: Verify APK identity and signature
         env:
-          RELEASE_VERSION: ${{ steps.release_contract.outputs.version }}
+          APP_VERSION: ${{ steps.release_contract.outputs.app_version }}
         run: |
           build_tools_dir=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
           "$build_tools_dir/apksigner" verify --verbose dist/release/eas-output.apk
           badging=$("$build_tools_dir/aapt" dump badging dist/release/eas-output.apk | head -n 1)
           grep -F "package: name='com.echowave.app'" <<<"$badging"
-          grep -F "versionName='$RELEASE_VERSION'" <<<"$badging"
+          grep -F "versionName='$APP_VERSION'" <<<"$badging"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
@@ -258,19 +258,26 @@ jobs:
       - name: Create and publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          IS_PRERELEASE: ${{ steps.release_contract.outputs.prerelease }}
           RELEASE_VERSION: ${{ steps.release_contract.outputs.version }}
         run: |
+          release_flags=()
+          publish_flags=(--draft=false --latest)
+          if [[ "$IS_PRERELEASE" == "true" ]]; then
+            release_flags+=(--prerelease --latest=false)
+            publish_flags=(--draft=false --prerelease --latest=false)
+          fi
           gh release create "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --draft \
             --title "EchoWave $GITHUB_REF_NAME" \
             --notes-file dist/release/release-notes.md \
+            "${release_flags[@]}" \
             "dist/release/EchoWave-android-v${RELEASE_VERSION}.apk" \
             "dist/release/EchoWave-server-v${RELEASE_VERSION}.zip" \
             "dist/release/EchoWave-release-v${RELEASE_VERSION}.json" \
             "dist/release/SHA256SUMS-v${RELEASE_VERSION}.txt"
           gh release edit "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
-            --draft=false \
-            --latest
+            "${publish_flags[@]}"

@@ -132,7 +132,8 @@ apps/api/src/
 - 文本类能力绑定“供应商连接 + 模型”，模型来自该供应商的模型目录：百炼候选来自 `GET /api/v1/models` 并按能力责任过滤（文本生成，情绪额外要求音频输入），DeepSeek 保留静态 `deepseek-v4-flash` 作为成本备选。保存绑定时服务端会再校验一次目录，职责不符的模型无法发布。
 - Thinking 参数按供应商区分：DeepSeek 使用 `thinking: { type }`，百炼兼容模式使用 `enable_thinking`。共享聊天模型工厂只发送绑定供应商认识的字段。
 - 角色识别使用非思考 JSON Output，核心角色为“销售、客户、其他、未知”，数据源可在此基础上增加最多 16 个自定义角色。
-- 检索使用 cosine HNSW、`ef_search=100` 和 pgvector iterative scan，初召回 30，去重和文档配额后最多向 Agent 提供 8 块/12000 字符。
+- 检索使用 cosine HNSW、`ef_search=100` 和 pgvector iterative scan，最多初召回 20 个候选。租户开关开启且任务冻结的 `knowledge_rerank` 绑定可用时，使用 DashScope `qwen3.7-text-rerank` 对同一候选集合重新排序；8 秒超时、无效响应、限流或配置缺失都会明确降级为向量顺序，不丢失本次查询。去重与单文档配额随后在调用方字符预算内最多选择 5 块。
+- 每次 RAG 运行和业务分析任务都会冻结是否启用重排及可用的绑定 revision。完成后的检索审计保存 applied/disabled/fallback 状态、模型、候选与入选数量、因重排提升而入选的证据数、token、耗时和安全降级原因；不保存 Credential、候选正文或相关性分数。
 - DeepAgent 使用绑定能力选择的文本模型、结构化 `{ answer, grounded, citedChunkIds }` 输出和 PostgreSQL checkpointer。
 - 文件系统权限全部拒绝，不配置 skills、长期记忆或子代理；业务工具只有租户范围内的 `search_knowledge`，单轮最多实际执行四次。
 - 销售复盘的外层恢复边界是 LangGraph；DeepAgent 只作为其中一个原子分析节点，保留检索工具白名单、调用次数限制、结构修复和证据安全校验，不配置内部 checkpointer。

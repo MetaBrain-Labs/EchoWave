@@ -111,7 +111,11 @@ erDiagram
 
 ### `ai_capability_bindings` 与 `ai_capability_binding_revisions`
 
-能力绑定把 embedding、知识问答、ASR、音频暂存、声学情绪、角色识别、业务分析和原音频对象存储映射到具体 Provider revision。绑定 revision 保存主连接、可选辅助连接、模型和设置快照；文档入库、RAG、音频转写、后处理和业务分析任务均保存实际使用的绑定 revision 外键。
+能力绑定把知识 embedding、知识重排、知识问答、ASR、音频暂存、声学情绪、角色识别、说话人复核、业务分析和原音频对象存储映射到具体 Provider revision。绑定 revision 保存主连接、可选辅助连接、模型和设置快照；文档入库、RAG、音频转写、后处理和业务分析任务均保存实际使用的绑定 revision 外键。
+
+### `tenant_knowledge_retrieval_settings`
+
+保存租户级权威重排开关和乐观锁 revision，客户端不能按单次问题覆盖。某次运行是否真正具备重排条件，还会通过冻结的 `knowledge_rerank` binding revision 固化。
 
 ### `configuration_imports`
 
@@ -128,7 +132,7 @@ erDiagram
 - `storage_location`：内容存储位置，当前默认 `local`，可选 `local` 或 `cloud`。
 - `indexing_mode`：索引方式，当前默认 `rag`，可选 `full_context` 或 `rag`。
 - `embedding_model`：知识库配置的嵌入模型，当前固定为 `qwen3.7-text-embedding`。
-- `reranker_model`：可为空的重排序模型；`NULL` 表示未启用。
+- `reranker_model`：当前默认 `qwen3.7-text-rerank`，用于展示知识库的重排模型；是否启用由租户级 `tenant_knowledge_retrieval_settings` 决定。
 - `parsing_mode`：解析方式，当前默认 `automatic`，可选 `automatic` 或 `manual`。
 
 这些字段当前用于保存和展示创建时配置，不改变仍由 API 全局配置驱动的解析与检索流程。
@@ -182,6 +186,8 @@ erDiagram
 - `title`、`heading_path`：标题及层级路径。
 - `content`、`embedding_text`：原始内容和用于生成向量的文本。
 - `content_sha256`：片段内容哈希。
+- `content_kind`、`title_source`：chunk v3 的内容类型与标题来源；旧数据保留 `legacy`。
+- `part_index`、`part_count`：表格行、列表、代码或长段落拆分后的 1 基分段序号与总数。
 - `locator`：原文定位信息。
 - `embedding_model`、`embedding`：模型名称和 1024 维向量。
 
@@ -218,6 +224,8 @@ erDiagram
 - `cited_chunk_ids`：最终引用的文档块。
 - `knowledge_base_ids`：本次实际检索的知识库集合；单库时等于 `knowledge_base_id`（迁移 042 新增）。
 - embedding、输入和输出 token 数量。
+- `rerank_enabled`、`reranker_model`、`rerank_binding_revision_id`：本次运行冻结的重排策略。
+- `rerank_tokens`、`rerank_status` 与 `retrieval_audit`：完成后的 applied/disabled/fallback 状态、候选与入选计数、提升证据数、耗时和安全降级原因。
 - embedding 与聊天模型、供应商。
 - `duration_ms`、`status`、`completed_at`：耗时和运行结果。
 
@@ -443,6 +451,8 @@ ASR 确认后的情绪分析和角色识别任务。每条任务固化 `analysis
 
 迁移 040 为该表增加分类检索审计三列：`category_snapshot` 保存分析开始时白名单知识库的 `content_version` 与 `category_version`，用于发布时的过期判定；`category_retrieval_calls` 与 `category_fallback_used` 是跨恢复共享的检索额度与一次性扩大标记，领取和扩大都通过带 `status='running'` 条件的原子 UPDATE 完成。`retrieval_audit` 是 append 式 JSONB，每次真实 SQL 检索追加一条 `{call, query, knowledgeBaseIds, categoryIds, categories, includeTestSamples, reason, hitCount, durationMs}`；其中 `categories` 冻结分类当时的 `id` 与 `name`，使分析报告在分类改名或停用后仍能显示分析当时使用的分类，而 `reason` 解释本次范围来自显式筛选、模型选择、默认路由还是零命中/证据不足兜底。未占用到额度的请求不写审计。
 
+迁移 044 增加 `rerank_enabled` 与 `rerank_binding_revision_id`；任务创建时冻结二者，重试和 checkpoint 恢复不得静默改变检索策略。
+
 ### `audio_business_analysis_windows`
 
 长转写销售复盘的窗口级 checkpoint。结构与后处理窗口一致，以租户、job 和窗口序号保证幂等；最终汇总只消费已完成窗口结果。它补充 LangGraph 节点级 checkpoint，不替代最终业务表。
@@ -639,3 +649,9 @@ Remove-Item Env:ECHOWAVE_LIVE_KNOWLEDGE_TEST
 ```
 
 回归验证混合类别过滤、继承优先级、确认与版本冲突、跨租户拒绝、测试样例隔离、正文和向量不变，以及过滤 SQL 的执行计划。
+
+## Chunk 元数据与重排迁移
+
+- `043_knowledge_chunk_metadata.sql` 为 chunk v3 增加可审计的内容类型、标题来源和分段序号，历史 chunk 回填为 `legacy`。
+- `044_knowledge_reranking.sql` 增加租户级重排开关、`knowledge_rerank` 能力、RAG 运行审计列和业务分析冻结快照；历史运行与已排队任务保持明确关闭，不用新默认值改写旧语义。
+- `045_dashscope_workspace_endpoints.sql` 仅为“已有当前 DashScope 知识 embedding 绑定、但尚无重排绑定”的租户补建固定 `qwen3.7-text-rerank` 绑定；不会覆盖既有绑定，也不会修复没有已发布 revision 的空壳行。
