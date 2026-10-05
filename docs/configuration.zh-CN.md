@@ -80,6 +80,25 @@ EchoWave 当前以阿里云百炼和通义千问能力为主，是因为百炼�
 
 供应商 URL、Bucket、模型、Thinking、DashScope 通知模式、回调 URL 和能力绑定不再属于启动级 `.env`。仅在升级期保留旧环境导入时，可用 `DASHSCOPE_WORKSPACE_ID` 和可选 `DASHSCOPE_REGION` 替代三个旧 URL 变量；结构化业务空间配置优先，地域省略时使用 `cn-beijing`。只有启用了 Expo Push access-token 安全的项目才设置可选 `EXPO_PUSH_ACCESS_TOKEN`；它是服务端 Secret，不能使用 `EXPO_PUBLIC_` 前缀。
 
+## 运行日志
+
+日志行为只由 `LOG_LEVEL` 与 `LOG_FORMAT` 决定，不读取 `NODE_ENV`。
+
+| 环境         | `LOG_LEVEL`     | `LOG_FORMAT` | 输出                                              |
+| ------------ | --------------- | ------------ | ------------------------------------------------- |
+| 本地开发     | `debug`         | `pretty`     | 通过 `pino-pretty` 输出人类可读的彩色单行日志     |
+| 测试         | `silent`/`warn` | `json`       | 安静的结构化输出                                  |
+| 生产         | `info`          | `json`       | stdout 上的 NDJSON，由 Docker `local` driver 轮转 |
+| 生产临时排错 | `debug`         | `json`       | 同样的 NDJSON，附带供应商与重试细节               |
+
+两个变量默认值为 `info` 与 `json`，因此既有 `.env` 无需改动即可继续启动。`LOG_FORMAT=pretty` 只用于本地：`pino-pretty` 属于 devDependency，不会进入生产镜像，生产 `api.env` 必须保持 `LOG_FORMAT=json`。
+
+每个响应都带 `X-Request-Id`（同时通过 CORS 暴露），HTTP 访问日志以及同一请求内更深层的日志都携带同一个 `requestId`。Worker 使用自己的 `jobId`/`audioFileId`/`revisionId` 字段，而不是 request id，因为一次 Worker 执行并不属于当初入队的 HTTP 调用。生产排查方式为 `docker compose logs api | grep "<requestId>"`。
+
+敏感值必须从源头就不采集：不要记录请求 body、请求 headers、完整 Prompt、Credential、Push Token 或转写正文。Pino 对 `password`、`authorization`、`cookie`、`accessToken`、`refreshToken`、`apiKey`、`accessKeySecret`、`credentialMasterKey` 的脱敏只是第二层防护，不是记录它们的许可。
+
+运行日志不写入 PostgreSQL。业务审计事实（`ai_execution_runs`、`ai_execution_events`、`error_code`、`error_message`、任务状态）继续由 PostgreSQL 承载；日志只补充堆栈与请求追踪信息。
+
 ## Local Credential Provider
 
 本机部署可将 `LOCAL_CREDENTIALS_FILE` 指向：

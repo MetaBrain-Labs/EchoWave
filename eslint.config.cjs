@@ -17,6 +17,13 @@ module.exports = defineConfig([
       'import/no-unresolved': 'off',
     },
   },
+  {
+    // 生产代码必须使用 infrastructure/logger.ts 的结构化日志，禁止重新引入 console.*。
+    files: ['apps/api/src/**/*.ts'],
+    rules: {
+      'no-console': 'error',
+    },
+  },
   globalIgnores([
     '**/.expo/**',
     '**/.turbo/**',

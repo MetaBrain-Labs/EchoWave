@@ -27,6 +27,7 @@ import {
 } from '../../../ai-observability/executionReporter.ts';
 import type { DatabasePool } from '../../../infrastructure/postgres.ts';
 import type { LiveUpdateBroker } from '../../../infrastructure/liveUpdateBroker.ts';
+import { getLogger } from '../../../infrastructure/logger.ts';
 import {
   MODEL_DISPLAY_NAMES,
   REASONING_BATCH_CHARACTERS,
@@ -105,8 +106,11 @@ export class PostgresAudioExecutionRecorder implements AiExecutionRecorder {
           client.release();
         }
       })
-      .catch(() => {
-        console.warn('[audio-execution-audit] failed to start execution run');
+      .catch((error: unknown) => {
+        getLogger().warn(
+          { err: error, component: 'audio-execution-audit', runId: this.id },
+          'Failed to start execution run',
+        );
         return false;
       });
   }
@@ -300,8 +304,11 @@ export class PostgresAudioExecutionRecorder implements AiExecutionRecorder {
         });
         this.notify();
       })
-      .catch(() => {
-        console.warn('[audio-execution-audit] failed to persist live event');
+      .catch((error: unknown) => {
+        getLogger().warn(
+          { err: error, component: 'audio-execution-audit', runId: this.id, eventType: type },
+          'Failed to persist live event',
+        );
       });
   }
 
@@ -393,9 +400,12 @@ export class PostgresAudioExecutionRecorder implements AiExecutionRecorder {
       });
       await client.query('COMMIT');
       this.notify();
-    } catch {
+    } catch (error) {
       await client.query('ROLLBACK');
-      console.warn('[audio-execution-audit] failed to finish execution run');
+      getLogger().warn(
+        { err: error, component: 'audio-execution-audit', runId: this.id, phase: 'finish' },
+        'Failed to finish execution run',
+      );
     } finally {
       client.release();
     }

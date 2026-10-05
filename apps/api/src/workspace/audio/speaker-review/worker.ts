@@ -12,6 +12,7 @@ import {
   type AiExecutionReporter,
 } from '../../../ai-observability/executionReporter.ts';
 import type { LiveUpdateBroker } from '../../../infrastructure/liveUpdateBroker.ts';
+import { childLogger } from '../../../infrastructure/logger.ts';
 import type { WorkerWakeupSource } from '../../../infrastructure/workerWakeup.ts';
 import { PostAnalysisProviderError } from '../post-analysis/qwenEmotionAnalyzer.ts';
 import type { SpeakerReviewer } from './speakerReviewer.ts';
@@ -74,9 +75,7 @@ export class SpeakerReviewWorker {
       });
       this.active = execution;
     } catch (error) {
-      console.error('Failed to claim speaker review job', {
-        error: error instanceof Error ? error.name : 'UnknownError',
-      });
+      childLogger('speaker-review-worker').error({ err: error }, 'Failed to claim review job');
     } finally {
       this.pumping = false;
     }

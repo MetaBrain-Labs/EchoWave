@@ -17,6 +17,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 
+import { childLogger } from '../infrastructure/logger.ts';
+
 const MAX_SECTION_CHARACTERS = 120_000;
 const DEFAULT_REPOSITORY_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 const SENSITIVE_KEYS = new Set([
@@ -316,7 +318,9 @@ export function createAiExecutionReporter(
         throw error;
       }
     });
-  const warn = dependencies.warn ?? ((message: string) => console.warn(message));
+  // warn 保留可注入通道；默认实现写入结构化运行日志，不改变调用方签名。
+  const warn =
+    dependencies.warn ?? ((message: string) => childLogger('ai-execution-report').warn(message));
 
   return {
     start(input) {

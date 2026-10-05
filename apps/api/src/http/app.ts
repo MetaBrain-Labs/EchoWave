@@ -27,7 +27,9 @@ import type { PushDeviceService } from '../notifications/service.ts';
 import type { AudioAnalysisRunsService } from '../workspace/audio/analysis-runs/service.ts';
 import type { DashScopeCallbackService } from '../workspace/audio/transcription/dashScopeCallback.ts';
 import type { AsrPreferenceRepository } from '../workspace/audio/transcription/asrPreferenceRepository.ts';
+import type { LogContext } from '../infrastructure/logger.ts';
 import { installErrorHandlers } from './errorHandler.ts';
+import { requestLogging } from './requestLogging.ts';
 import { registerAudioRoutes } from './routes/audio.ts';
 import { registerAudioRuntimeRoutes } from './routes/audioRuntime.ts';
 import { registerAudioUploadRoutes } from './routes/audioUploads.ts';
@@ -64,6 +66,7 @@ export type AppDependencies = {
   asrPreferenceRepository?: AsrPreferenceRepository;
   remotePushEnabled?: boolean;
   knowledgeRetrievalSettingsService?: KnowledgeRetrievalSettingsService;
+  logContext?: Omit<LogContext, 'requestId' | 'component'>;
 };
 
 /** 创建不启动监听器的 Hono 应用，使生产服务器和测试共享传输入口。 */
@@ -74,13 +77,21 @@ export function createApp(
   const app = new Hono();
   const liveUpdates = dependencies.liveUpdateBroker ?? new LiveUpdateBroker();
 
+  // 请求追踪必须在 CORS 之前安装，使预检与失败请求同样带上 X-Request-Id。
+  app.use('*', requestLogging(dependencies.logContext));
   app.use(
     '*',
     cors({
       origin: config.corsOrigins,
       allowMethods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowHeaders: ['Authorization', 'Content-Type', 'Range', 'X-Audio-Filename'],
-      exposeHeaders: ['Accept-Ranges', 'Content-Length', 'Content-Range', 'Last-Modified'],
+      allowHeaders: ['Authorization', 'Content-Type', 'Range', 'X-Audio-Filename', 'X-Request-Id'],
+      exposeHeaders: [
+        'Accept-Ranges',
+        'Content-Length',
+        'Content-Range',
+        'Last-Modified',
+        'X-Request-Id',
+      ],
     }),
   );
 

@@ -12,6 +12,7 @@
  */
 import { readdir, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
+import { childLogger } from '../../infrastructure/logger.ts';
 import type { WorkerWakeupSource } from '../../infrastructure/workerWakeup.ts';
 import { KnowledgeCleanupRepository } from '../persistence/cleanupRepository.ts';
 import { checkedKnowledgeFilePath, knowledgeStoragePath } from './storage.ts';
@@ -50,7 +51,9 @@ export class KnowledgeCleanupWorker {
   private pump(): void {
     if (this.running || this.stopping) return;
     this.running = this.drain()
-      .catch(() => console.warn('Knowledge cleanup scan failed'))
+      .catch((error: unknown) => {
+        childLogger('knowledge-cleanup-worker').warn({ err: error }, 'Cleanup scan failed');
+      })
       .finally(() => {
         this.running = undefined;
       });

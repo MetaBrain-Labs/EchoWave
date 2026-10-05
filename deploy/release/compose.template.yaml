@@ -6,6 +6,13 @@ services:
     restart: unless-stopped
     env_file:
       - ./api.env
+    # 容量轮转：20 MB × 5，自动压缩并删除最旧文件，避免日志写满磁盘。
+    logging:
+      driver: local
+      options:
+        max-size: '20m'
+        max-file: '5'
+        compress: 'true'
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB']
       interval: 5s
@@ -16,8 +23,14 @@ services:
 
   migrate:
     image: '{{IMAGE_REFERENCE}}'
-    command: ['node', 'dist/bootstrap/migrate.js']
+    command: ['node', '--enable-source-maps', 'dist/bootstrap/migrate.js']
     restart: 'no'
+    logging:
+      driver: local
+      options:
+        max-size: '20m'
+        max-file: '5'
+        compress: 'true'
     depends_on:
       postgres:
         condition: service_healthy
@@ -28,6 +41,13 @@ services:
   api:
     image: '{{IMAGE_REFERENCE}}'
     restart: unless-stopped
+    # 结构化 JSON 日志通过 Docker local driver 轮转；LOG_LEVEL 是控制日志量的第一道闸门。
+    logging:
+      driver: local
+      options:
+        max-size: '20m'
+        max-file: '5'
+        compress: 'true'
     depends_on:
       migrate:
         condition: service_completed_successfully

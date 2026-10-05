@@ -16,6 +16,7 @@ import {
   noOpAiExecutionReporter,
   type AiExecutionReporter,
 } from '../../../ai-observability/executionReporter.ts';
+import { childLogger } from '../../../infrastructure/logger.ts';
 import type { WorkerWakeupSource } from '../../../infrastructure/workerWakeup.ts';
 import { classifyHardBlock, classifyStoredHardBlock } from './errorClassification.ts';
 import {
@@ -86,9 +87,10 @@ export class AudioAutomationWorker {
       if (!task) return;
       await this.advance(task);
     } catch (error) {
-      console.error('Failed to advance audio automation task', {
-        error: error instanceof Error ? error.name : 'UnknownError',
-      });
+      childLogger('audio-automation-worker').error(
+        { err: error },
+        'Failed to advance audio automation task',
+      );
     }
   }
 
@@ -387,12 +389,11 @@ export class AudioAutomationWorker {
     message: string,
     retryable: boolean,
   ): Promise<void> {
-    await this.recordUnavailableStageSources(task).catch((error) => {
-      console.warn('[audio-analysis-batch-report] failed to record terminal stage sources', {
-        batchId: task.batchId,
-        taskId: task.id,
-        error: error instanceof Error ? error.name : 'UnknownError',
-      });
+    await this.recordUnavailableStageSources(task).catch((error: unknown) => {
+      childLogger('audio-automation-worker').warn(
+        { err: error, batchId: task.batchId, taskId: task.id },
+        'Failed to record terminal stage sources',
+      );
     });
     const terminalEvent = await this.options.repository.fail(task, code, message, retryable);
     await this.writeBatchReport(task.batchId, terminalEvent);
@@ -437,10 +438,10 @@ export class AudioAutomationWorker {
       });
       await report.finish({ status: terminalEvent === 'FAILED' ? 'failed' : 'completed' });
     } catch (error) {
-      console.warn('[audio-analysis-batch-report] failed to create batch report', {
-        batchId,
-        error: error instanceof Error ? error.name : 'UnknownError',
-      });
+      childLogger('audio-automation-worker').warn(
+        { err: error, batchId },
+        'Failed to create batch report',
+      );
     }
   }
 

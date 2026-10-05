@@ -7,27 +7,38 @@
  * Responsibilities:
  * - 启动 API 与入库 worker。
  * - 报告可操作的监听失败信息。
- * - 协调优雅停机。
+ * - 协调优雅停机并记录进程级致命异常。
  *
  * Notes:
  * - 领域行为留在 app 与 RAG 模块中。
+ * - 日志必须先配置再使用；正常停机只设置 process.exitCode，让日志传输有机会落盘。
  */
 import { serve } from '@hono/node-server';
 
 import { readApiConfigFile } from '../config/env.ts';
 import { createApp } from '../http/app.ts';
+import { configureLogger, getLogger } from '../infrastructure/logger.ts';
+import { registerFatalHandlers } from './fatalHandlers.ts';
 import { formatServerStartError } from './serverError.ts';
 import { createGracefulShutdown, startWorkersAfterListening } from './serverLifecycle.ts';
 import { createRagRuntime } from './runtime.ts';
 
 const config = readApiConfigFile(new URL('../../.env', import.meta.url));
+configureLogger(config.logging);
+const logger = getLogger();
 const ragRuntime = createRagRuntime(config);
 const transcriptionCapabilities = await ragRuntime.audioInputPreprocessor.probeFfmpeg();
 if (transcriptionCapabilities.ffmpeg.configured && !transcriptionCapabilities.ffmpeg.available) {
-  console.warn('FFmpeg preprocessing is unavailable; DashScope audio transcription is disabled.');
+  logger.warn(
+    { component: 'bootstrap' },
+    'FFmpeg preprocessing is unavailable; DashScope audio transcription is disabled.',
+  );
 }
 if (transcriptionCapabilities.ffmpeg.available && !transcriptionCapabilities.sileroVad.available) {
-  console.warn('Silero VAD is unavailable; whole-file audio transcription remains available.');
+  logger.warn(
+    { component: 'bootstrap' },
+    'Silero VAD is unavailable; whole-file audio transcription remains available.',
+  );
 }
 const app = createApp(config, {
   knowledgeService: ragRuntime.service,
@@ -46,6 +57,7 @@ const app = createApp(config, {
   knowledgeRetrievalSettingsService: ragRuntime.knowledgeRetrievalSettingsService,
   asrPreferenceRepository: ragRuntime.asrPreferenceRepository,
   trustedProxyCidrs: config.settingsSecurity.trustedProxyCidrs,
+  logContext: { tenantId: config.rag.tenantId },
   ...(ragRuntime.dashScopeCallbackService
     ? { dashScopeCallbackService: ragRuntime.dashScopeCallbackService }
     : {}),
@@ -78,37 +90,48 @@ try {
     ]);
   });
   startupCompleted = true;
-  console.log(`EchoWave API listening on http://localhost:${config.port}`);
+  logger.info({ port: config.port }, 'EchoWave API started');
 } catch (error) {
-  console.error(
-    formatServerStartError(
-      error instanceof Error ? error : new Error('Unknown API startup failure.'),
-      config.port,
-    ),
+  const startupError = error instanceof Error ? error : new Error('Unknown API startup failure.');
+  logger.fatal(
+    {
+      err: startupError,
+      port: config.port,
+      // 可操作提示：端口占用等常见故障在此给出具体修复动作，不依赖堆栈阅读。
+      reason: formatServerStartError(startupError, config.port),
+    },
+    'EchoWave API startup failed',
   );
   try {
     await shutdown(1);
   } catch (shutdownError) {
-    console.error('Failed to release the API runtime after startup failure.', shutdownError);
+    logger.error(
+      { err: shutdownError },
+      'Failed to release the API runtime after startup failure.',
+    );
   }
   process.exitCode = 1;
 }
 
 /** 收到系统信号后先停止接收新连接，再释放 RAG 运行时资源。 */
 async function handleShutdown(signal: NodeJS.Signals, exitCode = 0) {
-  console.log(`Received ${signal}; shutting down EchoWave API.`);
+  logger.info({ signal }, 'EchoWave API shutting down');
   try {
     await shutdown(exitCode);
     process.exitCode = exitCode;
   } catch (error) {
-    console.error('Failed to close the API server cleanly.', error);
+    logger.error({ err: error }, 'Failed to close the API server cleanly.');
     process.exitCode = 1;
   }
 }
 
 if (startupCompleted) {
+  registerFatalHandlers({ shutdown: (exitCode) => void handleShutdown('SIGTERM', exitCode) });
   server.on('error', (error) => {
-    console.error(formatServerStartError(error, config.port));
+    logger.fatal(
+      { err: error, port: config.port, reason: formatServerStartError(error, config.port) },
+      'EchoWave API listener failed',
+    );
     void handleShutdown('SIGTERM', 1);
   });
   process.once('SIGINT', (signal) => void handleShutdown(signal));

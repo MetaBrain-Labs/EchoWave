@@ -168,7 +168,23 @@ curl http://127.0.0.1:3001/api/hello
 }
 ```
 
-### 3.7 云服务器必须使用反向代理和 HTTPS
+两个响应都会返回 `X-Request-Id` 响应头；用户报告失败时应先索取该值。
+
+### 3.7 查看结构化日志
+
+API 把 NDJSON 写入 stdout，Compose 使用 Docker `local` logging driver 保存（每容器 20 MB × 5 个文件，自动压缩，超过后删除最旧文件）。这属于**容量轮转**，不是按天保留。`LOG_LEVEL` 是控制日志量的主要开关。
+
+```bash
+docker compose logs --tail=100 api
+docker compose logs -f api
+docker compose logs --since 1h api
+docker compose logs api | grep "<requestId>"
+docker compose logs api | grep "<audioFileId>"
+```
+
+需要临时提高细节时，把 `deploy/self-hosted/api.env` 的 `LOG_LEVEL` 改为 `debug` 并重启 `api`；`LOG_FORMAT` 必须保持 `json`，因为生产镜像不包含本地 pretty printer。
+
+### 3.8 云服务器必须使用反向代理和 HTTPS
 
 根 Compose 当前把宿主机 `<API_PORT>` 映射到容器 3001。云服务器安全组和主机防火墙不得向公网开放 3001 或 5432；Nginx 在宿主机通过 `127.0.0.1:3001` 访问 API，公网只开放验证所需的 80 和受限来源的 443。
 
@@ -306,7 +322,7 @@ sudo systemctl reload nginx
 curl https://<PUBLIC_HOST>/health
 ```
 
-### 3.8 配置可信代理
+### 3.9 配置可信代理
 
 只有 Nginx 到 Node API 的真实来源地址可以进入 `TRUSTED_PROXY_CIDRS`。不要填写手机、公网客户端、整个互联网或未经确认的网段。
 
@@ -347,7 +363,7 @@ curl https://<PUBLIC_HOST>/api/settings/transport-security
 
 若结果不是该状态，先检查 Nginx 转发头、真实容器对端地址和 `TRUSTED_PROXY_CIDRS`，不要通过扩大 CIDR 绕过检查。
 
-### 3.9 安全组与 App 连接
+### 3.10 安全组与 App 连接
 
 当前预览版本的建议规则：
 

@@ -20,6 +20,7 @@ import {
   type AiExecutionReporter,
 } from '../../../ai-observability/executionReporter.ts';
 import type { LiveUpdateBroker } from '../../../infrastructure/liveUpdateBroker.ts';
+import { childLogger } from '../../../infrastructure/logger.ts';
 import type { WorkerWakeupSource } from '../../../infrastructure/workerWakeup.ts';
 import {
   type ClaimedPostAnalysisJob,
@@ -141,10 +142,10 @@ export class AudioPostAnalysisWorker {
       });
       this.active = execution;
     } catch (error) {
-      console.error('Failed to claim audio post-analysis job', {
-        type: this.options.type,
-        error: error instanceof Error ? error.name : 'UnknownError',
-      });
+      childLogger('audio-post-analysis-worker').error(
+        { err: error, type: this.options.type },
+        'Failed to claim post-analysis job',
+      );
     } finally {
       this.pumping = false;
     }
@@ -234,13 +235,17 @@ export class AudioPostAnalysisWorker {
           failurePersistenceError,
         },
       });
-      console.error('Audio post-analysis failed', {
-        audioFileId: job.audioFileId,
-        jobId: job.id,
-        type: job.type,
-        code,
-        retryScheduled: !finalFailure,
-      });
+      childLogger('audio-post-analysis-worker')
+        .child({ jobId: job.id, audioFileId: job.audioFileId, type: job.type })
+        .error(
+          {
+            err: error,
+            code,
+            retryScheduled: !finalFailure,
+            ...(failurePersistenceError ? { failurePersistenceError } : {}),
+          },
+          'Audio post-analysis failed',
+        );
     } finally {
       if (job.type === 'emotion' && this.options.preprocessor) {
         await this.options.preprocessor.cleanup(job.id).catch(() => undefined);
@@ -432,8 +437,11 @@ export class AudioPostAnalysisWorker {
       }
       throw error;
     } finally {
-      await runtime.ossStaging.delete(objectKey).catch(() => {
-        console.warn('Failed to clean transient emotion analysis object', { jobId: job.id });
+      await runtime.ossStaging.delete(objectKey).catch((error: unknown) => {
+        childLogger('audio-post-analysis-worker').warn(
+          { err: error, jobId: job.id },
+          'Failed to clean transient emotion analysis object',
+        );
       });
     }
   }

@@ -10,6 +10,7 @@
  * Notes:
  * - 失败不会回滚已成功的音频分析。
  */
+import { childLogger } from '../../infrastructure/logger.ts';
 import type { WorkerWakeupSource } from '../../infrastructure/workerWakeup.ts';
 import type { CollectionService } from './service.ts';
 import { createCollectionGraph } from './graph/graph.ts';
@@ -39,8 +40,9 @@ export class CollectionWorker {
   private wake(): void {
     if (this.stopping || this.active) return;
     this.active = this.drain()
-      .catch(() => {
-        console.warn('[case-collection] Queue temporarily unavailable.');
+      .catch((error: unknown) => {
+        // 队列不可用只是暂时降级，下一个补偿扫描周期会自动重试。
+        childLogger('case-collection-worker').warn({ err: error }, 'Queue temporarily unavailable');
       })
       .finally(() => {
         this.active = undefined;

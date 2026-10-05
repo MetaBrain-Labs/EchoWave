@@ -14,6 +14,7 @@
  */
 import type { PoolClient } from 'pg';
 
+import { childLogger } from './logger.ts';
 import type { DatabasePool } from './postgres.ts';
 import { quoteIdentifier } from './postgres.ts';
 
@@ -94,9 +95,10 @@ export class PostgresWorkerWakeup implements WorkerWakeupSource {
     try {
       await this.connect();
     } catch (error) {
-      console.warn('[worker-wakeup] PostgreSQL listener unavailable; using safety polling', {
-        error: error instanceof Error ? error.name : 'UnknownError',
-      });
+      childLogger('worker-wakeup').warn(
+        { err: error },
+        'PostgreSQL listener unavailable; using safety polling',
+      );
       this.scheduleReconnect();
     }
   }
@@ -157,9 +159,10 @@ export class PostgresWorkerWakeup implements WorkerWakeupSource {
     this.detachClient(client);
     client.release(true);
     if (this.stopping) return;
-    console.warn('[worker-wakeup] PostgreSQL listener disconnected; scheduling reconnect', {
-      error: error.name,
-    });
+    childLogger('worker-wakeup').warn(
+      { err: error },
+      'PostgreSQL listener disconnected; scheduling reconnect',
+    );
     this.scheduleReconnect();
   }
 
@@ -179,10 +182,8 @@ export class PostgresWorkerWakeup implements WorkerWakeupSource {
     this.reconnectAttempt += 1;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = undefined;
-      void this.connect().catch((error) => {
-        console.warn('[worker-wakeup] PostgreSQL listener reconnect failed', {
-          error: error instanceof Error ? error.name : 'UnknownError',
-        });
+      void this.connect().catch((error: unknown) => {
+        childLogger('worker-wakeup').warn({ err: error }, 'PostgreSQL listener reconnect failed');
         this.scheduleReconnect();
       });
     }, delay);

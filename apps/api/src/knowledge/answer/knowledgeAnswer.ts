@@ -26,6 +26,7 @@ import {
   type AiExecutionReporter,
 } from '../../ai-observability/executionReporter.ts';
 import type { RagConfig } from '../../config/workspace.ts';
+import { childLogger } from '../../infrastructure/logger.ts';
 import {
   EmbeddingProviderError,
   type DashScopeEmbeddings,
@@ -220,7 +221,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
     if (searchBaseIds.length !== requestedIds.length) {
       const resolved = new Set(searchBaseIds);
       const missing = requestedIds.filter((id) => !resolved.has(id));
-      console.warn('Knowledge answer rejected unknown knowledge bases', { missing });
+      childLogger('knowledge-answer').warn({ missing }, 'Rejected unknown knowledge bases');
       throw new RagRepositoryError('NOT_FOUND', '知识库不存在或已删除。');
     }
     const crossBase = searchBaseIds.length > 1;
@@ -899,10 +900,11 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         throw new KnowledgeAnswerError('MODEL_TIMEOUT', '问答模型响应超时，请稍后重试。');
       }
       if (error instanceof KnowledgeAnswerError || error instanceof RagRepositoryError) throw error;
-      console.error('Knowledge answer failed', error, {
-        conversationId: conversation.id,
-        knowledgeBaseId: command.knowledgeBaseId,
-      });
+      // 未知异常统一映射为可重试的模型不可用，但必须保留原始堆栈。
+      childLogger('knowledge-answer').error(
+        { err: error, conversationId: conversation.id, knowledgeBaseId: command.knowledgeBaseId },
+        'Knowledge answer failed',
+      );
       throw new KnowledgeAnswerError('MODEL_UNAVAILABLE', '问答模型暂时不可用，请稍后重试。');
     }
   }
@@ -921,7 +923,7 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
   private runCleanup(): Promise<void> {
     if (this.cleanupPromise) return this.cleanupPromise;
     const running = this.cleanupExpiredConversations().catch((error: unknown) => {
-      console.error('Failed to clean expired RAG conversations', error);
+      childLogger('knowledge-answer').warn({ err: error }, 'Failed to clean expired conversations');
     });
     this.cleanupPromise = running.finally(() => {
       this.cleanupPromise = undefined;
@@ -936,9 +938,10 @@ class DefaultKnowledgeAnswerModule implements KnowledgeAnswerModule {
         await this.options.checkpointer.deleteThread(conversation.threadId);
         await this.options.conversationRepository.deleteExpiredConversation(conversation.id);
       } catch (error) {
-        console.error('Failed to clean expired RAG conversation', error, {
-          conversationId: conversation.id,
-        });
+        childLogger('knowledge-answer').warn(
+          { err: error, conversationId: conversation.id },
+          'Failed to clean expired conversation',
+        );
       }
     }
   }

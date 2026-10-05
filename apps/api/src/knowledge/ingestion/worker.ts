@@ -21,6 +21,7 @@ import {
   type AiExecutionReporter,
 } from '../../ai-observability/executionReporter.ts';
 import type { WorkerWakeupSource } from '../../infrastructure/workerWakeup.ts';
+import { childLogger } from '../../infrastructure/logger.ts';
 import { DocumentParseError } from './documentParser.ts';
 import { EmbeddingProviderError, DashScopeEmbeddings } from '../embeddings/dashScopeEmbeddings.ts';
 import {
@@ -31,6 +32,16 @@ import { createIngestionGraph } from './graph/graph.ts';
 import type { IngestionNodeOptions } from './graph/nodes.ts';
 
 const SAFETY_POLL_INTERVAL_MS = 15_000;
+
+/** 把单个入库任务的标识固定进日志，便于按文档或 revision 追踪一次入库。 */
+function jobLog(job: ClaimedIngestionJob) {
+  return childLogger('knowledge-ingestion-worker').child({
+    jobId: job.id,
+    knowledgeBaseId: job.knowledgeBaseId,
+    documentId: job.documentId,
+    revisionId: job.revisionId,
+  });
+}
 
 type WorkerOptions = {
   suggestCategories?: IngestionNodeOptions['suggestCategories'];
@@ -89,7 +100,7 @@ export class IngestionWorker {
         try {
           job = await this.options.repository.claimIngestionJob();
         } catch (error) {
-          console.error('Failed to claim ingestion job', error);
+          childLogger('knowledge-ingestion-worker').error({ err: error }, 'Failed to claim job');
           return;
         }
         if (!job) return;
@@ -159,11 +170,7 @@ export class IngestionWorker {
         status: 'completed',
         metadata: { durationMs },
       });
-      console.info('Ingestion completed', {
-        jobId: job.id,
-        documentId: job.documentId,
-        durationMs,
-      });
+      jobLog(job).info({ durationMs }, 'Ingestion completed');
     } catch (error) {
       const known = error instanceof DocumentParseError || error instanceof EmbeddingProviderError;
       const obsolete =
@@ -206,12 +213,7 @@ export class IngestionWorker {
         error,
         metadata: { code, retryable, durationMs: Date.now() - startedAt },
       });
-      console.error('Ingestion failed', {
-        jobId: job.id,
-        documentId: job.documentId,
-        code,
-        retryable,
-      });
+      jobLog(job).error({ err: error, code, retryable }, 'Ingestion failed');
     } finally {
       clearInterval(heartbeat);
     }

@@ -21,6 +21,7 @@ import {
   type AiExecutionReporter,
 } from '../../../ai-observability/executionReporter.ts';
 import { quoteIdentifier, type DatabasePool } from '../../../infrastructure/postgres.ts';
+import { getLogger } from '../../../infrastructure/logger.ts';
 import type { LiveUpdateBroker } from '../../../infrastructure/liveUpdateBroker.ts';
 import { AudioExecutionEventMapper } from './eventMapping.ts';
 import { PostgresAudioExecutionRecorder } from './postgresRecorder.ts';
@@ -40,8 +41,11 @@ export class PostgresAudioExecutionRepository implements AudioExecutionQuery {
     private readonly liveUpdates?: LiveUpdateBroker,
   ) {
     this.schema = quoteIdentifier(schema);
-    this.resetPromise = this.resetInterrupted().catch(() => {
-      console.warn('[audio-execution-audit] failed to reset interrupted runs');
+    this.resetPromise = this.resetInterrupted().catch((error: unknown) => {
+      getLogger().warn(
+        { err: error, component: 'audio-execution-audit', tenantId: this.tenantId },
+        'Failed to reset interrupted runs',
+      );
     });
   }
 

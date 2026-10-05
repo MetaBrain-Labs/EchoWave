@@ -16,6 +16,7 @@ import {
   noOpAiExecutionReporter,
   type AiExecutionReporter,
 } from '../../../ai-observability/executionReporter.ts';
+import { childLogger } from '../../../infrastructure/logger.ts';
 import type { LiveUpdateBroker } from '../../../infrastructure/liveUpdateBroker.ts';
 import type { WorkerWakeupSource } from '../../../infrastructure/workerWakeup.ts';
 import type { BusinessAnalysisRepository, ClaimedBusinessAnalysisJob } from './repository.ts';
@@ -98,10 +99,13 @@ export class BusinessAnalysisWorker {
       });
       this.active = execution;
     } catch (error) {
-      console.error('Failed to claim business analysis job', {
-        code: error && typeof error === 'object' && 'code' in error ? error.code : undefined,
-        message: error instanceof Error ? error.message : String(error),
-      });
+      childLogger('business-analysis-worker').error(
+        {
+          err: error,
+          code: error && typeof error === 'object' && 'code' in error ? error.code : undefined,
+        },
+        'Failed to claim business analysis job',
+      );
     } finally {
       this.pumping = false;
     }
@@ -225,17 +229,18 @@ export class BusinessAnalysisWorker {
         },
       });
       if (!willRetry && !failurePersistenceError) await this.cleanupCheckpoint(job);
-      console.error('Business analysis failed', {
-        audioFileId: job.audioFileId,
-        groupId: job.groupId,
-        jobId: job.id,
-        code,
-        retryable,
-        willRetry,
-        message,
-        failurePersistenceError:
-          failurePersistenceError instanceof Error ? failurePersistenceError.name : undefined,
-      });
+      childLogger('business-analysis-worker')
+        .child({ jobId: job.id, audioFileId: job.audioFileId, groupId: job.groupId })
+        .error(
+          {
+            err: error,
+            code,
+            retryable,
+            willRetry,
+            ...(failurePersistenceError ? { failurePersistenceError } : {}),
+          },
+          'Business analysis failed',
+        );
     }
   }
 
@@ -247,10 +252,10 @@ export class BusinessAnalysisWorker {
       else await this.options.workflow.deleteCheckpoint(job);
       await this.options.repository.markCheckpointCleaned(job.id);
     } catch (error) {
-      console.error('Failed to clean business analysis checkpoint', {
-        jobId: job.id,
-        error: error instanceof Error ? error.name : 'UnknownError',
-      });
+      childLogger('business-analysis-worker').error(
+        { err: error, jobId: job.id },
+        'Failed to clean business analysis checkpoint',
+      );
     }
   }
 
@@ -260,9 +265,10 @@ export class BusinessAnalysisWorker {
       for (const candidate of candidates) await this.cleanupCheckpoint(candidate);
     } catch (error) {
       // 清理失败不能阻断业务 Worker 启动；终态标记会让后续启动继续补偿。
-      console.error('Failed to list business analysis checkpoints for cleanup', {
-        error: error instanceof Error ? error.name : 'UnknownError',
-      });
+      childLogger('business-analysis-worker').warn(
+        { err: error },
+        'Failed to list business analysis checkpoints for cleanup',
+      );
     }
   }
 }

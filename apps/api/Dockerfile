@@ -57,4 +57,4 @@ USER node
 
 EXPOSE 3001
 
-CMD ["node", "dist/bootstrap/server.js"]
+CMD ["node", "--enable-source-maps", "dist/bootstrap/server.js"]

@@ -12,12 +12,15 @@
  */
 import { readApiConfigFile } from '../config/env.ts';
 import { createDatabasePool, quoteIdentifier } from '../infrastructure/postgres.ts';
+import { configureLogger, getLogger } from '../infrastructure/logger.ts';
 import { seedAudioWorkspace } from './seed/audio.ts';
 import { seedKnowledgeCatalog } from './seed/knowledge.ts';
 import type { SeedContext } from './seed/types.ts';
 import { seedWorkspaceCatalog, seedWorkspaceLinks } from './seed/workspace.ts';
 
 const config = readApiConfigFile(new URL('../../.env', import.meta.url));
+configureLogger(config.logging);
+const logger = getLogger();
 const pool = createDatabasePool(config.database);
 const schema = quoteIdentifier(config.database.schema);
 const context: SeedContext = {
@@ -35,7 +38,7 @@ async function seed(): Promise<void> {
     await seedWorkspaceLinks(client, context);
     await seedAudioWorkspace(client, context);
     await client.query('COMMIT');
-    console.log('Seeded EchoWave audio workspace development data.');
+    logger.info({ component: 'seed' }, 'Seeded EchoWave audio workspace development data.');
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -46,6 +49,9 @@ async function seed(): Promise<void> {
 
 try {
   await seed();
+} catch (error) {
+  logger.fatal({ err: error, component: 'seed' }, 'EchoWave development seed failed');
+  process.exitCode = 1;
 } finally {
   await pool.end();
 }

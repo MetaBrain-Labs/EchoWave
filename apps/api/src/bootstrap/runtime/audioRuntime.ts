@@ -15,6 +15,7 @@ import type { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
 import type { AiExecutionReporter } from '../../ai-observability/executionReporter.ts';
 import type { SttRawResponseReporter } from '../../ai-observability/sttRawResponseReporter.ts';
 import type { ApiConfig } from '../../config/env.ts';
+import { childLogger } from '../../infrastructure/logger.ts';
 import type { LiveUpdateBroker } from '../../infrastructure/liveUpdateBroker.ts';
 import type { DatabasePool } from '../../infrastructure/postgres.ts';
 import type { WorkerWakeupSource } from '../../infrastructure/workerWakeup.ts';
@@ -558,8 +559,11 @@ export function createAudioRuntime(options: AudioRuntimeOptions) {
       if (sourceCleanupTimer) return;
       await cleanupExpiredAudio();
       sourceCleanupTimer = setInterval(() => {
-        void cleanupExpiredAudio().catch((error) => {
-          console.error('Audio source lifecycle cleanup failed', error);
+        void cleanupExpiredAudio().catch((error: unknown) => {
+          childLogger('audio-source-cleanup').warn(
+            { err: error },
+            'Source lifecycle cleanup failed',
+          );
         });
       }, SOURCE_CLEANUP_INTERVAL_MS);
       sourceCleanupTimer.unref();

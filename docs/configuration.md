@@ -78,6 +78,25 @@ Create local `apps/api/.env` from `apps/api/.env.example`. The API reads only th
 
 Provider URLs, buckets, models, thinking modes, DashScope notification mode, callback URL, and capability bindings are tenant configuration rather than startup environment. During legacy environment import only, `DASHSCOPE_WORKSPACE_ID` and optional `DASHSCOPE_REGION` replace the three old URL variables; structured workspace configuration wins and defaults to `cn-beijing`. Set optional `EXPO_PUSH_ACCESS_TOKEN` only when Expo access-token security is enabled. It is a Server secret and must never use an `EXPO_PUBLIC_` prefix.
 
+## Runtime logs
+
+`LOG_LEVEL` and `LOG_FORMAT` are the only switches that decide log behavior; `NODE_ENV` is not consulted.
+
+| Environment                 | `LOG_LEVEL`     | `LOG_FORMAT` | Output                                                 |
+| --------------------------- | --------------- | ------------ | ------------------------------------------------------ |
+| Local development           | `debug`         | `pretty`     | Human-readable colored lines via `pino-pretty`         |
+| Tests                       | `silent`/`warn` | `json`       | Quiet structured output                                |
+| Production                  | `info`          | `json`       | NDJSON on stdout, rotated by the Docker `local` driver |
+| Temporary production triage | `debug`         | `json`       | Same NDJSON with provider and retry detail             |
+
+Both variables default to `info` and `json`, so an existing `.env` keeps starting unchanged. `LOG_FORMAT=pretty` is local-only: `pino-pretty` is a devDependency and is not installed in the production image, whose `api.env` must keep `LOG_FORMAT=json`.
+
+Each response carries an `X-Request-Id` header (also exposed through CORS), and every HTTP access log line plus any log emitted deeper in the same request carries the same `requestId`. Workers log under their own `jobId`/`audioFileId`/`revisionId` fields instead of a request id, because a worker run is not part of the HTTP call that queued it. Query production logs with `docker compose logs api | grep "<requestId>"`.
+
+Sensitive values must never be collected in the first place: do not log request bodies, request headers, full prompts, credentials, push tokens, or transcript text. Pino redaction of `password`, `authorization`, `cookie`, `accessToken`, `refreshToken`, `apiKey`, `accessKeySecret`, and `credentialMasterKey` is a second layer, not a licence to log them.
+
+Runtime logs stay out of PostgreSQL. Business audit facts (`ai_execution_runs`, `ai_execution_events`, `error_code`, `error_message`, task status) keep using PostgreSQL as before; logs only add stack traces and request tracing.
+
 ## Local Credential Provider
 
 Typical `LOCAL_CREDENTIALS_FILE` locations are:

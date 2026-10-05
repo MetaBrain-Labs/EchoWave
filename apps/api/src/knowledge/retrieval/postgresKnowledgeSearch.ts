@@ -19,6 +19,7 @@ import {
 } from '@echowave/contracts';
 import { toSql } from 'pgvector';
 
+import { childLogger } from '../../infrastructure/logger.ts';
 import { quoteIdentifier, type DatabasePool } from '../../infrastructure/postgres.ts';
 import type { KnowledgeSearchPort } from './port.ts';
 import { DashScopeReranker, RerankProviderError } from './dashScopeReranker.ts';
@@ -90,12 +91,15 @@ export class PostgresKnowledgeSearch implements KnowledgeSearchPort {
     const startedAt = Date.now();
     const result = await this.query([knowledgeBaseId], embedding, embeddingModel, filter);
     const selected = this.select(result.rows, 5, 12_000);
-    console.info('Knowledge retrieval completed', {
-      knowledgeBaseId,
-      candidateCount: result.rowCount ?? result.rows.length,
-      selectedCount: selected.length,
-      durationMs: Date.now() - startedAt,
-    });
+    childLogger('knowledge-retrieval').info(
+      {
+        knowledgeBaseId,
+        candidateCount: result.rowCount ?? result.rows.length,
+        selectedCount: selected.length,
+        durationMs: Date.now() - startedAt,
+      },
+      'Knowledge retrieval completed',
+    );
     return selected;
   }
 
@@ -208,10 +212,11 @@ export class PostgresKnowledgeSearch implements KnowledgeSearchPort {
       } catch (error) {
         rerankStatus = 'fallback';
         fallbackReason = error instanceof RerankProviderError ? error.code : 'INTERNAL_ERROR';
-        console.warn('Knowledge rerank degraded to vector order', {
-          reason: fallbackReason,
-          candidateCount: rows.length,
-        });
+        // 重排失败降级为向量顺序属于可恢复的供应商侧问题，只记 warn。
+        childLogger('knowledge-retrieval').warn(
+          { err: error, reason: fallbackReason, candidateCount: rows.length },
+          'Knowledge rerank degraded to vector order',
+        );
       }
     } else if (
       execution.rerank.enabled &&

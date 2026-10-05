@@ -22,6 +22,7 @@ import {
   type AiExecutionReporter,
 } from '../../../ai-observability/executionReporter.ts';
 import { runReportedStep } from '../../../ai-runtime/reportedStep.ts';
+import { childLogger } from '../../../infrastructure/logger.ts';
 import type { LiveUpdateBroker } from '../../../infrastructure/liveUpdateBroker.ts';
 import type { WorkerWakeupSource } from '../../../infrastructure/workerWakeup.ts';
 import {
@@ -170,9 +171,8 @@ export class AudioTranscriptionWorker {
       });
       this.active = execution;
     } catch (error) {
-      console.error('Failed to claim audio transcription work', {
-        error: error instanceof Error ? error.name : 'UnknownError',
-      });
+      // 领取阶段还没有具体任务，只记录组件与错误本身。
+      childLogger('audio-transcription-worker').warn({ err: error }, 'Failed to claim work');
     } finally {
       this.pumping = false;
       if (!claimed && !this.stopping) void this.scheduleNextDeadline();
@@ -201,9 +201,10 @@ export class AudioTranscriptionWorker {
       }, delay);
       this.deadlineTimer.unref();
     } catch (error) {
-      console.warn('Failed to schedule audio transcription deadline', {
-        error: error instanceof Error ? error.name : 'UnknownError',
-      });
+      childLogger('audio-transcription-worker').warn(
+        { err: error },
+        'Failed to schedule transcription deadline',
+      );
     }
   }
 
@@ -236,6 +237,7 @@ export class AudioTranscriptionWorker {
       return;
     }
     const report = this.startReport(work.job, work.kind);
+    const log = this.logFor(work.job);
     const startedAt = Date.now();
     let providers: TranscriptionProviders | undefined;
     try {
@@ -265,13 +267,18 @@ export class AudioTranscriptionWorker {
           speakerCount: new Set(segments.map((segment) => segment.speakerKey)).size,
         },
       });
-      console.info('Audio transcription completed from provider terminal result', {
-        audioFileId: work.job.audioFileId,
-        revisionId: work.job.revisionId,
-      });
+      log.info({ phase: work.kind }, 'Audio transcription completed from provider terminal result');
     } catch (error) {
       await this.finishFailure(work.job, report, error, startedAt, providers);
     }
+  }
+
+  /** 为单个转写任务绑定 audioFileId/revisionId，使该任务的日志可独立追踪。 */
+  private logFor(job: ClaimedAudioTranscription) {
+    return childLogger('audio-transcription-worker').child({
+      audioFileId: job.audioFileId,
+      revisionId: job.revisionId,
+    });
   }
 
   private startReport(
@@ -596,14 +603,17 @@ export class AudioTranscriptionWorker {
           : {}),
       },
     });
-    const log = finalFailure ? console.error : console.warn;
-    log('Audio transcription phase failed', {
-      audioFileId: job.audioFileId,
+    // 最终失败进 error，可重试失败降为 warn：重试成功的任务不应污染错误告警。
+    const log = this.logFor(job);
+    const fields = {
+      err: error,
       code,
-      revisionId: job.revisionId,
       retryable,
       retryScheduled: !finalFailure,
-    });
+      ...(persistenceError ? { persistenceError } : {}),
+    };
+    if (finalFailure) log.error(fields, 'Audio transcription phase failed');
+    else log.warn(fields, 'Audio transcription phase failed');
     if (persistenceError) throw persistenceError;
   }
 
@@ -619,11 +629,10 @@ export class AudioTranscriptionWorker {
       await this.options.repository.clearProviderArtifact(job);
       job.providerArtifactKey = null;
       report.recordStep({ name: 'oss-staging-cleanup', status: 'completed' });
-    } catch {
+    } catch (error) {
       report.recordStep({ name: 'oss-staging-cleanup', status: 'failed' });
-      console.warn('Failed to clean transient OSS transcription object', {
-        revisionId: job.revisionId,
-      });
+      // 对象键仍在数据库中，交给生命周期规则兜底，不因清理失败中断任务终态。
+      this.logFor(job).warn({ err: error }, 'Failed to clean transient OSS transcription object');
     }
   }
 }

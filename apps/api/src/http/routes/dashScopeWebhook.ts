@@ -12,6 +12,7 @@
  */
 import type { Hono } from 'hono';
 
+import { childLogger } from '../../infrastructure/logger.ts';
 import {
   DashScopeCallbackError,
   type DashScopeCallbackService,
@@ -38,9 +39,10 @@ export function registerDashScopeWebhookRoutes(app: Hono, service: DashScopeCall
           status,
         );
       }
-      console.error('Failed to persist DashScope callback', {
-        error: error instanceof Error ? error.name : 'UnknownError',
-      });
+      childLogger('dashscope-webhook').error(
+        { err: error },
+        'Failed to persist DashScope callback',
+      );
       return context.json(
         errorBody('INTERNAL_ERROR', 'DashScope callback is temporarily unavailable.', true),
         503,

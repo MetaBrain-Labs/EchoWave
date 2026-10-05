@@ -144,9 +144,23 @@ curl http://127.0.0.1:3001/health
 curl http://127.0.0.1:3001/api/hello
 ```
 
-`/health` must identify EchoWave API version 1 with `status=ok`; `/api/hello` must return `{ "ok": true, "service": "echowave-api", "message": "HelloWorld" }`.
+`/health` must identify EchoWave API version 1 with `status=ok`; `/api/hello` must return `{ "ok": true, "service": "echowave-api", "message": "HelloWorld" }`. Both responses carry an `X-Request-Id` header; ask users for that value when they report a failure.
 
-### 3.7 Public hosts require Nginx and HTTPS
+### 3.7 Inspect structured logs
+
+The API writes NDJSON to stdout and Compose stores it with the Docker `local` logging driver (20 MB × 5 files per container, compressed, oldest file deleted). This is capacity rotation, not day-based retention. `LOG_LEVEL` is the primary lever for log volume.
+
+```bash
+docker compose logs --tail=100 api
+docker compose logs -f api
+docker compose logs --since 1h api
+docker compose logs api | grep "<requestId>"
+docker compose logs api | grep "<audioFileId>"
+```
+
+For temporary detail, set `LOG_LEVEL=debug` in `deploy/self-hosted/api.env` and restart `api`. Keep `LOG_FORMAT=json`: the production image does not include the local pretty printer.
+
+### 3.8 Public hosts require Nginx and HTTPS
 
 The root Compose maps host `<API_PORT>` to container 3001. Security groups and host firewalls must keep 3001 and 5432 off the public internet. Nginx reaches `127.0.0.1:3001`; expose only port 80 when needed for certificate validation and tightly restricted port 443.
 
@@ -264,7 +278,7 @@ sudo systemctl reload nginx
 curl https://<PUBLIC_HOST>/health
 ```
 
-### 3.8 Trusted proxy
+### 3.9 Trusted proxy
 
 Only the real Nginx-to-Node peer belongs in `TRUSTED_PROXY_CIDRS`. Never enter the phone, public clients, the entire internet, or an unverified subnet.
 
@@ -282,7 +296,7 @@ curl https://<PUBLIC_HOST>/api/settings/transport-security
 
 Expected: `mode=trusted_proxy_https`, `secretSubmissionAllowed=true`, `warning=null`. Fix proxy headers and the exact peer when it differs; never widen the CIDR to bypass validation.
 
-### 3.9 Network and App connection
+### 3.10 Network and App connection
 
 Recommended preview rules: SSH 22 from an administrator's fixed IP, 80 only for validation/redirect, 443 from the smallest test-device source range, and no public 3001 or 5432. Enter `https://<PUBLIC_HOST>` in a Production APK without the internal API port.
 

@@ -17,6 +17,7 @@ import { ZodError } from 'zod';
 import { KnowledgeAnswerError } from '../knowledge/answer/knowledgeAnswer.ts';
 import { RagRepositoryError } from '../knowledge/persistence/errors.ts';
 import { UploadValidationError } from '../knowledge/service.ts';
+import { getLogger } from '../infrastructure/logger.ts';
 import { WorkspaceRepositoryError } from '../workspace/errors.ts';
 import { SettingsError } from '../settings/types.ts';
 import { AudioUploadValidationError } from '../workspace/data-sources/service.ts';
@@ -85,8 +86,19 @@ export function installErrorHandlers(app: Hono): void {
       message = error.message;
       // 模型目录暂时不可用属于可重试的供应商侧失败，客户端应显式暴露重试入口。
       retryable = error.code === 'MODEL_UNAVAILABLE';
+    }
+    // 已知错误按可恢复程度分级：5xx 与未识别异常保留 Error 堆栈，可重试失败进 warn，
+    // 其余 4xx 只留 debug，避免校验类错误淹没生产日志。
+    const logger = getLogger();
+    if (status >= 500) {
+      logger.error(
+        { err: error, statusCode: status, errorCode: code, retryable },
+        'API request failed',
+      );
+    } else if (retryable) {
+      logger.warn({ statusCode: status, errorCode: code, retryable }, 'API request rejected');
     } else {
-      console.error('Unhandled API error', error);
+      logger.debug({ statusCode: status, errorCode: code }, 'API request rejected');
     }
     return context.json(errorBody(code, message, retryable), status);
   });

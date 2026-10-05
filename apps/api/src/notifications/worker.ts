@@ -10,10 +10,13 @@
  */
 import { Expo } from 'expo-server-sdk';
 
+import { childLogger } from '../infrastructure/logger.ts';
 import type { WorkerWakeupSource } from '../infrastructure/workerWakeup.ts';
 import { PushNotificationRepository, type ClaimedNotificationDelivery } from './repository.ts';
 
 const SAFETY_SCAN_MS = 15_000;
+
+const logger = childLogger('push-notifications');
 
 function localizedContent(delivery: ClaimedNotificationDelivery): {
   title: string;
@@ -113,9 +116,7 @@ export class PushNotificationWorker {
       else await this.send(delivery);
     } catch (error) {
       if (!delivery) {
-        console.error('Failed to claim push notification delivery', {
-          error: error instanceof Error ? error.name : 'UnknownError',
-        });
+        logger.error({ err: error, component: 'push-notifications' }, 'Failed to claim delivery');
         return;
       }
       await this.options.repository.retryOrFail(
@@ -125,12 +126,7 @@ export class PushNotificationWorker {
           error instanceof Error ? error.message : 'Expo Push Service 请求失败。',
         ),
       );
-      console.warn('[push-notifications] delivery request failed', {
-        deliveryId: delivery.id,
-        deviceId: delivery.deviceId,
-        stage: delivery.ticketId ? 'receipt' : 'ticket',
-        code: 'PUSH_NETWORK_ERROR',
-      });
+      this.logExpoFailure(delivery, 'PUSH_NETWORK_ERROR', delivery.ticketId ? 'receipt' : 'ticket');
     }
   }
 
@@ -142,12 +138,8 @@ export class PushNotificationWorker {
         'INVALID_PUSH_TOKEN',
         'Expo Push Token 格式无效。',
       );
-      console.warn('[push-notifications] delivery rejected', {
-        deliveryId: delivery.id,
-        deviceId: delivery.deviceId,
-        stage: 'validation',
-        code: 'INVALID_PUSH_TOKEN',
-      });
+      // Token 无效属于不可重试的设备侧问题，只保留一条 warn 并停用设备。
+      this.logExpoFailure(delivery, 'INVALID_PUSH_TOKEN', 'validation');
       return;
     }
     const content = localizedContent(delivery);
@@ -168,11 +160,15 @@ export class PushNotificationWorker {
     if (!ticket) throw new Error('Expo Push Service 未返回 ticket。');
     if (ticket.status === 'ok') {
       await this.options.repository.markTicketed(delivery.id, ticket.id);
-      console.info('[push-notifications] delivery ticketed', {
-        deliveryId: delivery.id,
-        deviceId: delivery.deviceId,
-        ticketId: ticket.id,
-      });
+      logger.info(
+        {
+          component: 'push-notifications',
+          deliveryId: delivery.id,
+          deviceId: delivery.deviceId,
+          ticketId: ticket.id,
+        },
+        'Delivery ticketed',
+      );
       return;
     }
     await this.handleExpoError(delivery, ticket.details?.error, ticket.message);
@@ -191,11 +187,15 @@ export class PushNotificationWorker {
     }
     if (receipt.status === 'ok') {
       await this.options.repository.markDelivered(delivery.id);
-      console.info('[push-notifications] delivery receipt confirmed', {
-        deliveryId: delivery.id,
-        deviceId: delivery.deviceId,
-        ticketId: delivery.ticketId,
-      });
+      logger.info(
+        {
+          component: 'push-notifications',
+          deliveryId: delivery.id,
+          deviceId: delivery.deviceId,
+          ticketId: delivery.ticketId,
+        },
+        'Delivery receipt confirmed',
+      );
       return;
     }
     await this.handleExpoError(delivery, receipt.details?.error, receipt.message);
@@ -226,14 +226,18 @@ export class PushNotificationWorker {
   private logExpoFailure(
     delivery: ClaimedNotificationDelivery,
     code: string,
-    stage: 'ticket' | 'receipt',
+    stage: 'ticket' | 'receipt' | 'validation',
   ): void {
-    console.warn('[push-notifications] Expo delivery failed', {
-      deliveryId: delivery.id,
-      deviceId: delivery.deviceId,
-      stage,
-      code,
-    });
+    logger.warn(
+      {
+        component: 'push-notifications',
+        deliveryId: delivery.id,
+        deviceId: delivery.deviceId,
+        stage,
+        code,
+      },
+      'Expo delivery failed',
+    );
   }
 }
 

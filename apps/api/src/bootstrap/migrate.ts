@@ -22,10 +22,13 @@ import {
   quoteIdentifier,
 } from '../infrastructure/postgres.ts';
 import { readApiConfigFile } from '../config/env.ts';
+import { configureLogger, getLogger } from '../infrastructure/logger.ts';
 import { orderedMigrationFileNames } from './migrationFiles.ts';
 import { provisionStarterTemplates } from '../workspace/starter-templates/provisioner.ts';
 
 const config = readApiConfigFile(new URL('../../.env', import.meta.url));
+configureLogger(config.logging);
+const logger = getLogger();
 const pool = createDatabasePool(config.database, {
   // 首次部署时 001_rag.sql 负责创建 vector 扩展，连接本身不能预先依赖该类型。
   registerVectorTypes: false,
@@ -63,7 +66,7 @@ async function migrate() {
       await client.query(sql);
       await client.query(`INSERT INTO ${schema}.schema_migrations (name) VALUES ($1)`, [name]);
       await client.query('COMMIT');
-      console.log(`Applied migration ${name}`);
+      logger.info({ component: 'migrate', migration: name }, 'Applied migration');
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -83,11 +86,18 @@ async function migrate() {
     { schema: config.rag.langGraphSchema },
   );
   await checkpointer.setup();
-  console.log(`Initialized LangGraph schema ${config.rag.langGraphSchema}`);
+  logger.info(
+    { component: 'migrate', schema: config.rag.langGraphSchema },
+    'Initialized LangGraph schema',
+  );
 }
 
 try {
   await migrate();
+} catch (error) {
+  // 迁移失败必须留下 fatal 记录；不写入业务表，避免半迁移状态被误读为成功。
+  logger.fatal({ err: error, component: 'migrate' }, 'EchoWave database migration failed');
+  process.exitCode = 1;
 } finally {
   await pool.end();
 }

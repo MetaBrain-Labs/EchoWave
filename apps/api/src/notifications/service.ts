@@ -15,6 +15,9 @@ import {
 } from '@echowave/contracts';
 
 import type { PushNotificationRepository } from './repository.ts';
+import { childLogger } from '../infrastructure/logger.ts';
+
+const logger = childLogger('push-notifications');
 
 /** 固定租户设备登记服务。 */
 export class PushDeviceService {
@@ -23,10 +26,8 @@ export class PushDeviceService {
   async register(rawInput: PushDeviceRegisterRequest) {
     const input = PushDeviceRegisterRequestSchema.parse(rawInput);
     const device = await this.repository.register(input);
-    console.info('[push-notifications] device registered', {
-      deviceId: device.id,
-      platform: device.platform,
-    });
+    // 只记录设备标识与平台，绝不记录 Token 本体。
+    logger.info({ deviceId: device.id, platform: device.platform }, 'Device registered');
     return device;
   }
 

@@ -225,4 +225,13 @@ describe('API environment', () => {
     assert.equal(config.legacyProviders.detectedVariables.length, 0);
     assert.equal(config.rag.embeddingModel, 'qwen3.7-text-embedding');
   });
+
+  it('defaults logging separately from the legacy provider import switch', () => {
+    // completeValues 故意不含 LOG_*，证明既有 .env 仍然可以直接启动。
+    assert.deepEqual(readApiConfig(completeValues).logging, { level: 'info', format: 'json' });
+    assert.deepEqual(
+      readApiConfig({ ...completeValues, LOG_LEVEL: 'debug' }).logging.level,
+      'debug',
+    );
+  });
 });

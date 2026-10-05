@@ -18,6 +18,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { childLogger } from '../infrastructure/logger.ts';
 import type {
   AudioTranscriptionModel,
   AudioTranscriptionPreprocessing,
@@ -87,7 +88,9 @@ export function createSttRawResponseReporter(
       await mkdir(path.dirname(filePath), { recursive: true });
       await writeFile(filePath, content, 'utf8');
     });
-  const warn = dependencies.warn ?? ((message: string) => console.warn(message));
+  // warn 保留可注入通道；默认实现写入结构化运行日志，不改变调用方签名。
+  const warn =
+    dependencies.warn ?? ((message: string) => childLogger('stt-raw-report').warn(message));
 
   return {
     async record(input) {
