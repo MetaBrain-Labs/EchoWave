@@ -22,6 +22,9 @@
 > [!WARNING]
 > **1.0.0 Beta preview:** EchoWave is intended for self-hosted or private deployments and is not yet suitable as a public multi-user service. It has no real accounts, authorization, or rate limits. See [Security](./SECURITY.md) and [Current limitations](#current-limitations) before deploying.
 
+> [!INFO]
+> **EchoWave-Cloud:** EchoWave-Cloud, currently in the optimization phase, will be launched soon. It requires no local deployment; users can simply log in to use it, and it will offer more advanced features and a better user experience.
+
 [Quick start](#quick-start) · [Use cases](#use-cases) · [Capabilities](#current-capabilities) · [Architecture](#how-it-works) · [Limitations](#current-limitations) · [Future](#future) · [Docs](./docs/README.md) · [Contributing](./CONTRIBUTING.md)
 
 ## Use cases
