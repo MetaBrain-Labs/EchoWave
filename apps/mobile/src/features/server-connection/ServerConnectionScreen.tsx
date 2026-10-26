@@ -14,7 +14,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -28,6 +27,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { fetchServerHealth, ServerHealthError } from '@/shared/api/serverHealth';
 import { useServerConnection } from '@/shared/api/ServerConnectionProvider';
+import { LoadingIndicator } from '@/shared/ui/LoadingIndicator';
+import { useResponsiveLayout } from '@/shared/ui/useResponsiveLayout';
 import {
   getDevelopmentServerUrl,
   normalizeServerUrl,
@@ -77,6 +78,7 @@ const serverHealthErrorKeys: Record<ServerHealthError['code'], TranslationKey> =
 /** 渲染首次连接或修改服务器地址的完整表单。 */
 export function ServerConnectionScreen({ onCancel, onSaved }: ServerConnectionScreenProps) {
   const { t } = useAppLanguage();
+  const { desktop } = useResponsiveLayout();
   const { saveServerUrl, serverUrl } = useServerConnection();
   const [input, setInput] = useState(serverUrl ?? getDevelopmentServerUrl() ?? '');
   const [probe, setProbe] = useState<ProbeState>({ phase: 'idle' });
@@ -150,7 +152,7 @@ export function ServerConnectionScreen({ onCancel, onSaved }: ServerConnectionSc
           <Text style={styles.tagline}>EchoWave — From Voice to Insight.</Text>
           <Text style={styles.description}>{t('server.description')}</Text>
 
-          <View style={styles.card}>
+          <View style={[styles.card, desktop && styles.desktopCard]}>
             <Text style={styles.label}>{t('server.address')}</Text>
             <TextInput
               accessibilityLabel={t('server.address')}
@@ -200,7 +202,7 @@ export function ServerConnectionScreen({ onCancel, onSaved }: ServerConnectionSc
               testID="测试连接"
             >
               {probe.phase === 'loading' ? (
-                <ActivityIndicator color={colors.ink} />
+                <LoadingIndicator accessibilityLabel={t('server.test')} size={24} />
               ) : (
                 <Ionicons color={colors.ink} name="pulse-outline" size={20} />
               )}
@@ -218,7 +220,9 @@ export function ServerConnectionScreen({ onCancel, onSaved }: ServerConnectionSc
               ]}
               testID="保存并继续"
             >
-              {saving ? <ActivityIndicator color={colors.white} /> : null}
+              {saving ? (
+                <LoadingIndicator accessibilityLabel={t('common.submitting')} size={24} />
+              ) : null}
               <Text style={styles.primaryButtonText}>{t('server.saveContinue')}</Text>
             </Pressable>
             {onCancel ? (
@@ -286,6 +290,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
     padding: spacing.md,
   },
+  desktopCard: { alignSelf: 'center', maxWidth: 720, width: '100%' },
   label: { ...typography.label, color: textColors.secondary, marginBottom: spacing.xs },
   input: {
     ...textInputText,

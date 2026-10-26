@@ -33,6 +33,7 @@ import { useCitationJump } from '@/shared/hooks/useCitationJump';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
+import { useResponsiveLayout } from '@/shared/ui/useResponsiveLayout';
 
 import {
   colors,
@@ -98,6 +99,8 @@ export function KnowledgeQueryScreen({
   sessionId?: string;
 }) {
   const { t } = useAppLanguage();
+  const { desktop, width } = useResponsiveLayout();
+  const wideDesktop = desktop && width >= 1280;
   const headerTargetRef = useStarterTourTarget('query-header');
   const hintTargetRef = useStarterTourTarget('query-hint');
   const composerTargetRef = useStarterTourTarget('query-composer');
@@ -400,7 +403,7 @@ export function KnowledgeQueryScreen({
         ) : null}
         <ScrollView
           alwaysBounceVertical
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, desktop && styles.desktopContent]}
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
           onContentSizeChange={scrollToLatest}
@@ -472,27 +475,32 @@ export function KnowledgeQueryScreen({
                     onLayout={(event) => {
                       answerContainerOffsets.current.set(turn.id, event.nativeEvent.layout.y);
                     }}
-                    style={styles.answerCard}
+                    style={[styles.answerCard, desktop && styles.desktopAnswerCard]}
                   >
-                    {rerank ? <RerankDisclosure disclosure={rerank} /> : null}
-                    <AnswerText
-                      answer={turn.response.answer}
-                      citationCount={turn.response.citations.length}
-                      onOpenCitationMarker={(number) => openCitationMarker(turn.id, number)}
-                      style={styles.answerText}
-                    />
-                    <View
-                      collapsable={false}
-                      onLayout={(event) => jump.setListOffset(event.nativeEvent.layout.y)}
-                      ref={citationTargetRef}
-                    >
-                      <CitationList
-                        citations={turn.response.citations}
-                        highlightedNumber={jump.highlightedNumber}
-                        onOpenCitation={onOpenCitation}
-                        onScrollToOffset={(offset) => scrollToCitationCard(turn.id, offset)}
-                        ref={registerCitationList(turn.id)}
-                      />
+                    <View style={[styles.answerColumns, wideDesktop && styles.wideAnswerColumns]}>
+                      <View style={styles.answerMain}>
+                        {rerank ? <RerankDisclosure disclosure={rerank} /> : null}
+                        <AnswerText
+                          answer={turn.response.answer}
+                          citationCount={turn.response.citations.length}
+                          onOpenCitationMarker={(number) => openCitationMarker(turn.id, number)}
+                          style={styles.answerText}
+                        />
+                      </View>
+                      <View
+                        collapsable={false}
+                        onLayout={(event) => jump.setListOffset(event.nativeEvent.layout.y)}
+                        ref={citationTargetRef}
+                        style={[styles.citationPanel, wideDesktop && styles.wideCitationPanel]}
+                      >
+                        <CitationList
+                          citations={turn.response.citations}
+                          highlightedNumber={jump.highlightedNumber}
+                          onOpenCitation={onOpenCitation}
+                          onScrollToOffset={(offset) => scrollToCitationCard(turn.id, offset)}
+                          ref={registerCitationList(turn.id)}
+                        />
+                      </View>
                     </View>
                   </View>
                 ) : null}
@@ -500,7 +508,11 @@ export function KnowledgeQueryScreen({
             );
           })}
         </ScrollView>
-        <View ref={composerTargetRef} collapsable={false} style={styles.composer}>
+        <View
+          ref={composerTargetRef}
+          collapsable={false}
+          style={[styles.composer, desktop && styles.desktopComposer]}
+        >
           <TextInput
             accessibilityLabel={t('knowledgeQuery.input')}
             maxLength={2_000}
@@ -544,6 +556,12 @@ const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.card, flex: 1 },
   flex: { flex: 1 },
   content: { gap: spacing.md, padding: spacing.md, paddingBottom: spacing.xl },
+  desktopContent: {
+    alignSelf: 'center',
+    maxWidth: 1280,
+    paddingHorizontal: spacing.xl,
+    width: '100%',
+  },
   hint: {
     ...typography.body,
     color: textColors.secondary,
@@ -583,6 +601,12 @@ const styles = StyleSheet.create({
     maxWidth: '92%',
     padding: spacing.md,
   },
+  desktopAnswerCard: { alignSelf: 'stretch', maxWidth: '100%', width: '100%' },
+  answerColumns: { gap: spacing.md },
+  wideAnswerColumns: { alignItems: 'flex-start', flexDirection: 'row' },
+  answerMain: { flex: 1, minWidth: 0 },
+  citationPanel: { minWidth: 0 },
+  wideCitationPanel: { flexShrink: 0, width: 320 },
   answerText: { ...typography.body, color: textColors.primary, fontFamily: fontFamilies.sans },
   failureCard: {
     alignSelf: 'flex-start',
@@ -623,6 +647,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     padding: spacing.sm,
   },
+  desktopComposer: { alignSelf: 'center', maxWidth: 1280, width: '100%' },
   // 单行问题框，输入变长时升高到 120 为止；光标与文字保持居中行盒。
   input: {
     ...typography.body,

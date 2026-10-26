@@ -12,11 +12,11 @@
 import { colors, fontFamilies, radii, spacing, textColors, typography } from '../tokens';
 
 describe('text color tokens', () => {
-  it('uses the exact semantic text colors from docs/design-system.md', () => {
+  it('uses the shared semantic text colors', () => {
     expect(textColors).toEqual({
-      primary: '#000000',
-      secondary: '#5A6472',
-      tertiary: '#A3A3A3',
+      primary: '#101828',
+      secondary: '#667085',
+      tertiary: '#98A2B3',
     });
 
     expect(colors.ink).toBe(textColors.primary);
@@ -37,19 +37,31 @@ describe('layout and typography tokens', () => {
   it('uses four-pixel spacing increments and the approved radius values', () => {
     expect(Object.values(spacing).every((value) => value % 4 === 0)).toBe(true);
     expect(spacing.base).toBe(12);
-    expect(radii).toEqual({ default: 4, round: 999 });
+    expect(radii).toEqual({
+      default: 12,
+      input: 12,
+      button: 12,
+      card: 16,
+      large: 20,
+      sheet: 24,
+      round: 999,
+    });
   });
 
-  it('matches every typography role from docs/design-system.md', () => {
+  it('matches every shared typography role', () => {
     expect(typography).toEqual({
-      groupName: { fontSize: 40, lineHeight: 60 },
-      contentDisplay: { fontSize: 32, lineHeight: 48 },
+      groupName: { fontSize: 24, lineHeight: 32 },
+      contentDisplay: { fontSize: 32, lineHeight: 40 },
+      pageTitle: { fontSize: 24, lineHeight: 32 },
+      heroTitle: { fontSize: 32, lineHeight: 40 },
+      sectionTitle: { fontSize: 18, lineHeight: 26 },
+      cardTitle: { fontSize: 16, lineHeight: 24 },
       heading1: { fontSize: 18, lineHeight: 26 },
       heading2: { fontSize: 16, lineHeight: 24 },
       heading3: { fontSize: 14, lineHeight: 20 },
       heading4: { fontSize: 12, lineHeight: 18 },
       heading5: { fontSize: 10, lineHeight: 14 },
-      body: { fontSize: 14, lineHeight: 20 },
+      body: { fontSize: 14, lineHeight: 22 },
       description: { fontSize: 12, lineHeight: 18 },
       label: { fontSize: 10, lineHeight: 14 },
     });

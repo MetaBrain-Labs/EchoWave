@@ -17,10 +17,12 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { colors, radii } from '@/shared/theme/tokens';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { useResponsiveLayout } from '@/shared/ui/useResponsiveLayout';
 
 /** 渲染五个固定产品区域的底部标签布局。 */
 export default function TabsLayout() {
   const { t } = useAppLanguage();
+  const { desktop } = useResponsiveLayout();
   return (
     <Tabs
       screenOptions={{
@@ -28,7 +30,7 @@ export default function TabsLayout() {
         tabBarActiveTintColor: colors.ink,
         tabBarInactiveTintColor: colors.secondary,
         tabBarShowLabel: false,
-        tabBarStyle: styles.tabBar,
+        tabBarStyle: desktop ? [styles.tabBar, styles.desktopTabBar] : styles.tabBar,
         tabBarItemStyle: styles.tabBarItem,
         tabBarButton: ({ accessibilityState, onPress, ref, ...props }) => (
           <Pressable
@@ -114,6 +116,7 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     paddingTop: 8,
   },
+  desktopTabBar: { display: 'none' },
   tabBarItem: {
     overflow: 'visible',
   },

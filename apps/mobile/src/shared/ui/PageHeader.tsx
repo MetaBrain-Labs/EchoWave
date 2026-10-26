@@ -16,6 +16,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, fontFamilies, spacing, textColors, typography } from '@/shared/theme/tokens';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { DesktopBreadcrumb } from '@/shared/ui/DesktopBreadcrumb';
+import { useResponsiveLayout } from '@/shared/ui/useResponsiveLayout';
 
 /** 渲染详情层级页面使用的可访问返回页头。 */
 export function PageHeader({
@@ -39,6 +41,50 @@ export function PageHeader({
   title: string;
 }) {
   const { t } = useAppLanguage();
+  const { desktop } = useResponsiveLayout();
+  const actions = (
+    <View style={styles.headerActions}>
+      {guide}
+      {onSearch ? (
+        <Pressable
+          accessibilityLabel={searchLabel ?? t('common.search')}
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={onSearch}
+          style={({ pressed }) => [styles.headerIconButton, pressed && styles.pressed]}
+        >
+          <Ionicons color={colors.ink} name="search-outline" size={28} />
+        </Pressable>
+      ) : null}
+      {onMore ? (
+        <Pressable
+          accessibilityLabel={moreLabel ?? t('common.moreActions')}
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={onMore}
+          style={({ pressed }) => [styles.headerIconButton, pressed && styles.pressed]}
+        >
+          <Ionicons color={colors.ink} name="ellipsis-horizontal" size={28} />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+
+  if (desktop) {
+    return (
+      <View style={styles.desktopPageHeader}>
+        <View style={styles.desktopPageHeaderRow}>
+          <DesktopBreadcrumb current={title} onBack={onBack} style={styles.desktopBreadcrumb} />
+          {leading}
+          {actions}
+        </View>
+        <Text style={styles.desktopPageDescription}>
+          {t('desktop.breadcrumb.pageDescription', { title })}
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.pageHeader}>
       <Pressable
@@ -56,31 +102,7 @@ export function PageHeader({
           {title}
         </Text>
       </View>
-      <View style={styles.headerActions}>
-        {guide}
-        {onSearch ? (
-          <Pressable
-            accessibilityLabel={searchLabel ?? t('common.search')}
-            accessibilityRole="button"
-            hitSlop={8}
-            onPress={onSearch}
-            style={({ pressed }) => [styles.headerIconButton, pressed && styles.pressed]}
-          >
-            <Ionicons color={colors.ink} name="search-outline" size={28} />
-          </Pressable>
-        ) : null}
-        {onMore ? (
-          <Pressable
-            accessibilityLabel={moreLabel ?? t('common.moreActions')}
-            accessibilityRole="button"
-            hitSlop={8}
-            onPress={onMore}
-            style={({ pressed }) => [styles.headerIconButton, pressed && styles.pressed]}
-          >
-            <Ionicons color={colors.ink} name="ellipsis-horizontal" size={28} />
-          </Pressable>
-        ) : null}
-      </View>
+      {actions}
     </View>
   );
 }
@@ -89,12 +111,23 @@ const styles = StyleSheet.create({
   pressed: { backgroundColor: colors.background },
   pageHeader: {
     alignItems: 'center',
-    borderBottomColor: colors.divider,
-    borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     minHeight: 76,
-    paddingHorizontal: spacing.sm,
-    backgroundColor: colors.background,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  desktopPageHeader: {
+    backgroundColor: 'transparent',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.lg,
+  },
+  desktopPageHeaderRow: { alignItems: 'center', flexDirection: 'row', minHeight: 44 },
+  desktopBreadcrumb: { flex: 1 },
+  desktopPageDescription: {
+    ...typography.description,
+    color: textColors.secondary,
+    fontFamily: fontFamilies.sans,
   },
   headerIconButton: {
     alignItems: 'center',

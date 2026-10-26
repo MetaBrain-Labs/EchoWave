@@ -10,12 +10,13 @@
  * Notes:
  * - 仅管理 UI 导航偏好，不持久化业务数据。
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   ScrollView,
   useWindowDimensions,
+  type LayoutChangeEvent,
 } from 'react-native';
 
 const desktopCanvasWidth = 480;
@@ -32,10 +33,16 @@ export function useSwipePager<Tab extends string>({
 }) {
   const pagerRef = useRef<ScrollView>(null);
   const { width } = useWindowDimensions();
-  const pageWidth = Math.min(width, desktopCanvasWidth);
   const activeIndex = tabs.indexOf(activeTab);
   const previousPageWidth = useRef(0);
   const previousActiveIndex = useRef(-1);
+  const [measuredPageWidth, setMeasuredPageWidth] = useState(0);
+  const pageWidth = measuredPageWidth || Math.min(width, desktopCanvasWidth);
+
+  const handlePageLayout = (event: LayoutChangeEvent) => {
+    const nextWidth = Math.round(event.nativeEvent.layout.width);
+    if (nextWidth > 0 && nextWidth !== measuredPageWidth) setMeasuredPageWidth(nextWidth);
+  };
 
   useEffect(() => {
     if (previousPageWidth.current !== pageWidth || previousActiveIndex.current !== activeIndex) {
@@ -71,6 +78,7 @@ export function useSwipePager<Tab extends string>({
   };
 
   return {
+    handlePageLayout,
     handleMomentumScrollEnd,
     pageWidth,
     pagerRef,

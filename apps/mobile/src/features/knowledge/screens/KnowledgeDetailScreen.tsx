@@ -20,16 +20,7 @@ import { KnowledgeCaseActions } from '../components/KnowledgeCaseActions';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  AppState,
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { AppState, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type {
   CollectionFolder,
@@ -43,13 +34,17 @@ import type {
 import { linkKnowledgeBaseGroups, listKnowledgeBaseGroups } from '@/shared/api/knowledgeBasesApi';
 import { pickDocumentAsync } from '@/shared/files/documentPicker';
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
+import { useResponsiveLayout } from '@/shared/ui/useResponsiveLayout';
 import { useGroupAssociationEditor } from '@/shared/hooks/useGroupAssociationEditor';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { PageTabs } from '@/shared/ui/PageTabs';
+import { DESKTOP_DETAIL_CONTENT_MAX_WIDTH } from '@/shared/ui/layoutMetrics';
+import { useTopBarSearchRegistration } from '@/shared/ui/TopBarSearchContext';
 import { SearchSheet } from '@/shared/ui/SearchSheet';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
+import { LoadingIndicator } from '@/shared/ui/LoadingIndicator';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import {
@@ -300,6 +295,7 @@ export function KnowledgeDetailScreen({
   onEditBase?: () => void;
 }) {
   const { formatDateTime, formatNumber, t } = useAppLanguage();
+  const { desktop } = useResponsiveLayout();
   const [knowledge, setKnowledge] = useState<KnowledgeBaseDetail>();
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
   const [directory, setDirectory] = useState<KnowledgeDirectoryEntry[]>([]);
@@ -321,10 +317,19 @@ export function KnowledgeDetailScreen({
   const [switchTarget, setSwitchTarget] = useState<GroupSummary>();
   const [actionDocument, setActionDocument] = useState<KnowledgeDocument>();
   const runInitialRequest = useInitialRequestLoading();
-  const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } = useSwipePager({
-    activeTab,
-    onTabChange: setActiveTab,
-    tabs: detailTabKeys,
+  const { handlePageLayout, handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } =
+    useSwipePager({
+      activeTab,
+      onTabChange: setActiveTab,
+      tabs: detailTabKeys,
+    });
+  useTopBarSearchRegistration({
+    onChange: (nextQuery) => {
+      setQuery(nextQuery);
+      if (nextQuery) selectTab('files');
+    },
+    placeholder: t('knowledgeDetail.searchPlaceholder'),
+    value: query,
   });
   const overviewTargetRef = useStarterTourTarget('knowledge-overview');
   const filesTargetRef = useStarterTourTarget('knowledge-files');
@@ -586,9 +591,8 @@ export function KnowledgeDetailScreen({
     return (
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
         <PageHeader onBack={onBack} title={t('knowledgeDetail.title')} />
-        <ActivityIndicator
+        <LoadingIndicator
           accessibilityLabel={t('knowledgeDetail.loading')}
-          color={colors.ink}
           style={styles.loading}
         />
       </SafeAreaView>
@@ -614,9 +618,10 @@ export function KnowledgeDetailScreen({
   }
 
   const renderTabs = () => (
-    <View style={styles.tabsSurface}>
+    <View style={[styles.tabsSurface, desktop && styles.desktopTabsSurface]}>
       <PageTabs
         activeTab={activeTab}
+        desktop={desktop}
         onChange={selectTab}
         tabs={detailTabs.map((tab) => ({ key: tab.key, label: t(tab.labelKey) }))}
         testIDPrefix="knowledge-detail-tab"
@@ -624,7 +629,7 @@ export function KnowledgeDetailScreen({
     </View>
   );
   const renderHero = () => (
-    <View style={styles.hero}>
+    <View style={[styles.hero, desktop && styles.desktopHero]}>
       <Text accessibilityRole="header" style={styles.displayTitle}>
         {knowledge.name}
       </Text>
@@ -647,7 +652,7 @@ export function KnowledgeDetailScreen({
               style={styles.collectionQuickAction}
               testID="knowledge-cases-entry"
             >
-              <Ionicons name="chatbubbles-outline" size={20} color={textColors.primary} />
+              <Ionicons color={textColors.primary} name="chatbubbles-outline" size={20} />
               <Text style={styles.collectionQuickText}>{t('collection.casesAndReview')}</Text>
             </Pressable>
           ) : null}
@@ -659,7 +664,7 @@ export function KnowledgeDetailScreen({
               style={styles.collectionQuickAction}
               testID="knowledge-collection-entry"
             >
-              <Ionicons name="library-outline" size={20} color={textColors.primary} />
+              <Ionicons color={textColors.primary} name="library-outline" size={20} />
               <Text style={styles.collectionQuickText}>{t('collection.rules')}</Text>
             </Pressable>
           ) : null}
@@ -718,7 +723,10 @@ export function KnowledgeDetailScreen({
   );
 
   return (
-    <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
+    <SafeAreaView
+      edges={['top', 'bottom']}
+      style={[styles.safeArea, desktop && styles.desktopSafeArea]}
+    >
       {searchVisible ? (
         <SearchSheet
           appliedQuery={query}
@@ -832,30 +840,42 @@ export function KnowledgeDetailScreen({
         title={knowledge.name}
       />
       {guideDemo ? <GuideDemoBanner /> : null}
+      {desktop ? (
+        <View style={styles.desktopHeading}>
+          <View ref={overviewTargetRef} collapsable={false}>
+            {renderHero()}
+          </View>
+          {renderTabs()}
+        </View>
+      ) : null}
       <ScrollView
         directionalLockEnabled
         horizontal
         nestedScrollEnabled
         onMomentumScrollEnd={handleMomentumScrollEnd}
-        pagingEnabled
+        onLayout={handlePageLayout}
+        pagingEnabled={!desktop}
         ref={pagerRef}
+        scrollEnabled={!desktop}
         showsHorizontalScrollIndicator={false}
         style={styles.pager}
         testID="knowledge-detail-pager"
       >
         <ScrollView
           alwaysBounceVertical
-          contentContainerStyle={styles.pageContent}
+          contentContainerStyle={[styles.pageContent, desktop && styles.desktopPageContent]}
           refreshControl={<ScreenRefreshControl {...screenRefresh} />}
           showsVerticalScrollIndicator={false}
-          stickyHeaderIndices={[1]}
-          style={[styles.page, { width: pageWidth }]}
+          stickyHeaderIndices={desktop ? undefined : [1]}
+          style={[styles.page, desktop && styles.desktopPage, { width: pageWidth }]}
           testID="knowledge-overview-scroll"
         >
-          <View ref={overviewTargetRef} collapsable={false}>
-            {renderHero()}
-          </View>
-          {renderTabs()}
+          {desktop ? null : (
+            <View ref={overviewTargetRef} collapsable={false}>
+              {renderHero()}
+            </View>
+          )}
+          {desktop ? null : renderTabs()}
           {error ? (
             <Text accessibilityRole="alert" style={styles.failureReason}>
               {error}
@@ -952,18 +972,22 @@ export function KnowledgeDetailScreen({
           </View>
         </ScrollView>
 
-        <View collapsable={false} ref={filesTargetRef} style={[styles.page, { width: pageWidth }]}>
+        <View
+          collapsable={false}
+          ref={filesTargetRef}
+          style={[styles.page, desktop && styles.desktopPage, { width: pageWidth }]}
+        >
           <ScrollView
             alwaysBounceVertical
-            contentContainerStyle={styles.pageContent}
+            contentContainerStyle={[styles.pageContent, desktop && styles.desktopPageContent]}
             keyboardShouldPersistTaps="handled"
             refreshControl={<ScreenRefreshControl {...screenRefresh} />}
             showsVerticalScrollIndicator={false}
-            stickyHeaderIndices={[0]}
+            stickyHeaderIndices={desktop ? undefined : [0]}
             style={styles.flexPage}
             testID="knowledge-files-scroll"
           >
-            {renderTabs()}
+            {desktop ? null : renderTabs()}
             <View style={styles.stickySearch}>
               <SearchAndFilter
                 onChangeText={setQuery}
@@ -993,14 +1017,14 @@ export function KnowledgeDetailScreen({
 
         <ScrollView
           alwaysBounceVertical
-          contentContainerStyle={styles.pageContent}
+          contentContainerStyle={[styles.pageContent, desktop && styles.desktopPageContent]}
           refreshControl={<ScreenRefreshControl {...screenRefresh} />}
           showsVerticalScrollIndicator={false}
-          stickyHeaderIndices={[0]}
-          style={[styles.page, { width: pageWidth }]}
+          stickyHeaderIndices={desktop ? undefined : [0]}
+          style={[styles.page, desktop && styles.desktopPage, { width: pageWidth }]}
           testID="knowledge-groups-scroll"
         >
-          {renderTabs()}
+          {desktop ? null : renderTabs()}
           <View style={styles.groupList}>
             {linkedGroups.length ? (
               linkedGroups.map((group) => (
@@ -1074,18 +1098,34 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sans,
   },
   safeArea: { backgroundColor: colors.card, flex: 1 },
+  desktopSafeArea: { backgroundColor: 'transparent' },
   emptyRefreshContent: { flexGrow: 1 },
   loading: { marginTop: spacing.xl },
   pager: { flex: 1 },
   page: { flex: 1 },
+  desktopPage: { backgroundColor: 'transparent' },
   flexPage: { flex: 1 },
   pageContent: { flexGrow: 1, paddingBottom: spacing.lg },
+  desktopPageContent: {
+    alignSelf: 'center',
+    maxWidth: DESKTOP_DETAIL_CONTENT_MAX_WIDTH,
+    paddingHorizontal: spacing.xl,
+    width: '100%',
+  },
+  desktopHeading: {
+    alignSelf: 'center',
+    maxWidth: DESKTOP_DETAIL_CONTENT_MAX_WIDTH,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.lg,
+    width: '100%',
+  },
   hero: {
     gap: spacing.md,
     padding: spacing.md,
     paddingTop: spacing.lg,
     backgroundColor: colors.background,
   },
+  desktopHero: { backgroundColor: 'transparent', paddingHorizontal: 0, paddingTop: 0 },
   displayTitle: {
     ...typography.contentDisplay,
     color: textColors.primary,
@@ -1100,6 +1140,7 @@ const styles = StyleSheet.create({
   },
   heroMeta: { ...typography.body, color: textColors.secondary, fontFamily: fontFamilies.sans },
   tabsSurface: { backgroundColor: colors.card, zIndex: 1 },
+  desktopTabsSurface: { backgroundColor: 'transparent', zIndex: 1 },
   overviewContent: { gap: spacing.md, paddingHorizontal: spacing.md, paddingTop: spacing.md },
   sectionTitle: {
     ...typography.heading1,

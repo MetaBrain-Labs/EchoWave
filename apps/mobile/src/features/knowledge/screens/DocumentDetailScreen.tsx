@@ -173,11 +173,12 @@ export function DocumentDetailScreen({
   const originalLocatedRef = useRef(false);
   const importantBlocks = useImportantBlocks();
   const runInitialRequest = useInitialRequestLoading();
-  const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } = useSwipePager({
-    activeTab,
-    onTabChange: setActiveTab,
-    tabs: tabKeys,
-  });
+  const { handlePageLayout, handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } =
+    useSwipePager({
+      activeTab,
+      onTabChange: setActiveTab,
+      tabs: tabKeys,
+    });
   const documentStatusTargetRef = useStarterTourTarget('knowledge-document-status');
   const blockListTargetRef = useStarterTourTarget('document-block-list');
 
@@ -352,6 +353,7 @@ export function DocumentDetailScreen({
         keyboardShouldPersistTaps="handled"
         nestedScrollEnabled
         onMomentumScrollEnd={handleMomentumScrollEnd}
+        onLayout={handlePageLayout}
         pagingEnabled
         ref={pagerRef}
         contentOffset={{ x: Math.max(tabKeys.indexOf(activeTab), 0) * pageWidth, y: 0 }}

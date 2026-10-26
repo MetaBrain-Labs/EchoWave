@@ -14,16 +14,20 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import type { AudioAnalysisRun } from '@echowave/contracts';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { listAudioAnalysisRuns } from '@/shared/api/audioAnalysisRunsApi';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
+import { LoadingIndicator } from '@/shared/ui/LoadingIndicator';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import type { TranslationKey } from '@/shared/i18n/translations';
 import { colors, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
+import { DesktopDataTable } from '@/shared/ui/DesktopDataTable';
+import { StatusBadge } from '@/shared/ui/DesignPrimitives';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
+import { useResponsiveLayout } from '@/shared/ui/useResponsiveLayout';
 
 const filters = [
   ['all', 'analysisRuns.filter.all'],
@@ -55,7 +59,8 @@ function isActive(run: AudioAnalysisRun): boolean {
 
 /** 渲染统一分析运行记录。 */
 export function AnalysisRunsScreen({ onBack }: { onBack?: () => void } = {}) {
-  const { t } = useAppLanguage();
+  const { formatDateTime, t } = useAppLanguage();
+  const { desktop } = useResponsiveLayout();
   const router = useRouter();
   const [filter, setFilter] = useState<(typeof filters)[number][0]>('all');
   const [items, setItems] = useState<AudioAnalysisRun[]>([]);
@@ -103,8 +108,84 @@ export function AnalysisRunsScreen({ onBack }: { onBack?: () => void } = {}) {
     }
   };
 
+  const tableColumns = [
+    {
+      id: 'run',
+      label: t('tabs.analysis'),
+      flex: 2,
+      render: (run: AudioAnalysisRun) => (
+        <View style={styles.tableRun}>
+          <Text numberOfLines={1} style={styles.title}>
+            {run.title}
+          </Text>
+          <Text numberOfLines={2} style={styles.meta}>
+            {run.kind === 'batch' ? t('analysisRuns.batchCounts', run.counts) : t('tabs.analysis')}
+          </Text>
+        </View>
+      ),
+    },
+    {
+      id: 'status',
+      label: t('desktop.sourceStatus'),
+      width: 150,
+      render: (run: AudioAnalysisRun) => (
+        <StatusBadge
+          label={t(statusLabelKey(run.status))}
+          tone={
+            run.status === 'completed'
+              ? 'success'
+              : run.status === 'failed'
+                ? 'danger'
+                : run.status === 'completed_with_warnings'
+                  ? 'warning'
+                  : 'neutral'
+          }
+        />
+      ),
+    },
+    {
+      id: 'progress',
+      label: t('desktop.runProgress'),
+      width: 92,
+      render: (run: AudioAnalysisRun) => <Text style={styles.meta}>{run.progress}%</Text>,
+    },
+    {
+      id: 'details',
+      label: t('desktop.runDetails'),
+      flex: 1.4,
+      render: (run: AudioAnalysisRun) => (
+        <Text
+          numberOfLines={2}
+          style={
+            run.kind === 'manual_audio' && run.warningCodes.length ? styles.warning : styles.meta
+          }
+        >
+          {run.kind === 'batch'
+            ? t('analysisRuns.batchCounts', run.counts)
+            : run.warningCodes.length
+              ? t('analysisRuns.limited', { codes: run.warningCodes.join('、') })
+              : t(statusLabelKey(run.status))}
+        </Text>
+      ),
+    },
+    {
+      id: 'updated',
+      label: t('desktop.updated'),
+      width: 160,
+      render: (run: AudioAnalysisRun) => (
+        <Text numberOfLines={1} style={styles.meta}>
+          {formatDateTime(run.updatedAt)}
+        </Text>
+      ),
+    },
+  ];
+
   return (
-    <SafeAreaView edges={['top']} style={styles.safeArea} testID="analysis-runs-screen">
+    <SafeAreaView
+      edges={['top']}
+      style={[styles.safeArea, desktop && styles.desktopSafeArea]}
+      testID="analysis-runs-screen"
+    >
       <TopLevelPageHeader
         onBack={onBack}
         subtitle={t('analysisRuns.subtitle')}
@@ -126,7 +207,7 @@ export function AnalysisRunsScreen({ onBack }: { onBack?: () => void } = {}) {
       </View>
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator color={colors.ink} />
+          <LoadingIndicator accessibilityLabel={t('common.loading')} />
         </View>
       ) : error && !items.length ? (
         <ScrollView
@@ -142,7 +223,10 @@ export function AnalysisRunsScreen({ onBack }: { onBack?: () => void } = {}) {
       ) : (
         <ScrollView
           alwaysBounceVertical
-          contentContainerStyle={items.length ? styles.content : styles.emptyContent}
+          contentContainerStyle={[
+            items.length ? styles.content : styles.emptyContent,
+            desktop && styles.desktopContent,
+          ]}
           refreshControl={<ScreenRefreshControl {...screenRefresh} />}
         >
           {error ? (
@@ -150,7 +234,17 @@ export function AnalysisRunsScreen({ onBack }: { onBack?: () => void } = {}) {
               {t('analysisRuns.refreshFailed', { message: error })}
             </Text>
           ) : null}
-          {items.length ? (
+          {items.length && desktop ? (
+            <DesktopDataTable
+              columns={tableColumns}
+              getRowAccessibilityLabel={(run) => run.title}
+              getRowKey={(run) => `${run.kind}-${run.id}`}
+              label={t('tabs.analysis')}
+              onRowPress={open}
+              rows={items}
+              testID="desktop-analysis-runs-table"
+            />
+          ) : items.length && !desktop ? (
             items.map((run) => (
               <Pressable
                 key={`${run.kind}-${run.id}`}
@@ -193,6 +287,7 @@ export function AnalysisRunsScreen({ onBack }: { onBack?: () => void } = {}) {
 
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.canvas, flex: 1 },
+  desktopSafeArea: { backgroundColor: 'transparent' },
   filters: {
     flexDirection: 'row',
     gap: spacing.xs,
@@ -210,6 +305,8 @@ const styles = StyleSheet.create({
   filterText: { ...typography.description, color: textColors.secondary },
   filterTextActive: { color: colors.white },
   content: { gap: spacing.sm, padding: spacing.md },
+  desktopContent: { padding: spacing.xl },
+  tableRun: { gap: spacing.xs },
   emptyContent: { flexGrow: 1, justifyContent: 'center', padding: spacing.md },
   card: {
     alignItems: 'center',

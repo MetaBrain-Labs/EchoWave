@@ -16,6 +16,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { useResponsiveLayout } from '@/shared/ui/useResponsiveLayout';
 import {
   colors,
   fontFamilies,
@@ -36,6 +37,7 @@ export function CreateHubScreen({
   onOpenRecording: () => void;
 }) {
   const { t } = useAppLanguage();
+  const { desktop } = useResponsiveLayout();
   const [hintVisible, setHintVisible] = useState(false);
   const cards = [
     {
@@ -69,26 +71,35 @@ export function CreateHubScreen({
         subtitle={t('createHub.subtitle')}
         title={t('createHub.title')}
       />
-      <ScrollView contentContainerStyle={styles.content} testID="create-hub-scroll">
+      <ScrollView
+        contentContainerStyle={[styles.content, desktop && styles.desktopContent]}
+        testID="create-hub-scroll"
+      >
         {hintVisible ? <GuideHintCard namespace="guideHint.createHub" /> : null}
-        {cards.map((card) => (
-          <Pressable
-            accessibilityLabel={card.accessibilityLabel}
-            accessibilityRole="button"
-            key={card.title}
-            onPress={card.onPress}
-            style={({ pressed }) => [styles.navigationCard, pressed && styles.pressed]}
-          >
-            <View style={styles.navigationIcon} testID={`create-hub-icon-${card.id}`}>
-              <Ionicons color={colors.ink} name={card.icon} size={22} />
-            </View>
-            <View style={styles.navigationCopy}>
-              <Text style={styles.navigationTitle}>{card.title}</Text>
-              <Text style={styles.navigationText}>{card.description}</Text>
-            </View>
-            <Ionicons color={textColors.tertiary} name="chevron-forward" size={22} />
-          </Pressable>
-        ))}
+        <View style={[styles.cardGrid, desktop && styles.desktopCardGrid]}>
+          {cards.map((card) => (
+            <Pressable
+              accessibilityLabel={card.accessibilityLabel}
+              accessibilityRole="button"
+              key={card.title}
+              onPress={card.onPress}
+              style={({ pressed }) => [
+                styles.navigationCard,
+                desktop && styles.desktopNavigationCard,
+                pressed && styles.pressed,
+              ]}
+            >
+              <View style={styles.navigationIcon} testID={`create-hub-icon-${card.id}`}>
+                <Ionicons color={colors.primary} name={card.icon} size={22} />
+              </View>
+              <View style={styles.navigationCopy}>
+                <Text style={styles.navigationTitle}>{card.title}</Text>
+                <Text style={styles.navigationText}>{card.description}</Text>
+              </View>
+              <Ionicons color={textColors.tertiary} name="chevron-forward" size={22} />
+            </Pressable>
+          ))}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -101,6 +112,14 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl,
     paddingHorizontal: spacing.md,
   },
+  desktopContent: {
+    alignSelf: 'center',
+    maxWidth: 1280,
+    paddingHorizontal: spacing.xl,
+    width: '100%',
+  },
+  cardGrid: { gap: spacing.sm },
+  desktopCardGrid: { flexDirection: 'row' },
   navigationCard: {
     alignItems: 'center',
     backgroundColor: colors.card,
@@ -109,6 +128,11 @@ const styles = StyleSheet.create({
     gap: spacing.base,
     minHeight: 112,
     padding: spacing.md,
+  },
+  desktopNavigationCard: {
+    alignItems: 'flex-start',
+    flex: 1,
+    minHeight: 192,
   },
   navigationIcon: {
     alignItems: 'center',

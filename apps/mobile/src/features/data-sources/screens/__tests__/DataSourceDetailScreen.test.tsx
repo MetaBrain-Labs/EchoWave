@@ -264,7 +264,7 @@ describe('DataSourceDetailScreen', () => {
 
     for (const label of ['上传失败', '转写失败']) {
       for (const node of screen.getAllByText(label)) {
-        expect(['#000000', '#5A6472', '#A3A3A3']).toContain(
+        expect(['#101828', '#5A6472', '#A3A3A3']).toContain(
           StyleSheet.flatten(node.props.style)?.color,
         );
       }

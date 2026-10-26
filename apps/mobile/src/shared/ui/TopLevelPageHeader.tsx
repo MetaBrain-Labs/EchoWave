@@ -23,6 +23,7 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { useResponsiveLayout } from '@/shared/ui/useResponsiveLayout';
 
 /** 描述一级页头中的单个图标或文字操作。 */
 export type TopLevelPageAction = {
@@ -54,9 +55,13 @@ export function TopLevelPageHeader({
   title,
 }: TopLevelPageHeaderProps) {
   const { t } = useAppLanguage();
+  const { desktop } = useResponsiveLayout();
   return (
-    <View style={[styles.header, compact && styles.compactHeader]} testID="top-level-page-header">
-      <View style={styles.titleRow}>
+    <View
+      style={[styles.header, compact && styles.compactHeader, desktop && styles.desktopHeader]}
+      testID="top-level-page-header"
+    >
+      <View style={[styles.titleRow, desktop && styles.desktopTitleRow]}>
         {onBack ? (
           <Pressable
             accessibilityLabel={t('common.back')}
@@ -108,7 +113,9 @@ export function TopLevelPageHeader({
           </View>
         ) : null}
       </View>
-      {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+      {subtitle ? (
+        <Text style={[styles.subtitle, desktop && styles.desktopSubtitle]}>{subtitle}</Text>
+      ) : null}
     </View>
   );
 }
@@ -124,12 +131,19 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.base,
     paddingTop: spacing.base,
   },
+  desktopHeader: {
+    backgroundColor: 'transparent',
+    paddingBottom: spacing.md,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.xl,
+  },
   titleRow: {
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
     minHeight: 44,
   },
+  desktopTitleRow: { minHeight: 40 },
   backAction: {
     alignItems: 'center',
     height: 44,
@@ -184,6 +198,7 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sans,
     marginTop: spacing.sm,
   },
+  desktopSubtitle: { marginTop: spacing.xs, maxWidth: 960 },
   disabled: { opacity: 0.45 },
   pressed: {
     backgroundColor: colors.background,

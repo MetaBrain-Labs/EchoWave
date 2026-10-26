@@ -11,15 +11,7 @@
 import type { AudioAnalysisBatch, AudioAnalysisTask } from '@echowave/contracts';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -40,6 +32,8 @@ import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { colors, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
+import { LoadingIndicator } from '@/shared/ui/LoadingIndicator';
+import { useResponsiveLayout } from '@/shared/ui/useResponsiveLayout';
 
 const statusLabelKeys: Record<AudioAnalysisTask['status'], TranslationKey> = {
   awaiting_upload: 'batchDetail.status.awaiting_upload',
@@ -72,6 +66,7 @@ export function AnalysisBatchDetailScreen({
   router: DetailRouter;
 }) {
   const { formatDateTime, t } = useAppLanguage();
+  const { desktop } = useResponsiveLayout();
   const [batch, setBatch] = useState<AudioAnalysisBatch>();
   const [error, setError] = useState('');
   const [restFallback, setRestFallback] = useState(false);
@@ -149,7 +144,7 @@ export function AnalysisBatchDetailScreen({
       />
       {!batch && !error ? (
         <View style={styles.center}>
-          <ActivityIndicator color={colors.ink} />
+          <LoadingIndicator accessibilityLabel={t('common.loading')} />
         </View>
       ) : null}
       {error && !batch ? (
@@ -165,7 +160,7 @@ export function AnalysisBatchDetailScreen({
       {batch ? (
         <ScrollView
           alwaysBounceVertical
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, desktop && styles.desktopContent]}
           refreshControl={<ScreenRefreshControl {...screenRefresh} />}
         >
           {error ? (
@@ -411,6 +406,12 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   content: { gap: spacing.md, padding: spacing.md, paddingBottom: spacing.xxl },
+  desktopContent: {
+    alignSelf: 'center',
+    maxWidth: 1280,
+    paddingHorizontal: spacing.xl,
+    width: '100%',
+  },
   summary: {
     backgroundColor: colors.card,
     borderRadius: radii.default,

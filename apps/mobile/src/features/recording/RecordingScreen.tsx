@@ -21,7 +21,6 @@ import { useRouter, type Href } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Platform,
   Pressable,
@@ -56,6 +55,8 @@ import {
 } from '@/shared/theme/tokens';
 import { ActionSheet, type ActionSheetItem } from '@/shared/ui/ActionSheet';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
+import { LoadingIndicator } from '@/shared/ui/LoadingIndicator';
+import { useResponsiveLayout } from '@/shared/ui/useResponsiveLayout';
 import { textInputText } from '@/shared/theme/textInput';
 
 type TranslationFunction = ReturnType<typeof useAppLanguage>['t'];
@@ -353,7 +354,7 @@ function DraftCard({
 
       <View style={styles.statusRow}>
         {submitting ? (
-          <ActivityIndicator color={colors.ink} size="small" />
+          <LoadingIndicator accessibilityLabel={t('common.loading')} size={24} />
         ) : (
           <Ionicons
             color={submitted ? colors.success : textColors.tertiary}
@@ -452,6 +453,7 @@ export function RecordingScreen({
 }) {
   const recording = useRecording();
   const { t } = useAppLanguage();
+  const { desktop } = useResponsiveLayout();
   const { preference, hydrated, setPreference } = useAnalysisPreference();
   const [sources, setSources] = useState<DataSourceSummary[]>([]);
   const [sourceId, setSourceId] = useState(initialSourceId);
@@ -540,7 +542,7 @@ export function RecordingScreen({
         title={t('recording.title')}
       />
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, desktop && styles.desktopContent]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -738,7 +740,7 @@ export function RecordingScreen({
                   ]}
                 >
                   {recording.busy ? (
-                    <ActivityIndicator color={colors.white} />
+                    <LoadingIndicator accessibilityLabel={t('common.submitting')} size={24} />
                   ) : (
                     <View style={styles.recordIcon}>
                       <Ionicons color={colors.ink} name="mic" size={26} />
@@ -850,6 +852,12 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
     paddingBottom: spacing.xxl,
     paddingHorizontal: spacing.md,
+  },
+  desktopContent: {
+    alignSelf: 'center',
+    maxWidth: 1040,
+    paddingHorizontal: spacing.xl,
+    width: '100%',
   },
   section: { gap: spacing.base },
   sectionTitle: {

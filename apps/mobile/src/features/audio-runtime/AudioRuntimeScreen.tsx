@@ -14,15 +14,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { AudioRuntimeMode, AudioRuntimeOverview } from '@echowave/contracts';
 import { useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getAudioRuntime, updateAudioRuntime } from '@/shared/api/audioRuntimeApi';
@@ -31,6 +23,8 @@ import { AdminSessionGate } from '@/shared/auth/AdminSessionGate';
 import { useAdminSession } from '@/shared/auth/AdminSessionProvider';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { LoadingIndicator } from '@/shared/ui/LoadingIndicator';
+import { useResponsiveLayout } from '@/shared/ui/useResponsiveLayout';
 import {
   colors,
   fontFamilies,
@@ -88,6 +82,7 @@ export function AudioRuntimeScreen({
   onOpenServiceConfiguration: () => void;
 }) {
   const { t } = useAppLanguage();
+  const { desktop } = useResponsiveLayout();
   const noticeTourRef = useStarterTourTarget('runtime-notice');
   const modesTourRef = useStarterTourTarget('runtime-modes');
   const saveTourRef = useStarterTourTarget('runtime-save');
@@ -182,13 +177,13 @@ export function AudioRuntimeScreen({
         title={t('runtime.title')}
       />
       {!token ? (
-        <ScrollView contentContainerStyle={styles.content}>
+        <ScrollView contentContainerStyle={[styles.content, desktop && styles.desktopContent]}>
           <AdminSessionGate onOpenServiceConfiguration={onOpenServiceConfiguration} />
         </ScrollView>
       ) : (
         <ScrollView
           alwaysBounceVertical
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, desktop && styles.desktopContent]}
           keyboardShouldPersistTaps="handled"
           refreshControl={<ScreenRefreshControl {...screenRefresh} />}
           testID="audio-runtime-scroll"
@@ -197,7 +192,7 @@ export function AudioRuntimeScreen({
             <Ionicons color={colors.secondary} name="information-circle-outline" size={22} />
             <Text style={styles.noticeText}>{t('runtime.notice')}</Text>
           </View>
-          {loading ? <ActivityIndicator color={colors.ink} /> : null}
+          {loading ? <LoadingIndicator accessibilityLabel={t('common.loading')} /> : null}
           <View collapsable={false} ref={modesTourRef} style={styles.modeList}>
             {overview
               ? overview.modes.map((availability) => {
@@ -318,6 +313,12 @@ export function AudioRuntimeScreen({
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.canvas, flex: 1 },
   content: { gap: spacing.sm, padding: spacing.md, paddingBottom: spacing.xxl },
+  desktopContent: {
+    alignSelf: 'center',
+    maxWidth: 1040,
+    paddingHorizontal: spacing.xl,
+    width: '100%',
+  },
   modeList: { gap: spacing.sm },
   notice: {
     alignItems: 'flex-start',

@@ -20,7 +20,6 @@ import type {
 } from '@echowave/contracts';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   AppState,
   BackHandler,
@@ -59,6 +58,7 @@ import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingP
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { localizeRequestError } from '@/shared/i18n/errorLocalization';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
+import { LoadingIndicator } from '@/shared/ui/LoadingIndicator';
 import { applyExecutionTraceEvent, hasRunningExecution } from './executionTraceState';
 import {
   colors,
@@ -912,11 +912,7 @@ export function AnalysisDetailScreen({
         <View style={styles.unknownTopBar}>
           <IconButton icon="chevron-back" label={t('common.back')} onPress={requestBack} />
         </View>
-        <ActivityIndicator
-          accessibilityLabel={t('analysisDetail.loading')}
-          color={colors.ink}
-          style={styles.loading}
-        />
+        <LoadingIndicator accessibilityLabel={t('analysisDetail.loading')} style={styles.loading} />
       </SafeAreaView>
     );
   }

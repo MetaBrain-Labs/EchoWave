@@ -13,7 +13,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { DataSourceSummary } from '@echowave/contracts';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -29,9 +29,14 @@ import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import type { TranslationKey } from '@/shared/i18n/translations';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { DesktopDataTable } from '@/shared/ui/DesktopDataTable';
+import { StatusBadge } from '@/shared/ui/DesignPrimitives';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
+import { LoadingIndicator } from '@/shared/ui/LoadingIndicator';
 import { SearchSheet } from '@/shared/ui/SearchSheet';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
+import { useResponsiveLayout } from '@/shared/ui/useResponsiveLayout';
+import { useTopBarSearchRegistration } from '@/shared/ui/TopBarSearchContext';
 import { useStarterTour, useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 
 import { DataSourceFormSheet, type DataSourceFormValue } from '../components/DataSourceDialogs';
@@ -106,7 +111,8 @@ export function DataSourceListScreen({
 }: {
   onOpenSource: (sourceId: string) => void;
 }) {
-  const { t } = useAppLanguage();
+  const { formatDateTime, t } = useAppLanguage();
+  const { desktop } = useResponsiveLayout();
   const { startGuide } = useStarterTour();
   const headerTourRef = useStarterTourTarget('data-sources-header');
   const createTourRef = useStarterTourTarget('data-sources-create');
@@ -121,6 +127,11 @@ export function DataSourceListScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [formError, setFormError] = useState('');
   const [creating, setCreating] = useState(false);
+  useTopBarSearchRegistration({
+    value: searchQuery,
+    placeholder: t('sources.searchPlaceholder'),
+    onChange: setSearchQuery,
+  });
   const runInitialRequest = useInitialRequestLoading();
   const load = useCallback(
     async (showLoading = true) => {
@@ -171,8 +182,76 @@ export function DataSourceListScreen({
     );
   }, [dataSources, searchQuery, t]);
 
+  const tableColumns = [
+    {
+      id: 'source',
+      label: t('sources.title'),
+      flex: 1.7,
+      render: (source: DataSourceSummary) => (
+        <View style={styles.tableSource}>
+          <Text numberOfLines={1} style={styles.cardTitle}>
+            {source.name}
+          </Text>
+          <Text numberOfLines={1} style={styles.tableSecondary}>
+            {source.description || t('sources.noDescription')}
+          </Text>
+        </View>
+      ),
+    },
+    {
+      id: 'status',
+      label: t('desktop.sourceStatus'),
+      width: 118,
+      render: (source: DataSourceSummary) => (
+        <StatusBadge
+          label={t(connectionStatusLabelKeys[source.connectionStatus])}
+          tone={
+            source.connectionStatus === 'connected'
+              ? 'success'
+              : source.connectionStatus === 'error'
+                ? 'danger'
+                : 'neutral'
+          }
+        />
+      ),
+    },
+    {
+      id: 'location',
+      label: t('desktop.sourceLocation'),
+      width: 108,
+      render: (source: DataSourceSummary) => (
+        <Text numberOfLines={1} style={styles.tableSecondary}>
+          {t(locationLabelKeys[source.location])}
+        </Text>
+      ),
+    },
+    {
+      id: 'groups',
+      label: t('desktop.sourceGroups'),
+      width: 132,
+      render: (source: DataSourceSummary) => (
+        <Text numberOfLines={2} style={styles.tableSecondary}>
+          {t('sources.linkedGroups', {
+            count: source.linkedGroupCount,
+            connection: source.connectionLabel,
+          })}
+        </Text>
+      ),
+    },
+    {
+      id: 'updated',
+      label: t('desktop.sourceLastUpload'),
+      width: 158,
+      render: (source: DataSourceSummary) => (
+        <Text numberOfLines={2} style={styles.tableSecondary}>
+          {source.lastUploadedAt ? formatDateTime(source.lastUploadedAt) : t('sources.none')}
+        </Text>
+      ),
+    },
+  ];
+
   return (
-    <SafeAreaView edges={['top']} style={styles.safeArea}>
+    <SafeAreaView edges={['top']} style={[styles.safeArea, desktop && styles.desktopSafeArea]}>
       {searchVisible ? (
         <SearchSheet
           appliedQuery={searchQuery}
@@ -231,15 +310,13 @@ export function DataSourceListScreen({
       </View>
       <ScrollView
         alwaysBounceVertical
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, desktop && styles.desktopContent]}
         refreshControl={<ScreenRefreshControl {...screenRefresh} />}
         showsVerticalScrollIndicator={false}
         testID="data-source-list-scroll"
       >
         <View style={styles.list}>
-          {loading ? (
-            <ActivityIndicator accessibilityLabel={t('sources.loading')} color={colors.ink} />
-          ) : null}
+          {loading ? <LoadingIndicator accessibilityLabel={t('sources.loading')} /> : null}
           {error ? (
             <View style={styles.errorCard}>
               <Text accessibilityRole="alert" style={styles.description}>
@@ -256,7 +333,18 @@ export function DataSourceListScreen({
           {!loading && !error && dataSources.length > 0 && visibleDataSources.length === 0 ? (
             <Text style={styles.description}>{t('sources.noMatch', { query: searchQuery })}</Text>
           ) : null}
-          {!loading && !error
+          {!loading && !error && desktop && visibleDataSources.length ? (
+            <DesktopDataTable
+              columns={tableColumns}
+              getRowAccessibilityLabel={(source) => t('sources.open', { name: source.name })}
+              getRowKey={(source) => source.id}
+              label={t('sources.title')}
+              onRowPress={(source) => onOpenSource(source.id)}
+              rows={visibleDataSources}
+              testID="desktop-data-source-table"
+            />
+          ) : null}
+          {!loading && !error && !desktop
             ? visibleDataSources.map((source, index) => (
                 <View key={source.id}>
                   {index === 0 ? (
@@ -284,10 +372,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     flex: 1,
   },
+  desktopSafeArea: { backgroundColor: 'transparent' },
   content: {
     paddingBottom: spacing.xxl,
     paddingHorizontal: spacing.md,
   },
+  desktopContent: { paddingHorizontal: spacing.xl },
+  tableSource: { gap: spacing.xs },
+  tableSecondary: { ...typography.description, color: textColors.secondary },
   list: {
     gap: spacing.sm,
   },

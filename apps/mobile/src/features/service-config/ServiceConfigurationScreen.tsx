@@ -14,16 +14,7 @@
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getAsrPreferences, updateAsrPreferences } from '@/shared/api/asrPreferencesApi';
@@ -40,6 +31,8 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
+import { LoadingIndicator } from '@/shared/ui/LoadingIndicator';
+import { useResponsiveLayout } from '@/shared/ui/useResponsiveLayout';
 import { multilineTextInputText, textInputText } from '@/shared/theme/textInput';
 
 /** 渲染管理员校验、ASR 默认上下文和服务器配置入口。 */
@@ -53,6 +46,7 @@ export function ServiceConfigurationScreen({
   onOpenRuntime: () => void;
 }) {
   const { t } = useAppLanguage();
+  const { desktop } = useResponsiveLayout();
   const { token, setSession, clearSession } = useAdminSession();
   const [tokenInput, setTokenInput] = useState('');
   const [verifying, setVerifying] = useState(false);
@@ -121,7 +115,7 @@ export function ServiceConfigurationScreen({
         subtitle={t('serviceConfig.subtitle')}
         title={t('serviceConfig.title')}
       />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, desktop && styles.desktopContent]}>
         <View style={styles.card}>
           <Text accessibilityRole="header" style={styles.title}>
             {t('serviceConfig.sessionTitle')}
@@ -164,7 +158,9 @@ export function ServiceConfigurationScreen({
                   pressed && styles.pressed,
                 ]}
               >
-                {verifying ? <ActivityIndicator color={colors.white} /> : null}
+                {verifying ? (
+                  <LoadingIndicator accessibilityLabel={t('common.submitting')} size={24} />
+                ) : null}
                 <Text style={styles.primaryButtonText}>
                   {verifying
                     ? t('serviceConfig.sessionVerifying')
@@ -180,9 +176,7 @@ export function ServiceConfigurationScreen({
             {t('serviceConfig.asrTitle')}
           </Text>
           <Text style={styles.description}>{t('serviceConfig.asrDescription')}</Text>
-          {asrLoading ? (
-            <ActivityIndicator accessibilityLabel={t('common.loading')} color={colors.ink} />
-          ) : null}
+          {asrLoading ? <LoadingIndicator accessibilityLabel={t('common.loading')} /> : null}
           <Text style={styles.fieldLabel}>{t('serviceConfig.asrContextLabel')}</Text>
           <TextInput
             accessibilityLabel={t('serviceConfig.asrContextLabel')}
@@ -207,7 +201,9 @@ export function ServiceConfigurationScreen({
               pressed && styles.pressed,
             ]}
           >
-            {asrSaving ? <ActivityIndicator color={colors.white} /> : null}
+            {asrSaving ? (
+              <LoadingIndicator accessibilityLabel={t('common.submitting')} size={24} />
+            ) : null}
             <Text style={styles.primaryButtonText}>{t('serviceConfig.asrSave')}</Text>
           </Pressable>
           {token ? null : <Text style={styles.help}>{t('serviceConfig.sessionDescription')}</Text>}
@@ -254,6 +250,12 @@ export function ServiceConfigurationScreen({
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.canvas, flex: 1 },
   content: { padding: spacing.md, paddingBottom: spacing.xxl, gap: spacing.md },
+  desktopContent: {
+    alignSelf: 'center',
+    maxWidth: 1040,
+    paddingHorizontal: spacing.xl,
+    width: '100%',
+  },
   card: {
     backgroundColor: colors.card,
     borderColor: colors.divider,

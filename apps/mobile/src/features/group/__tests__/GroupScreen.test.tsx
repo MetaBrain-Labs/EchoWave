@@ -146,9 +146,9 @@ describe('GroupScreen', () => {
 
     expect(StyleSheet.flatten(screen.getByText('产品研究组').props.style)).toEqual(
       expect.objectContaining({
-        fontSize: 40,
+        fontSize: 24,
         fontWeight: 'bold',
-        lineHeight: 60,
+        lineHeight: 32,
       }),
     );
     expect(StyleSheet.flatten(screen.getByTestId('icon-hourglass-outline').props.style)).toEqual({

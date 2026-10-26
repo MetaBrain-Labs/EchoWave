@@ -23,7 +23,6 @@ import type {
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
-  ActivityIndicator,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   Pressable,
@@ -62,9 +61,13 @@ import {
   textColors,
   typography,
 } from '@/shared/theme/tokens';
+import { GROUP_NAVIGATION_WIDTH } from '@/shared/ui/layoutMetrics';
 import { PageTabs } from '@/shared/ui/PageTabs';
 import { SearchSheet } from '@/shared/ui/SearchSheet';
+import { useTopBarSearchRegistration } from '@/shared/ui/TopBarSearchContext';
+import { useResponsiveLayout } from '@/shared/ui/useResponsiveLayout';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
+import { LoadingIndicator } from '@/shared/ui/LoadingIndicator';
 import { AudioContent } from './components/AudioContent';
 import { DataSourcesContent } from './components/DataSourcesContent';
 import { GroupDrawer } from './components/GroupDrawer';
@@ -88,9 +91,9 @@ import {
 } from './model';
 
 const tabs = [
-  { key: 'audio', labelKey: 'groups.tab.audio' },
-  { key: 'knowledge', labelKey: 'groups.tab.knowledge' },
-  { key: 'sources', labelKey: 'groups.tab.sources' },
+  { key: 'audio', labelKey: 'groups.tab.audio', icon: 'musical-notes-outline' },
+  { key: 'knowledge', labelKey: 'groups.tab.knowledge', icon: 'library-outline' },
+  { key: 'sources', labelKey: 'groups.tab.sources', icon: 'link-outline' },
 ] as const;
 
 export type TabKey = (typeof tabs)[number]['key'];
@@ -154,6 +157,7 @@ export function GroupScreen({
   onTabChange?: (tab: TabKey) => void;
 }) {
   const { t } = useAppLanguage();
+  const { desktop, wideDesktop } = useResponsiveLayout();
   const runInitialRequest = useInitialRequestLoading();
   const { offerStarterTemplates, startGuide } = useStarterTour();
   const menuTourRef = useStarterTourTarget('group-menu');
@@ -172,6 +176,11 @@ export function GroupScreen({
   const [renameError, setRenameError] = useState('');
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  useTopBarSearchRegistration({
+    value: searchQuery,
+    placeholder: t('common.search'),
+    onChange: setSearchQuery,
+  });
   const [filterVisible, setFilterVisible] = useState(false);
   const [audioSortOrder, setAudioSortOrder] = useState<AudioSortOrder>('newest');
   const [audioStatuses, setAudioStatuses] = useState<Set<AudioStatusKind>>(() => new Set());
@@ -693,11 +702,12 @@ export function GroupScreen({
     onTabChangeRef.current?.(tab);
   }, []);
 
-  const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } = useSwipePager({
-    activeTab,
-    onTabChange: handleTabChange,
-    tabs: tabKeys,
-  });
+  const { handlePageLayout, handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } =
+    useSwipePager({
+      activeTab,
+      onTabChange: handleTabChange,
+      tabs: tabKeys,
+    });
 
   const handleContentScroll = (tab: TabKey) => (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     if (event.nativeEvent.contentOffset.y <= spacing.xl) return;
@@ -726,7 +736,11 @@ export function GroupScreen({
     !searchQuery &&
     sourceLocations.size === 0 &&
     sourceStatuses.size === 0;
-  const localizedTabs = tabs.map((tab) => ({ key: tab.key, label: t(tab.labelKey) }));
+  const localizedTabs = tabs.map((tab) => ({
+    key: tab.key,
+    label: t(tab.labelKey),
+    icon: tab.icon,
+  }));
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
@@ -811,227 +825,333 @@ export function GroupScreen({
         visible={resourceLinkKind !== undefined}
       />
 
-      <View style={styles.topBar} testID="group-top-bar">
-        <View style={styles.topLeft}>
-          <IconButton
-            icon="menu"
-            label={t('groups.menu')}
-            onPress={() => {
-              setCreateError('');
-              setDrawerVisible(true);
-            }}
-            ref={menuTourRef}
-          />
-          {headerCollapsed ? (
-            <View style={styles.inlineTitleRow}>
-              <Text testID="group-inline-title" style={styles.inlineTitle}>
-                {group?.name}
+      <View style={[styles.contentColumns, wideDesktop && styles.wideContentColumns]}>
+        {wideDesktop ? (
+          <View
+            accessibilityLabel={t('tabs.groups')}
+            style={styles.desktopGroupSidebar}
+            testID="desktop-group-sidebar"
+          >
+            <View style={styles.desktopGroupHeading}>
+              <Text style={styles.desktopGroupTitle}>{t('tabs.groups')}</Text>
+              <Pressable
+                accessibilityLabel={t('groups.openMenu')}
+                accessibilityRole="button"
+                onPress={() => setDrawerVisible(true)}
+                style={({ pressed }) => [styles.desktopCreateGroup, pressed && styles.pressed]}
+                testID="desktop-create-group"
+              >
+                <Ionicons color={colors.primary} name="add" size={21} />
+              </Pressable>
+            </View>
+            <ScrollView contentContainerStyle={styles.desktopGroupList}>
+              {groups.map((item) => {
+                const selected = item.id === group?.id;
+                return (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    key={item.id}
+                    onPress={() => void selectGroup(item, true)}
+                    style={({ pressed }) => [
+                      styles.desktopGroupItem,
+                      selected && styles.desktopGroupItemActive,
+                      pressed && styles.pressed,
+                    ]}
+                    testID={`desktop-group-${item.id}`}
+                  >
+                    <Text numberOfLines={1} style={styles.desktopGroupItemName}>
+                      {item.name}
+                    </Text>
+                    <Text style={styles.desktopGroupMeta}>{item.metrics.audioCount}</Text>
+                  </Pressable>
+                );
+              })}
+              {!groups.length && !directoryLoading ? (
+                <Text style={styles.desktopGroupMeta}>{t('groups.noneAvailable')}</Text>
+              ) : null}
+            </ScrollView>
+          </View>
+        ) : null}
+        <View style={styles.groupMain}>
+          <View style={styles.topBar} testID="group-top-bar">
+            <View style={styles.topLeft}>
+              <IconButton
+                icon="menu"
+                label={t('groups.menu')}
+                onPress={() => {
+                  setCreateError('');
+                  setDrawerVisible(true);
+                }}
+                ref={menuTourRef}
+              />
+              {headerCollapsed ? (
+                <View style={styles.inlineTitleRow}>
+                  <Text testID="group-inline-title" style={styles.inlineTitle}>
+                    {group?.name}
+                  </Text>
+                  {group?.starterTemplateKey ? (
+                    <Text style={styles.templateBadge}>{t('groups.template')}</Text>
+                  ) : null}
+                </View>
+              ) : null}
+            </View>
+            <View style={styles.topActions}>
+              {!desktop ? (
+                <IconButton
+                  disabled={!group}
+                  icon="search"
+                  label={t('common.search')}
+                  onPress={() => setSearchVisible(true)}
+                />
+              ) : null}
+              <IconButton
+                disabled={!group || knowledgeLoading}
+                icon="chatbubble-ellipses-outline"
+                label={t('groups.askKnowledge')}
+                onPress={() => void askKnowledge()}
+                testID="group-ask-knowledge"
+              />
+              <IconButton
+                disabled={!group}
+                icon="options-outline"
+                label={t('groups.settings')}
+                onPress={() => {
+                  if (group) onOpenSettings?.(group.id);
+                }}
+                ref={settingsTourRef}
+              />
+            </View>
+          </View>
+
+          {!headerCollapsed ? (
+            <View collapsable={false} ref={titleTourRef} style={styles.displayTitleRow}>
+              <Text testID="group-display-title" style={styles.displayTitle}>
+                {directoryLoading ? t('groups.loading') : (group?.name ?? t('groups.empty'))}
               </Text>
               {group?.starterTemplateKey ? (
                 <Text style={styles.templateBadge}>{t('groups.template')}</Text>
               ) : null}
             </View>
           ) : null}
-        </View>
-        <View style={styles.topActions}>
-          <IconButton
-            disabled={!group}
-            icon="search"
-            label={t('common.search')}
-            onPress={() => setSearchVisible(true)}
-          />
-          <IconButton
-            disabled={!group || knowledgeLoading}
-            icon="chatbubble-ellipses-outline"
-            label={t('groups.askKnowledge')}
-            onPress={() => void askKnowledge()}
-            testID="group-ask-knowledge"
-          />
-          <IconButton
-            disabled={!group}
-            icon="options-outline"
-            label={t('groups.settings')}
-            onPress={() => {
-              if (group) onOpenSettings?.(group.id);
-            }}
-            ref={settingsTourRef}
-          />
+
+          {directoryLoading ? (
+            <View style={styles.pageState}>
+              <LoadingIndicator accessibilityLabel={t('groups.loadingDirectory')} />
+            </View>
+          ) : !group ? (
+            <ScrollView
+              alwaysBounceVertical
+              contentContainerStyle={styles.pageState}
+              refreshControl={<ScreenRefreshControl {...screenRefresh} />}
+            >
+              <Ionicons color={colors.muted} name="albums-outline" size={40} />
+              <Text style={styles.emptyGroupTitle}>
+                {directoryError || t('groups.noneAvailable')}
+              </Text>
+              <Text style={styles.emptyGroupDescription}>
+                {directoryError ? t('groups.retryHint') : t('groups.emptyHint')}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  if (directoryError) void loadDirectory();
+                  else setDrawerVisible(true);
+                }}
+                style={({ pressed }) => [styles.emptyGroupButton, pressed && styles.primaryPressed]}
+              >
+                <Text style={styles.emptyGroupButtonText}>
+                  {directoryError ? t('groups.reload') : t('groups.openMenu')}
+                </Text>
+              </Pressable>
+            </ScrollView>
+          ) : (
+            <>
+              <View collapsable={false} ref={tabsTourRef}>
+                <PageTabs
+                  activeTab={activeTab}
+                  desktop={desktop}
+                  onChange={selectTab}
+                  tabs={localizedTabs}
+                  testIDPrefix="group-tab"
+                />
+              </View>
+              <ScrollView
+                accessibilityLabel={t('groups.pager')}
+                directionalLockEnabled
+                horizontal
+                nestedScrollEnabled
+                onMomentumScrollEnd={handleMomentumScrollEnd}
+                onLayout={handlePageLayout}
+                pagingEnabled
+                ref={pagerRef}
+                showsHorizontalScrollIndicator={false}
+                style={styles.pager}
+                testID="group-tab-pager"
+              >
+                <View style={[styles.page, { width: pageWidth }]}>
+                  <ScrollView
+                    alwaysBounceVertical
+                    contentContainerStyle={styles.scrollContent}
+                    onMomentumScrollEnd={handleScrollEnd('audio')}
+                    onScroll={handleContentScroll('audio')}
+                    onScrollEndDrag={handleScrollEnd('audio')}
+                    refreshControl={<ScreenRefreshControl {...screenRefresh} />}
+                    scrollEventThrottle={16}
+                    showsVerticalScrollIndicator={false}
+                    testID="group-audio-scroll"
+                  >
+                    <AudioContent
+                      emptyMessage={
+                        searchEmpty ||
+                        (audioStatuses.size ? t('groups.noAudioFilter') : t('groups.noAudio'))
+                      }
+                      error={audioError}
+                      items={visibleAudio}
+                      loading={audioLoading}
+                      onOpenAudio={(id) => {
+                        if (group) onOpenAudio?.(id, group.id);
+                      }}
+                      onOpenFilter={() => setFilterVisible(true)}
+                      onOpenTemplateExample={() => onOpenTemplateExample?.(group.id)}
+                      onRetry={() => {
+                        void loadAudio(group.id);
+                      }}
+                      onRetryTemplateExample={() => {
+                        void loadTemplateExample(group);
+                      }}
+                      templateExample={templateExample}
+                      templateExampleError={templateExampleError}
+                      templateExampleLoading={templateExampleLoading}
+                    />
+                  </ScrollView>
+                </View>
+                <View style={[styles.page, { width: pageWidth }]}>
+                  <ScrollView
+                    alwaysBounceVertical
+                    contentContainerStyle={styles.scrollContent}
+                    onMomentumScrollEnd={handleScrollEnd('knowledge')}
+                    onScroll={handleContentScroll('knowledge')}
+                    onScrollEndDrag={handleScrollEnd('knowledge')}
+                    refreshControl={<ScreenRefreshControl {...screenRefresh} />}
+                    scrollEventThrottle={16}
+                    showsVerticalScrollIndicator={false}
+                    testID="group-knowledge-scroll"
+                  >
+                    <KnowledgeContent
+                      emptyMessage={
+                        searchEmpty ||
+                        (knowledgeDocumentFilter !== 'all'
+                          ? t('groups.noKnowledgeFilter')
+                          : t('groups.noKnowledge'))
+                      }
+                      error={knowledgeError}
+                      knowledgeBases={visibleKnowledge}
+                      loading={knowledgeLoading}
+                      onLink={() => openResourceLinkSheet('knowledge')}
+                      onOpenFilter={() => setFilterVisible(true)}
+                      onOpenKnowledge={(id) => onOpenKnowledge?.(id, group.id)}
+                      onRetry={() => {
+                        void loadKnowledgeBases(group.id);
+                      }}
+                      showLinkAction={showKnowledgeLinkAction}
+                    />
+                  </ScrollView>
+                </View>
+                <View style={[styles.page, { width: pageWidth }]}>
+                  <ScrollView
+                    alwaysBounceVertical
+                    contentContainerStyle={styles.scrollContent}
+                    onMomentumScrollEnd={handleScrollEnd('sources')}
+                    onScroll={handleContentScroll('sources')}
+                    onScrollEndDrag={handleScrollEnd('sources')}
+                    refreshControl={<ScreenRefreshControl {...screenRefresh} />}
+                    scrollEventThrottle={16}
+                    showsVerticalScrollIndicator={false}
+                    testID="group-sources-scroll"
+                  >
+                    <DataSourcesContent
+                      emptyMessage={
+                        searchEmpty ||
+                        (sourceLocations.size || sourceStatuses.size
+                          ? t('groups.noSourceFilter')
+                          : t('groups.noSources'))
+                      }
+                      error={sourcesError}
+                      loading={sourcesLoading}
+                      onOpenFilter={() => setFilterVisible(true)}
+                      onLink={() => openResourceLinkSheet('sources')}
+                      onOpenSource={(id) => {
+                        if (group) onOpenSource?.(id, group.id);
+                      }}
+                      onRetry={() => {
+                        void loadSources(group.id);
+                      }}
+                      showLinkAction={showSourceLinkAction}
+                      sources={visibleSources}
+                    />
+                  </ScrollView>
+                </View>
+              </ScrollView>
+            </>
+          )}
         </View>
       </View>
-
-      {!headerCollapsed ? (
-        <View collapsable={false} ref={titleTourRef} style={styles.displayTitleRow}>
-          <Text testID="group-display-title" style={styles.displayTitle}>
-            {directoryLoading ? t('groups.loading') : (group?.name ?? t('groups.empty'))}
-          </Text>
-          {group?.starterTemplateKey ? (
-            <Text style={styles.templateBadge}>{t('groups.template')}</Text>
-          ) : null}
-        </View>
-      ) : null}
-
-      {directoryLoading ? (
-        <View style={styles.pageState}>
-          <ActivityIndicator accessibilityLabel={t('groups.loadingDirectory')} color={colors.ink} />
-        </View>
-      ) : !group ? (
-        <ScrollView
-          alwaysBounceVertical
-          contentContainerStyle={styles.pageState}
-          refreshControl={<ScreenRefreshControl {...screenRefresh} />}
-        >
-          <Ionicons color={colors.muted} name="albums-outline" size={40} />
-          <Text style={styles.emptyGroupTitle}>{directoryError || t('groups.noneAvailable')}</Text>
-          <Text style={styles.emptyGroupDescription}>
-            {directoryError ? t('groups.retryHint') : t('groups.emptyHint')}
-          </Text>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => {
-              if (directoryError) void loadDirectory();
-              else setDrawerVisible(true);
-            }}
-            style={({ pressed }) => [styles.emptyGroupButton, pressed && styles.primaryPressed]}
-          >
-            <Text style={styles.emptyGroupButtonText}>
-              {directoryError ? t('groups.reload') : t('groups.openMenu')}
-            </Text>
-          </Pressable>
-        </ScrollView>
-      ) : (
-        <>
-          <View collapsable={false} ref={tabsTourRef}>
-            <PageTabs
-              activeTab={activeTab}
-              onChange={selectTab}
-              tabs={localizedTabs}
-              testIDPrefix="group-tab"
-            />
-          </View>
-          <ScrollView
-            accessibilityLabel={t('groups.pager')}
-            directionalLockEnabled
-            horizontal
-            nestedScrollEnabled
-            onMomentumScrollEnd={handleMomentumScrollEnd}
-            pagingEnabled
-            ref={pagerRef}
-            showsHorizontalScrollIndicator={false}
-            style={styles.pager}
-            testID="group-tab-pager"
-          >
-            <View style={[styles.page, { width: pageWidth }]}>
-              <ScrollView
-                alwaysBounceVertical
-                contentContainerStyle={styles.scrollContent}
-                onMomentumScrollEnd={handleScrollEnd('audio')}
-                onScroll={handleContentScroll('audio')}
-                onScrollEndDrag={handleScrollEnd('audio')}
-                refreshControl={<ScreenRefreshControl {...screenRefresh} />}
-                scrollEventThrottle={16}
-                showsVerticalScrollIndicator={false}
-                testID="group-audio-scroll"
-              >
-                <AudioContent
-                  emptyMessage={
-                    searchEmpty ||
-                    (audioStatuses.size ? t('groups.noAudioFilter') : t('groups.noAudio'))
-                  }
-                  error={audioError}
-                  items={visibleAudio}
-                  loading={audioLoading}
-                  onOpenAudio={(id) => {
-                    if (group) onOpenAudio?.(id, group.id);
-                  }}
-                  onOpenFilter={() => setFilterVisible(true)}
-                  onOpenTemplateExample={() => onOpenTemplateExample?.(group.id)}
-                  onRetry={() => {
-                    void loadAudio(group.id);
-                  }}
-                  onRetryTemplateExample={() => {
-                    void loadTemplateExample(group);
-                  }}
-                  templateExample={templateExample}
-                  templateExampleError={templateExampleError}
-                  templateExampleLoading={templateExampleLoading}
-                />
-              </ScrollView>
-            </View>
-            <View style={[styles.page, { width: pageWidth }]}>
-              <ScrollView
-                alwaysBounceVertical
-                contentContainerStyle={styles.scrollContent}
-                onMomentumScrollEnd={handleScrollEnd('knowledge')}
-                onScroll={handleContentScroll('knowledge')}
-                onScrollEndDrag={handleScrollEnd('knowledge')}
-                refreshControl={<ScreenRefreshControl {...screenRefresh} />}
-                scrollEventThrottle={16}
-                showsVerticalScrollIndicator={false}
-                testID="group-knowledge-scroll"
-              >
-                <KnowledgeContent
-                  emptyMessage={
-                    searchEmpty ||
-                    (knowledgeDocumentFilter !== 'all'
-                      ? t('groups.noKnowledgeFilter')
-                      : t('groups.noKnowledge'))
-                  }
-                  error={knowledgeError}
-                  knowledgeBases={visibleKnowledge}
-                  loading={knowledgeLoading}
-                  onLink={() => openResourceLinkSheet('knowledge')}
-                  onOpenFilter={() => setFilterVisible(true)}
-                  onOpenKnowledge={(id) => onOpenKnowledge?.(id, group.id)}
-                  onRetry={() => {
-                    void loadKnowledgeBases(group.id);
-                  }}
-                  showLinkAction={showKnowledgeLinkAction}
-                />
-              </ScrollView>
-            </View>
-            <View style={[styles.page, { width: pageWidth }]}>
-              <ScrollView
-                alwaysBounceVertical
-                contentContainerStyle={styles.scrollContent}
-                onMomentumScrollEnd={handleScrollEnd('sources')}
-                onScroll={handleContentScroll('sources')}
-                onScrollEndDrag={handleScrollEnd('sources')}
-                refreshControl={<ScreenRefreshControl {...screenRefresh} />}
-                scrollEventThrottle={16}
-                showsVerticalScrollIndicator={false}
-                testID="group-sources-scroll"
-              >
-                <DataSourcesContent
-                  emptyMessage={
-                    searchEmpty ||
-                    (sourceLocations.size || sourceStatuses.size
-                      ? t('groups.noSourceFilter')
-                      : t('groups.noSources'))
-                  }
-                  error={sourcesError}
-                  loading={sourcesLoading}
-                  onOpenFilter={() => setFilterVisible(true)}
-                  onLink={() => openResourceLinkSheet('sources')}
-                  onOpenSource={(id) => {
-                    if (group) onOpenSource?.(id, group.id);
-                  }}
-                  onRetry={() => {
-                    void loadSources(group.id);
-                  }}
-                  showLinkAction={showSourceLinkAction}
-                  sources={visibleSources}
-                />
-              </ScrollView>
-            </View>
-          </ScrollView>
-        </>
-      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.canvas, flex: 1 },
+  contentColumns: { flex: 1, minHeight: 0, minWidth: 0 },
+  wideContentColumns: { flexDirection: 'row' },
+  groupMain: { flex: 1, minHeight: 0, minWidth: 0 },
+  desktopGroupSidebar: {
+    backgroundColor: colors.card,
+    borderRightColor: colors.borderSoft,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    flexShrink: 0,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.xl,
+    width: GROUP_NAVIGATION_WIDTH,
+  },
+  desktopGroupHeading: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+    minHeight: 40,
+  },
+  desktopGroupTitle: {
+    ...typography.heading3,
+    color: textColors.primary,
+    fontFamily: fontFamilies.sansBold,
+  },
+  desktopCreateGroup: {
+    alignItems: 'center',
+    backgroundColor: colors.primarySurface,
+    borderRadius: radii.input,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+  desktopGroupList: { gap: spacing.xs, paddingBottom: spacing.xl },
+  desktopGroupItem: {
+    alignItems: 'center',
+    borderRadius: radii.input,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'space-between',
+    minHeight: 44,
+    paddingHorizontal: spacing.sm,
+  },
+  desktopGroupItemActive: { backgroundColor: colors.primarySurface },
+  desktopGroupItemName: {
+    ...typography.body,
+    color: textColors.primary,
+    flexShrink: 1,
+  },
+  desktopGroupMeta: { ...typography.label, color: textColors.tertiary },
   topBar: {
     alignItems: 'center',
     flexDirection: 'row',

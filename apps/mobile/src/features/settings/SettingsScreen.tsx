@@ -28,7 +28,6 @@ import {
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useMemo, useState, type ComponentProps, type ReactNode } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -60,6 +59,8 @@ import {
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { GuideButton } from '@/shared/ui/GuideButton';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
+import { useResponsiveLayout } from '@/shared/ui/useResponsiveLayout';
+import { LoadingIndicator } from '@/shared/ui/LoadingIndicator';
 import { useStarterTour, useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import { ActionSheet } from '@/shared/ui/ActionSheet';
 import { textInputText } from '@/shared/theme/textInput';
@@ -390,6 +391,7 @@ export function SettingsScreen({
   onOpenServiceConfiguration: () => void;
 }) {
   const { formatDateTime, formatNumber, t } = useAppLanguage();
+  const { desktop } = useResponsiveLayout();
   const { activeGuide } = useStarterTour();
   const securityTourRef = useStarterTourTarget('ai-security');
   const configurationTourRef = useStarterTourTarget('ai-configuration');
@@ -726,7 +728,7 @@ export function SettingsScreen({
       />
       <ScrollView
         alwaysBounceVertical
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, desktop && styles.desktopContent]}
         keyboardShouldPersistTaps="handled"
         refreshControl={<ScreenRefreshControl {...screenRefresh} />}
       >
@@ -1014,7 +1016,9 @@ export function SettingsScreen({
             </>
           ) : null}
         </View>
-        {busy ? <ActivityIndicator color={colors.ink} style={styles.busy} /> : null}
+        {busy ? (
+          <LoadingIndicator accessibilityLabel={t('common.loading')} style={styles.busy} />
+        ) : null}
       </ScrollView>
       {bindingCapability ? (
         <ModelPickerSheet
@@ -1456,7 +1460,7 @@ function ModelPickerSheet({
           </View>
           {status === 'loading' ? (
             <View style={styles.pickerState}>
-              <ActivityIndicator color={colors.ink} />
+              <LoadingIndicator accessibilityLabel={t('aiSettings.catalogLoading')} />
               <Text style={styles.help}>{t('aiSettings.catalogLoading')}</Text>
             </View>
           ) : (
@@ -1656,6 +1660,12 @@ function ActionButton({
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.canvas, flex: 1 },
   content: { gap: spacing.md, padding: spacing.md, paddingBottom: spacing.xxl },
+  desktopContent: {
+    alignSelf: 'center',
+    maxWidth: 1280,
+    paddingHorizontal: spacing.xl,
+    width: '100%',
+  },
   flex: { flex: 1 },
   demoPanel: { gap: spacing.md },
   demoNotice: {

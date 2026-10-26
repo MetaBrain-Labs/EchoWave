@@ -19,16 +19,7 @@ import type {
 import * as DocumentPicker from 'expo-document-picker';
 import { useRouter, type Href } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -47,6 +38,8 @@ import { getAudioRuntime } from '@/shared/api/audioRuntimeApi';
 import { pickDocumentAsync } from '@/shared/files/documentPicker';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
+import { useResponsiveLayout } from '@/shared/ui/useResponsiveLayout';
+import { LoadingIndicator } from '@/shared/ui/LoadingIndicator';
 import { colors, radii, spacing, textColors, typography } from '@/shared/theme/tokens';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
@@ -68,6 +61,8 @@ export function AnalysisBatchCreateScreen({ onBack }: { onBack?: () => void }) {
   const { preference, hydrated, setPreference } = useAnalysisPreference();
   const pipeline = pipelineForPreference(preference);
   const { language: appLanguage, formatDateTime, t } = useAppLanguage();
+  const { desktop, width } = useResponsiveLayout();
+  const wideDesktop = desktop && width >= 1280;
   const scrollRef = useRef<ScrollView>(null);
   const prepareAudioTourTarget = useCallback(() => {
     scrollRef.current?.scrollTo({ animated: true, y: 180 });
@@ -433,7 +428,7 @@ export function AnalysisBatchCreateScreen({ onBack }: { onBack?: () => void }) {
           title={t('analysisBatch.title')}
         />
         <View style={styles.center}>
-          <ActivityIndicator color={colors.ink} />
+          <LoadingIndicator accessibilityLabel={t('common.loading')} />
         </View>
       </SafeAreaView>
     );
@@ -454,7 +449,7 @@ export function AnalysisBatchCreateScreen({ onBack }: { onBack?: () => void }) {
       />
       <ScrollView
         alwaysBounceVertical
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, desktop && styles.desktopContent]}
         keyboardShouldPersistTaps="handled"
         ref={scrollRef}
         refreshControl={<ScreenRefreshControl {...screenRefresh} />}
@@ -465,201 +460,216 @@ export function AnalysisBatchCreateScreen({ onBack }: { onBack?: () => void }) {
             {t('analysisBatch.refreshFailed', { message: refreshError })}
           </Text>
         ) : null}
-        <View collapsable={false} ref={sourceTourRef} style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('analysisBatch.objectSection')}</Text>
-          <Text style={styles.contextLabel}>{t('analysisBatch.sourceLabel')}</Text>
-          <Pressable
-            accessibilityLabel={t('analysisBatch.selectSource')}
-            accessibilityRole="button"
-            onPress={() => setSourceSheetVisible(true)}
-            style={({ pressed }) => [styles.contextRow, pressed && styles.choicePressed]}
+        <View style={[styles.batchColumns, wideDesktop && styles.wideBatchColumns]}>
+          <View
+            collapsable={false}
+            ref={sourceTourRef}
+            style={[styles.section, styles.batchColumn]}
           >
-            <View style={styles.contextCopy}>
-              <Text numberOfLines={1} style={styles.contextValue}>
-                {selectedSource?.name ?? t('analysisBatch.noSource')}
-              </Text>
-              <Text style={styles.hint}>
-                {sourceId ? t('analysisBatch.currentSource') : t('analysisBatch.noSource')}
-              </Text>
+            <Text style={styles.sectionTitle}>{t('analysisBatch.objectSection')}</Text>
+            <Text style={styles.contextLabel}>{t('analysisBatch.sourceLabel')}</Text>
+            <Pressable
+              accessibilityLabel={t('analysisBatch.selectSource')}
+              accessibilityRole="button"
+              onPress={() => setSourceSheetVisible(true)}
+              style={({ pressed }) => [styles.contextRow, pressed && styles.choicePressed]}
+            >
+              <View style={styles.contextCopy}>
+                <Text numberOfLines={1} style={styles.contextValue}>
+                  {selectedSource?.name ?? t('analysisBatch.noSource')}
+                </Text>
+                <Text style={styles.hint}>
+                  {sourceId ? t('analysisBatch.currentSource') : t('analysisBatch.noSource')}
+                </Text>
+              </View>
+              <View style={styles.contextAction}>
+                <Text style={styles.hint}>{t('analysisBatch.changeSource')}</Text>
+                <Ionicons color={colors.secondary} name="chevron-forward" size={20} />
+              </View>
+            </Pressable>
+            <View style={styles.separator} />
+            <View collapsable={false} ref={groupTourRef} style={styles.contextHeadingRow}>
+              <View>
+                <Text style={styles.contextLabel}>{t('analysisBatch.groupLabel')}</Text>
+                <Text style={styles.hint}>{t('analysisBatch.groupHelper')}</Text>
+              </View>
+              <Text style={styles.required}>{t('analysisBatch.required')}</Text>
             </View>
-            <View style={styles.contextAction}>
-              <Text style={styles.hint}>{t('analysisBatch.changeSource')}</Text>
-              <Ionicons color={colors.secondary} name="chevron-forward" size={20} />
-            </View>
-          </Pressable>
-          <View style={styles.separator} />
-          <View collapsable={false} ref={groupTourRef} style={styles.contextHeadingRow}>
-            <View>
-              <Text style={styles.contextLabel}>{t('analysisBatch.groupLabel')}</Text>
-              <Text style={styles.hint}>{t('analysisBatch.groupHelper')}</Text>
-            </View>
-            <Text style={styles.required}>{t('analysisBatch.required')}</Text>
+            <Pressable
+              accessibilityLabel={t('analysisBatch.selectGroup')}
+              accessibilityRole="button"
+              disabled={!groups.length}
+              onPress={() => setGroupSheetVisible(true)}
+              style={({ pressed }) => [styles.contextRow, pressed && styles.choicePressed]}
+            >
+              <View style={styles.contextCopy}>
+                <Text numberOfLines={1} style={styles.contextValue}>
+                  {selectedGroup?.name ?? t('analysisBatch.noGroups')}
+                </Text>
+                <Text style={styles.hint}>
+                  {groupId ? t('analysisBatch.currentGroup') : t('analysisBatch.chooseGroup')}
+                </Text>
+              </View>
+              <View style={styles.contextAction}>
+                <Text style={styles.hint}>{t('analysisBatch.changeGroup')}</Text>
+                <Ionicons color={colors.secondary} name="chevron-forward" size={20} />
+              </View>
+            </Pressable>
+            {/* 角色词典属于所选数据源；提交分析前可直接确认或补充角色白名单。 */}
+            {sourceId ? (
+              <RoleDictionaryPanel
+                onError={(reason) =>
+                  Alert.alert(
+                    t('roleDictionary.saveFailed'),
+                    reason instanceof Error ? reason.message : t('analysisBatch.tryAgain'),
+                  )
+                }
+                sourceId={sourceId}
+              />
+            ) : null}
           </View>
-          <Pressable
-            accessibilityLabel={t('analysisBatch.selectGroup')}
-            accessibilityRole="button"
-            disabled={!groups.length}
-            onPress={() => setGroupSheetVisible(true)}
-            style={({ pressed }) => [styles.contextRow, pressed && styles.choicePressed]}
-          >
-            <View style={styles.contextCopy}>
-              <Text numberOfLines={1} style={styles.contextValue}>
-                {selectedGroup?.name ?? t('analysisBatch.noGroups')}
-              </Text>
-              <Text style={styles.hint}>
-                {groupId ? t('analysisBatch.currentGroup') : t('analysisBatch.chooseGroup')}
-              </Text>
-            </View>
-            <View style={styles.contextAction}>
-              <Text style={styles.hint}>{t('analysisBatch.changeGroup')}</Text>
-              <Ionicons color={colors.secondary} name="chevron-forward" size={20} />
-            </View>
-          </Pressable>
-          {/* 角色词典属于所选数据源；提交分析前可直接确认或补充角色白名单。 */}
-          {sourceId ? (
-            <RoleDictionaryPanel
-              onError={(reason) =>
-                Alert.alert(
-                  t('roleDictionary.saveFailed'),
-                  reason instanceof Error ? reason.message : t('analysisBatch.tryAgain'),
-                )
-              }
-              sourceId={sourceId}
-            />
-          ) : null}
-        </View>
-        <View collapsable={false} ref={audioTourRef}>
-          <View style={styles.section}>
-            <View style={styles.sectionHeadingRow}>
-              <Text style={styles.sectionTitle}>{t('analysisBatch.audioSection')}</Text>
-              <Text style={styles.hint}>
-                {t('analysisBatch.selectedAudioCount', { count: selectedCount })}
-              </Text>
-            </View>
-            <View accessibilityRole="tablist" style={styles.segmentedControl}>
-              {(['uploads', 'existing_audio'] as const).map((kind) => (
-                <Pressable
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: sourceKind === kind }}
-                  key={kind}
-                  onPress={() => setSourceKind(kind)}
-                  style={[styles.segment, sourceKind === kind && styles.segmentSelected]}
-                >
-                  <Text
-                    style={[styles.segmentText, sourceKind === kind && styles.segmentTextSelected]}
+          <View collapsable={false} ref={audioTourRef} style={styles.batchColumn}>
+            <View style={styles.section}>
+              <View style={styles.sectionHeadingRow}>
+                <Text style={styles.sectionTitle}>{t('analysisBatch.audioSection')}</Text>
+                <Text style={styles.hint}>
+                  {t('analysisBatch.selectedAudioCount', { count: selectedCount })}
+                </Text>
+              </View>
+              <View accessibilityRole="tablist" style={styles.segmentedControl}>
+                {(['uploads', 'existing_audio'] as const).map((kind) => (
+                  <Pressable
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: sourceKind === kind }}
+                    key={kind}
+                    onPress={() => setSourceKind(kind)}
+                    style={[styles.segment, sourceKind === kind && styles.segmentSelected]}
                   >
-                    {t(kind === 'uploads' ? 'analysisBatch.uploads' : 'analysisBatch.existing')}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-            {sourceKind === 'uploads' ? (
-              <View style={styles.audioInput}>
-                {assets.length ? (
-                  <View style={styles.assetList}>
-                    {assets.map((asset, index) => (
-                      <View key={`${asset.uri}-${index}`} style={styles.assetRow}>
-                        <Ionicons color={colors.secondary} name="musical-notes-outline" size={20} />
-                        <View style={styles.assetCopy}>
-                          <Text numberOfLines={1} style={styles.assetName}>
-                            {asset.name}
-                          </Text>
-                          <Text style={styles.hint}>
-                            {formatAssetSize(asset.size) || t('analysisBatch.audioFile')}
-                          </Text>
+                    <Text
+                      style={[
+                        styles.segmentText,
+                        sourceKind === kind && styles.segmentTextSelected,
+                      ]}
+                    >
+                      {t(kind === 'uploads' ? 'analysisBatch.uploads' : 'analysisBatch.existing')}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              {sourceKind === 'uploads' ? (
+                <View style={styles.audioInput}>
+                  {assets.length ? (
+                    <View style={styles.assetList}>
+                      {assets.map((asset, index) => (
+                        <View key={`${asset.uri}-${index}`} style={styles.assetRow}>
+                          <Ionicons
+                            color={colors.secondary}
+                            name="musical-notes-outline"
+                            size={20}
+                          />
+                          <View style={styles.assetCopy}>
+                            <Text numberOfLines={1} style={styles.assetName}>
+                              {asset.name}
+                            </Text>
+                            <Text style={styles.hint}>
+                              {formatAssetSize(asset.size) || t('analysisBatch.audioFile')}
+                            </Text>
+                          </View>
+                          <Pressable
+                            accessibilityLabel={t('analysisBatch.removeAudio', {
+                              name: asset.name,
+                            })}
+                            accessibilityRole="button"
+                            hitSlop={8}
+                            onPress={() =>
+                              setAssets((current) => current.filter((_, item) => item !== index))
+                            }
+                          >
+                            <Ionicons color={colors.secondary} name="close" size={20} />
+                          </Pressable>
                         </View>
+                      ))}
+                    </View>
+                  ) : null}
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={assets.length >= 20}
+                    onPress={() => void pickFiles()}
+                    style={({ pressed }) => [
+                      styles.addAudioButton,
+                      pressed && styles.choicePressed,
+                      assets.length >= 20 && styles.disabled,
+                    ]}
+                  >
+                    <Ionicons color={colors.ink} name="cloud-upload-outline" size={20} />
+                    <Text style={styles.buttonText}>
+                      {assets.length
+                        ? t('analysisBatch.continueAdding')
+                        : t('analysisBatch.addAudio')}
+                    </Text>
+                  </Pressable>
+                  <Text style={styles.hint}>{t('analysisBatch.audioLimit')}</Text>
+                </View>
+              ) : (
+                <View style={styles.list}>
+                  {audioFiles.length ? (
+                    audioFiles.map((audio) => {
+                      const selected = selectedAudioIds.includes(audio.id);
+                      const disabledReason = existingAudioDisabledReason(
+                        audio,
+                        runtimeMode,
+                        t,
+                        pipeline.includeEmotion,
+                      );
+                      return (
                         <Pressable
-                          accessibilityLabel={t('analysisBatch.removeAudio', { name: asset.name })}
-                          accessibilityRole="button"
-                          hitSlop={8}
+                          accessibilityRole="checkbox"
+                          accessibilityState={{
+                            checked: selected,
+                            disabled: Boolean(disabledReason),
+                          }}
+                          disabled={Boolean(disabledReason)}
+                          key={audio.id}
                           onPress={() =>
-                            setAssets((current) => current.filter((_, item) => item !== index))
+                            setSelectedAudioIds((current) =>
+                              selected
+                                ? current.filter((id) => id !== audio.id)
+                                : current.length < 20
+                                  ? [...current, audio.id]
+                                  : current,
+                            )
                           }
+                          style={[
+                            styles.checkRow,
+                            selected && styles.checkRowSelected,
+                            disabledReason && styles.disabled,
+                          ]}
                         >
-                          <Ionicons color={colors.secondary} name="close" size={20} />
-                        </Pressable>
-                      </View>
-                    ))}
-                  </View>
-                ) : null}
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={assets.length >= 20}
-                  onPress={() => void pickFiles()}
-                  style={({ pressed }) => [
-                    styles.addAudioButton,
-                    pressed && styles.choicePressed,
-                    assets.length >= 20 && styles.disabled,
-                  ]}
-                >
-                  <Ionicons color={colors.ink} name="cloud-upload-outline" size={20} />
-                  <Text style={styles.buttonText}>
-                    {assets.length
-                      ? t('analysisBatch.continueAdding')
-                      : t('analysisBatch.addAudio')}
-                  </Text>
-                </Pressable>
-                <Text style={styles.hint}>{t('analysisBatch.audioLimit')}</Text>
-              </View>
-            ) : (
-              <View style={styles.list}>
-                {audioFiles.length ? (
-                  audioFiles.map((audio) => {
-                    const selected = selectedAudioIds.includes(audio.id);
-                    const disabledReason = existingAudioDisabledReason(
-                      audio,
-                      runtimeMode,
-                      t,
-                      pipeline.includeEmotion,
-                    );
-                    return (
-                      <Pressable
-                        accessibilityRole="checkbox"
-                        accessibilityState={{
-                          checked: selected,
-                          disabled: Boolean(disabledReason),
-                        }}
-                        disabled={Boolean(disabledReason)}
-                        key={audio.id}
-                        onPress={() =>
-                          setSelectedAudioIds((current) =>
-                            selected
-                              ? current.filter((id) => id !== audio.id)
-                              : current.length < 20
-                                ? [...current, audio.id]
-                                : current,
-                          )
-                        }
-                        style={[
-                          styles.checkRow,
-                          selected && styles.checkRowSelected,
-                          disabledReason && styles.disabled,
-                        ]}
-                      >
-                        <Ionicons
-                          color={selected ? colors.success : colors.muted}
-                          name={selected ? 'checkmark-circle' : 'ellipse-outline'}
-                          size={22}
-                        />
-                        <Text numberOfLines={1} style={styles.checkLabel}>
-                          {audio.title}
-                        </Text>
-                        <View style={styles.checkMeta}>
-                          <Text style={styles.hint}>
-                            {audio.runtimeMode ?? t('analysisBatch.unknownMode')}
+                          <Ionicons
+                            color={selected ? colors.success : colors.muted}
+                            name={selected ? 'checkmark-circle' : 'ellipse-outline'}
+                            size={22}
+                          />
+                          <Text numberOfLines={1} style={styles.checkLabel}>
+                            {audio.title}
                           </Text>
-                          {disabledReason ? (
-                            <Text style={styles.danger}>{disabledReason}</Text>
-                          ) : null}
-                        </View>
-                      </Pressable>
-                    );
-                  })
-                ) : (
-                  <Text style={styles.hint}>{t('analysisBatch.noAudio')}</Text>
-                )}
-              </View>
-            )}
+                          <View style={styles.checkMeta}>
+                            <Text style={styles.hint}>
+                              {audio.runtimeMode ?? t('analysisBatch.unknownMode')}
+                            </Text>
+                            {disabledReason ? (
+                              <Text style={styles.danger}>{disabledReason}</Text>
+                            ) : null}
+                          </View>
+                        </Pressable>
+                      );
+                    })
+                  ) : (
+                    <Text style={styles.hint}>{t('analysisBatch.noAudio')}</Text>
+                  )}
+                </View>
+              )}
+            </View>
           </View>
         </View>
         <View style={styles.section}>
@@ -859,7 +869,7 @@ export function AnalysisBatchCreateScreen({ onBack }: { onBack?: () => void }) {
           style={[styles.primaryButton, ctaDisabled && styles.disabled]}
         >
           {submitting ? (
-            <ActivityIndicator color={colors.white} />
+            <LoadingIndicator accessibilityLabel={t('common.submitting')} size={24} />
           ) : (
             <Text style={styles.primaryText}>
               {sourceKind === 'uploads'
@@ -1002,6 +1012,15 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl + 72,
     paddingHorizontal: spacing.md,
   },
+  desktopContent: {
+    alignSelf: 'center',
+    maxWidth: 1280,
+    paddingHorizontal: spacing.xl,
+    width: '100%',
+  },
+  batchColumns: { gap: spacing.md },
+  wideBatchColumns: { flexDirection: 'row', alignItems: 'flex-start' },
+  batchColumn: { flex: 1, minWidth: 0 },
   section: {
     backgroundColor: colors.card,
     borderRadius: radii.default,

@@ -26,12 +26,14 @@ import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
 type DetailTab = 'overview' | 'audio' | 'uploads' | 'groups';
 
 function ActionButton({
+  desktop = false,
   icon,
   label,
   onPress,
   emphasized = false,
   disabled = false,
 }: {
+  desktop?: boolean;
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   onPress: () => void;
@@ -46,25 +48,29 @@ function ActionButton({
       onPress={onPress}
       style={({ pressed }) => [
         styles.actionButton,
+        desktop && styles.desktopActionButton,
         emphasized && styles.emphasizedActionButton,
         disabled && styles.disabledActionButton,
         pressed && styles.pressed,
       ]}
     >
-      <Ionicons color={colors.ink} name={icon} size={typography.body.lineHeight} />
+      <Ionicons color={colors.primary} name={icon} size={typography.body.lineHeight} />
       <Text style={styles.actionButtonText}>{label}</Text>
     </Pressable>
   );
 }
 
+/** 在当前详情页签展示可执行操作，并保持业务动作由调用方持有。 */
 export function FixedActions({
   activeTab,
+  desktop = false,
   onLinkGroups,
   onTranscribeAll,
   onUpload,
   uploading,
 }: {
   activeTab: DetailTab;
+  desktop?: boolean;
   onLinkGroups: () => void;
   onTranscribeAll?: () => void;
   onUpload: () => void;
@@ -73,9 +79,13 @@ export function FixedActions({
   const { t } = useAppLanguage();
   if (activeTab === 'groups') {
     return (
-      <View style={styles.fixedActions} testID="data-source-fixed-actions">
+      <View
+        style={[styles.fixedActions, desktop && styles.desktopFixedActions]}
+        testID="data-source-fixed-actions"
+      >
         <ActionButton
           emphasized
+          desktop={desktop}
           icon="add"
           label={t('sourceFixed.linkGroup')}
           onPress={onLinkGroups}
@@ -85,9 +95,13 @@ export function FixedActions({
   }
   if (activeTab === 'uploads') {
     return (
-      <View style={styles.fixedActions} testID="data-source-fixed-actions">
+      <View
+        style={[styles.fixedActions, desktop && styles.desktopFixedActions]}
+        testID="data-source-fixed-actions"
+      >
         <ActionButton
           emphasized
+          desktop={desktop}
           icon="cloud-upload-outline"
           label={uploading ? t('sourceFixed.uploading') : t('sourceFixed.upload')}
           onPress={onUpload}
@@ -97,14 +111,19 @@ export function FixedActions({
     );
   }
   return (
-    <View style={styles.fixedActions} testID="data-source-fixed-actions">
+    <View
+      style={[styles.fixedActions, desktop && styles.desktopFixedActions]}
+      testID="data-source-fixed-actions"
+    >
       <ActionButton
+        desktop={desktop}
         icon="create-outline"
         label={t('sourceFixed.transcribeAll')}
         onPress={() => onTranscribeAll?.()}
       />
       <ActionButton
         emphasized
+        desktop={desktop}
         icon="cloud-upload-outline"
         label={uploading ? t('sourceFixed.uploading') : t('sourceFixed.upload')}
         onPress={onUpload}
@@ -128,9 +147,9 @@ const styles = StyleSheet.create({
     minHeight: 56,
     paddingHorizontal: spacing.md,
   },
-  emphasizedActionButton: { borderColor: colors.ink, borderWidth: 2 },
+  emphasizedActionButton: { borderColor: colors.primary, borderWidth: 1 },
   disabledActionButton: { opacity: 0.5 },
-  pressed: { backgroundColor: colors.divider, borderRadius: radii.default },
+  pressed: { backgroundColor: colors.background, borderRadius: radii.default },
   actionButtonText: {
     ...typography.body,
     color: textColors.primary,
@@ -145,4 +164,14 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     padding: spacing.md,
   },
+  desktopFixedActions: {
+    alignSelf: 'center',
+    backgroundColor: 'transparent',
+    borderTopWidth: 0,
+    justifyContent: 'flex-start',
+    maxWidth: 1280,
+    paddingHorizontal: spacing.xl,
+    width: '100%',
+  },
+  desktopActionButton: { flex: 0, maxWidth: 260, minWidth: 180 },
 });

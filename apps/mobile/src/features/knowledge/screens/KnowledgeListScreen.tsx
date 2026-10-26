@@ -12,23 +12,19 @@
  */
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { KnowledgeBaseSummary } from '@echowave/contracts';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
 import { useAppLanguage } from '@/shared/i18n/LanguageProvider';
+import { LoadingIndicator } from '@/shared/ui/LoadingIndicator';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
+import { DesktopDataTable } from '@/shared/ui/DesktopDataTable';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
 import { SearchSheet } from '@/shared/ui/SearchSheet';
 import { TopLevelPageHeader } from '@/shared/ui/TopLevelPageHeader';
+import { useResponsiveLayout } from '@/shared/ui/useResponsiveLayout';
+import { useTopBarSearchRegistration } from '@/shared/ui/TopBarSearchContext';
 import { useStarterTour, useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import { multilineTextInputText, textInputText } from '@/shared/theme/textInput';
 
@@ -67,6 +63,7 @@ export function KnowledgeListScreen({
   onOpenKnowledge: (id: string) => void;
 }) {
   const { formatDateTime, t } = useAppLanguage();
+  const { desktop } = useResponsiveLayout();
   const { activeStep, startGuide } = useStarterTour();
   const headerTourRef = useStarterTourTarget('knowledge-header');
   const createTourRef = useStarterTourTarget('knowledge-create');
@@ -80,6 +77,11 @@ export function KnowledgeListScreen({
   const [createName, setCreateName] = useState('');
   const [createDescription, setCreateDescription] = useState('');
   const [creating, setCreating] = useState(false);
+  useTopBarSearchRegistration({
+    value: searchQuery,
+    placeholder: t('knowledge.searchPlaceholder'),
+    onChange: setSearchQuery,
+  });
   const runInitialRequest = useInitialRequestLoading();
   const load = useCallback(
     async (showLoading = true) => {
@@ -131,9 +133,52 @@ export function KnowledgeListScreen({
       [item.name, item.description].some((value) => value.toLocaleLowerCase().includes(normalized)),
     );
   }, [knowledgeBases, searchQuery]);
+  const tableColumns = [
+    {
+      id: 'name',
+      label: t('knowledge.title'),
+      flex: 2,
+      render: (knowledge: KnowledgeBaseSummary) => (
+        <View style={styles.tableName}>
+          <Text numberOfLines={1} style={styles.cardTitle}>
+            {knowledge.name}
+          </Text>
+          <Text numberOfLines={1} style={styles.tableSecondary}>
+            {knowledge.description || t('knowledge.noDescription')}
+          </Text>
+        </View>
+      ),
+    },
+    {
+      id: 'documents',
+      label: t('desktop.sourceDocuments'),
+      width: 120,
+      render: (knowledge: KnowledgeBaseSummary) => (
+        <Text style={styles.tableSecondary}>{knowledge.documentCount}</Text>
+      ),
+    },
+    {
+      id: 'groups',
+      label: t('desktop.sourceGroups'),
+      width: 118,
+      render: (knowledge: KnowledgeBaseSummary) => (
+        <Text style={styles.tableSecondary}>{knowledge.linkedGroupCount}</Text>
+      ),
+    },
+    {
+      id: 'updated',
+      label: t('desktop.updated'),
+      width: 160,
+      render: (knowledge: KnowledgeBaseSummary) => (
+        <Text numberOfLines={1} style={styles.tableSecondary}>
+          {formatDateTime(knowledge.updatedAt)}
+        </Text>
+      ),
+    },
+  ];
 
   return (
-    <SafeAreaView edges={['top']} style={styles.safeArea}>
+    <SafeAreaView edges={['top']} style={[styles.safeArea, desktop && styles.desktopSafeArea]}>
       {searchVisible ? (
         <SearchSheet
           appliedQuery={searchQuery}
@@ -178,7 +223,7 @@ export function KnowledgeListScreen({
 
       <ScrollView
         alwaysBounceVertical
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, desktop && styles.desktopListContent]}
         refreshControl={<ScreenRefreshControl {...screenRefresh} />}
         showsVerticalScrollIndicator={false}
         testID="knowledge-list-scroll"
@@ -247,9 +292,7 @@ export function KnowledgeListScreen({
             </View>
           </View>
         ) : null}
-        {loading ? (
-          <ActivityIndicator accessibilityLabel={t('knowledge.loading')} color={colors.ink} />
-        ) : null}
+        {loading ? <LoadingIndicator accessibilityLabel={t('knowledge.loading')} /> : null}
         {error ? (
           <Pressable accessibilityRole="button" onPress={() => void load()} style={styles.feedback}>
             <Text style={styles.description}>{error}</Text>
@@ -262,36 +305,49 @@ export function KnowledgeListScreen({
         {!loading && !error && knowledgeBases.length > 0 && visibleKnowledgeBases.length === 0 ? (
           <Text style={styles.description}>{t('knowledge.noMatch', { query: searchQuery })}</Text>
         ) : null}
-        {visibleKnowledgeBases.map((knowledge) => (
-          <Pressable
-            key={knowledge.id}
-            accessibilityLabel={t('knowledge.open', { name: knowledge.name })}
-            accessibilityRole="button"
-            onPress={() => onOpenKnowledge(knowledge.id)}
-            style={({ pressed }) => [styles.card, pressed && styles.pressed]}
-          >
-            <View style={styles.cardTitleRow}>
-              <Ionicons
-                color={colors.secondary}
-                name="library-outline"
-                size={typography.heading1.lineHeight}
-              />
-              <Text style={styles.cardTitle}>{knowledge.name}</Text>
-            </View>
-            <Text numberOfLines={2} style={styles.description}>
-              {knowledge.description || t('knowledge.noDescription')}
-            </Text>
-            <Text style={styles.meta}>
-              {t('knowledge.counts', {
-                documents: knowledge.documentCount,
-                groups: knowledge.linkedGroupCount,
-              })}
-            </Text>
-            <Text style={styles.updated}>
-              {t('knowledge.updated', { date: formatDateTime(knowledge.updatedAt) })}
-            </Text>
-          </Pressable>
-        ))}
+        {desktop && visibleKnowledgeBases.length ? (
+          <DesktopDataTable
+            columns={tableColumns}
+            getRowAccessibilityLabel={(knowledge) => t('knowledge.open', { name: knowledge.name })}
+            getRowKey={(knowledge) => knowledge.id}
+            label={t('knowledge.title')}
+            onRowPress={(knowledge) => onOpenKnowledge(knowledge.id)}
+            rows={visibleKnowledgeBases}
+            testID="desktop-knowledge-table"
+          />
+        ) : null}
+        {!desktop
+          ? visibleKnowledgeBases.map((knowledge) => (
+              <Pressable
+                key={knowledge.id}
+                accessibilityLabel={t('knowledge.open', { name: knowledge.name })}
+                accessibilityRole="button"
+                onPress={() => onOpenKnowledge(knowledge.id)}
+                style={({ pressed }) => [styles.card, pressed && styles.pressed]}
+              >
+                <View style={styles.cardTitleRow}>
+                  <Ionicons
+                    color={colors.secondary}
+                    name="library-outline"
+                    size={typography.heading1.lineHeight}
+                  />
+                  <Text style={styles.cardTitle}>{knowledge.name}</Text>
+                </View>
+                <Text numberOfLines={2} style={styles.description}>
+                  {knowledge.description || t('knowledge.noDescription')}
+                </Text>
+                <Text style={styles.meta}>
+                  {t('knowledge.counts', {
+                    documents: knowledge.documentCount,
+                    groups: knowledge.linkedGroupCount,
+                  })}
+                </Text>
+                <Text style={styles.updated}>
+                  {t('knowledge.updated', { date: formatDateTime(knowledge.updatedAt) })}
+                </Text>
+              </Pressable>
+            ))
+          : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -302,6 +358,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.canvas,
     flex: 1,
   },
+  desktopSafeArea: { backgroundColor: 'transparent' },
   createText: {
     ...typography.body,
     color: textColors.primary,
@@ -313,6 +370,9 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl,
     paddingHorizontal: spacing.md,
   },
+  desktopListContent: { paddingHorizontal: spacing.xl },
+  tableName: { gap: spacing.xs },
+  tableSecondary: { ...typography.description, color: textColors.secondary },
   card: {
     backgroundColor: colors.card,
     borderColor: colors.divider,

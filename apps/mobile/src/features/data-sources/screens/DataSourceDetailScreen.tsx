@@ -29,7 +29,6 @@ import { DEFAULT_AUDIO_TRANSCRIPTION_MODEL } from '@echowave/contracts';
 import * as DocumentPicker from 'expo-document-picker';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   AppState,
   Platform,
@@ -44,6 +43,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSwipePager } from '@/shared/hooks/useSwipePager';
 import { useGroupAssociationEditor } from '@/shared/hooks/useGroupAssociationEditor';
 import { useScreenRefresh } from '@/shared/hooks/useScreenRefresh';
+import { useResponsiveLayout } from '@/shared/ui/useResponsiveLayout';
+import { useTopBarSearchRegistration } from '@/shared/ui/TopBarSearchContext';
 import { useAudioPlayback } from '@/shared/audio/useAudioPlayback';
 import { pickDocumentAsync } from '@/shared/files/documentPicker';
 import {
@@ -55,10 +56,12 @@ import {
   typography,
 } from '@/shared/theme/tokens';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { DESKTOP_DETAIL_CONTENT_MAX_WIDTH } from '@/shared/ui/layoutMetrics';
 import { GuideButton } from '@/shared/ui/GuideButton';
 import { PageTabs } from '@/shared/ui/PageTabs';
 import { SearchSheet } from '@/shared/ui/SearchSheet';
 import { ScreenRefreshControl } from '@/shared/ui/ScreenRefreshControl';
+import { LoadingIndicator } from '@/shared/ui/LoadingIndicator';
 import { useInitialRequestLoading } from '@/shared/navigation/NavigationLoadingProvider';
 import { useStarterTourTarget } from '@/shared/onboarding/StarterTourContext';
 import {
@@ -151,6 +154,7 @@ export function DataSourceDetailScreen({
   sourceId: string;
 }) {
   const { formatNumber, language: appLanguage, t } = useAppLanguage();
+  const { desktop } = useResponsiveLayout();
   const detailTabs = [
     { key: 'overview', label: t('sourceDetail.tabOverview') },
     { key: 'audio', label: t('sourceDetail.tabAudio') },
@@ -200,10 +204,19 @@ export function DataSourceDetailScreen({
   const [uploadIncludeAcousticEmotion, setUploadIncludeAcousticEmotion] = useState(true);
   const audioPlayback = useAudioPlayback();
   const runInitialRequest = useInitialRequestLoading();
-  const { handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } = useSwipePager({
-    activeTab,
-    onTabChange: setActiveTab,
-    tabs: detailTabKeys,
+  const { handlePageLayout, handleMomentumScrollEnd, pageWidth, pagerRef, selectTab } =
+    useSwipePager({
+      activeTab,
+      onTabChange: setActiveTab,
+      tabs: detailTabKeys,
+    });
+  useTopBarSearchRegistration({
+    onChange: (nextQuery) => {
+      setSearchQuery(nextQuery);
+      if (nextQuery && activeTab === 'overview') selectTab('audio');
+    },
+    placeholder: t('sourceDetail.searchPlaceholder'),
+    value: searchQuery,
   });
   const detailHeaderTargetRef = useStarterTourTarget('data-source-detail-header');
   const audioListTargetRef = useStarterTourTarget('data-source-audio-list');
@@ -537,11 +550,7 @@ export function DataSourceDetailScreen({
     return (
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
         <PageHeader onBack={onBack} title={t('sourceDetail.title')} />
-        <ActivityIndicator
-          accessibilityLabel={t('sourceDetail.loading')}
-          color={colors.ink}
-          style={styles.loading}
-        />
+        <LoadingIndicator accessibilityLabel={t('sourceDetail.loading')} style={styles.loading} />
       </SafeAreaView>
     );
   }
@@ -575,13 +584,28 @@ export function DataSourceDetailScreen({
   }
 
   const renderTabs = () => (
-    <View style={styles.tabsSurface}>
+    <View style={[styles.tabsSurface, desktop && styles.desktopTabsSurface]}>
       <PageTabs
         activeTab={activeTab}
+        desktop={desktop}
         onChange={selectTab}
         tabs={detailTabs}
         testIDPrefix="data-source-tab"
       />
+    </View>
+  );
+  const renderHero = () => (
+    <View style={[styles.hero, desktop && styles.desktopHero]}>
+      <Text accessibilityRole="header" style={styles.heroTitle}>
+        {source.name}
+      </Text>
+      <Text style={styles.heroDescription}>{source.description || t('sources.noDescription')}</Text>
+      <Text style={styles.heroMeta}>
+        {t('sourceDetail.meta', {
+          connection: source.connection,
+          count: formatNumber(source.linkedGroupCount),
+        })}
+      </Text>
     </View>
   );
   const filteredAudioItems = source.audioItems.filter((item) =>
@@ -721,7 +745,10 @@ export function DataSourceDetailScreen({
     ]);
 
   return (
-    <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
+    <SafeAreaView
+      edges={['top', 'bottom']}
+      style={[styles.safeArea, desktop && styles.desktopSafeArea]}
+    >
       {searchVisible ? (
         <SearchSheet
           appliedQuery={searchQuery}
@@ -983,41 +1010,36 @@ export function DataSourceDetailScreen({
           </Pressable>
         </View>
       ) : null}
+      {desktop ? (
+        <View style={styles.desktopHeading}>
+          {renderHero()}
+          {renderTabs()}
+        </View>
+      ) : null}
       <ScrollView
         directionalLockEnabled
         horizontal
         nestedScrollEnabled
         onMomentumScrollEnd={handleMomentumScrollEnd}
-        pagingEnabled
+        onLayout={handlePageLayout}
+        pagingEnabled={!desktop}
         ref={pagerRef}
+        scrollEnabled={!desktop}
         showsHorizontalScrollIndicator={false}
         style={styles.pager}
         testID="data-source-detail-pager"
       >
         <ScrollView
           alwaysBounceVertical
-          contentContainerStyle={styles.pageContent}
+          contentContainerStyle={[styles.pageContent, desktop && styles.desktopPageContent]}
           refreshControl={<ScreenRefreshControl {...screenRefresh} />}
           showsVerticalScrollIndicator={false}
-          stickyHeaderIndices={[1]}
-          style={[styles.page, { width: pageWidth }]}
+          stickyHeaderIndices={desktop ? undefined : [1]}
+          style={[styles.page, desktop && styles.desktopPage, { width: pageWidth }]}
           testID="data-source-overview-scroll"
         >
-          <View style={styles.hero}>
-            <Text accessibilityRole="header" style={styles.heroTitle}>
-              {source.name}
-            </Text>
-            <Text style={styles.heroDescription}>
-              {source.description || t('sources.noDescription')}
-            </Text>
-            <Text style={styles.heroMeta}>
-              {t('sourceDetail.meta', {
-                connection: source.connection,
-                count: formatNumber(source.linkedGroupCount),
-              })}
-            </Text>
-          </View>
-          {renderTabs()}
+          {desktop ? null : renderHero()}
+          {desktop ? null : renderTabs()}
           <OverviewContent
             activeAudioFileId={audioPlayback.activeAudioFileId}
             audioLoading={!audioPlayback.isLoaded || audioPlayback.isBuffering}
@@ -1032,14 +1054,14 @@ export function DataSourceDetailScreen({
 
         <ScrollView
           alwaysBounceVertical
-          contentContainerStyle={styles.pageContent}
+          contentContainerStyle={[styles.pageContent, desktop && styles.desktopPageContent]}
           refreshControl={<ScreenRefreshControl {...screenRefresh} />}
           showsVerticalScrollIndicator={false}
-          stickyHeaderIndices={[0]}
-          style={[styles.page, { width: pageWidth }]}
+          stickyHeaderIndices={desktop ? undefined : [0]}
+          style={[styles.page, desktop && styles.desktopPage, { width: pageWidth }]}
           testID="data-source-audio-scroll"
         >
-          {renderTabs()}
+          {desktop ? null : renderTabs()}
           <RecordingDraftList sourceId={sourceId} />
           {Platform.OS !== 'web' ? (
             <Pressable
@@ -1082,14 +1104,14 @@ export function DataSourceDetailScreen({
 
         <ScrollView
           alwaysBounceVertical
-          contentContainerStyle={styles.pageContent}
+          contentContainerStyle={[styles.pageContent, desktop && styles.desktopPageContent]}
           refreshControl={<ScreenRefreshControl {...screenRefresh} />}
           showsVerticalScrollIndicator={false}
-          stickyHeaderIndices={[0]}
-          style={[styles.page, { width: pageWidth }]}
+          stickyHeaderIndices={desktop ? undefined : [0]}
+          style={[styles.page, desktop && styles.desktopPage, { width: pageWidth }]}
           testID="data-source-uploads-scroll"
         >
-          {renderTabs()}
+          {desktop ? null : renderTabs()}
           <View style={styles.recordsList}>
             {uploadDates.length === 0 ? (
               <Text style={styles.listEmptyText}>
@@ -1130,14 +1152,14 @@ export function DataSourceDetailScreen({
 
         <ScrollView
           alwaysBounceVertical
-          contentContainerStyle={styles.pageContent}
+          contentContainerStyle={[styles.pageContent, desktop && styles.desktopPageContent]}
           refreshControl={<ScreenRefreshControl {...screenRefresh} />}
           showsVerticalScrollIndicator={false}
-          stickyHeaderIndices={[0]}
-          style={[styles.page, { width: pageWidth }]}
+          stickyHeaderIndices={desktop ? undefined : [0]}
+          style={[styles.page, desktop && styles.desktopPage, { width: pageWidth }]}
           testID="data-source-groups-scroll"
         >
-          {renderTabs()}
+          {desktop ? null : renderTabs()}
           <View style={styles.groupList}>
             {filteredGroups.length === 0 ? (
               <Text style={styles.listEmptyText}>
@@ -1161,6 +1183,7 @@ export function DataSourceDetailScreen({
       <View collapsable={false} ref={transcribeTargetRef}>
         <FixedActions
           activeTab={activeTab}
+          desktop={desktop}
           onLinkGroups={openGroupPicker}
           onTranscribeAll={transcribeAll}
           onUpload={() => {
@@ -1175,6 +1198,14 @@ export function DataSourceDetailScreen({
 
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: colors.background, flex: 1 },
+  desktopSafeArea: { backgroundColor: 'transparent' },
+  desktopHeading: {
+    alignSelf: 'center',
+    maxWidth: DESKTOP_DETAIL_CONTENT_MAX_WIDTH,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.lg,
+    width: '100%',
+  },
   runtimeNotice: {
     alignItems: 'flex-start',
     backgroundColor: colors.card,
@@ -1231,6 +1262,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     paddingTop: spacing.sm,
   },
+  desktopTabsSurface: {
+    backgroundColor: 'transparent',
+    borderBottomWidth: 0,
+    paddingHorizontal: 0,
+  },
   operationError: {
     backgroundColor: colors.background,
     borderBottomColor: colors.divider,
@@ -1269,12 +1305,25 @@ const styles = StyleSheet.create({
   pager: { flex: 1 },
   pageContent: { paddingBottom: spacing.lg },
   page: { backgroundColor: colors.card, height: '100%' },
+  desktopPage: { backgroundColor: 'transparent' },
+  desktopPageContent: {
+    alignSelf: 'center',
+    maxWidth: DESKTOP_DETAIL_CONTENT_MAX_WIDTH,
+    paddingHorizontal: spacing.xl,
+    width: '100%',
+  },
   hero: {
     backgroundColor: colors.canvas,
     gap: spacing.md,
     paddingBottom: spacing.xl,
     paddingHorizontal: spacing.md,
     paddingTop: spacing.xl,
+  },
+  desktopHero: {
+    backgroundColor: 'transparent',
+    gap: spacing.sm,
+    paddingHorizontal: 0,
+    paddingTop: 0,
   },
   heroTitle: {
     ...typography.contentDisplay,

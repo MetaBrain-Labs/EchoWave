@@ -1067,7 +1067,7 @@ describe('AnalysisDetailScreen', () => {
         fontFamily: fontFamilies.sansBold,
         fontSize: 32,
         fontWeight: 'bold',
-        lineHeight: 48,
+        lineHeight: 40,
       }),
     );
   });

@@ -1,7 +1,7 @@
 /**
  * 移动应用根布局。
  *
- * 装载字体、安全区、导航加载状态与 Expo Router 栈，并在桌面 Web 上约束居中的单列画布。
+ * 装载字体、安全区、导航加载状态与 Expo Router 栈，并选择移动或桌面工作区画布。
  *
  * Responsibilities:
  * - 初始化跨平台应用级 provider。
@@ -27,7 +27,9 @@ import { AdminSessionProvider } from '@/shared/auth/AdminSessionProvider';
 import { subscribeToNotificationNavigation } from '@/shared/notifications/pushNotifications';
 import { PushNotificationProvider } from '@/shared/notifications/PushNotificationProvider';
 import { colors, fontFamilies, spacing, textColors, typography } from '@/shared/theme/tokens';
+import { DesktopWorkspaceShell } from '@/shared/ui/DesktopWorkspaceShell';
 import { StatusBarBackdrop } from '@/shared/ui/StatusBarBackdrop';
+import { useResponsiveLayout } from '@/shared/ui/useResponsiveLayout';
 import { StarterTourProvider } from '@/shared/onboarding/StarterTourProvider';
 import { LanguageProvider, useAppLanguage } from '@/shared/i18n/LanguageProvider';
 import { RecordingProvider } from '@/shared/recording/RecordingProvider';
@@ -57,6 +59,7 @@ function RootContent() {
   const { t } = useAppLanguage();
   const router = useRouter();
   const connection = useServerConnection();
+  const { desktop } = useResponsiveLayout();
   const [fontsLoaded, fontError] = useFonts({
     [fontFamilies.kai]: require('../../assets/fonts/LXGWWenKaiLite-Regular.ttf'),
     [fontFamilies.sans]: require('../../assets/fonts/SourceHanSansCN-Regular.otf'),
@@ -112,12 +115,20 @@ function RootContent() {
   }
 
   return (
-    <View style={styles.stage} testID="echowave-ready">
-      <View style={styles.canvas}>
+    <View style={[styles.stage, desktop && styles.desktopStage]} testID="echowave-ready">
+      <View
+        style={[
+          styles.canvas,
+          Platform.OS !== 'web' && styles.nativeCanvas,
+          desktop && styles.desktopCanvas,
+        ]}
+      >
         <StarterTourProvider key={connection.revision} serverUrl={connection.serverUrl}>
           <AdminSessionProvider serverRevision={connection.revision}>
             <NavigationLoadingProvider>
-              <Stack screenOptions={{ headerShown: false }} />
+              <DesktopWorkspaceShell>
+                <Stack screenOptions={{ headerShown: false }} />
+              </DesktopWorkspaceShell>
               <StatusBar style="dark" />
               <StatusBarBackdrop />
             </NavigationLoadingProvider>
@@ -167,6 +178,15 @@ const styles = StyleSheet.create({
     maxWidth: 480,
     overflow: Platform.OS === 'web' ? 'hidden' : 'visible',
     width: '100%',
+  },
+  desktopStage: {
+    alignItems: 'stretch',
+  },
+  desktopCanvas: {
+    maxWidth: '100%',
+  },
+  nativeCanvas: {
+    maxWidth: '100%',
   },
   fontGate: {
     alignItems: 'center',

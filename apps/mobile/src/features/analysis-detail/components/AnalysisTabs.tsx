@@ -22,20 +22,28 @@ const analysisTabs: readonly { key: AnalysisTab; labelKey: TranslationKey }[] = 
 ];
 export const analysisTabKeys = analysisTabs.map((tab) => tab.key);
 
+/** 按当前视口样式显示分析详情分页，同时保留原有活动页状态与回调。 */
 export function DetailTabs({
   activeTab,
   onChange,
+  desktop = false,
   showSummary = true,
+  transcriptLabel,
   visibleTabs,
 }: {
   activeTab: AnalysisTab;
   onChange: (tab: AnalysisTab) => void;
+  desktop?: boolean;
   showSummary?: boolean;
+  transcriptLabel?: string;
   visibleTabs?: readonly AnalysisTab[];
 }) {
   const { t } = useAppLanguage();
   return (
-    <View accessibilityRole="tablist" style={styles.detailTabs}>
+    <View
+      accessibilityRole="tablist"
+      style={[styles.detailTabs, desktop && styles.desktopDetailTabs]}
+    >
       {analysisTabs
         .filter(
           (tab) =>
@@ -50,12 +58,29 @@ export function DetailTabs({
               accessibilityRole="tab"
               accessibilityState={{ selected }}
               onPress={() => onChange(tab.key)}
-              style={({ pressed }) => [styles.detailTab, pressed && styles.pressed]}
+              style={({ pressed }) => [
+                styles.detailTab,
+                desktop && styles.desktopDetailTab,
+                pressed && styles.pressed,
+              ]}
             >
-              <Text style={[styles.detailTabText, selected && styles.activeDetailTabText]}>
-                {t(tab.labelKey)}
+              <Text
+                style={[
+                  styles.detailTabText,
+                  desktop && styles.desktopDetailTabText,
+                  selected && styles.activeDetailTabText,
+                  selected && desktop && styles.desktopActiveDetailTabText,
+                ]}
+              >
+                {tab.key === 'transcript' && transcriptLabel ? transcriptLabel : t(tab.labelKey)}
               </Text>
-              <View style={[styles.tabUnderline, selected && styles.activeTabUnderline]} />
+              <View
+                style={[
+                  styles.tabUnderline,
+                  desktop && styles.desktopTabUnderline,
+                  selected && styles.activeTabUnderline,
+                ]}
+              />
             </Pressable>
           );
         })}
@@ -73,8 +98,15 @@ const styles = StyleSheet.create({
     minHeight: 34,
     paddingHorizontal: spacing.md,
   },
+  desktopDetailTabs: { gap: spacing.xl, minHeight: 48, paddingHorizontal: spacing.md },
   detailTab: {
     justifyContent: 'flex-end',
+  },
+  desktopDetailTab: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+    paddingHorizontal: spacing.xs,
   },
   detailTabText: {
     ...typography.heading5,
@@ -85,13 +117,16 @@ const styles = StyleSheet.create({
   },
   activeDetailTabText: {
     ...typography.heading4,
-    color: textColors.primary,
+    color: colors.primary,
   },
+  desktopDetailTabText: { ...typography.body, paddingBottom: 0, textAlign: 'center' },
+  desktopActiveDetailTabText: { ...typography.body, color: colors.primary },
   tabUnderline: {
     backgroundColor: 'transparent',
     height: 2,
   },
+  desktopTabUnderline: { bottom: 0, left: 0, position: 'absolute', right: 0 },
   activeTabUnderline: {
-    backgroundColor: colors.ink,
+    backgroundColor: colors.primary,
   },
 });

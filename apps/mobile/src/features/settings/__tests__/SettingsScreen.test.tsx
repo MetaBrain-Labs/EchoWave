@@ -18,6 +18,7 @@ import { StyleSheet, Text } from 'react-native';
 import { settingsApi } from '@/shared/api/settingsApi';
 import { WorkspaceRequestError } from '@/shared/api/request';
 import { AdminSessionProvider, useAdminSession } from '@/shared/auth/AdminSessionProvider';
+import { radii } from '@/shared/theme/tokens';
 import {
   StarterTourContext,
   type StarterTourContextValue,
@@ -364,7 +365,7 @@ describe('SettingsScreen', () => {
       }),
     );
     expect(StyleSheet.flatten(screen.getByLabelText('Local file').props.style)).toEqual(
-      expect.objectContaining({ borderRadius: 4 }),
+      expect.objectContaining({ borderRadius: radii.default }),
     );
   });
 
